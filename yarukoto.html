@@ -662,7 +662,7 @@ function renderIdeas(){
 function renderIdeaDetail(el){
   const meta = bucketMeta(ideaApp);
   const all = db.ideas.filter(x=>x.app===ideaApp);
-  const active = all.filter(x=>!x.done && !x.later).sort((a,b)=>(b.updated||b.ts||0) - (a.updated||a.ts||0));
+  const active = all.filter(x=>!x.done && !x.later).sort((a,b)=>(a.ts||0) - (b.ts||0));  // 古い順＝新しく追加したものが下に並ぶ
   const later = all.filter(x=>!x.done && x.later).sort((a,b)=>(b.updated||b.ts||0) - (a.updated||a.ts||0));
   const done = all.filter(x=>x.done).sort((a,b)=>(b.doneAt||0) - (a.doneAt||0));
   let html = '<div class="idea-head">'+
@@ -708,7 +708,7 @@ function goIdeaGrid(){ ideaApp = null; renderIdeas(); renderAddbar(); window.scr
 function buildIdeaPrompt(){
   const meta = bucketMeta(ideaApp);
   const active = db.ideas.filter(x=>x.app===ideaApp && !x.done && !x.later)
-    .sort((a,b)=>(b.updated||b.ts||0) - (a.updated||a.ts||0));
+    .sort((a,b)=>(a.ts||0) - (b.ts||0));  // 表示と同じ「古い順（新しいものが下）」で番号を振る
   if(!active.length) return '';
   let s = meta.label+'の改善がしたいです。\n';
   s += '以下の'+active.length+'個の改善を手伝ってください。\n';
@@ -735,7 +735,7 @@ function renderAddbar(){
     const inp = document.getElementById('quickInput');
     const addIt = ()=>{
       const v = inp.value.trim(); if(!v) return;
-      db.ideas.unshift({ id:uid(), app:ideaApp, text:v, ts:Date.now(), updated:Date.now() });
+      db.ideas.push({ id:uid(), app:ideaApp, text:v, ts:Date.now(), updated:Date.now() });
       save();
       inp.value='';
       // 入力欄は作り直さずリストとカウントだけ更新 → iOSでキーボードが閉じず連続入力できる
