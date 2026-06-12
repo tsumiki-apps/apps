@@ -289,7 +289,6 @@
   </section>
   <section class="view" id="memberView"></section>
   <section class="view" id="editorView"></section>
-  <section class="view" id="followView"></section>
 </div>
 
 <div class="fab" id="fab" style="display:none"><div class="inner"><button class="btn" id="fabBtn"></button></div></div>
@@ -304,7 +303,7 @@ const KEY="grownote_v1";
 let DB=load();
 function load(){
   try{const r=JSON.parse(localStorage.getItem(KEY));if(r&&Array.isArray(r.members)){
-    r.members.forEach(m=>{if(typeof m.progress!=="number")m.progress=0;});return r;}}catch(e){}
+    r.members.forEach(m=>{if(!Array.isArray(m.sessions))m.sessions=[];});return r;}}catch(e){}
   return {members:[]};
 }
 function saveLocal(){localStorage.setItem(KEY,JSON.stringify(DB));}
@@ -340,7 +339,7 @@ async function pullCloud(){
   if(res.error){console.error(res.error);return false;}
   if(res.data&&res.data.state&&Array.isArray(res.data.state.members)){
     DB=res.data.state;
-    DB.members.forEach(m=>{if(typeof m.progress!=="number")m.progress=0;if(!Array.isArray(m.sessions))m.sessions=[];});
+    DB.members.forEach(m=>{if(!Array.isArray(m.sessions))m.sessions=[];});
     saveLocal();
     return true;
   }
@@ -377,7 +376,7 @@ function sessHasContent(s){
     (s.memberIdeas&&s.memberIdeas.some(x=>x&&x.trim()))||
     (s.advice&&s.advice.some(a=>a.text&&a.text.trim()))||
     (s.insight&&s.insight.trim())||
-    (s.action&&((s.action.deadline||"").trim()||(s.action.todos&&s.action.todos.some(t=>t.text&&t.text.trim())))));
+    (s.nextCheckin&&s.nextCheckin.trim()));
 }
 
 /* ---------- navigation ---------- */
@@ -386,7 +385,7 @@ let growthSeries="nps";   // メンバー詳細の成長グラフで表示中の
 function go(r){route={...route,...r};render();window.scrollTo(0,0);}
 
 function render(){
-  ["homeView","memberView","editorView","followView"].forEach(v=>$("#"+v).classList.remove("active"));
+  ["homeView","memberView","editorView"].forEach(v=>$("#"+v).classList.remove("active"));
   const back=$("#backBtn"),ha=$("#headerAction"),fab=$("#fab"),title=$("#appTitle");
   back.classList.remove("show");ha.textContent="";ha.onclick=null;fab.style.display="none";
 
@@ -406,39 +405,26 @@ function render(){
     const m=memberById(route.memberId);back.onclick=()=>go({view:"member"});
     title.innerHTML = `${esc(m?m.name:"")}<small>${route.sessionId?"会話を編集":"新しい会話"}</small>`;
     renderEditor();
-  }else if(route.view==="follow"){
-    $("#followView").classList.add("active");back.classList.add("show");back.onclick=()=>go({view:"home"});
-    title.innerHTML='フォロー<small>会話で決めた約束を追いかける</small>';
-    renderFollow();
   }
 }
 
 /* ---------- HOME ---------- */
 function renderHome(){
   const sum=$("#teamSummary"),el=$("#memberList");
+  sum.innerHTML="";
   $("#homeFooter").innerHTML=`<div class="xfer card" onclick="transferSheet()"><span>⚙️ データの引き継ぎ・バックアップ</span><span class="muted">別の端末/ブラウザで続ける ›</span></div>`;
   if(!DB.members.length){
-    sum.innerHTML="";
     el.innerHTML=`<div class="empty"><div class="big">🌱</div>まだメンバーがいません。<br>下のボタンから最初のメンバーを追加しましょう。</div>`;return;
   }
-  const n=DB.members.length;
-  const avg=Math.round(DB.members.reduce((s,m)=>s+(m.progress||0),0)/n);
-  sum.innerHTML=`<div class="summary card">
-      <div class="srow"><span>🚀 チーム全体の進捗</span><span class="savg">${avg}%</span></div>
-      <div class="bar"><i style="width:${avg}%"></i></div>
-      <div class="smeta">メンバー ${n}人 ・ ゴール達成度の平均</div>
-    </div>` + followCardHTML();
-
   const sorted=[...DB.members].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   el.innerHTML=sorted.map(m=>{
-    const cnt=m.sessions.length;const p=m.progress||0;
+    const cnt=m.sessions.length;
     const last=cnt?fmtFull(m.sessions[m.sessions.length-1].date):"—";
     const goal=m.goal?`<div class="goal">🎯 ${esc(m.goal)}</div>`:`<div class="goal none">🎯 叶えたいゴールはまだ未設定</div>`;
     return `<div class="member card" onclick="go({view:'member',memberId:'${m.id}'})">
       <div class="name"><span class="avatar">${esc(initial(m.name))}</span>${esc(m.name)}</div>
       ${goal}
-      <div class="progress-row" style="margin-top:12px"><div class="bar sm"><i style="width:${p}%"></i></div><span class="pct">${p}%</span></div>
-      <div class="meta"><span>🗒 会話 ${cnt}件</span><span>最終 ${last}</span></div>
+      <div class="meta" style="margin-top:12px"><span>🗒 会話 ${cnt}件</span><span>最終 ${last}</span></div>
       <span class="chev">›</span>
     </div>`;
   }).join("");
@@ -450,15 +436,9 @@ function renderMember(){
   $("#appTitle").innerHTML=`${esc(m.name)}<small>叶えたいことの記録</small>`;
   const ha=$("#headerAction");ha.textContent="編集";ha.onclick=()=>editMemberSheet(m.id);
 
-  const p=m.progress||0;
   const goalBlock=`<div class="goalcard card">
       <h3>🎯 叶えたいゴール</h3>
       <div class="goaltext ${m.goal?"":"none"}">${m.goal?esc(m.goal):"このメンバーが最終的に叶えたいことを設定しましょう"}</div>
-      <div style="margin-top:14px">
-        <div class="progress-row"><div class="bar"><i id="goalFill" style="width:${p}%"></i></div><span class="pct" id="goalPct">${p}%</span></div>
-        <input type="range" class="slider" id="progSlider" min="0" max="100" step="5" value="${p}">
-        <div class="smeta" style="color:var(--sub);font-size:12px">スライドして達成度を更新（体感でOK）</div>
-      </div>
       <div class="npstarget-line">🎯 目標NPS：<b>${typeof m.npsTarget==="number"?m.npsTarget:"未設定"}</b>
         <button class="npstarget-edit" onclick="editNpsTargetSheet('${m.id}')">${typeof m.npsTarget==="number"?"変更":"設定"}</button></div>
       <button class="btn ghost edit" onclick="editGoalSheet('${m.id}')">${m.goal?"ゴールを編集":"ゴールを設定する"}</button>
@@ -472,164 +452,29 @@ function renderMember(){
     body=`<div class="section-lead">会話の履歴（${m.sessions.length}）</div><div class="timeline">`+list.map(s=>{
       const ideaN=(s.memberIdeas||[]).filter(x=>x&&x.trim()).length+(s.advice||[]).filter(a=>a.text&&a.text.trim()).length;
       const insight=(s.insight&&s.insight.trim())?`<div class="insight"><b>今日から</b><span>${esc(s.insight)}</span></div>`:"";
-      let actionChip="";
-      const act=s.action||{};const todos=(act.todos||[]).filter(t=>t.text&&t.text.trim());
-      if(act.deadline||todos.length){
-        const done=todos.filter(t=>t.done).length;
-        const sp=todos.length?`<span class="sp">${done}/${todos.length}</span>`:"";
-        const lbl=act.deadline?`${fmtFull(act.deadline)}まで`:"アクション";
-        actionChip=`<div class="action-chip">🚀 ${sp}<span>${lbl}</span></div>`;
-      }
-      const head=(s.goal&&s.goal.trim())?s.goal:((s.reality&&s.reality.trim())?s.reality:"（内容未記入）");
+      const checkin=s.nextCheckin||(s.action&&s.action.deadline)||"";
+      const checkinChip=checkin?`<div class="action-chip">📅 <span>次回チェックイン ${fmtFull(checkin)}</span></div>`:"";
+      const fb2=s.feedback||{};
+      const head=(fb2.keep&&fb2.keep.trim())?fb2.keep:((fb2.more&&fb2.more.trim())?fb2.more:((s.insight&&s.insight.trim())?s.insight:((s.goal&&s.goal.trim())?s.goal:((s.reality&&s.reality.trim())?s.reality:"（内容未記入）"))));
       return `<div class="sess card" onclick="go({view:'editor',sessionId:'${s.id}'})">
         <div class="top"><span class="date-chip">${fmtFull(s.date)}</span><span class="stepcount">💡 ${ideaN}件</span></div>
-        <div class="sgoal">🎯 ${esc(head)}</div>
+        <div class="sgoal">💬 ${esc(head)}</div>
         ${insight}
-        ${actionChip}
+        ${checkinChip}
       </div>`;
     }).join("")+`</div>`;
   }
   const growthCard = m.sessions.length ? `<div class="growth card">
-      <h3>📈 成長の推移</h3>
-      <div class="sub">セッションごとに記録した数値の移り変わり。点をつなげて成長を見える化。</div>
-      <div class="gchips">
-        <button class="gchip" data-gs="nps">NPS実数値</button>
-        <button class="gchip" data-gs="progress">進捗%</button>
-      </div>
+      <h3>📈 NPSの推移</h3>
+      <div class="sub">セッションごとに記録したNPS実数値の移り変わり。点をつなげて成長を見える化。</div>
       <div class="gchart-wrap"><canvas class="gchart" id="growthCanvas"></canvas><div class="gempty" id="growthEmpty" style="display:none"></div></div>
     </div>` : "";
 
   $("#memberView").innerHTML=goalBlock+growthCard+body;
 
   if(m.sessions.length){
-    document.querySelectorAll(".gchip").forEach(b=>{
-      b.classList.toggle("on", b.dataset.gs===growthSeries);
-      b.onclick=()=>{
-        growthSeries=b.dataset.gs;
-        document.querySelectorAll(".gchip").forEach(x=>x.classList.toggle("on",x.dataset.gs===growthSeries));
-        drawGrowth(m);
-      };
-    });
     drawGrowth(m);
   }
-
-  const slider=$("#progSlider");
-  function paint(v){slider.style.background=`linear-gradient(90deg,#0071e3 0%,#34c759 ${v}%,#ececf0 ${v}%)`;}
-  paint(p);
-  slider.addEventListener("input",()=>{const v=+slider.value;$("#goalFill").style.width=v+"%";$("#goalPct").textContent=v+"%";paint(v);});
-  slider.addEventListener("change",()=>{m.progress=+slider.value;m.updatedAt=Date.now();save();toast(`達成度 ${m.progress}%`);});
-}
-
-/* ---------- フォロー（横断ビュー） ---------- */
-// 全メンバー・全会話の「やること(todo)」を1本に束ね、状態で分類する
-function collectFollowItems(){
-  const T=todayStr(), items=[];
-  DB.members.forEach(m=>{
-    (m.sessions||[]).forEach(s=>{
-      const act=s.action||{}; const dl=(act.deadline||"").trim();
-      (act.todos||[]).forEach(t=>{
-        if(!t.text||!t.text.trim())return;
-        const d = dl ? diffDays(T,dl) : null;   // 今日から期限までの日数（null=期限なし）
-        let cat;
-        if(t.done) cat="done";
-        else if(d!==null && d<0) cat="overdue";
-        else if(d!==null && d<=7) cat="soon";
-        else cat="open";
-        items.push({memberId:m.id,memberName:m.name,sessionId:s.id,sessionDate:s.date,
-          deadline:dl,days:d,todoId:t.id,text:t.text,done:!!t.done,doneAt:t.doneAt||""});
-      });
-    });
-  });
-  return items;
-}
-function followCounts(){
-  const c={overdue:0,soon:0,open:0,done:0};
-  collectFollowItems().forEach(it=>{c[it.done?"done":(it.days!==null&&it.days<0?"overdue":(it.days!==null&&it.days<=7?"soon":"open"))]++;});
-  return c;
-}
-// ホームに出すフォロー要約カード（やることが1件も無ければ非表示）
-function followCardHTML(){
-  const c=followCounts();
-  const total=c.overdue+c.soon+c.open+c.done;
-  if(!total)return "";
-  const urgent=c.overdue;
-  const pill=urgent?`<span class="fc-pill">${urgent}</span>`:`<span class="fc-pill zero">✓</span>`;
-  const parts=[];
-  if(c.overdue)parts.push(`期限切れ ${c.overdue}`);
-  if(c.soon)parts.push(`今週 ${c.soon}`);
-  const open=c.open; if(open)parts.push(`未完 ${open}`);
-  const sub = parts.length?parts.join(" ・ "):`未完了なし・約束は全部完了`;
-  return `<div class="followcard card" onclick="go({view:'follow'})">
-      <div class="fc-ic">⏰</div>
-      <div class="fc-main"><div class="fc-title">フォロー</div><div class="fc-sub">${sub}</div></div>
-      ${pill}<span class="chev">›</span>
-    </div>`;
-}
-function dlLabel(it){
-  if(!it.deadline)return `<span class="dl none">期限なし</span>`;
-  const cls = it.done ? "future" : (it.days<0?"overdue":(it.days<=7?"soon":"future"));
-  let txt;
-  if(it.done) txt=`${fmtFull(it.deadline)}まで`;
-  else if(it.days<0) txt=`${-it.days}日 超過`;
-  else if(it.days===0) txt=`今日まで`;
-  else if(it.days<=7) txt=`あと${it.days}日`;
-  else txt=`${fmtFull(it.deadline)}まで`;
-  return `<span class="dl ${cls}">${txt}</span>`;
-}
-function renderFollow(){
-  const root=$("#followView");
-  const items=collectFollowItems();
-  if(!items.length){
-    root.innerHTML=`<div class="empty"><div class="big">🌱</div>追いかける約束はまだありません。<br>会話の「🚀 アクション宣言」でやることを決めると、ここに集まります。</div>`;
-    return;
-  }
-  const groups=[
-    {key:"overdue",cls:"overdue",icon:"⏰",label:"期限切れ・未完了",
-      sort:(a,b)=>a.days-b.days, filter:it=>!it.done&&it.days!==null&&it.days<0},
-    {key:"soon",cls:"soon",icon:"📋",label:"今週まで（7日以内）",
-      sort:(a,b)=>a.days-b.days, filter:it=>!it.done&&it.days!==null&&it.days>=0&&it.days<=7},
-    {key:"open",cls:"open",icon:"📥",label:"その他の未完了",
-      sort:(a,b)=>(a.days===null)-(b.days===null)||(a.days||0)-(b.days||0), filter:it=>!it.done&&(it.days===null||it.days>7)},
-    {key:"done",cls:"done",icon:"✅",label:"最近 完了したもの",
-      sort:(a,b)=>(b.doneAt||b.sessionDate).localeCompare(a.doneAt||a.sessionDate), filter:it=>it.done, limit:20},
-  ];
-  let html="";
-  groups.forEach(g=>{
-    let arr=items.filter(g.filter).sort(g.sort);
-    if(g.limit)arr=arr.slice(0,g.limit);
-    if(!arr.length)return;
-    html+=`<div class="fgroup-lead ${g.cls}"><span>${g.icon}</span><span>${g.label}</span><span class="cnt">${arr.length}</span></div>`;
-    html+=arr.map(it=>{
-      const tok=`${it.memberId}|${it.sessionId}|${it.todoId}`;
-      return `<div class="fitem card ${it.done?'is-done':''}">
-        <button class="step-check ${it.done?'on':''}" data-fcheck="${tok}">${it.done?'✓':''}</button>
-        <div class="fbody" data-fopen="${it.memberId}|${it.sessionId}">
-          <div class="ftext">${esc(it.text)}</div>
-          <div class="fmeta">
-            <span class="who"><span class="av">${esc(initial(it.memberName))}</span>${esc(it.memberName)}</span>
-            <span>・</span>${dlLabel(it)}
-          </div>
-        </div>
-      </div>`;
-    }).join("");
-  });
-  root.innerHTML=html;
-  root.querySelectorAll("[data-fcheck]").forEach(b=>b.onclick=()=>toggleFollowTodo(b.dataset.fcheck));
-  root.querySelectorAll("[data-fopen]").forEach(el=>el.onclick=()=>{
-    const[mid,sid]=el.dataset.fopen.split("|");
-    go({view:"editor",memberId:mid,sessionId:sid});
-  });
-}
-// フォロー一覧から直接 done を切り替え → 実体の todo に書き戻して保存
-function toggleFollowTodo(tok){
-  const[mid,sid,tid]=tok.split("|");
-  const m=memberById(mid);if(!m)return;
-  const s=(m.sessions||[]).find(x=>x.id===sid);if(!s||!s.action)return;
-  const t=(s.action.todos||[]).find(x=>x.id===tid);if(!t)return;
-  t.done=!t.done;
-  if(t.done)t.doneAt=todayStr(); else delete t.doneAt;
-  m.updatedAt=Date.now();save();
-  renderFollow();
 }
 
 /* ---------- 成長グラフ ---------- */
@@ -712,14 +557,13 @@ function drawGrowth(m){
 function renderEditor(){
   const m=memberById(route.memberId);if(!m){go({view:"home"});return;}
   const s=route.sessionId?m.sessions.find(x=>x.id===route.sessionId):null;
-  const data=s||{date:todayStr(),goal:"",reality:"",feedback:{keep:"",more:""},
-    memberIdeas:[],advice:[],insight:"",action:{deadline:"",todos:[]}};
+  const data=s||{date:todayStr(),feedback:{keep:"",more:""},
+    memberIdeas:[],advice:[],insight:"",nextCheckin:""};
 
   // working arrays
   const ideas=(data.memberIdeas||[]).slice();
   const advice=(data.advice||[]).map(a=>({text:a.text||"",by:a.by||""}));
-  const todos=((data.action||{}).todos||[]).map(t=>({id:t.id||uid(),text:t.text||"",done:!!t.done,doneAt:t.doneAt||""}));
-  const goalInit = s?(data.goal||"") : (data.goal||m.goal||"");
+  const checkinInit=(data.nextCheckin||(data.action&&data.action.deadline)||"");
 
   $("#editorView").innerHTML=`
     <div class="field" style="margin-top:18px">
@@ -751,17 +595,7 @@ function renderEditor(){
       </details>
     </div>
 
-    <div class="gstep"><span class="gn">1</span><span class="ge">🎯</span><span class="gt">ゴール</span></div>
-    <div class="field">
-      <textarea id="f_goal" placeholder="この人が目指すゴール（数値があれば一緒に書こう。例：NPS70 / 全員にプロモーターになってもらう）">${esc(goalInit)}</textarea>
-    </div>
-
-    <div class="gstep"><span class="gn">2</span><span class="ge">📍</span><span class="gt">現状</span></div>
-    <div class="field">
-      <textarea id="f_reality" placeholder="いま、どこにいる？（例：6/1時点で52くらい。量はできている）">${esc(data.reality||"")}</textarea>
-    </div>
-
-    <div class="gstep"><span class="gn">3</span><span class="ge">💬</span><span class="gt">Reflection</span></div>
+    <div class="gstep"><span class="gn">1</span><span class="ge">💬</span><span class="gt">Reflection</span></div>
     <div class="field">
       <div class="fb keep">
         <h4>👍 Success</h4>
@@ -773,7 +607,7 @@ function renderEditor(){
       </div>
     </div>
 
-    <div class="gstep"><span class="gn">4</span><span class="ge">💡</span><span class="gt">Ways Forward</span></div>
+    <div class="gstep"><span class="gn">2</span><span class="ge">💡</span><span class="gt">Ways Forward</span></div>
     <div class="field">
       <div class="sublabel">🙋 ${esc(m.name)}のアイデア <span class="opt">（無くてもOK）</span></div>
       <div id="ideaList"></div>
@@ -784,32 +618,25 @@ function renderEditor(){
       <button class="btn line addbtn" id="addAdvice">＋ アドバイスを追加</button>
     </div>
 
-    <div class="gstep"><span class="gn">5</span><span class="ge">⭐</span><span class="gt">今日からできること</span></div>
+    <div class="gstep"><span class="gn">3</span><span class="ge">⭐</span><span class="gt">今日からできること</span></div>
     <div class="field insight-field">
       <div class="materials" id="materials"></div>
       <textarea id="f_insight" placeholder="Ways Forwardを踏まえて、今日から具体的に何をする？（例：自分だけでなく、チーム・Apple環境を活用してコラボでご案内の質を高める）">${esc(data.insight||"")}</textarea>
     </div>
 
-    <div class="gstep"><span class="gn">6</span><span class="ge">🚀</span><span class="gt">アクション宣言</span></div>
-    <div class="field">
-      <label>📅 期限<span class="hint">いつまでに達成する？ 期限を決めると動き出せる</span></label>
-      <input type="date" id="f_deadline" value="${(data.action||{}).deadline||""}">
-    </div>
-    <div class="field">
-      <label>🪜 やること<span class="hint">ゴールに向けた具体的な行動。チェックで進捗管理</span></label>
-      <div id="todoList"></div>
-      <button class="btn line addbtn" id="addTodo">＋ やることを追加</button>
+    <div class="field" style="margin-top:24px">
+      <label>📅 次回チェックイン予定日<span class="hint">次に話すのはいつ？ 予定を決めておくと続けやすい</span></label>
+      <input type="date" id="f_checkin" value="${checkinInit}">
     </div>
 
     <div class="editor-actions">
       <button class="btn" id="saveBtn">${s?"更新する":"保存する"}</button>
       <button class="btn line" id="imgBtn">🖼 この会話を画像で書き出す</button>
-      <button class="btn line" id="starsBtn">🪞 STARSの素材にする</button>
       ${s?'<button class="btn danger" id="delBtn">この会話を削除</button>':''}
     </div>
   `;
 
-  ["f_goal","f_reality","f_keep","f_more","f_insight"].forEach(id=>{const e=$("#"+id);autoGrow(e);e.addEventListener("input",()=>autoGrow(e));});
+  ["f_keep","f_more","f_insight"].forEach(id=>{const e=$("#"+id);autoGrow(e);e.addEventListener("input",()=>autoGrow(e));});
 
   /* NPSカウンター：5/4/3〜1 を数えてNPSを自動計算し、上の数値メモへ反映 */
   const npsCounts={p5:0,p4:0,det:0};
@@ -835,14 +662,14 @@ function renderEditor(){
     const b=e.target.closest(".npsc-step");if(!b)return;
     const k=b.dataset.nk, d=b.dataset.nstep==="inc"?1:-1;
     npsCounts[k]=Math.max(0,(npsCounts[k]||0)+d);
-    npscSyncInputs();npscRender(true);
+    npscSyncInputs();npscRender(true);scheduleAutosave();
   });
   $("#npsCounter").addEventListener("input",e=>{
     const inp=e.target.closest(".npsc-cnt");if(!inp)return;
     const n=parseInt(inp.value,10);
-    npsCounts[inp.dataset.nk]=isNaN(n)||n<0?0:n;npscRender(true);
+    npsCounts[inp.dataset.nk]=isNaN(n)||n<0?0:n;npscRender(true);scheduleAutosave();
   });
-  $("#npscReset").onclick=()=>{npsCounts.p5=0;npsCounts.p4=0;npsCounts.det=0;npscSyncInputs();npscRender(false);};
+  $("#npscReset").onclick=()=>{npsCounts.p5=0;npsCounts.p4=0;npsCounts.det=0;npscSyncInputs();npscRender(false);scheduleAutosave();};
 
   /* ideas list */
   function renderIdeas(){
@@ -889,23 +716,6 @@ function renderEditor(){
   }
   refreshMaterials();
 
-  /* todos */
-  function renderTodos(){
-    const c=$("#todoList");
-    if(!todos.length){c.innerHTML=`<div class="muted" style="font-size:13px;padding:4px 2px 8px">まだやることがありません</div>`;return;}
-    c.innerHTML=todos.map((st,i)=>`
-      <div class="step ${st.done?'done':''}">
-        <button class="step-check ${st.done?'on':''}" data-toggle="${i}">${st.done?'✓':''}</button>
-        <input type="text" data-todo="${i}" value="${esc(st.text)}" placeholder="例：チームと共有して次の接客で試す">
-        <button class="step-del" data-tdel="${i}">✕</button>
-      </div>`).join("");
-    c.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>{const i=+b.dataset.toggle;todos[i].done=!todos[i].done;todos[i].doneAt=todos[i].done?todayStr():"";renderTodos();});
-    c.querySelectorAll("[data-todo]").forEach(inp=>inp.oninput=()=>{todos[+inp.dataset.todo].text=inp.value;});
-    c.querySelectorAll("[data-tdel]").forEach(b=>b.onclick=()=>{todos.splice(+b.dataset.tdel,1);renderTodos();});
-  }
-  renderTodos();
-  $("#addTodo").onclick=()=>{todos.push({id:uid(),text:"",done:false});renderTodos();const ins=$("#todoList").querySelectorAll("[data-todo]");if(ins.length)ins[ins.length-1].focus();};
-
   /* build + persist */
   let workingId=s?s.id:null;
   function buildRec(){
@@ -913,36 +723,42 @@ function renderEditor(){
     const ex=m.sessions.find(x=>x.id===workingId);
     const npsRaw=($("#f_nps").value||"").trim();
     const npsVal=npsRaw===""?null:(isFinite(+npsRaw)?+npsRaw:null);
-    // 進捗%スナップショット：既存セッションは元の値を保持、新規はその時点のメンバー進捗を記録
-    const prevProgAt = (ex&&typeof ex.progressAt==="number") ? ex.progressAt
-      : ((s&&typeof s.progressAt==="number") ? s.progressAt : null);
-    const progAt = prevProgAt!==null ? prevProgAt : (typeof m.progress==="number"?m.progress:null);
     return {
       id:workingId,
       date:$("#f_date").value||todayStr(),
       nps:npsVal,
       npsCounts:(npsCounts.p5||npsCounts.p4||npsCounts.det)?{p5:npsCounts.p5,p4:npsCounts.p4,det:npsCounts.det}:null,
-      progressAt:progAt,
-      goal:$("#f_goal").value.trim(),
-      reality:$("#f_reality").value.trim(),
       feedback:{keep:$("#f_keep").value.trim(),more:$("#f_more").value.trim()},
       memberIdeas:ideas.map(t=>t.trim()).filter(Boolean),
       advice:advice.map(a=>({text:a.text.trim(),by:a.by.trim()})).filter(a=>a.text),
       insight:$("#f_insight").value.trim(),
-      action:{deadline:$("#f_deadline").value||"",todos:todos.map(t=>({id:t.id,text:t.text.trim(),done:t.done,doneAt:t.done?(t.doneAt||todayStr()):""})).filter(t=>t.text)},
+      nextCheckin:$("#f_checkin").value||"",
       createdAt:ex?ex.createdAt:(s?s.createdAt:Date.now()),
       updatedAt:Date.now()
     };
   }
-  function persist(rec){
+  function persist(rec,opts){
     const idx=m.sessions.findIndex(x=>x.id===rec.id);
     if(idx>=0)m.sessions[idx]=rec;else m.sessions.push(rec);
     m.updatedAt=Date.now();save();
-    if(window.Career)Career.log({action:"grow",summary:"1on1ノートを記録："+(m.name||"メンバー")+"さん"+(rec.goal?"（"+rec.goal.slice(0,30)+"）":"")});
+    if(!(opts&&opts.silent)&&window.Career)Career.log({action:"grow",summary:"1on1ノートを記録："+(m.name||"メンバー")+"さん"+(rec.insight?"（"+rec.insight.slice(0,30)+"）":"")});
     return rec;
   }
 
+  /* ---- 自動保存：入力が消えないよう、内容があれば随時バックグラウンド保存 ---- */
+  let autoTimer=null;
+  function scheduleAutosave(){
+    clearTimeout(autoTimer);
+    autoTimer=setTimeout(()=>{
+      const rec=buildRec();
+      if(sessHasContent(rec))persist(rec,{silent:true});
+    },700);
+  }
+  $("#editorView").oninput=scheduleAutosave;
+  $("#editorView").onchange=scheduleAutosave;
+
   $("#saveBtn").onclick=()=>{
+    clearTimeout(autoTimer);
     const rec=buildRec();
     if(!sessHasContent(rec)){toast("何か入力してね");return;}
     persist(rec);toast(s?"更新しました":"保存しました");go({view:"member"});
@@ -951,22 +767,6 @@ function renderEditor(){
     const rec=buildRec();
     if(!sessHasContent(rec)){toast("先に内容を入力してね");return;}
     exportSessionImage(rec,m);
-  };
-  $("#starsBtn").onclick=()=>{
-    const rec=buildRec();
-    if(!sessHasContent(rec)){toast("先に内容を入力してね");return;}
-    const fb=rec.feedback||{};
-    const todoTxt=((rec.action||{}).todos||[]).map(t=>"・"+t.text).join("\n");
-    const lines=[
-      rec.goal?("【ゴール】"+rec.goal):"",
-      rec.reality?("【現状】"+rec.reality):"",
-      fb.keep?("【良い点】"+fb.keep):"",
-      fb.more?("【伸びしろ】"+fb.more):"",
-      rec.insight?("【今日から】"+rec.insight):"",
-      todoTxt?("【約束】\n"+todoTxt):""
-    ].filter(Boolean);
-    const payload={title:(m.name||"メンバー")+"さんとの1on1（"+rec.date+"）",body:lines.join("\n"),source:"GROWノート"};
-    location.href="reflection.html#stars="+encodeURIComponent(JSON.stringify(payload));
   };
   const del=$("#delBtn");
   if(del)del.onclick=()=>confirmSheet("この会話を削除しますか？","削除した記録は元に戻せません。",()=>{
@@ -1017,12 +817,10 @@ function exportSessionImage(s,m){
   }
   if(s.insight&&s.insight.trim())sections.push({emoji:"⭐",label:"今日からできること",lc:"#9a6b00",bg:"#fff7e6",bd:"#f1d99a",
     blocks:[{text:s.insight,font:IMG_FONT(700,20),color:"#1d1d1f",lineH:29}]});
-  const act=s.action||{};const todos=(act.todos||[]).filter(t=>t.text&&t.text.trim());
-  if(act.deadline||todos.length){
-    const blocks=[];
-    if(act.deadline)blocks.push({text:`📅 期限：${fmtFull(act.deadline)}`,font:IMG_FONT(700,17),color:"#0071e3",lineH:26,gap:4});
-    todos.forEach(t=>blocks.push({text:`${t.done?"✓":"□"} ${t.text}`,font:IMG_FONT(500,17),color:t.done?"#34c759":"#1d1d1f",lineH:26}));
-    sections.push({emoji:"🚀",label:"アクション宣言",lc:"#0071e3",bg:"#f4f8ff",bd:"#cfe3fb",blocks});
+  const checkin=s.nextCheckin||(s.action&&s.action.deadline)||"";
+  if(checkin){
+    sections.push({emoji:"📅",label:"次回チェックイン予定日",lc:"#0071e3",bg:"#f4f8ff",bd:"#cfe3fb",
+      blocks:[{text:fmtFull(checkin),font:IMG_FONT(700,18),color:"#1d1d1f",lineH:27}]});
   }
 
   mc.font=IMG_FONT(500,15);
@@ -1092,14 +890,13 @@ function closeSheet(){$("#scrim").classList.remove("show");}
 $("#scrim").addEventListener("click",e=>{if(e.target.id==="scrim")closeSheet();});
 
 function addMember(){
-  openSheet(`<h3>メンバーを追加</h3><p class="sub">名前と、分かっていれば叶えたいゴールを入力（あとで編集可）</p>
+  openSheet(`<h3>メンバーを追加</h3><p class="sub">名前を入力（ゴールはあとで設定できます）</p>
     <div class="field"><label>👤 名前</label><input type="text" id="m_name" placeholder="例：田中さん / Yuki" autofocus></div>
-    <div class="field"><label>🎯 叶えたいゴール（任意）</label><textarea id="m_goal" placeholder="このメンバーが最終的に目指したいこと"></textarea></div>
     <div class="sheet-actions"><button class="btn line" onclick="closeSheet()">キャンセル</button><button class="btn" id="m_save">追加する</button></div>`);
   setTimeout(()=>$("#m_name").focus(),50);
   $("#m_save").onclick=()=>{
     const name=$("#m_name").value.trim();if(!name){toast("名前を入れてね");return;}
-    const m={id:uid(),name,goal:$("#m_goal").value.trim(),progress:0,createdAt:Date.now(),updatedAt:Date.now(),sessions:[]};
+    const m={id:uid(),name,goal:"",createdAt:Date.now(),updatedAt:Date.now(),sessions:[]};
     DB.members.push(m);save();closeSheet();toast("追加しました");go({view:"member",memberId:m.id});
   };
 }
@@ -1193,7 +990,7 @@ function transferSheet(){
     try{parsed=JSON.parse(txt.value);}catch(e){setMsg("読み込めませんでした。内容（文字列）を確認してね。",true);return;}
     const incoming=(parsed&&parsed.grownote_v1)?parsed.grownote_v1:parsed;
     if(!incoming||!Array.isArray(incoming.members)){setMsg("このバックアップに GROW ノートのデータが見つかりませんでした。",true);return;}
-    incoming.members.forEach(m=>{if(typeof m.progress!=="number")m.progress=0;if(!Array.isArray(m.sessions))m.sessions=[];});
+    incoming.members.forEach(m=>{if(!Array.isArray(m.sessions))m.sessions=[];});
     const apply=()=>{localStorage.setItem(KEY,JSON.stringify(incoming));DB=load();scheduleCloud();closeSheet();go({view:"home"});toast("復元しました 🎉");};
     if(DB.members.length){
       openSheet(`<h3>現在のデータを置き換えますか？</h3>
@@ -1208,20 +1005,19 @@ function transferSheet(){
 /* ---------- CSV ---------- */
 function csvCell(v){return '"'+String(v==null?"":v).replace(/"/g,'""')+'"';}
 function exportCSV(){
-  const head=["メンバー","叶えたいゴール","達成度(%)","目標NPS","日付","NPS実数値","NPS内訳(5/4/3〜1)","今回のゴール","現状","Success","Opportunity","本人のアイデア","もらったアドバイス","今日からできること","期限","アクション"];
+  const head=["メンバー","叶えたいゴール","目標NPS","日付","NPS実数値","NPS内訳(5/4/3〜1)","今回のゴール","現状","Success","Opportunity","本人のアイデア","もらったアドバイス","今日からできること","次回チェックイン予定日"];
   const rows=[head];
   DB.members.forEach(m=>{
-    const pg=m.progress||0;
     const tgt=typeof m.npsTarget==="number"?m.npsTarget:"";
-    if(!m.sessions.length){rows.push([m.name,m.goal,pg,tgt,"","","","","","","","","","","",""]);return;}
+    if(!m.sessions.length){rows.push([m.name,m.goal,tgt,"","","","","","","","","","",""]);return;}
     [...m.sessions].sort((a,b)=>a.date<b.date?-1:1).forEach(s=>{
-      const fb=s.feedback||{};const act=s.action||{};
+      const fb=s.feedback||{};
       const ideas=(s.memberIdeas||[]).filter(Boolean).join(" / ");
       const adv=(s.advice||[]).filter(a=>a.text).map(a=>a.by?`${a.text}（${a.by}）`:a.text).join(" / ");
-      const todos=(act.todos||[]).filter(t=>t.text).map(t=>`${t.done?"✓":"□"} ${t.text}`).join(" / ");
       const npsCell=typeof s.nps==="number"?s.nps:"";
       const nc=s.npsCounts;const ncCell=nc?`5:${nc.p5||0} 4:${nc.p4||0} 3〜1:${nc.det||0}`:"";
-      rows.push([m.name,m.goal,pg,tgt,s.date,npsCell,ncCell,s.goal||"",s.reality||"",fb.keep||"",fb.more||"",ideas,adv,s.insight||"",act.deadline||"",todos]);
+      const checkin=s.nextCheckin||(s.action&&s.action.deadline)||"";
+      rows.push([m.name,m.goal,tgt,s.date,npsCell,ncCell,s.goal||"",s.reality||"",fb.keep||"",fb.more||"",ideas,adv,s.insight||"",checkin]);
     });
   });
   const csv="﻿"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n");
