@@ -128,34 +128,54 @@ window.MG = (function(){
     });
   }
 
-  /* ---------- 4. ハイ&ロー ---------- */
+  /* ---------- 4. ハイ&ロー（わかりやすい版） ----------
+     ・カードは 1〜13 の「数字」だけ（A/J/Q/K 表記をやめた）
+     ・ボタンに正解の範囲をそのまま表示（「⬆️ 8〜13 がでる」など）
+     ・1〜13 の数直線で いまの数字の位置が見える
+     ・同じ数字は出ない問題だけを出す（引き分けの混乱なし） */
   function gHighlow(stage, seed, sfx){
     return new Promise(resolve=>{
       const R = rng(seed);
-      const cards = Array.from({length:6}, ()=>1+Math.floor(R()*13));
-      const face = v => ({1:'A',11:'J',12:'Q',13:'K'}[v] || String(v));
+      const cards = [1+Math.floor(R()*13)];
+      while(cards.length < 6){
+        const v = 1+Math.floor(R()*13);
+        if(v !== cards[cards.length-1]) cards.push(v);   // となり同士が同じ数字にならないように
+      }
       let i = 0, score = 0, tmo = null, ended = false;
+      function numline(cur, reveal){
+        let s = '<div class="mg-numline">';
+        for(let v=1; v<=13; v++){
+          const cls = v===cur ? 'now' : (reveal!=null && v===reveal ? 'next' : '');
+          s += `<span class="${cls}">${v}</span>`;
+        }
+        return s + '</div>';
+      }
       function show(){
         if(i>=5){ ended=true; clearTimeout(tmo); setTimeout(()=>resolve(score),500); return; }
+        const cur = cards[i];
         stage.innerHTML = `
-          <div class="mg-sub">${i+1}/5 もん ・ いまのカードより…</div>
-          <div class="mg-cardface">${face(cards[i])}</div>
+          <div class="mg-sub">${i+1}/5 もん ・ つぎのカード（1〜13）は？</div>
+          <div class="mg-cardface">${cur}</div>
+          ${numline(cur, null)}
           <div class="mg-row">
-            <button class="mg-tap mg-hl" data-g="up">⬆️ おおきい</button>
-            <button class="mg-tap mg-hl" data-g="down">⬇️ ちいさい</button>
+            <button class="mg-tap mg-hl" data-g="up" ${cur>=13?'disabled':''}>⬆️ ${Math.min(cur+1,13)}〜13<br><small>がでる！</small></button>
+            <button class="mg-tap mg-hl" data-g="down" ${cur<=1?'disabled':''}>⬇️ 1〜${Math.max(cur-1,1)}<br><small>がでる！</small></button>
           </div>
-          <div class="mg-sub" id="mgHLScore">${score}てん</div>`;
-        stage.querySelectorAll('.mg-hl').forEach(b=>b.onclick=()=>pick(b.dataset.g));
-        clearTimeout(tmo); tmo = setTimeout(()=>pick(null), 6000);  // 6秒未回答=ハズレ扱い
+          <div class="mg-sub" id="mgHLScore">いまのとくてん：${score}てん</div>`;
+        stage.querySelectorAll('.mg-hl').forEach(b=>{ if(!b.disabled) b.onclick=()=>pick(b.dataset.g); });
+        clearTimeout(tmo); tmo = setTimeout(()=>pick(null), 8000);  // 8秒未回答=ハズレ扱い
       }
       function pick(g){
         if(ended) return;
         const a = cards[i], b = cards[i+1];
-        const correct = (g==='up' && b>=a) || (g==='down' && b<=a);
-        if(correct){ score += 30; sfx.coin(); flash(stage, `${face(b)}！ せいかい ＋30`); }
-        else { sfx.bad(); flash(stage, `${face(b)}… はずれ`); }
+        const correct = (g==='up' && b>a) || (g==='down' && b<a);
+        stage.querySelector('.mg-cardface').textContent = b;
+        const nl = stage.querySelector('.mg-numline');
+        if(nl) nl.outerHTML = numline(a, b);
+        if(correct){ score += 30; sfx.coin(); flash(stage, `${b} がでた！ せいかい ＋30`); }
+        else { sfx.bad(); flash(stage, g===null ? 'じかんぎれ…' : `${b} がでた… はずれ`); }
         i++;
-        setTimeout(show, 850);
+        setTimeout(show, 1100);
       }
       show();
     });
