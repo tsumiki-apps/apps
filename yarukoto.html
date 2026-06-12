@@ -345,9 +345,11 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ===================== 定数 ===================== */
-// アイデアを束ねるアプリ一覧（index.html と揃える）。key は href から .html を除いたもの。
+// アイデアを束ねるアプリ一覧。起動時に index.html(つみき) から自動取り込みするので、
+// 新しいアプリを作って つみきに載せれば ここにも自動で増える。
+// 下のリストはオフライン時などの予備（フォールバック）。
 const NEW_APP = { key:'_new', emoji:'✨', label:'アプリ制作' };  // 新しいアプリの構想用（常設）
-const APP_CATALOG = [
+let APP_CATALOG = [
   { key:'index',       emoji:'🧱',  label:'つみきTOP' },
   { key:'search',      emoji:'🔎',  label:'横断検索' },
   { key:'nps',         emoji:'📊',  label:'NPSカウンター' },
@@ -366,7 +368,9 @@ const APP_CATALOG = [
   { key:'tsunagu',     emoji:'🌱',  label:'ツナグ' },
   { key:'tabinoki',    emoji:'🌴',  label:'たびのき' },
   { key:'yarukoto',    emoji:'✅',  label:'やることばこ' },
+  { key:'kaimono',     emoji:'🛒',  label:'おつかいカート' },
   { key:'serifu',      emoji:'🎭',  label:'おぼえりふ' },
+  { key:'jinsei',      emoji:'🎲',  label:'じんせいすごろく' },
   { key:'credit',      emoji:'💳',  label:'クレジット明細マネージャー' },
   { key:'money',       emoji:'💴',  label:'お金の残高 計算ツール' },
   { key:'forecast',    emoji:'📉',  label:'資産予測グラフ' },
@@ -383,6 +387,31 @@ function bucketMeta(key){
   if(key==='_new') return NEW_APP;
   return APP_CATALOG.find(a=>a.key===key) || { key, emoji:'💡', label:key };
 }
+// index.html(つみき) の categories からアプリ一覧を自動取り込み。
+// 新アプリは「つみきに追加→公開」だけで、ここのアプリ選択にも自動で現れる。
+async function loadCatalogFromIndex(){
+  try{
+    const res = await fetch('index.html', {cache:'no-store'});
+    if(!res.ok) return;
+    const html = await res.text();
+    const m = html.match(/const\s+categories\s*=\s*\[([\s\S]*?)\];/);
+    if(!m) return;
+    const apps = [];
+    const re = /\{\s*emoji:"([^"]*)",\s*title:"([^"]*)",\s*desc:"[^"]*",\s*href:"([^"]*)"\s*\}/g;
+    let g;
+    while((g = re.exec(m[1]))){
+      const key = g[3].replace(/\.html$/,'');
+      if(!key || key.startsWith('check')) continue;   // チェックルーム類は除外
+      apps.push({ key, emoji:g[1], label:g[2] });
+    }
+    if(apps.length < 5) return;   // 解析失敗っぽいときは内蔵リストを維持
+    APP_CATALOG = [{ key:'index', emoji:'🧱', label:'つみきTOP' }]
+      .concat(apps, [{ key:'other', emoji:'📦', label:'その他' }]);
+    render();   // 取り込めたら表示中の画面へ反映
+  }catch(e){ /* オフライン等は内蔵リストのまま */ }
+}
+loadCatalogFromIndex();
+
 // 旧アイデアの tag 文字列からアプリkeyを推定（見つからなければ null）
 function matchApp(tag){
   if(!tag) return null;
