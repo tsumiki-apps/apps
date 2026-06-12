@@ -83,7 +83,8 @@
   .trip-hero h2{font-size:22px; font-weight:800; letter-spacing:-.02em; margin-top:6px;}
   .trip-hero .h-sub{color:var(--sub); font-size:14px; margin-top:4px;}
   .trip-hero .h-note{font-size:14px; margin-top:10px; white-space:pre-wrap; color:#3a4a47;}
-  .trip-hero .h-edit{margin-top:12px; font-size:13px; font-weight:600; color:var(--accent-ink);}
+  .trip-hero .h-acts{margin-top:12px; display:flex; gap:16px; flex-wrap:wrap;}
+  .trip-hero .h-edit{font-size:13px; font-weight:600; color:var(--accent-ink); cursor:pointer;}
 
   .tabs{display:flex; gap:6px; background:var(--card); border:1px solid var(--line);
     border-radius:14px; padding:4px; margin-bottom:16px; position:sticky;
@@ -733,7 +734,7 @@ function renderTrip(){
       <h2>${esc(t.title||'無題の旅')}</h2>
       <div class="h-sub">${t.destination?'📍 '+esc(t.destination)+'　':''}📅 ${esc(dates)} ${nightLabel}</div>
       ${t.memo?`<div class="h-note">${esc(t.memo)}</div>`:''}
-      <div class="h-edit" id="editTrip">✎ 旅の情報を編集</div>
+      <div class="h-acts"><span class="h-edit" id="editTrip">✎ 旅の情報を編集</span><span class="h-edit" id="exportTrip">📋 予定を書き出す</span></div>
     </div>`;
   const tabs = `<div class="tabs">
       <button data-tab="plan" class="${route.tab==='plan'?'on':''}">🗓 しおり</button>
@@ -749,6 +750,7 @@ function renderTrip(){
 
   v.innerHTML = hero + tabs + `<div id="tabbody">${body}</div>`;
   $('#editTrip').onclick = ()=>openTripForm(t);
+  $('#exportTrip').onclick = ()=>openExport(t);
   v.querySelectorAll('.tabs button').forEach(b=> b.onclick=()=>{ route.tab=b.dataset.tab; render(); });
   bindPlan(t); bindPack(t); bindCost(t);
   if(route.tab==='plan') loadWeather(t);
@@ -790,6 +792,86 @@ function renderPlan(t){
       </div></div>`;
   });
   return html;
+}
+/* ----- 予定をテキストに書き出す ----- */
+function tripToText(t){
+  const items = t.items||[];
+  const dayList = rangeDates(t.startDate, t.endDate);
+  const extra = [...new Set(items.map(i=>i.date).filter(Boolean))].filter(d=>!dayList.includes(d));
+  const days = [...dayList, ...extra].sort();
+  const useDays = days.length? days : [t.startDate||'__none__'];
+
+  const out = [];
+  // ヘッダ
+  out.push(`${t.emoji||'🌴'} ${t.title||'無題の旅'}`);
+  const sub = [];
+  if(t.destination) sub.push('📍 '+t.destination);
+  if(t.startDate){
+    const nights = (t.startDate&&t.endDate)? Math.max(0, daysBetween(t.startDate,t.endDate)) : 0;
+    let d = fmtDate(t.startDate)+'('+fmtDow(t.startDate)+')';
+    if(t.endDate&&t.endDate!==t.startDate) d += '〜'+fmtDate(t.endDate)+'('+fmtDow(t.endDate)+')';
+    if(nights>0) d += `（${nights}泊${nights+1}日）`;
+    sub.push('📅 '+d);
+  } else sub.push('📅 日程未定');
+  out.push(sub.join('  '));
+  if(t.memo) out.push(t.memo);
+
+  useDays.forEach((date, idx)=>{
+    const dayItems = items.filter(i=> (i.date||t.startDate||'__none__')===date)
+      .sort((a,b)=> effOrder(a)-effOrder(b));
+    out.push('');
+    const head = date==='__none__'
+      ? '─────────────\n【日付未定の予定】'
+      : `─────────────\n【Day ${idx+1}】${fmtDate(date)}(${fmtDow(date)})`;
+    out.push(head);
+    if(!dayItems.length){ out.push('（まだ予定なし）'); return; }
+    dayItems.forEach(it=>{
+      const ty = TYPES[it.type]||TYPES.other;
+      let tm = '';
+      if(it.time && it.endTime) tm = `${it.time}〜${it.endTime}`;
+      else if(it.time) tm = it.time;
+      out.push(`${tm?tm+' ':'・'}${ty.emoji} ${it.title||ty.label}`);
+      if(it.place) out.push(`   📍 ${it.place}`);
+      if(it.fromStation||it.toStation) out.push(`   🚉 ${it.fromStation||'？'} → ${it.toStation||'？'}`);
+      if(it.transport) out.push(`   🚃 ${it.transport}`);
+      if(it.note) out.push(`   📝 ${it.note}`);
+      if(Number(it.cost)>0){
+        const set=(it.payer==='こうだい'||it.payer==='ゆずは'); const sp=it.split||'half';
+        const spL = set ? (sp==='kodai'?'こうだい持ち':sp==='yuzu'?'ゆずは持ち':'折半') : '';
+        out.push(`   💰 ${yen(it.cost)}${it.payer?' '+it.payer+(set?'立替':''):''}${spL?'・'+spL:''}`);
+      }
+      (it.comments||[]).forEach(c=> out.push(`   💬 ${c.who}: ${c.body}`));
+    });
+  });
+  return out.join('\n');
+}
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok=document.execCommand('copy'); document.body.removeChild(ta); return ok;
+    }catch(_){ return false; }
+  }
+}
+function openExport(t){
+  const text = tripToText(t);
+  openSheet(`
+    <h3>📋 予定を書き出す</h3>
+    <p style="color:var(--sub);font-size:13px;margin:-4px 0 10px;">今の予定をテキストにしました。LINEやメモに貼れます。</p>
+    <textarea id="exp-text" readonly style="width:100%;min-height:240px;font-size:13px;line-height:1.6;white-space:pre;overflow:auto;resize:vertical;">${esc(text)}</textarea>
+    <div class="sheet-actions">
+      <button class="btn-primary" id="exp-copy">📋 コピー</button>
+      <button class="btn-ghost" id="exp-close">閉じる</button>
+    </div>
+  `);
+  $('#exp-copy').onclick = async ()=>{
+    const ok = await copyText(text);
+    toast(ok?'コピーしました':'コピーできませんでした。手動で選択してください');
+  };
+  $('#exp-close').onclick = closeSheet;
 }
 function mapQ(t, place){ // 地名＋行き先で精度を上げる
   const tok=(t.destination||'').split(/[・、,／/\s〜~]/)[0].trim();
