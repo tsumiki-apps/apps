@@ -19,14 +19,14 @@
   html,body{height:100dvh;overflow:hidden;}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;
-    background:#8fd0f0; color:var(--ink); touch-action:none; user-select:none;-webkit-user-select:none;
+    background:#57b8e8; color:var(--ink); touch-action:none; user-select:none;-webkit-user-select:none;
   }
   input{user-select:text;-webkit-user-select:text;}
 
   /* ===== ゲーム全体ラッパ（縦持ちのときはCSS回転で横画面化） ===== */
-  #gameWrap{position:fixed;left:0;top:0;width:100vw;height:100dvh;display:none;overflow:hidden;background:#8fd0f0;}
+  #gameWrap{position:fixed;left:0;top:0;width:100vw;height:100dvh;display:none;overflow:hidden;background:#57b8e8;}
   body.rot #gameWrap{
-    width:100dvh;height:100vw;left:100vw;top:0;
+    /* サイズと位置はJSが実測ピクセルで指定（dvhのズレで下に帯が出るのを防ぐ） */
     transform:rotate(90deg);transform-origin:left top;
   }
   #cv{position:absolute;inset:0;display:block;}
@@ -568,13 +568,31 @@ const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
 
 /* ===== 画面サイズ・横画面化 ===== */
 let started = false;
-function isRot(){ return started && !resultShown && innerHeight > innerWidth; }
+/* 画面の実寸：innerWidth/Height と visualViewport の大きい方を採用（iOS Safariの過小報告対策） */
+function viewportPx(){
+  const vv = window.visualViewport;
+  const vw = Math.max(innerWidth,  vv ? Math.round(vv.width  * vv.scale) : 0);
+  const vh = Math.max(innerHeight, vv ? Math.round(vv.height * vv.scale) : 0);
+  return {vw, vh};
+}
+function isRot(){ const {vw,vh}=viewportPx(); return started && !resultShown && vh > vw; }
 function gameDims(){
-  if(isRot()) return {w:innerHeight, h:innerWidth};
-  return {w:innerWidth, h:innerHeight};
+  const {vw,vh} = viewportPx();
+  if(isRot()) return {w:vh, h:vw};
+  return {w:vw, h:vh};
 }
 function applyOrientation(){
-  document.body.classList.toggle('rot', isRot());
+  const rot = isRot();
+  document.body.classList.toggle('rot', rot);
+  const {vw,vh} = viewportPx();
+  const wrap = document.getElementById('gameWrap');
+  if(rot){
+    wrap.style.width = vh+'px'; wrap.style.height = vw+'px';
+    wrap.style.left = vw+'px'; wrap.style.top = '0px';
+  }else{
+    wrap.style.width = vw+'px'; wrap.style.height = vh+'px';
+    wrap.style.left = '0px'; wrap.style.top = '0px';
+  }
   const d = gameDims();
   renderer.setSize(d.w, d.h);
   camera.aspect = d.w/d.h; camera.updateProjectionMatrix();
@@ -583,6 +601,15 @@ addEventListener('resize', applyOrientation);
 addEventListener('orientationchange', ()=>setTimeout(applyOrientation,150));
 if(window.visualViewport) visualViewport.addEventListener('resize', applyOrientation);
 applyOrientation();
+/* iOSはツールバー開閉でresizeイベントが飛ばないことがあるため、ゲーム中は2秒ごとに実寸を再確認 */
+setInterval(()=>{
+  if(!started || resultShown) return;
+  const {vw,vh} = viewportPx();
+  const wrap = document.getElementById('gameWrap');
+  const rot = isRot();
+  const ew = rot ? vh : vw, eh = rot ? vw : vh;
+  if(parseInt(wrap.style.width||0) !== ew || parseInt(wrap.style.height||0) !== eh) applyOrientation();
+}, 2000);
 
 /* ライト */
 scene.add(new THREE.HemisphereLight(0xfff6e8, 0x9bd49b, 0.85));
