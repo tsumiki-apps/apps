@@ -170,6 +170,16 @@
   .more>summary::before{content:'＋ ';}
   .more[open]>summary::before{content:'－ ';}
 
+  /* 予定追加 FAB（右下の緑＋） */
+  .fab{position:fixed; right:18px; bottom:calc(18px + env(safe-area-inset-bottom));
+    width:58px; height:58px; border-radius:50%; background:var(--accent); color:#fff;
+    font-size:34px; font-weight:300; line-height:1; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 8px 22px rgba(13,148,136,.45); z-index:40;
+    transition:transform .14s ease, opacity .2s ease;}
+  .fab:active{transform:scale(.92);}
+  .fab[hidden]{display:none;}
+
   /* マップ（Googleマップ埋め込み） */
   .map-days{display:flex; gap:8px; overflow-x:auto; padding:0 2px 12px; -webkit-overflow-scrolling:touch;}
   .map-days button{flex:0 0 auto; font-size:13px; font-weight:600; color:var(--sub);
@@ -332,6 +342,7 @@
   </div>
 </div></div>
 
+<button class="fab" id="fab" aria-label="予定を追加" hidden>＋</button>
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -552,6 +563,20 @@ function render(){
   if(route.name==='trip') renderTrip();
   else if(route.name==='ideas') renderIdeas();
   else renderHome();
+  syncFab();
+}
+
+/* 右下の＋FAB：旅の「しおり」タブだけ表示し、予定追加フォームを開く */
+function syncFab(){
+  const fab = $('#fab'); if(!fab) return;
+  const t = (route.name==='trip' && route.tab==='plan') ? getTrip(route.tripId) : null;
+  if(t){
+    fab.hidden = false;
+    fab.onclick = ()=> openItemForm(t, null, t.startDate||'');
+  } else {
+    fab.hidden = true;
+    fab.onclick = null;
+  }
 }
 
 function renderTopbar(){
