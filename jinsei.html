@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="すごろく">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --pink:#ff9ad5; --blue:#4da3ff; --red:#ff6b6b; --yellow:#ffd166; --green:#5ed47a;
@@ -19,6 +20,7 @@
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;
     background:#bfe7ff; color:var(--ink); touch-action:none; user-select:none;-webkit-user-select:none;
   }
+  input{user-select:text;-webkit-user-select:text;}
   #cv{position:fixed;inset:0;display:block;}
 
   /* ===== タイトル / 設定 ===== */
@@ -26,7 +28,7 @@
     background:linear-gradient(180deg,#ffe3f3 0%,#dceeff 60%,#d8ffe6 100%);z-index:50;padding:24px;
     transition:opacity .5s;}
   .screen.hide{opacity:0;pointer-events:none;}
-  .logo{font-size:42px;font-weight:800;letter-spacing:2px;color:var(--ink);text-shadow:0 3px 0 #fff;}
+  .logo{font-size:min(42px, 10vw);font-weight:800;letter-spacing:2px;color:var(--ink);text-shadow:0 3px 0 #fff;white-space:nowrap;}
   .logo small{display:block;font-size:14px;font-weight:600;color:#8b7fa8;letter-spacing:6px;margin-bottom:6px;text-align:center;}
   .dice{font-size:64px;margin:10px 0 18px;animation:bob 2.2s ease-in-out infinite;}
   @keyframes bob{0%,100%{transform:translateY(0) rotate(-8deg)}50%{transform:translateY(-10px) rotate(8deg)}}
@@ -45,6 +47,32 @@
     background:linear-gradient(135deg,#ff7ac8,#a07aff);color:#fff;font-size:19px;font-weight:800;letter-spacing:2px;
     box-shadow:0 6px 16px rgba(160,90,220,.35);}
   .go-btn:active{transform:scale(.97);}
+  .go-btn:disabled{opacity:.45;}
+  .mode-btn{display:block;width:100%;margin-bottom:12px;padding:16px;border:2px solid #e6def5;border-radius:18px;
+    background:#fff;font-size:17px;font-weight:800;color:var(--ink);text-align:center;}
+  .mode-btn small{display:block;font-size:12px;font-weight:600;color:#8b7fa8;margin-top:4px;}
+  .mode-btn:active{transform:scale(.97);border-color:var(--pink);}
+  .sub-btn{display:block;width:100%;margin-top:10px;padding:14px;border:none;border-radius:16px;
+    background:linear-gradient(135deg,#6fb6ff,#7a8cff);color:#fff;font-size:16px;font-weight:800;}
+  .sub-btn:active{transform:scale(.97);}
+  .sub-btn.pink{background:linear-gradient(135deg,#ff7ac8,#a07aff);}
+  .back-link{display:block;text-align:center;margin-top:14px;font-size:13px;font-weight:700;color:#8b7fa8;background:none;border:none;width:100%;}
+  .joinrow{display:flex;gap:8px;margin-top:10px;}
+  .joinrow input{flex:1;font-size:18px;padding:12px;border:2px solid #e6def5;border-radius:14px;outline:none;text-align:center;
+    letter-spacing:6px;font-weight:800;min-width:0;}
+  .divider{display:flex;align-items:center;gap:10px;color:#b6abd0;font-size:12px;font-weight:700;margin:16px 0 6px;}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:#e6def5;}
+
+  /* ===== ロビー ===== */
+  .room-code{font-size:52px;font-weight:900;letter-spacing:14px;text-align:center;color:#7a4ddb;margin:4px 0 2px;text-indent:14px;}
+  .lobby-note{font-size:12.5px;color:#8b7fa8;font-weight:600;text-align:center;line-height:1.7;margin-bottom:14px;}
+  .lobby-row{display:flex;align-items:center;gap:10px;background:#fff;border:2px solid #efe9fb;border-radius:14px;
+    padding:10px 14px;margin-bottom:8px;font-weight:800;font-size:15px;}
+  .lobby-row .dot{width:14px;height:14px;border-radius:50%;flex:none;}
+  .lobby-row .you{margin-left:auto;font-size:11px;color:#fff;background:var(--pink);border-radius:999px;padding:2px 10px;}
+  .lobby-row.empty{color:#c9c0de;border-style:dashed;font-weight:600;}
+  #lobbyWaitMsg{text-align:center;font-size:14px;font-weight:700;color:#8b7fa8;margin-top:14px;animation:pulse 1.6s infinite;}
+  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
 
   /* ===== HUD ===== */
   #hud{position:fixed;top:0;left:0;right:0;z-index:20;display:none;padding:calc(env(safe-area-inset-top) + 8px) 10px 0;
@@ -70,18 +98,24 @@
   @media (max-width:430px){
     #spinBtn{font-size:16px;padding:15px 18px;gap:8px;letter-spacing:0;}
     #spinBtn .who{font-size:13px;padding:4px 10px;max-width:34vw;}
+    #turnBanner{font-size:14px;}
   }
   #spinBtn:active{transform:scale(.96);}
   #spinBtn .who{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.25);
     border-radius:999px;padding:4px 12px;font-size:14px;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   #spinBtn .who i{width:12px;height:12px;border-radius:50%;flex:none;}
-  #spinBtn:disabled{opacity:0;pointer-events:none;}
+  #spinBtn:disabled{display:none;}
+  #turnBanner{display:none;padding:14px 26px;border-radius:999px;font-size:15px;font-weight:800;color:#6c5f8d;
+    background:rgba(255,255,255,.92);box-shadow:0 6px 16px rgba(60,40,100,.18);white-space:nowrap;max-width:100%;
+    overflow:hidden;text-overflow:ellipsis;animation:pulse 1.8s infinite;}
 
-  /* 右上小ボタン */
-  #miniBtns{position:fixed;right:10px;top:calc(env(safe-area-inset-top) + 56px);z-index:21;display:none;flex-direction:column;gap:8px;}
+  /* 右上小ボタン・部屋コードピル */
+  #miniBtns{position:fixed;right:10px;top:calc(env(safe-area-inset-top) + 56px);z-index:21;display:none;flex-direction:column;gap:8px;align-items:flex-end;}
   .mini{width:42px;height:42px;border-radius:50%;border:none;background:rgba(255,255,255,.9);font-size:19px;
     box-shadow:0 3px 10px rgba(60,40,100,.2);}
   .mini:active{transform:scale(.92);}
+  #codePill{display:none;background:rgba(255,255,255,.9);border-radius:999px;padding:5px 12px;font-size:11px;font-weight:800;
+    color:#7a4ddb;box-shadow:0 3px 10px rgba(60,40,100,.2);}
 
   /* ===== ルーレット ===== */
   #rouletteWrap{position:fixed;inset:0;z-index:30;background:rgba(40,25,70,.45);backdrop-filter:blur(3px);
@@ -137,16 +171,16 @@
 
 <canvas id="cv"></canvas>
 
-<!-- タイトル & プレイヤー設定 -->
+<!-- タイトル & 設定 -->
 <div class="screen" id="title">
   <div class="logo"><small>FUTARI NO</small>じんせいすごろく</div>
   <div class="dice">🎲</div>
-  <div class="panel">
-    <h2>あそぶ人数をえらんでね</h2>
-    <div class="cnt-row" id="cntRow"></div>
-    <div id="nameRows"></div>
-    <button class="go-btn" id="goBtn">スタート！</button>
-  </div>
+  <div class="panel" id="panel"></div>
+</div>
+
+<!-- オンライン ロビー -->
+<div class="screen" id="lobby" style="display:none;">
+  <div class="panel" id="lobbyPanel"></div>
 </div>
 
 <!-- HUD -->
@@ -154,8 +188,12 @@
 <div id="miniBtns">
   <button class="mini" id="viewBtn" title="ぜんたいを見る">🗺️</button>
   <button class="mini" id="muteBtn" title="サウンド">🔊</button>
+  <div id="codePill"></div>
 </div>
-<div id="bottom"><button id="spinBtn"></button></div>
+<div id="bottom">
+  <button id="spinBtn" disabled></button>
+  <div id="turnBanner"></div>
+</div>
 
 <!-- ルーレット -->
 <div id="rouletteWrap">
@@ -175,6 +213,12 @@
 <div id="result"></div>
 <canvas id="confetti"></canvas>
 
+<script>
+/* テスト専用（?sbtest=1）：iframe同居のテスト環境では描画ループ(rAF)が止まることがあるためタイマーで代替。実機では無効 */
+if(new URLSearchParams(location.search).get('sbtest')==='1'){
+  window.requestAnimationFrame = cb => setTimeout(()=>cb(performance.now()), 33);
+}
+</script>
 <script type="importmap">
 { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
 </script>
@@ -243,6 +287,125 @@ const START_MONEY = 50000;
 const TYPE_COLOR = {start:0x9b8dff, goal:0xffd24d, p:0x4da3ff, m:0xff6b6b, lv:0xff9ad5, ev:0xffd166, sal:0x5ed47a};
 const TYPE_LABEL = {p:['ラッキー','#4da3ff'], m:['アクシデント','#ff6b6b'], lv:['ふたりイベント','#f06bb8'], ev:['ハプニング','#e8a93a'], sal:['きゅうりょうび','#2fae57'], goal:['ゴール','#d8a800'], start:['スタート','#9b8dff']};
 const PLAYER_COLORS = ['#ff5fa8', '#3f8cff', '#27c460', '#ff9d2e'];
+
+/* ============================================================
+   オンライン同期（Supabase）
+   - 部屋テーブル jinsei_rooms に「部屋コード1行＝ゲーム全状態」で保存
+   - 変更はリアルタイム配信＋ポーリング（保険）の二重で受信
+   - ?sbtest=1 はローカル開発テスト用（モックサーバーに接続）
+   ============================================================ */
+const QS = new URLSearchParams(location.search);
+const SB_TEST = QS.get('sbtest') === '1';
+const SB_URL  = SB_TEST ? 'http://localhost:8124' : 'https://okbjqtdirrathscctyvx.supabase.co';
+const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+const POLL_MS = Math.max(1000, +(QS.get('poll')||0) || 6000);
+const SESSION_KEY = 'jinseiSession';
+
+const SBH = {apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json'};
+class TableMissing extends Error {}
+
+async function sbGetRoom(code){
+  const r = await fetch(`${SB_URL}/rest/v1/jinsei_rooms?code=eq.${encodeURIComponent(code)}&select=state`, {headers:SBH});
+  if(r.status === 404) throw new TableMissing();
+  if(!r.ok) throw new Error('get '+r.status);
+  const j = await r.json();
+  return j.length ? j[0].state : null;
+}
+async function sbInsert(code, state){
+  const r = await fetch(`${SB_URL}/rest/v1/jinsei_rooms`, {method:'POST',
+    headers:{...SBH, Prefer:'return=minimal'}, body: JSON.stringify({code, state})});
+  if(r.status === 404) throw new TableMissing();
+  if(r.status === 409) return false;                 // コード衝突 → 取り直し
+  if(!r.ok) throw new Error('insert '+r.status);
+  return true;
+}
+async function sbCas(code, expectV, state){
+  /* 楽観ロック（＝「自分が読んだ版のままなら書く」方式）。state->>v が一致した行だけ更新 */
+  const r = await fetch(`${SB_URL}/rest/v1/jinsei_rooms?code=eq.${encodeURIComponent(code)}&state->>v=eq.${expectV}`,
+    {method:'PATCH', headers:{...SBH, Prefer:'return=representation'},
+     body: JSON.stringify({state, updated_at: new Date().toISOString()})});
+  if(r.status === 404) throw new TableMissing();
+  if(!r.ok) throw new Error('patch '+r.status);
+  const j = await r.json().catch(()=>[]);
+  return Array.isArray(j) && j.length > 0;
+}
+
+/* オンライン状態 */
+let MODE = 'local';            // 'local' | 'online'
+let room = null;               // {code, state}
+let mySeat = -1, myName = '', myCid = '';
+let sbClient = null, channel = null;
+let processing = false; const inbox = [];
+let resultShown = false;
+
+function saveSession(){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify({code:room.code, seat:mySeat, name:myName, cid:myCid, ts:Date.now()})); }catch(e){} }
+function loadSession(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY)||'null');
+    if(s && Date.now()-s.ts < 24*3600*1000) return s;
+  }catch(e){}
+  return null;
+}
+function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+
+async function casMutate(mut){
+  for(let i=0; i<6; i++){
+    const cur = room.state;
+    const next = JSON.parse(JSON.stringify(cur));
+    if(mut(next) === false) return null;
+    next.v = cur.v + 1;
+    if(await sbCas(room.code, cur.v, next)){ return next; }
+    const fresh = await sbGetRoom(room.code);   // 競合 → 最新を読み直して再挑戦
+    if(fresh) room.state = fresh;
+  }
+  throw new Error('conflict');
+}
+
+function connectRealtime(code){
+  try{
+    if(!window.supabase || SB_TEST) return;   // テスト時はポーリングのみ
+    sbClient = sbClient || window.supabase.createClient(SB_URL, SB_KEY);
+    channel = sbClient.channel('jinsei-'+code)
+      .on('postgres_changes', {event:'UPDATE', schema:'public', table:'jinsei_rooms', filter:'code=eq.'+code},
+        p => { if(p.new && p.new.state) onRemote(p.new.state); })
+      .subscribe();
+  }catch(e){ /* ポーリングが保険として動く */ }
+}
+
+function onRemote(s){
+  if(!room || !s || typeof s.v !== 'number') return;
+  const maxv = Math.max(room.state.v, ...inbox.map(x=>x.v), 0);
+  if(s.v <= maxv) return;
+  inbox.push(s);
+  pump();
+}
+async function pump(){
+  if(processing) return; processing = true;
+  try{
+    while(inbox.length){
+      const s = inbox.shift();
+      if(!room || s.v <= room.state.v) continue;
+      const prev = room.state;
+      const canReplay = started && prev.phase === 'play' && s.last && s.last.by !== mySeat && s.v === prev.v + 1;
+      if(canReplay) await replayTurn(s);
+      enterState(s);
+    }
+  } finally { processing = false; }
+}
+
+/* ポーリング（リアルタイムを取りこぼした時の保険。自分の手番中は止める） */
+setInterval(async ()=>{
+  if(MODE!=='online' || !room) return;
+  const s = room.state;
+  if(s.phase==='end' || busy || processing) return;
+  if(s.phase==='play' && s.cur===mySeat) return;
+  try{ const f = await sbGetRoom(room.code); if(f) onRemote(f); }catch(e){}
+}, POLL_MS);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && MODE==='online' && room && !busy){
+    sbGetRoom(room.code).then(f=>f&&onRemote(f)).catch(()=>{});
+  }
+});
 
 /* ============================================================
    サウンド（WebAudio・端末音量に従う）
@@ -315,8 +478,8 @@ const ctrl = [
   [-36,-4],[-38,-22],[-22,-34],[ 2,-36],[ 24,-32],[ 38,-18]
 ].map(([x,z]) => new THREE.Vector3(x, 0, z));
 const curve = new THREE.CatmullRomCurve3(ctrl, false, 'catmullrom', 0.5);
-const pts = curve.getSpacedPoints(N-1);          // 各マスの中心
-const tans = pts.map((p,i)=>{                     // 進行方向
+const pts = curve.getSpacedPoints(N-1);
+const tans = pts.map((p,i)=>{
   const a = pts[Math.max(0,i-1)], b = pts[Math.min(N-1,i+1)];
   return new THREE.Vector3().subVectors(b,a).normalize();
 });
@@ -454,7 +617,6 @@ function makePawn(colorHex){
   g.add(base, body, head);
   return g;
 }
-/* 手番マーカー（コマの上の▼） */
 const marker = new THREE.Mesh(
   new THREE.ConeGeometry(0.42, 0.7, 4),
   new THREE.MeshBasicMaterial({color:0xffb53e})
@@ -465,11 +627,12 @@ scene.add(marker);
 /* ============================================================
    状態
    ============================================================ */
-let players = [];      // {name,color,money,pos,skip,done,goalOrder,pawn}
+let players = [];      // {idx,name,color,money,pos,skip,done,goalOrder,pawn}
 let cur = 0;
 let goalCount = 0;
 let busy = false;
 let started = false;
+let turnLog = [];
 
 function pawnWorldPos(pl, tileIdx){
   const p = pts[tileIdx];
@@ -543,73 +706,38 @@ function loop(){
 loop();
 
 /* ============================================================
-   UI：プレイヤー設定
+   UI ヘルパー
    ============================================================ */
 const $ = id => document.getElementById(id);
-let playerCount = 2;
-const DEFAULT_NAMES = ['こうだい','ゆずは','プレイヤー3','プレイヤー4'];
-function renderSetup(){
-  $('cntRow').innerHTML = [2,3,4].map(n=>
-    `<button class="cnt-btn ${n===playerCount?'on':''}" data-n="${n}">${n}人</button>`).join('');
-  $('cntRow').querySelectorAll('button').forEach(b=>b.onclick=()=>{ playerCount=+b.dataset.n; renderSetup(); });
-  const rows = [];
-  for(let i=0;i<playerCount;i++){
-    const prev = document.querySelector(`#nameRows input[data-i="${i}"]`);
-    const val = prev ? prev.value : DEFAULT_NAMES[i];
-    rows.push(`<div class="name-row">
-      <div class="name-dot" style="background:${PLAYER_COLORS[i]}"></div>
-      <input data-i="${i}" maxlength="8" value="${val}" placeholder="なまえ">
-    </div>`);
-  }
-  $('nameRows').innerHTML = rows.join('');
-}
-renderSetup();
-
-$('goBtn').onclick = ()=>{
-  audio();
-  const names = [...document.querySelectorAll('#nameRows input')].map((inp,i)=> inp.value.trim() || DEFAULT_NAMES[i]);
-  players = names.map((name,i)=>{
-    const pawn = makePawn(new THREE.Color(PLAYER_COLORS[i]));
-    const wp = pawnWorldPos({idx:i}, 0);
-    pawn.position.copy(wp);
-    scene.add(pawn);
-    return {idx:i, name, color:PLAYER_COLORS[i], money:START_MONEY, pos:0, skip:0, done:false, goalOrder:0, pawn};
-  });
-  $('title').classList.add('hide');
-  $('hud').style.display='block';
-  $('miniBtns').style.display='flex';
-  $('bottom').style.display='flex';
-  renderChips();
-  sFanfare();
-  /* イントロ：上空から1人目へ寄る */
-  camCtl.target.copy(pts[0]); camLerp = 0.03;
-  setTimeout(()=>{ camLerp = 0.06; }, 2200);
-  started = true;
-  setTimeout(startTurn, 1500);
-};
-
-/* ============================================================
-   HUD
-   ============================================================ */
 const fmt = n => (n<0?'−':'') + '¥' + Math.abs(n).toLocaleString('ja-JP');
+function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const wait = ms => new Promise(r=>setTimeout(r, ms));
+const P = fn => new Promise(r=>fn(r));
+
 function renderChips(flashIdx=-1){
   $('chips').innerHTML = players.map((p,i)=>`
     <div class="chip ${i===cur&&!p.done?'cur':''} ${i===flashIdx?'flash':''}">
       <div class="dot" style="background:${p.color}"></div>
-      <span class="nm">${esc(p.name)}</span>
+      <span class="nm">${esc(p.name)}${MODE==='online'&&i===mySeat?'⭐':''}</span>
       <span class="yen ${p.money<0?'minus':''}">${fmt(p.money)}</span>
       ${p.done?`<span class="goalmark">👑${p.goalOrder}位通過</span>`:''}
     </div>`).join('');
 }
-function esc(s){ return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
 function showToast(html, ms=1700){
   const t = $('toast');
   t.innerHTML = html; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), ms);
 }
+function showSpinFor(p){
+  $('turnBanner').style.display='none';
+  const b = $('spinBtn');
+  b.disabled = false;
+  b.innerHTML = `<span class="who"><i style="background:${p.color}"></i>${esc(p.name)}</span> ルーレットを回す！`;
+}
+function hideSpin(){ $('spinBtn').disabled = true; }
+function showBanner(html){ hideSpin(); const b=$('turnBanner'); b.innerHTML=html; b.style.display='block'; }
+function hideBanner(){ $('turnBanner').style.display='none'; }
 
-/* 右上ボタン */
 $('viewBtn').onclick = ()=>{
   camCtl.overview = !camCtl.overview;
   $('viewBtn').textContent = camCtl.overview ? '🎯' : '🗺️';
@@ -620,7 +748,332 @@ $('muteBtn').onclick = ()=>{
 };
 
 /* ============================================================
-   ターン進行
+   タイトル画面（モード選択 → ローカル設定 / オンライン設定）
+   ============================================================ */
+let playerCount = 2;
+const DEFAULT_NAMES = ['こうだい','ゆずは','プレイヤー3','プレイヤー4'];
+
+function vModeSelect(){
+  const saved = loadSession();
+  $('panel').innerHTML = `
+    <h2>あそびかたをえらんでね</h2>
+    <button class="mode-btn" id="mLocal">📱 ひとつのスマホで<small>かわりばんこに まわしてあそぶ</small></button>
+    <button class="mode-btn" id="mOnline">📶 べつべつのスマホで<small>へやコードを共有してオンライン対戦</small></button>
+    ${saved ? `<button class="sub-btn pink" id="mResume">🔁 まえのゲームに もどる（へや ${esc(saved.code)}）</button>` : ''}`;
+  $('mLocal').onclick = ()=>{ MODE='local'; vLocalSetup(); };
+  $('mOnline').onclick = ()=>{ MODE='online'; vOnlineSetup(); };
+  if(saved) $('mResume').onclick = ()=>{ audio(); resumeSession(saved); };
+}
+function vLocalSetup(){
+  $('panel').innerHTML = `
+    <h2>あそぶ人数をえらんでね</h2>
+    <div class="cnt-row" id="cntRow"></div>
+    <div id="nameRows"></div>
+    <button class="go-btn" id="goBtn">スタート！</button>
+    <button class="back-link" id="backBtn">‹ もどる</button>`;
+  renderLocalRows();
+  $('goBtn').onclick = startLocalGame;
+  $('backBtn').onclick = vModeSelect;
+}
+function renderLocalRows(){
+  $('cntRow').innerHTML = [2,3,4].map(n=>
+    `<button class="cnt-btn ${n===playerCount?'on':''}" data-n="${n}">${n}人</button>`).join('');
+  $('cntRow').querySelectorAll('button').forEach(b=>b.onclick=()=>{ playerCount=+b.dataset.n; renderLocalRows(); });
+  const rows = [];
+  for(let i=0;i<playerCount;i++){
+    const prev = document.querySelector(`#nameRows input[data-i="${i}"]`);
+    const val = prev ? prev.value : DEFAULT_NAMES[i];
+    rows.push(`<div class="name-row">
+      <div class="name-dot" style="background:${PLAYER_COLORS[i]}"></div>
+      <input data-i="${i}" maxlength="8" value="${esc(val)}" placeholder="なまえ">
+    </div>`);
+  }
+  $('nameRows').innerHTML = rows.join('');
+}
+function vOnlineSetup(){
+  $('panel').innerHTML = `
+    <h2>べつべつのスマホであそぶ</h2>
+    <div class="name-row">
+      <div class="name-dot" style="background:#b8a8e8"></div>
+      <input id="onName" maxlength="8" value="こうだい" placeholder="じぶんのなまえ">
+    </div>
+    <button class="sub-btn pink" id="mkRoom">🏠 へやをつくる（ホスト）</button>
+    <div class="divider">あいてがつくったへやに入る</div>
+    <div class="joinrow">
+      <input id="joinCode" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="0000">
+      <button class="sub-btn" style="width:auto;margin:0;padding:12px 20px;" id="joinBtn">はいる</button>
+    </div>
+    <button class="back-link" id="backBtn">‹ もどる</button>`;
+  $('mkRoom').onclick = ()=>{ audio(); createRoom(); };
+  $('joinBtn').onclick = ()=>{ audio(); joinRoom(); };
+  $('backBtn').onclick = vModeSelect;
+}
+vModeSelect();
+
+/* ============================================================
+   ローカルモード開始
+   ============================================================ */
+function buildPlayers(names, posArr=null){
+  players = names.map((name,i)=>{
+    const pawn = makePawn(new THREE.Color(PLAYER_COLORS[i]));
+    const pl = {idx:i, name, color:PLAYER_COLORS[i], money:START_MONEY, pos:(posArr?posArr[i]:0), skip:0, done:false, goalOrder:0, pawn};
+    pawn.position.copy(pawnWorldPos(pl, pl.pos));
+    scene.add(pawn);
+    return pl;
+  });
+}
+function showGameUI(){
+  $('title').classList.add('hide');
+  $('lobby').style.display='none';
+  $('hud').style.display='block';
+  $('miniBtns').style.display='flex';
+  $('bottom').style.display='flex';
+}
+function startLocalGame(){
+  audio();
+  const names = [...document.querySelectorAll('#nameRows input')].map((inp,i)=> inp.value.trim() || DEFAULT_NAMES[i]);
+  buildPlayers(names);
+  showGameUI();
+  renderChips();
+  sFanfare();
+  camCtl.target.copy(pts[0]); camLerp = 0.03;
+  setTimeout(()=>{ camLerp = 0.06; }, 2200);
+  started = true;
+  setTimeout(startTurn, 1500);
+}
+
+/* ============================================================
+   オンライン：部屋の作成 / 参加 / ロビー
+   ============================================================ */
+function freshSeatState(name, cid, seat){
+  return {name, cid, seat, money:START_MONEY, pos:0, skip:0, done:false, goalOrder:0};
+}
+function onlineError(e){
+  if(e instanceof TableMissing){
+    showToast('🛠️ オンライン機能は じゅんびちゅう…<br><small>（Supabaseで jinsei_rooms.sql の実行が必要です）</small>', 3400);
+  }else{
+    showToast('⚠️ つうしんエラー…<br>でんぱの良いところで もういちど', 2400);
+  }
+}
+async function createRoom(){
+  const name = ($('onName').value.trim() || 'こうだい').slice(0,8);
+  myName = name; myCid = Math.random().toString(36).slice(2,10);
+  const state = {v:1, phase:'lobby', players:[freshSeatState(name, myCid, 0)], cur:0, goalCount:0, last:null};
+  try{
+    let code = null;
+    for(let i=0;i<8;i++){
+      const c = String(1000 + Math.floor(Math.random()*9000));
+      if(await sbInsert(c, state)){ code = c; break; }
+    }
+    if(!code){ showToast('⚠️ へやが つくれなかった…もういちど'); return; }
+    room = {code, state};
+    mySeat = 0;
+    saveSession();
+    connectRealtime(code);
+    showLobby();
+  }catch(e){ onlineError(e); }
+}
+async function joinRoom(){
+  const code = ($('joinCode').value||'').trim();
+  if(!/^\d{4}$/.test(code)){ showToast('4けたの へやコードを入れてね'); return; }
+  const name = ($('onName').value.trim() || 'ゆずは').slice(0,8);
+  try{
+    const s = await sbGetRoom(code);
+    if(!s){ showToast('🔍 そのへやは 見つからないよ'); return; }
+    if(s.phase !== 'lobby'){
+      /* 開始済み → 同じ名前のプレイヤーがいれば再接続として入る */
+      const seat = s.players.findIndex(p=>p.name===name);
+      if(seat >= 0){
+        myName = name; myCid = s.players[seat].cid; mySeat = seat;
+        room = {code, state:{v:0}};
+        saveSession(); connectRealtime(code);
+        enterState(s);
+        return;
+      }
+      showToast('このへやは もうスタートしてるよ'); return;
+    }
+    if(s.players.length >= 4){ showToast('このへやは まんいん…'); return; }
+    myName = name; myCid = Math.random().toString(36).slice(2,10);
+    room = {code, state:s};
+    const next = await casMutate(st=>{
+      if(st.phase!=='lobby' || st.players.length>=4) return false;
+      st.players.push(freshSeatState(name, myCid, st.players.length));
+    });
+    if(!next){ showToast('はいれなかった…もういちど'); room=null; return; }
+    room.state = next;
+    mySeat = next.players.findIndex(p=>p.cid===myCid);
+    saveSession();
+    connectRealtime(code);
+    showLobby();
+  }catch(e){ onlineError(e); room = null; }
+}
+async function resumeSession(saved){
+  try{
+    const s = await sbGetRoom(saved.code);
+    if(!s || s.phase==='end'){ clearSession(); showToast('まえのゲームは おわってたよ'); vModeSelect(); return; }
+    const seat = s.players.findIndex(p=>p.cid===saved.cid);
+    if(seat < 0){ clearSession(); showToast('まえのゲームには もどれなかった…'); vModeSelect(); return; }
+    MODE='online'; mySeat=seat; myName=s.players[seat].name; myCid=saved.cid;
+    room = {code:saved.code, state:{v:0}};
+    connectRealtime(saved.code);
+    enterState(s);
+  }catch(e){ onlineError(e); }
+}
+function showLobby(){
+  $('title').classList.add('hide');
+  $('lobby').style.display='flex';
+  renderLobby();
+}
+function renderLobby(){
+  if(!room || room.state.phase!=='lobby') return;
+  const s = room.state;
+  const isHost = mySeat===0;
+  const rows = [];
+  for(let i=0;i<4;i++){
+    const p = s.players[i];
+    if(p) rows.push(`<div class="lobby-row"><div class="dot" style="background:${PLAYER_COLORS[i]}"></div>${esc(p.name)}${i===mySeat?'<span class="you">あなた</span>':''}</div>`);
+    else  rows.push(`<div class="lobby-row empty">… まちあわせちゅう …</div>`);
+  }
+  $('lobbyPanel').innerHTML = `
+    <h2>へやコード</h2>
+    <div class="room-code">${esc(room.code)}</div>
+    <div class="lobby-note">あいてのスマホで「べつべつのスマホで」→<br>この4けたを入力すると 入ってこられるよ</div>
+    ${rows.join('')}
+    ${isHost
+      ? `<button class="go-btn" id="lobbyStart" ${s.players.length<2?'disabled':''}>スタート！${s.players.length<2?'（2人いれば押せるよ）':''}</button>`
+      : `<div id="lobbyWaitMsg">ホストのスタートを まってるよ…</div>`}
+    <button class="back-link" id="lobbyLeave">‹ やめる</button>`;
+  if(isHost) $('lobbyStart').onclick = async ()=>{
+    audio();
+    try{
+      const next = await casMutate(st=>{
+        if(st.phase!=='lobby' || st.players.length<2) return false;
+        st.phase='play'; st.cur=0;
+      });
+      if(next) enterState(next);
+    }catch(e){ onlineError(e); }
+  };
+  $('lobbyLeave').onclick = ()=>{ clearSession(); location.reload(); };
+}
+
+/* ============================================================
+   オンライン：状態の適用・手番UI・リプレイ
+   ============================================================ */
+function beginOnlineGame(){
+  buildPlayers(room.state.players.map(p=>p.name), room.state.players.map(p=>p.pos));
+  showGameUI();
+  $('codePill').style.display='block';
+  $('codePill').textContent = 'へや ' + room.code;
+  sFanfare();
+  camCtl.target.copy(pts[players[mySeat].pos]); camLerp = 0.03;
+  setTimeout(()=>{ camLerp = 0.06; }, 2200);
+  started = true;
+}
+function syncFromState(){
+  const s = room.state;
+  goalCount = s.goalCount;
+  cur = s.cur;
+  s.players.forEach((sp,i)=>{
+    const p = players[i]; if(!p) return;
+    p.money=sp.money; p.skip=sp.skip; p.done=sp.done; p.goalOrder=sp.goalOrder;
+    if(p.pos!==sp.pos){ p.pos=sp.pos; p.pawn.position.copy(pawnWorldPos(p,p.pos)); }
+  });
+}
+function enterState(s){
+  room.state = s;
+  if(s.phase==='lobby'){ renderLobby(); return; }
+  if(!started) beginOnlineGame();
+  syncFromState();
+  renderChips();
+  if(s.phase==='end'){
+    clearSession();
+    if(!resultShown) showResult();
+    return;
+  }
+  prepareTurnUI();
+}
+function prepareTurnUI(){
+  const s = room.state;
+  renderChips();
+  camCtl.overview=false; $('viewBtn').textContent='🗺️';
+  const plc = players[s.cur];
+  camCtl.target.copy(pts[plc.pos]);
+  const mp = pawnWorldPos(plc, plc.pos);
+  marker.visible = true;
+  marker.position.set(mp.x, 2.6, mp.z);
+  marker.material.color.set(plc.color);
+  if(s.cur === mySeat){
+    const me = players[mySeat];
+    if(me.skip > 0){
+      showBanner('💤 おやすみ しょうかちゅう…');
+      showToast(`💤 ${esc(me.name)} は おやすみ中…<br>1回パス！`);
+      me.skip--;
+      setTimeout(()=>commitTurn([{sleep:{seat:mySeat}}]), 1900);
+      return;
+    }
+    showSpinFor(me);
+  }else{
+    showBanner(`🎲 ${esc(plc.name)} のばん…`);
+  }
+}
+function advanceCur(st){
+  if(st.players.every(p=>p.done)){ st.phase='end'; return; }
+  let c = st.cur;
+  do{ c = (c+1) % st.players.length; }while(st.players[c].done);
+  st.cur = c;
+}
+async function commitTurn(anim){
+  try{
+    const next = await casMutate(st=>{
+      players.forEach((p,i)=>{
+        const sp = st.players[i];
+        sp.money=p.money; sp.pos=p.pos; sp.skip=p.skip; sp.done=p.done; sp.goalOrder=p.goalOrder;
+      });
+      st.goalCount = goalCount;
+      advanceCur(st);
+      st.last = {by:mySeat, anim};
+    });
+    busy = false;
+    if(next) enterState(next);
+  }catch(e){
+    busy = false;
+    if(e instanceof TableMissing) onlineError(e);
+    else showToast('⚠️ つうしんエラー…<br>でんぱの良いところで もういちど', 2600);
+    prepareTurnUI();
+  }
+}
+async function replayTurn(s){
+  const anim = (s.last && s.last.anim) || [];
+  const actorName = players[s.last.by] ? players[s.last.by].name : '';
+  marker.visible = false;
+  for(const step of anim){
+    if(step.spin){
+      showBanner(`🎲 ${esc(actorName)} がルーレット…`);
+      await P(done=>runRoulette(step.spin.n, done));
+    }else if(step.move){
+      const p = players[step.move.seat]; if(!p) continue;
+      await P(done=>animateHops(p, step.move.from, step.move.to, done));
+      p.pos = step.move.to;
+    }else if(step.card){
+      const tl = TILES[step.card.idx]; const p = players[step.card.seat];
+      await P(done=>showTileCard(tl, done));
+      if(p && tl.$){ p.money += tl.$; renderChips(p.idx); }
+    }else if(step.sleep){
+      const p = players[step.sleep.seat];
+      showToast(`💤 ${esc(p?p.name:'')} は おやすみ…<br>1回パス！`);
+      await wait(1900);
+    }else if(step.goal){
+      const p = players[step.goal.seat];
+      sFanfare();
+      if(p){ p.money += 0; }
+      await P(done=>showGoalCard(p, step.goal.order, step.goal.bonus, done));
+      if(p){ renderChips(p.idx); }
+    }
+  }
+}
+
+/* ============================================================
+   ローカルモードのターン進行
    ============================================================ */
 function startTurn(){
   if(players.every(p=>p.done)){ showResult(); return; }
@@ -639,13 +1092,15 @@ function startTurn(){
     setTimeout(nextPlayer, 1900);
     return;
   }
-  const b = $('spinBtn');
-  b.disabled = false;
-  b.innerHTML = `<span class="who"><i style="background:${pl.color}"></i>${esc(pl.name)}</span> ルーレットを回す！`;
+  showSpinFor(pl);
 }
 function nextPlayer(){
   cur = (cur+1) % players.length;
   startTurn();
+}
+function endTurn(){
+  if(MODE==='online'){ commitTurn(turnLog); }
+  else { busy = false; setTimeout(nextPlayer, 250); }
 }
 
 /* ============================================================
@@ -670,26 +1125,19 @@ const SEG_COLORS = ['#ff8fb8','#ffd166','#7ec8ff','#8fe6a3','#c9a7ff','#ffb47a',
   svg.innerHTML = s;
 })();
 
-$('spinBtn').onclick = ()=>{
-  if(busy || !started) return;
-  audio(); busy = true;
-  $('spinBtn').disabled = true;
-  marker.visible = false;
-  const result = 1 + Math.floor(Math.random()*SEG);
+function runRoulette(result, done){
   const wrap = $('rouletteWrap');
   const wheel = $('wheel');
   const num = $('wheelNum');
   num.classList.remove('pop'); num.textContent = '';
   wrap.style.display = 'flex';
   $('rouletteHint').textContent = 'ルーレット回転中…';
-  /* 回転：5周 + 当たり位置（セグメント中心が真上に来る角度） */
   wheel.style.transition = 'none';
   wheel.style.transform = 'rotate(0deg)';
   void wheel.getBoundingClientRect();
   const final = 360*5 - (result-1)*(360/SEG) + (Math.random()*24-12);
   wheel.style.transition = 'transform 3.1s cubic-bezier(.12,.67,.08,1)';
   wheel.style.transform = `rotate(${final}deg)`;
-  /* チクチク音（減速に合わせて間隔を伸ばす） */
   let delay = 40;
   (function tickLoop(elapsed){
     if(elapsed > 2700) return;
@@ -702,60 +1150,95 @@ $('spinBtn').onclick = ()=>{
     num.classList.add('pop');
     $('rouletteHint').textContent = `${result} マスすすむ！`;
     sCoin();
-    setTimeout(()=>{
-      wrap.style.display = 'none';
-      movePlayer(players[cur], result, 0);
-    }, 950);
+    setTimeout(()=>{ wrap.style.display = 'none'; done(); }, 950);
   }, 3250);
+}
+
+$('spinBtn').onclick = ()=>{
+  if(busy || !started) return;
+  if(MODE==='online' && (!room || room.state.phase!=='play' || room.state.cur!==mySeat)) return;
+  audio(); busy = true;
+  hideSpin();
+  marker.visible = false;
+  const pl = players[cur];
+  turnLog = [];
+  const result = 1 + Math.floor(Math.random()*SEG);
+  turnLog.push({spin:{seat:pl.idx, n:result}});
+  runRoulette(result, ()=>actorMove(pl, result, 0));
 };
 
 /* ============================================================
    コマ移動（1マスずつぴょこぴょこ）
    ============================================================ */
-function movePlayer(pl, steps, chain){
-  const dir = steps >= 0 ? 1 : -1;
-  let remain = Math.abs(steps);
-  if(dir > 0) remain = Math.min(remain, (N-1) - pl.pos);
-  else        remain = Math.min(remain, pl.pos);
-  if(remain === 0){ landed(pl, chain); return; }
+function animateHops(pl, from, to, done){
+  if(from === to){ done(); return; }
+  let pos = from;
+  const dir = to > from ? 1 : -1;
   function hop(){
-    const from = pawnWorldPos(pl, pl.pos);
-    pl.pos += dir;
-    const to = pawnWorldPos(pl, pl.pos);
+    const a = pawnWorldPos(pl, pos);
+    pos += dir;
+    const b = pawnWorldPos(pl, pos);
     const t0 = performance.now(), dur = 270;
     sHop();
     (function anim(){
       const k = Math.min(1, (performance.now()-t0)/dur);
-      pl.pawn.position.lerpVectors(from, to, k);
+      pl.pawn.position.lerpVectors(a, b, k);
       pl.pawn.position.y = 0.5 + Math.sin(k*Math.PI)*1.3;
-      camCtl.target.lerp(pts[pl.pos], 0.4);
+      camCtl.target.lerp(pts[pos], 0.4);
       if(k < 1){ requestAnimationFrame(anim); }
       else{
-        pl.pawn.position.copy(to);
-        remain--;
-        if(remain > 0) setTimeout(hop, 60);
-        else setTimeout(()=>landed(pl, chain), 350);
+        pl.pawn.position.copy(b);
+        if(pos !== to) setTimeout(hop, 60);
+        else setTimeout(done, 350);
       }
     })();
   }
   hop();
 }
+function actorMove(pl, steps, chain){
+  const target = Math.max(0, Math.min(N-1, pl.pos + steps));
+  if(target === pl.pos){ actorLanded(pl, chain); return; }
+  turnLog.push({move:{seat:pl.idx, from:pl.pos, to:target}});
+  animateHops(pl, pl.pos, target, ()=>{
+    pl.pos = target;
+    actorLanded(pl, chain);
+  });
+}
 
 /* ============================================================
    マス到着 → イベント
    ============================================================ */
-function landed(pl, chain){
+function actorLanded(pl, chain){
   const tl = TILES[pl.pos];
-  if(tl.t === 'goal'){ reachGoal(pl); return; }
-  if(tl.t === 'start'){ busy=false; nextPlayer(); return; }
-  showEventCard(pl, tl, chain);
+  if(tl.t === 'goal'){
+    goalCount++;
+    pl.done = true; pl.goalOrder = goalCount;
+    const bonus = GOAL_BONUS[goalCount-1] || 0;
+    pl.money += bonus;
+    turnLog.push({goal:{seat:pl.idx, order:goalCount, bonus}});
+    sFanfare();
+    renderChips(pl.idx);
+    showGoalCard(pl, goalCount, bonus, endTurn);
+    return;
+  }
+  if(tl.t === 'start'){ endTurn(); return; }
+  turnLog.push({card:{seat:pl.idx, idx:pl.pos}});
+  showTileCard(tl, ()=>{
+    if(tl.$){ pl.money += tl.$; renderChips(pl.idx); }
+    if(tl.skip){ pl.skip = tl.skip; }
+    if(tl.mv && chain < 3){
+      setTimeout(()=>actorMove(pl, tl.mv, chain+1), 350);
+      return;
+    }
+    endTurn();
+  });
 }
 
-function showEventCard(pl, tl, chain){
+function showTileCard(tl, cb){
   const [label, lcolor] = TYPE_LABEL[tl.t];
   const delta = tl.$ || 0;
   let deltaHtml = '';
-  if(delta > 0) deltaHtml = `<div class="delta plus">＋${fmt(delta).replace('¥','¥')}</div>`;
+  if(delta > 0) deltaHtml = `<div class="delta plus">＋¥${delta.toLocaleString('ja-JP')}</div>`;
   else if(delta < 0) deltaHtml = `<div class="delta minus">−¥${Math.abs(delta).toLocaleString('ja-JP')}</div>`;
   let subHtml = '';
   if(tl.mv) subHtml = `<div class="delta zero">${tl.mv>0?`🚶 ${tl.mv}マス すすむ`:`🔙 ${-tl.mv}マス もどる`}</div>`;
@@ -772,40 +1255,22 @@ function showEventCard(pl, tl, chain){
   if(tl.t==='lv') sLove(); else if(delta>0) sCoin(); else if(delta<0) sBad(); else sHop();
   $('okBtn').onclick = ()=>{
     $('modal').style.display = 'none';
-    if(delta){ pl.money += delta; renderChips(pl.idx); }
-    if(tl.skip){ pl.skip = tl.skip; }
-    if(tl.mv && chain < 3){
-      setTimeout(()=>movePlayer(pl, tl.mv, chain+1), 350);
-      return;
-    }
-    busy = false;
-    setTimeout(nextPlayer, 250);
+    cb();
   };
 }
-
-/* ============================================================
-   ゴール
-   ============================================================ */
-function reachGoal(pl){
-  goalCount++;
-  pl.done = true; pl.goalOrder = goalCount;
-  const bonus = GOAL_BONUS[goalCount-1] || 0;
-  pl.money += bonus;
-  sFanfare();
-  renderChips(pl.idx);
+function showGoalCard(pl, order, bonus, cb){
   $('modal').innerHTML = `
     <div class="card">
       <span class="cat" style="background:#d8a800">ゴール</span>
       <div class="emo">👑</div>
-      <div class="txt">${esc(pl.name)} が <b>${goalCount}位</b> でゴール！</div>
+      <div class="txt">${esc(pl?pl.name:'')} が <b>${order}位</b> でゴール！</div>
       <div class="delta plus">ゴールボーナス ＋¥${bonus.toLocaleString('ja-JP')}</div>
       <button class="ok" id="okBtn">やったー！</button>
     </div>`;
   $('modal').style.display = 'flex';
   $('okBtn').onclick = ()=>{
     $('modal').style.display = 'none';
-    busy = false;
-    setTimeout(nextPlayer, 250);
+    cb();
   };
 }
 
@@ -813,6 +1278,7 @@ function reachGoal(pl){
    結果発表
    ============================================================ */
 function showResult(){
+  resultShown = true;
   marker.visible = false;
   $('bottom').style.display = 'none';
   camCtl.overview = true;
@@ -829,7 +1295,7 @@ function showResult(){
       </div>`).join('')}
     <button id="againBtn">もういちど あそぶ</button>`;
   $('result').style.display = 'flex';
-  $('againBtn').onclick = ()=>location.reload();
+  $('againBtn').onclick = ()=>{ clearSession(); location.reload(); };
   sFanfare(); setTimeout(sFanfare, 900);
   confetti();
 }
