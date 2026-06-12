@@ -1,0 +1,32 @@
+name: daily-report
+
+# 毎日 日本時間 23:45 に日報メールを送る（GitHubのクラウドで実行されるのでMacがオフでも動く）
+on:
+  schedule:
+    # GitHubのcronはUTC。23:45 JST = 14:45 UTC
+    - cron: "45 14 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate and send daily report
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python3 .github/scripts/daily_report.py
