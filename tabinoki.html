@@ -140,7 +140,35 @@
   .cmt-add button{flex:0 0 auto; color:var(--accent-ink); font-weight:700; font-size:14px; padding:0 6px;}
 
   .add-ev{display:flex; align-items:center; gap:7px; color:var(--accent-ink);
-    font-size:14px; font-weight:600; padding:8px 6px; margin-left:58px;}
+    font-size:13.5px; font-weight:600; padding:7px 6px; margin-left:58px;}
+
+  /* クイック追加（時刻＋タイトルだけでサッと足す） */
+  .quick-add{display:flex; gap:7px; align-items:center; margin:4px 0 2px;}
+  .quick-add .qa-time{flex:0 0 70px; width:70px; border:1px solid var(--line); border-radius:11px;
+    padding:10px 8px; font-size:13px; background:var(--card); -webkit-appearance:none; appearance:none;}
+  .quick-add .qa-title{flex:1; min-width:0; border:1px solid var(--line); border-radius:11px;
+    padding:10px 12px; font-size:14px; background:var(--card);}
+  .quick-add .qa-btn{flex:0 0 auto; width:40px; height:40px; border-radius:12px;
+    background:var(--accent); color:#fff; font-size:22px; font-weight:700; line-height:1;}
+  .quick-add .qa-btn:active{transform:scale(.94);}
+
+  /* コメント折りたたみ */
+  .cmts.empty-c{border-top:none; padding-top:2px; margin-top:4px;}
+  .cmt-fold{margin-top:2px;}
+  .cmt-fold>summary{list-style:none; cursor:pointer; font-size:12.5px; color:var(--sub);
+    padding:3px 0; user-select:none; display:inline-flex; align-items:center; gap:4px;}
+  .cmt-fold>summary::-webkit-details-marker{display:none;}
+  .cmt-fold[open]>summary{color:var(--accent-ink);}
+
+  /* フォーム：種類連動ブロック／詳細折りたたみ */
+  .cond-block{display:none;}
+  .cond-block.show{display:block;}
+  .more{margin:4px 0 2px; border-top:1px dashed var(--line); padding-top:10px;}
+  .more>summary{list-style:none; cursor:pointer; font-size:14px; font-weight:700;
+    color:var(--accent-ink); padding:5px 0; user-select:none;}
+  .more>summary::-webkit-details-marker{display:none;}
+  .more>summary::before{content:'＋ ';}
+  .more[open]>summary::before{content:'－ ';}
 
   /* マップ（Googleマップ埋め込み） */
   .map-days{display:flex; gap:8px; overflow-x:auto; padding:0 2px 12px; -webkit-overflow-scrolling:touch;}
@@ -439,6 +467,7 @@ let who = localStorage.getItem(WHO_KEY) || '';
 let online = null;   // null=確認中 / true=クラウド同期OK / false=オフライン
 let route = { name:'home', tripId:null, tab:'plan' };
 let lastPushed = '';   // 自分のupsertのエコーを無視するため
+let _focusQA = null;   // クイック追加後にその日の入力欄へフォーカスを戻す
 
 /* ============ 永続化 ============ */
 function loadLocal(){ try{ const s=localStorage.getItem(LS_KEY); if(s) db=JSON.parse(s); }catch(e){} }
@@ -788,7 +817,12 @@ function renderPlan(t){
     html += `<div class="day-block">
       <div class="day-head">${dnum}${dlabel}</div>
       <div class="tl">${evs || '<div style="color:var(--sub);font-size:13px;padding:4px 0 8px 58px;">まだ予定なし</div>'}
-        <div class="add-ev" data-add="${date}">＋ 予定を追加</div>
+        <div class="quick-add" data-qaday="${date}">
+          <input type="time" class="qa-time" aria-label="時刻">
+          <input type="text" class="qa-title" placeholder="予定をすばやく追加…">
+          <button class="qa-btn" title="追加">＋</button>
+        </div>
+        <div class="add-ev" data-add="${date}">＋ くわしく追加（駅・費用など）</div>
       </div></div>`;
   });
   return html;
@@ -884,11 +918,11 @@ function evHtml(t,i,date,gap,prevPlace){
     ? (timeToMin(i.endTime)-timeToMin(i.time)) : 0;
   if(dur) tags.push(`<span class="tag">⏱ 所要 ${fmtDur(dur)}</span>`);
   if(i.place){
-    tags.push(`<a class="tag link" href="https://www.google.com/maps/search/?api=1&query=${mapQ(t,i.place)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺 地図</a>`);
-    if(prevPlace) tags.push(`<a class="tag link" href="https://www.google.com/maps/dir/?api=1&origin=${mapQ(t,prevPlace)}&destination=${mapQ(t,i.place)}&travelmode=transit" target="_blank" rel="noopener" onclick="event.stopPropagation()">🚶 道順</a>`);
+    tags.push(`<a class="tag link" title="地図" href="https://www.google.com/maps/search/?api=1&query=${mapQ(t,i.place)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺</a>`);
+    if(prevPlace) tags.push(`<a class="tag link" title="道順" href="https://www.google.com/maps/dir/?api=1&origin=${mapQ(t,prevPlace)}&destination=${mapQ(t,i.place)}&travelmode=transit" target="_blank" rel="noopener" onclick="event.stopPropagation()">🚶</a>`);
   }
-  if(i.fromStation && i.toStation) tags.push(`<a class="tag link" href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(i.fromStation)}&destination=${encodeURIComponent(i.toStation)}&travelmode=transit" target="_blank" rel="noopener" onclick="event.stopPropagation()">🚃 乗換案内</a>`);
-  if(i.url) tags.push(`<a class="tag link" href="${esc(i.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 リンク</a>`);
+  if(i.fromStation && i.toStation) tags.push(`<a class="tag link" href="https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(i.fromStation)}&destination=${encodeURIComponent(i.toStation)}&travelmode=transit" target="_blank" rel="noopener" onclick="event.stopPropagation()">🚃 乗換</a>`);
+  if(i.url) tags.push(`<a class="tag link" title="リンク" href="${esc(i.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗</a>`);
   if(Number(i.cost)>0){
     const set=(i.payer==='こうだい'||i.payer==='ゆずは'); const sp=i.split||'half';
     const spL = set ? (sp==='kodai'?'こうだい持ち':sp==='yuzu'?'ゆずは持ち':'折半') : '';
@@ -910,20 +944,51 @@ function evHtml(t,i,date,gap,prevPlace){
         ${i.transport?`<div class="e-trans">🚃 ${esc(i.transport)}</div>`:''}
         ${i.note?`<div class="e-note">${esc(i.note)}</div>`:''}
         ${tags.length?`<div class="e-row">${tags.join('')}</div>`:''}
-        <div class="cmts" onclick="event.stopPropagation()">
+        <div class="cmts ${comments.length?'':'empty-c'}" onclick="event.stopPropagation()">
           ${cmtHtml}
-          <div class="cmt-add">
-            <input type="text" placeholder="ひとことメモ…" data-cmt="${i.id}">
-            <button data-cmtbtn="${i.id}">送信</button>
-          </div>
+          <details class="cmt-fold">
+            <summary>💬 ${comments.length?'返信する':'ひとこと'}</summary>
+            <div class="cmt-add">
+              <input type="text" placeholder="ひとことメモ…" data-cmt="${i.id}">
+              <button data-cmtbtn="${i.id}">送信</button>
+            </div>
+          </details>
         </div>
       </div>
     </div></div>`;
+}
+/* タイトルから種類をおおまかに推測（クイック追加用・あとで変更可） */
+function guessType(title){
+  const s = title||'';
+  if(/駅|移動|電車|バス|新幹線|地下鉄|タクシー|徒歩|歩い|フェリー|飛行機|空港|乗換|戻る|向か/.test(s)) return 'move';
+  if(/朝食|昼食|夕食|ランチ|ディナー|ごはん|ご飯|めし|食べ|食事|カフェ|喫茶|レストラン|居酒屋|ビール|スイーツ|団子|甘味/.test(s)) return 'food';
+  if(/ホテル|宿|旅館|チェックイン|チェックアウト|泊|就寝|温泉|サウナ|プール/.test(s)) return 'stay';
+  if(/買い|土産|ショッピング|買物|お土産/.test(s)) return 'shop';
+  return 'spot';
+}
+function quickAdd(t, dayKey, time, title){
+  const date = dayKey==='__none__' ? '' : dayKey;
+  const item = { id:uid(), date, time:time||'', endTime:'', type:guessType(title), title:title.trim(),
+    place:'', transport:'', fromStation:'', toStation:'', url:'', cost:0, payer:'', split:'half', note:'', comments:[] };
+  t.items = t.items||[]; t.items.push(item);
+  _focusQA = dayKey;          // 追加後、同じ日の入力欄に戻る
+  save(); render();
 }
 function bindPlan(t){
   if(route.tab!=='plan') return;
   const v=$('#view');
   v.querySelectorAll('[data-add]').forEach(b=> b.onclick=()=>openItemForm(t, null, b.dataset.add==='__none__'?'':b.dataset.add));
+  v.querySelectorAll('.quick-add').forEach(qa=>{
+    const titleEl=qa.querySelector('.qa-title'), timeEl=qa.querySelector('.qa-time');
+    const fire=()=>{ const title=titleEl.value.trim(); if(!title) return; quickAdd(t, qa.dataset.qaday, timeEl.value, title); };
+    qa.querySelector('.qa-btn').onclick=fire;
+    titleEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); fire(); } });
+  });
+  if(_focusQA!=null){
+    const sel=v.querySelector('.quick-add[data-qaday="'+_focusQA+'"] .qa-title');
+    _focusQA=null;
+    if(sel){ try{ sel.focus({preventScroll:true}); }catch(_){ sel.focus(); } }
+  }
   v.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{
     const it=(t.items||[]).find(x=>x.id===b.dataset.edit); if(it) openItemForm(t, it);
   });
@@ -1207,30 +1272,34 @@ function openItemForm(t, item, presetDate){
   const typeBtns = Object.entries(TYPES).map(([k,v])=>`<button data-t="${k}" class="${k===item.type?'on':''}"><span class="te">${v.emoji}</span>${v.label}</button>`).join('');
   const payerOpts = `<option value="">立替者なし / 無料</option>`+PAYERS.map(p=>`<option value="${p}" ${p===item.payer?'selected':''}>${p==='ふたり'?'ふたりで（精算なし）':p}</option>`).join('');
   const splitOpts = Object.entries(SPLITS).map(([k,v])=>`<option value="${k}" ${k===(item.split||'half')?'selected':''}>${k==='half'?'折半（半分こ）':v+'が全部もつ'}</option>`).join('');
+  const moveShow = (item.type==='move' || item.fromStation || item.toStation || item.transport) ? ' show' : '';
+  const moneyOpen = (Number(item.cost)>0) ? ' open' : '';
   openSheet(`
     <h3>${wasNew?'予定を追加':'予定を編集'}</h3>
     <div class="field"><label>種類</label><div class="type-grid" id="i-type">${typeBtns}</div></div>
     <div class="field"><label>日</label>${dateField}</div>
     <div class="field-2">
-      <div class="field"><label>出発・開始</label><input type="time" id="i-time" value="${esc(item.time)}"></div>
-      <div class="field"><label>到着・終了（任意）</label><input type="time" id="i-end" value="${esc(item.endTime||'')}"></div>
+      <div class="field"><label>開始</label><input type="time" id="i-time" value="${esc(item.time)}"></div>
+      <div class="field"><label>終了（任意）</label><input type="time" id="i-end" value="${esc(item.endTime||'')}"></div>
     </div>
     <div class="field"><label>タイトル（何をする？）</label><input type="text" id="i-title" value="${esc(item.title)}" placeholder="例: 清水寺を散策"></div>
-    <div class="field"><label>📍 場所（どこ？）</label><input type="text" id="i-place" value="${esc(item.place)}" placeholder="例: 清水寺">
-      <div class="hint">地図ピンと「🗺地図・🚶道順」リンクは、この場所から自動で作られます。</div></div>
-    <div class="field-2">
-      <div class="field"><label>🚉 出発駅</label><input type="text" id="i-from" value="${esc(item.fromStation||'')}" placeholder="例: 京都駅"></div>
-      <div class="field"><label>到着駅</label><input type="text" id="i-to" value="${esc(item.toStation||'')}" placeholder="例: 大阪駅"></div>
+    <div class="field"><label>📍 場所（どこ？）</label><input type="text" id="i-place" value="${esc(item.place)}" placeholder="例: 清水寺"></div>
+    <div class="cond-block${moveShow}" id="i-moveblock">
+      <div class="field-2">
+        <div class="field"><label>🚉 出発駅</label><input type="text" id="i-from" value="${esc(item.fromStation||'')}" placeholder="例: 京都駅"></div>
+        <div class="field"><label>到着駅</label><input type="text" id="i-to" value="${esc(item.toStation||'')}" placeholder="例: 大阪駅"></div>
+      </div>
+      <div class="field"><label>🚃 交通メモ</label><input type="text" id="i-trans" value="${esc(item.transport)}" placeholder="例: JR嵯峨野線で約16分"></div>
     </div>
-    <div class="field"><label>🚃 移動・交通メモ</label><input type="text" id="i-trans" value="${esc(item.transport)}" placeholder="例: 新快速で約30分">
-      <div class="hint">駅を入れると「🚃 乗換案内」リンクが自動で作られます。ここは補足メモ（路線・所要時間など）。</div></div>
-    <div class="field-2">
-      <div class="field"><label>費用</label><input type="number" inputmode="numeric" id="i-cost" value="${esc(item.cost)}" placeholder="¥"></div>
-      <div class="field"><label>立て替えた人</label><select id="i-payer">${payerOpts}</select></div>
-    </div>
-    <div class="field"><label>割り勘（だれの負担？）</label><select id="i-split">${splitOpts}</select>
-      <div class="hint">「立て替えた人」が支払って、ここで決めた負担で精算します。費用タブに「だれがだれに払うか」がまとまります。</div></div>
-    <div class="field"><label>メモ</label><textarea id="i-note" placeholder="予約番号・補足など…">${esc(item.note)}</textarea></div>
+    <div class="field"><label>📝 メモ（任意）</label><textarea id="i-note" placeholder="予約番号・補足など…">${esc(item.note)}</textarea></div>
+    <details class="more"${moneyOpen}>
+      <summary>💰 費用・割り勘をつける</summary>
+      <div class="field-2">
+        <div class="field"><label>費用</label><input type="number" inputmode="numeric" id="i-cost" value="${esc(item.cost)}" placeholder="¥"></div>
+        <div class="field"><label>立て替えた人</label><select id="i-payer">${payerOpts}</select></div>
+      </div>
+      <div class="field"><label>割り勘（だれの負担？）</label><select id="i-split">${splitOpts}</select></div>
+    </details>
     <div class="autosave" id="i-status">✓ 自動保存されます</div>
     <div class="sheet-actions">
       <button class="btn-primary" id="i-done">完了</button>
@@ -1250,10 +1319,13 @@ function openItemForm(t, item, presetDate){
     item.cost = costRaw===''?0:Number(costRaw); item.payer=$('#i-payer').value; item.split=$('#i-split').value; item.note=$('#i-note').value.trim();
     save(); flashSaved();
   };
+  const moveBlock = $('#i-moveblock');
+  const syncMove = ()=>{ if(moveBlock) moveBlock.classList.toggle('show',
+      pickedType==='move' || !!$('#i-from').value || !!$('#i-to').value || !!$('#i-trans').value); };
   sheet.querySelectorAll('#i-type button').forEach(b=> b.onclick=()=>{
     pickedType=b.dataset.t;
     sheet.querySelectorAll('#i-type button').forEach(x=>x.classList.toggle('on', x===b));
-    apply();
+    syncMove(); apply();
   });
   sheet.querySelectorAll('input,textarea,select').forEach(el=>{
     el.addEventListener('input', apply); el.addEventListener('change', apply);
