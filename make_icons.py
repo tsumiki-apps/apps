@@ -35,6 +35,7 @@ APPS = {
     "check":       ("🔍", "#8fa3c8", "#54648c"),
     "serifu":      ("🎭", "#b08bff", "#7a4ddb"),
     "jinsei":      ("🎲", "#ff8fc8", "#9a6df0"),
+    "trump":       ("🃏", "#2fa86b", "#0d6b3f"),
 }
 
 

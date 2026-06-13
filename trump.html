@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>トランプ3D</title>
+<link rel="apple-touch-icon" href="icons/icon-trump.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --felt1:#2aa86a; --felt2:#0c5d38; --felt3:#073d24;
+  --gold:#e9c66a; --gold2:#b8922f;
+  --ink:#1c2530; --red:#d22f3a; --black:#1f2733;
+  --cw: 66px;            /* カード幅。JSで端末に合わせて調整 */
+  --ch: calc(var(--cw) * 1.4);
+  --rad: 9px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;height:100%;overflow:hidden;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;
+  color:#eaf3ee; user-select:none; -webkit-user-select:none; touch-action:manipulation;
+  background:#04140c;
+}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;}
+.screen.on{display:flex;}
+
+/* ====== 共通テーブル背景（フェルト＋木枠＋ビネット） ====== */
+.felt{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(120% 90% at 50% 18%, rgba(255,255,255,.10), rgba(255,255,255,0) 45%),
+    radial-gradient(140% 120% at 50% 120%, var(--felt3), rgba(0,0,0,0) 60%),
+    radial-gradient(120% 100% at 50% 40%, var(--felt1), var(--felt2) 70%, var(--felt3));
+}
+.felt::after{ /* ビネット＋微テクスチャ */
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(130% 100% at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,.45) 100%),
+    repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 2px, rgba(0,0,0,.012) 2px 4px);
+}
+.rail{position:absolute;inset:0;border-radius:24px;pointer-events:none;
+  border:13px solid #6a4428;
+  box-shadow:inset 0 0 34px rgba(0,0,0,.5), inset 0 0 0 3px var(--gold2),
+    inset 0 2px 3px rgba(255,255,255,.15);}
+
+/* ====== ボタン ====== */
+.btn{
+  border:0;border-radius:14px;padding:14px 20px;font-size:17px;font-weight:800;color:#08130c;
+  background:linear-gradient(180deg,#ffe7a0,var(--gold) 55%,var(--gold2));
+  box-shadow:0 6px 0 #8a6c1f,0 10px 18px rgba(0,0,0,.4);cursor:pointer;
+  transition:transform .06s, box-shadow .06s; letter-spacing:.04em;
+}
+.btn:active{transform:translateY(4px);box-shadow:0 2px 0 #8a6c1f,0 5px 10px rgba(0,0,0,.4);}
+.btn.sec{background:linear-gradient(180deg,#dfeaf0,#9fb3c4);color:#13202c;box-shadow:0 6px 0 #5f7184,0 10px 18px rgba(0,0,0,.35);}
+.btn.sec:active{box-shadow:0 2px 0 #5f7184;}
+.btn.gh{background:rgba(255,255,255,.12);color:#eaf3ee;box-shadow:none;border:1.5px solid rgba(255,255,255,.3);font-weight:700;}
+.btn.gh:active{transform:translateY(2px);background:rgba(255,255,255,.2);}
+.btn:disabled{filter:grayscale(.7) brightness(.8);opacity:.55;pointer-events:none;}
+.btn.sm{padding:9px 14px;font-size:14px;border-radius:11px;box-shadow:0 4px 0 #8a6c1f,0 6px 10px rgba(0,0,0,.3);}
+.btn.sm:active{box-shadow:0 1px 0 #8a6c1f;}
+
+/* ====== HOME ====== */
+#home{align-items:center;justify-content:center;text-align:center;padding:24px;}
+.brand{font-size:clamp(38px,12vw,68px);font-weight:900;letter-spacing:.06em;
+  background:linear-gradient(180deg,#fff,var(--gold) 60%,var(--gold2));-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 4px 8px rgba(0,0,0,.5));margin:0;}
+.brand small{display:block;font-size:15px;letter-spacing:.3em;color:#bfe7cf;font-weight:700;margin-top:6px;-webkit-text-fill-color:#bfe7cf;}
+.suitline{font-size:30px;letter-spacing:10px;margin:14px 0 26px;}
+.suitline .r{color:#ff6b73;} .suitline .b{color:#dfe9f0;}
+.home-card{width:min(440px,92vw);background:rgba(8,28,18,.72);backdrop-filter:blur(8px);
+  border:1.5px solid rgba(233,198,106,.4);border-radius:22px;padding:22px;
+  box-shadow:0 18px 50px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:13px;}
+.home-card h2{margin:0 0 4px;font-size:16px;color:#bfe7cf;font-weight:800;letter-spacing:.05em;}
+.hint{font-size:12.5px;color:#9fc3ae;line-height:1.6;}
+
+/* ====== 入力 ====== */
+.field{display:flex;flex-direction:column;gap:6px;text-align:left;}
+.field label{font-size:12px;color:#bfe7cf;font-weight:700;}
+.input{width:100%;border:1.5px solid rgba(255,255,255,.25);background:rgba(0,0,0,.3);color:#fff;
+  border-radius:12px;padding:13px 14px;font-size:16px;font-weight:700;outline:none;}
+.input:focus{border-color:var(--gold);}
+.codebox{font-size:40px;font-weight:900;letter-spacing:.34em;text-align:center;text-indent:.34em;
+  font-variant-numeric:tabular-nums;}
+
+/* ====== ロビー ====== */
+#lobby{align-items:center;justify-content:center;padding:24px;text-align:center;}
+.room-code{font-size:56px;font-weight:900;letter-spacing:.22em;text-indent:.22em;color:#fff;
+  font-variant-numeric:tabular-nums;text-shadow:0 3px 14px rgba(0,0,0,.5);margin:2px 0;}
+.seats{display:flex;gap:14px;justify-content:center;margin:18px 0;}
+.seat{flex:1;max-width:160px;background:rgba(0,0,0,.3);border:1.5px solid rgba(255,255,255,.2);border-radius:16px;padding:16px 10px;}
+.seat .who{font-size:34px;}
+.seat .nm{font-weight:800;margin-top:6px;font-size:15px;}
+.seat .st{font-size:12px;margin-top:3px;color:#9fc3ae;}
+.seat.live{border-color:#5be39a;box-shadow:0 0 16px rgba(91,227,154,.4);}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#6b7a72;margin-right:5px;vertical-align:middle;}
+.dot.on{background:#5be39a;box-shadow:0 0 8px #5be39a;}
+
+/* ====== ゲーム選択 ====== */
+#select{padding:calc(var(--safe-t) + 8px) 12px 14px;overflow:hidden;}
+.selhead{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.selhead h2{margin:0;font-size:19px;font-weight:900;flex:1;letter-spacing:.04em;}
+.glist{flex:1;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-bottom:14px;-webkit-overflow-scrolling:touch;}
+.gtile{position:relative;border-radius:16px;padding:13px 12px 12px;text-align:left;cursor:pointer;
+  background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.04));
+  border:1.5px solid rgba(255,255,255,.16);box-shadow:0 8px 18px rgba(0,0,0,.3);
+  transition:transform .08s;overflow:hidden;}
+.gtile:active{transform:scale(.97);}
+.gtile .em{font-size:30px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4));}
+.gtile .gname{font-weight:900;font-size:16px;margin-top:4px;}
+.gtile .gdesc{font-size:11px;color:#cfe3d7;line-height:1.45;margin-top:3px;min-height:30px;}
+.gtile .tags{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;}
+.tag{font-size:10px;font-weight:800;padding:3px 7px;border-radius:20px;background:rgba(0,0,0,.3);}
+.tag.len0{background:#2e7d52;} .tag.len1{background:#9a7b1e;} .tag.len2{background:#8a3d6b;}
+.tag.tm{background:rgba(255,255,255,.16);}
+
+/* ====== 対局画面 ====== */
+#table{}
+.tbar{position:absolute;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;gap:8px;
+  padding:calc(var(--safe-t) + 6px) 12px 6px;
+  background:linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,0));}
+.tbar .ttl{font-weight:900;font-size:16px;flex:1;text-shadow:0 1px 3px rgba(0,0,0,.6);}
+.iconbtn{width:38px;height:38px;border-radius:11px;border:1.5px solid rgba(255,255,255,.25);
+  background:rgba(0,0,0,.3);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.iconbtn:active{background:rgba(0,0,0,.5);}
+.scene{position:absolute;inset:0;perspective:1100px;perspective-origin:50% 38%;}
+.board{position:absolute;inset:0;display:flex;flex-direction:column;
+  transform:rotateX(11deg);transform-style:preserve-3d;transform-origin:50% 42%;}
+/* 各ゲームが #zone に描く。zoneは3つの帯（相手/場/自分） */
+#zone{position:absolute;inset:0;display:flex;flex-direction:column;}
+.lane{display:flex;align-items:center;justify-content:center;position:relative;}
+.lane.opp{flex:0 0 26%;align-items:flex-start;padding-top:54px;}
+.lane.mid{flex:1;}
+.lane.me{flex:0 0 32%;align-items:flex-end;padding-bottom:calc(var(--safe-b) + 152px);}
+.nameplate{position:absolute;left:50%;transform:translateX(-50%);z-index:5;
+  background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.22);border-radius:20px;
+  padding:5px 14px;font-weight:800;font-size:13px;display:flex;align-items:center;gap:7px;white-space:nowrap;}
+.nameplate.np-opp{top:calc(var(--safe-t) + 46px);} .nameplate.np-me{bottom:calc(var(--safe-b) + 106px);}
+.nameplate.turn{background:linear-gradient(180deg,var(--gold),var(--gold2));color:#1a1206;
+  box-shadow:0 0 18px rgba(233,198,106,.6);}
+.countpill{font-size:11px;background:rgba(255,255,255,.18);border-radius:12px;padding:1px 7px;}
+
+/* 操作バー＆ステータス */
+.statusbar{position:absolute;left:0;right:0;bottom:calc(var(--safe-b) + 8px);z-index:30;
+  display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 12px;pointer-events:none;}
+.statustxt{background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.18);border-radius:16px;
+  padding:7px 16px;font-weight:800;font-size:14px;max-width:94vw;text-align:center;backdrop-filter:blur(4px);
+  pointer-events:none;}
+.actbar{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;pointer-events:auto;}
+
+/* ====== 3Dカード ====== */
+.card{
+  width:var(--cw);height:var(--ch);position:relative;flex:0 0 auto;
+  transform-style:preserve-3d;transition:transform .28s cubic-bezier(.2,.8,.3,1), margin .2s;
+  cursor:default;
+}
+.card .cinner{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .42s cubic-bezier(.4,.1,.2,1);}
+.card.down .cinner{transform:rotateY(180deg);}
+.cface{position:absolute;inset:0;border-radius:var(--rad);backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  box-shadow:0 6px 12px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.5) inset;overflow:hidden;}
+.cfront{background:linear-gradient(150deg,#ffffff,#f1f4f8);}
+.cfront::before{content:"";position:absolute;inset:0;border-radius:var(--rad);
+  border:1px solid rgba(0,0,0,.08);box-shadow:inset 0 0 0 2px rgba(255,255,255,.7);pointer-events:none;}
+.cfront::after{content:"";position:absolute;inset:0;border-radius:var(--rad);pointer-events:none;
+  background:linear-gradient(125deg,rgba(255,255,255,.6) 0 18%,rgba(255,255,255,0) 38%);}
+.cback{transform:rotateY(180deg);
+  background:
+    repeating-linear-gradient(45deg,#b41f2c 0 7px,#9b1822 7px 14px),
+    repeating-linear-gradient(-45deg,rgba(255,255,255,.10) 0 7px,rgba(0,0,0,0) 7px 14px);
+  background-color:#a31c27;}
+.cback::before{content:"";position:absolute;inset:5px;border-radius:6px;border:2px solid rgba(255,255,255,.55);
+  box-shadow:inset 0 0 12px rgba(0,0,0,.35);}
+.cback::after{content:"♠";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:calc(var(--cw)*.5);color:rgba(255,255,255,.85);text-shadow:0 1px 2px rgba(0,0,0,.4);}
+/* カードの厚み（縁） */
+.card::after{content:"";position:absolute;left:1px;right:1px;bottom:-3px;height:6px;border-radius:0 0 var(--rad) var(--rad);
+  background:linear-gradient(#cfd6de,#9aa6b2);transform:translateZ(-3px);filter:brightness(.9);z-index:-1;}
+
+/* コーナー数字＆中央ピップ */
+.cidx{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.92;font-weight:900;
+  font-size:calc(var(--cw)*.26);}
+.cidx.tl{top:4px;left:5px;} .cidx.br{bottom:4px;right:5px;transform:rotate(180deg);}
+.cidx .cs{font-size:calc(var(--cw)*.22);margin-top:0px;}
+.pips{position:absolute;inset:calc(var(--cw)*.18) calc(var(--cw)*.14);}
+.pip{position:absolute;transform:translate(-50%,-50%);font-size:calc(var(--cw)*.30);line-height:1;}
+.pip.f{transform:translate(-50%,-50%) rotate(180deg);}
+.facebox{position:absolute;inset:calc(var(--cw)*.20) calc(var(--cw)*.13);border-radius:6px;
+  background:linear-gradient(160deg,#fff7e3,#ffe9b8);border:1.5px solid var(--gold2);
+  display:flex;align-items:center;justify-content:center;font-size:calc(var(--cw)*.62);
+  box-shadow:inset 0 0 10px rgba(184,146,47,.35);}
+.s-red{color:var(--red);} .s-blk{color:var(--black);}
+.jokerface{position:absolute;inset:6%;display:flex;align-items:center;justify-content:center;
+  font-size:calc(var(--cw)*.62);background:linear-gradient(160deg,#fff,#eef);border-radius:6px;
+  border:1.5px solid #b9c2cf;color:#7a4ddb;font-weight:900;}
+
+/* カード状態 */
+.card.sel{transform:translateY(-22px) translateZ(40px);}
+.card.sel .cface{box-shadow:0 14px 22px rgba(0,0,0,.5),0 0 0 3px var(--gold);}
+.card.playable .cface{box-shadow:0 6px 12px rgba(0,0,0,.45),0 0 0 2px #5be39a;}
+.card.playable{cursor:pointer;}
+.card.dim{filter:brightness(.62) saturate(.7);}
+.card.tap{cursor:pointer;}
+.card.flash{animation:flash .5s;}
+@keyframes flash{0%{filter:brightness(2)}100%{filter:brightness(1)}}
+.dealing{animation:dealin .4s cubic-bezier(.2,.8,.3,1) both;}
+@keyframes dealin{from{transform:translateY(-160px) rotateZ(-30deg) scale(.6);opacity:0}to{opacity:1}}
+
+/* 手札の扇/重なり */
+.hand{display:flex;justify-content:center;align-items:flex-end;flex-wrap:nowrap;}
+.hand.fan .card{margin-left:calc(var(--cw) * -0.46);}
+.hand.fan .card:first-child{margin-left:0;}
+.pile{position:relative;}
+.pile .card{position:absolute;top:0;left:0;}
+
+/* ヴェール（ローカル交代） */
+#veil{position:absolute;inset:0;z-index:60;display:none;flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(2,12,7,.94);text-align:center;gap:18px;cursor:pointer;}
+#veil.on{display:flex;}
+#veil .vw{font-size:54px;} #veil .vt{font-size:22px;font-weight:900;}
+#veil .vh{font-size:14px;color:#9fc3ae;}
+
+/* モーダル */
+#modal{position:absolute;inset:0;z-index:70;display:none;align-items:center;justify-content:center;padding:22px;
+  background:rgba(0,0,0,.6);backdrop-filter:blur(5px);}
+#modal.on{display:flex;}
+.sheet{width:min(420px,94vw);max-height:84vh;overflow-y:auto;background:linear-gradient(180deg,#0e2a1b,#0a2014);
+  border:1.5px solid rgba(233,198,106,.4);border-radius:22px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+.sheet h2{margin:0 0 10px;font-size:22px;font-weight:900;}
+.sheet h3{margin:14px 0 4px;font-size:14px;color:var(--gold);}
+.sheet p,.sheet li{font-size:14px;line-height:1.7;color:#dcebe0;color:#d7ebe0;}
+.sheet ul{margin:4px 0;padding-left:20px;}
+.sheet .row{display:flex;gap:10px;margin-top:16px;}
+.bigresult{text-align:center;}
+.bigresult .em{font-size:64px;}
+.bigresult .wl{font-size:30px;font-weight:900;margin:6px 0;}
+
+/* トースト */
+#toast{position:absolute;left:50%;bottom:calc(var(--safe-b) + 130px);transform:translateX(-50%) translateY(20px);
+  z-index:80;background:rgba(0,0,0,.82);color:#fff;padding:11px 20px;border-radius:30px;font-weight:800;font-size:14px;
+  opacity:0;transition:.3s;pointer-events:none;max-width:90vw;text-align:center;border:1px solid rgba(255,255,255,.18);}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+
+.spin{width:34px;height:34px;border:3px solid rgba(255,255,255,.25);border-top-color:var(--gold);border-radius:50%;
+  animation:sp 1s linear infinite;margin:0 auto;}
+@keyframes sp{to{transform:rotate(360deg)}}
+.center{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.muted{color:#9fc3ae;font-size:13px;}
+.pad{padding:18px;}
+.gap{display:flex;flex-direction:column;gap:12px;}
+.rowg{display:flex;gap:10px;}
+.rowg>*{flex:1;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ HOME ============ -->
+  <section class="screen on" id="home">
+    <div class="felt"></div>
+    <h1 class="brand">トランプ3D<small>3D CARD CASINO</small></h1>
+    <div class="suitline"><span class="b">♠</span><span class="r">♥</span><span class="r">♦</span><span class="b">♣</span></div>
+    <div class="home-card">
+      <h2>あそびかたをえらぶ</h2>
+      <button class="btn" onclick="UI.goOnlineMenu()">📱 オンライン対戦（べつべつのスマホ）</button>
+      <button class="btn sec" onclick="UI.startLocal()">🤝 ローカル（この画面でかわるがわる）</button>
+      <div class="hint">オンラインは、片方が「へやをつくる」→ 4桁コードを相手に教える → 相手が「へやにはいる」でつながります。</div>
+    </div>
+  </section>
+
+  <!-- ============ ONLINE MENU ============ -->
+  <section class="screen" id="onmenu">
+    <div class="felt"></div>
+    <div class="home-card" style="margin:auto;">
+      <h2>オンライン対戦</h2>
+      <div class="field"><label>あなたのなまえ</label>
+        <input class="input" id="nameIn" maxlength="8" placeholder="なまえ"></div>
+      <button class="btn" onclick="Net.createRoom()">＋ へやをつくる</button>
+      <div class="rowg" style="align-items:flex-end;">
+        <div class="field" style="flex:1;"><label>へやコード</label>
+          <input class="input codebox" id="codeIn" inputmode="numeric" maxlength="4" placeholder="0000"></div>
+      </div>
+      <button class="btn sec" onclick="Net.joinRoom()">→ へやにはいる</button>
+      <button class="btn gh" onclick="UI.show('home')">もどる</button>
+      <div class="hint" id="onmenuHint"></div>
+    </div>
+  </section>
+
+  <!-- ============ LOBBY ============ -->
+  <section class="screen" id="lobby">
+    <div class="felt"></div>
+    <div class="home-card" style="margin:auto;">
+      <h2 style="text-align:center;">あいことば（へやコード）</h2>
+      <div class="room-code" id="lobbyCode">----</div>
+      <div class="hint" style="text-align:center;">この4桁を相手に伝えてね</div>
+      <div class="seats" id="lobbySeats"></div>
+      <button class="btn" id="lobbyGo" onclick="UI.toSelect()" disabled>ゲームをえらぶ →</button>
+      <button class="btn gh" onclick="Net.leave()">へやをでる</button>
+      <div class="hint" id="lobbyHint" style="text-align:center;"></div>
+    </div>
+  </section>
+
+  <!-- ============ SELECT ============ -->
+  <section class="screen" id="select">
+    <div class="felt"></div>
+    <div class="selhead">
+      <button class="iconbtn" onclick="UI.backFromSelect()">‹</button>
+      <h2>ゲームをえらぶ</h2>
+      <button class="iconbtn" id="selMode" title="モード">🤝</button>
+    </div>
+    <div class="glist" id="glist"></div>
+  </section>
+
+  <!-- ============ TABLE ============ -->
+  <section class="screen" id="table">
+    <div class="scene"><div class="board"><div class="felt"></div><div class="rail"></div><div id="zone"></div></div></div>
+    <div class="tbar">
+      <button class="iconbtn" onclick="UI.quitGame()">‹</button>
+      <div class="ttl" id="gTtl"></div>
+      <button class="iconbtn" onclick="Game.showRules()">？</button>
+      <button class="iconbtn" id="muteBtn" onclick="Snd.toggle()">🔊</button>
+    </div>
+    <div class="statusbar">
+      <div class="statustxt" id="statusTxt" style="display:none"></div>
+      <div class="actbar" id="actBar"></div>
+    </div>
+  </section>
+
+  <!-- VEIL / MODAL / TOAST -->
+  <div id="veil" onclick="UI.dropVeil()"><div class="vw">🃏</div><div class="vt" id="veilName"></div><div class="vh">タップして自分のターンをはじめる</div></div>
+  <div id="modal"><div class="sheet" id="sheet"></div></div>
+  <div id="toast"></div>
+</div>
+
+<script>
+/* ============================================================
+   トランプ3D — 10ゲーム / 3D / iPhone間リアルタイム同期
+   構造はじんせいすごろくと同じ Supabase CAS 同期を踏襲。
+   ============================================================ */
+const QS = new URLSearchParams(location.search);
+const SB_URL = 'https://okbjqtdirrathscctyvx.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+const SBH = {apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json'};
+const POLL_MS = Math.max(1500, +(QS.get('poll')||0) || 5000);
+const SESSION_KEY = 'trumpSession';
+const $ = id => document.getElementById(id);
+
+/* ---------- グローバル状態 ---------- */
+let MODE = 'local';                 // 'local' | 'online'
+let room = null;                    // {code, state}
+let mySeat = 0, myName = 'プレイヤー', myCid = '';
+let sbClient = null, channel = null;
+let presentSeats = new Set();
+let processing = false; const inbox = [];
+let localPending = null;            // ローカルで次に手番を渡す相手（ヴェール用）
+
+function uid(){ return Math.random().toString(36).slice(2,10); }
+myCid = (()=>{ try{ let c=localStorage.getItem('trumpCid'); if(!c){c=uid();localStorage.setItem('trumpCid',c);} return c; }catch(e){ return uid(); } })();
+
+/* ============================================================
+   Supabase REST + Realtime（CAS）
+   ============================================================ */
+class TableMissing extends Error {}
+async function sbGet(code){
+  const r = await fetch(`${SB_URL}/rest/v1/cards_rooms?code=eq.${encodeURIComponent(code)}&select=state`, {headers:SBH});
+  if(r.status===404) throw new TableMissing();
+  if(!r.ok) throw new Error('get '+r.status);
+  const j = await r.json(); return j.length ? j[0].state : null;
+}
+async function sbInsert(code, state){
+  const r = await fetch(`${SB_URL}/rest/v1/cards_rooms`, {method:'POST',
+    headers:{...SBH, Prefer:'return=minimal'}, body:JSON.stringify({code, state})});
+  if(r.status===404) throw new TableMissing();
+  if(r.status===409) return false;
+  if(!r.ok) throw new Error('insert '+r.status);
+  return true;
+}
+async function sbCas(code, expectV, state){
+  const r = await fetch(`${SB_URL}/rest/v1/cards_rooms?code=eq.${encodeURIComponent(code)}&state->>v=eq.${expectV}`,
+    {method:'PATCH', headers:{...SBH, Prefer:'return=representation'},
+     body:JSON.stringify({state, updated_at:new Date().toISOString()})});
+  if(r.status===404) throw new TableMissing();
+  if(!r.ok) throw new Error('patch '+r.status);
+  const j = await r.json().catch(()=>[]);
+  return Array.isArray(j) && j.length>0;
+}
+
+const Net = {
+  async createRoom(){
+    myName = ($('nameIn').value||'').trim() || 'ホスト';
+    $('onmenuHint').textContent = 'へやを作成中…';
+    let code, ok=false;
+    try{
+      for(let t=0;t<8 && !ok;t++){
+        code = String(Math.floor(1000+Math.random()*9000));
+        const state = Net.freshState();
+        state.players[0] = {name:myName, cid:myCid, connected:true};
+        state.host = myCid;
+        ok = await sbInsert(code, state);
+        if(ok){ room={code, state}; mySeat=0; MODE='online'; }
+      }
+      if(!ok){ $('onmenuHint').textContent='混みあっています。もう一度お試しを。'; return; }
+      saveSession(); Net.connect(code); UI.enterLobby();
+    }catch(e){ Net.err(e); }
+  },
+  async joinRoom(){
+    myName = ($('nameIn').value||'').trim() || 'ゲスト';
+    const code = ($('codeIn').value||'').trim();
+    if(!/^\d{4}$/.test(code)){ $('onmenuHint').textContent='4桁のコードを入れてね'; return; }
+    $('onmenuHint').textContent = 'へやに参加中…';
+    try{
+      let s = await sbGet(code);
+      if(!s){ $('onmenuHint').textContent='そのへやは見つからないみたい'; return; }
+      room = {code, state:s}; MODE='online';
+      // 空いている席を探す（自分が既にいれば再入室）
+      let seat = s.players.findIndex(p=>p && p.cid===myCid);
+      if(seat<0) seat = s.players.findIndex(p=>!p || !p.cid);
+      if(seat<0){ $('onmenuHint').textContent='このへやは満員だよ'; return; }
+      mySeat = seat;
+      const next = await casMutate(st=>{ st.players[seat] = {name:myName, cid:myCid, connected:true}; });
+      if(!next){ $('onmenuHint').textContent='うまく入れなかった。もう一度。'; return; }
+      saveSession(); Net.connect(code); UI.enterLobby();
+    }catch(e){ Net.err(e); }
+  },
+  freshState(){
+    return {v:0, phase:'lobby', game:null, players:[null,null], host:null, g:null, msg:'', rematch:[false,false]};
+  },
+  connect(code){
+    try{
+      if(!window.supabase) return;
+      sbClient = sbClient || window.supabase.createClient(SB_URL, SB_KEY);
+      channel = sbClient.channel('cards-'+code, {config:{presence:{key:myCid}}})
+        .on('postgres_changes', {event:'UPDATE', schema:'public', table:'cards_rooms', filter:'code=eq.'+code},
+          p => { if(p.new && p.new.state) onRemote(p.new.state); })
+        .on('presence', {event:'sync'}, ()=>{
+          presentSeats = new Set();
+          const st = channel.presenceState();
+          Object.values(st).forEach(arr=>arr.forEach(m=>{ if(typeof m.seat==='number') presentSeats.add(m.seat); }));
+          if(room && room.state.phase==='lobby') UI.renderLobby();
+          else render();
+        })
+        .subscribe(status=>{ if(status==='SUBSCRIBED'){ try{ channel.track({seat:mySeat}); }catch(e){} } });
+    }catch(e){}
+  },
+  async leave(){
+    try{ if(room) await casMutate(st=>{ if(st.players[mySeat] && st.players[mySeat].cid===myCid) st.players[mySeat]=null; }); }catch(e){}
+    Net.teardown(); UI.show('home');
+  },
+  teardown(){ try{ channel && sbClient.removeChannel(channel); }catch(e){} channel=null; room=null; clearSession(); MODE='local'; },
+  err(e){ console.warn(e); $('onmenuHint').textContent = (e instanceof TableMissing)
+      ? 'サーバー初期化が必要かも（cards_rooms テーブル）。' : 'つうしんエラー。電波を確認してね。'; }
+};
+
+/* CAS 楽観ロック：fn(state) を適用しバージョンを進めて保存 */
+async function casMutate(mut){
+  for(let i=0;i<7;i++){
+    const cur = room.state;
+    const next = JSON.parse(JSON.stringify(cur));
+    if(mut(next)===false) return null;
+    next.v = cur.v + 1;
+    if(await sbCas(room.code, cur.v, next)){ room.state = next; return next; }
+    const fresh = await sbGet(room.code);
+    if(fresh) room.state = fresh;
+  }
+  throw new Error('conflict');
+}
+
+function onRemote(s){
+  if(!room || !s || typeof s.v!=='number') return;
+  const maxv = Math.max(room.state.v, ...inbox.map(x=>x.v), 0);
+  if(s.v<=maxv) return;
+  inbox.push(s); pump();
+}
+async function pump(){
+  if(processing) return; processing=true;
+  try{
+    while(inbox.length){
+      const s = inbox.shift();
+      if(!room || s.v<=room.state.v) continue;
+      room.state = s;
+      applyState();
+    }
+  } finally { processing=false; }
+}
+setInterval(async ()=>{
+  if(MODE!=='online'||!room||processing) return;
+  try{ const f = await sbGet(room.code); if(f) onRemote(f); }catch(e){}
+}, POLL_MS);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && MODE==='online' && room){
+    sbGet(room.code).then(f=>f&&onRemote(f)).catch(()=>{});
+  }
+});
+
+/* リモート状態を画面へ反映 */
+function applyState(){
+  const s = room.state;
+  if(s.phase==='lobby'){ UI.enterLobby(); }
+  else if(s.phase==='play'){
+    if(UI.cur!=='table' || Game.id!==s.game){ UI.openTable(s.game); }
+    render();
+  }
+}
+
+/* セッション保存（再読込で復帰） */
+function saveSession(){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify({code:room.code, seat:mySeat, name:myName, ts:Date.now()})); }catch(e){} }
+function loadSession(){ try{ const s=JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); if(s && Date.now()-s.ts<6*3600*1000) return s; }catch(e){} return null; }
+function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+
+/* ============================================================
+   カード基盤
+   ============================================================ */
+const SUITS=['♠','♥','♦','♣'];
+const RANKS=['','A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const isRed = s => s===1||s===2;
+function buildDeck(jokers=0){ const d=[]; for(let s=0;s<4;s++)for(let r=1;r<=13;r++)d.push({s,r}); for(let i=0;i<jokers;i++)d.push({j:1,id:i}); return d; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function cardKey(c){ return c.j?('JK'+c.id):(c.s+'_'+c.r); }
+function sameCard(a,b){ return a&&b&&cardKey(a)===cardKey(b); }
+
+const PIPS = {
+ 1:[[50,50,0]],
+ 2:[[50,17,0],[50,83,1]],
+ 3:[[50,17,0],[50,50,0],[50,83,1]],
+ 4:[[30,17,0],[70,17,0],[30,83,1],[70,83,1]],
+ 5:[[30,17,0],[70,17,0],[50,50,0],[30,83,1],[70,83,1]],
+ 6:[[30,17,0],[70,17,0],[30,50,0],[70,50,0],[30,83,1],[70,83,1]],
+ 7:[[30,17,0],[70,17,0],[50,33,0],[30,50,0],[70,50,0],[30,83,1],[70,83,1]],
+ 8:[[30,17,0],[70,17,0],[50,33,0],[30,50,0],[70,50,0],[50,67,1],[30,83,1],[70,83,1]],
+ 9:[[30,15,0],[70,15,0],[30,38,0],[70,38,0],[50,50,0],[30,62,1],[70,62,1],[30,85,1],[70,85,1]],
+ 10:[[30,15,0],[70,15,0],[50,28,0],[30,40,0],[70,40,0],[30,60,1],[70,60,1],[50,72,1],[30,85,1],[70,85,1]]
+};
+const FACE_EMO = {11:'🤵',12:'👸',13:'🤴'};
+
+/* カードDOMを生成。opts: {sel, dim, playable, tap, onClick} */
+function cardEl(c, faceUp=true, opts={}){
+  const w = document.createElement('div');
+  w.className = 'card' + (faceUp?'':' down')
+    + (opts.sel?' sel':'') + (opts.dim?' dim':'') + (opts.playable?' playable':'') + (opts.tap?' tap':'') + (opts.cls?(' '+opts.cls):'');
+  const inner = document.createElement('div'); inner.className='cinner';
+  const front = document.createElement('div'); front.className='cface cfront';
+  const back  = document.createElement('div'); back.className='cface cback';
+  if(c) buildFront(front, c);
+  inner.append(front, back); w.append(inner);
+  if(opts.onClick) w.addEventListener('click', opts.onClick);
+  if(c) w.dataset.k = cardKey(c);
+  return w;
+}
+function buildFront(el, c){
+  if(c.j){
+    el.innerHTML = '<div class="cidx tl" style="color:#7a4ddb">JOKER</div>'
+      + '<div class="jokerface">🃏</div>'
+      + '<div class="cidx br" style="color:#7a4ddb">JOKER</div>';
+    el.querySelectorAll('.cidx').forEach(e=>e.style.fontSize='calc(var(--cw)*.16)');
+    return;
+  }
+  const col = isRed(c.s)?'s-red':'s-blk';
+  const su = SUITS[c.s], rk = RANKS[c.r];
+  let mid='';
+  if(c.r>=11){
+    mid = `<div class="facebox ${col}">${FACE_EMO[c.r]}</div>`;
+  } else {
+    const pts = PIPS[c.r]||[];
+    mid = '<div class="pips">' + pts.map(p=>`<span class="pip ${p[2]?'f':''}" style="left:${p[0]}%;top:${p[1]}%">${su}</span>`).join('') + '</div>';
+  }
+  el.innerHTML =
+    `<div class="cidx tl ${col}">${rk}<span class="cs">${su}</span></div>`
+    + `<div class="cidx br ${col}">${rk}<span class="cs">${su}</span></div>`
+    + `<div class="${col}">${mid}</div>`;
+}
+
+/* ============================================================
+   サウンド（軽量・自動生成）
+   ============================================================ */
+const Snd = {
+  ctx:null, muted:false,
+  init(){ if(!this.ctx){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(this.ctx&&this.ctx.state==='suspended') this.ctx.resume(); },
+  beep(f,d=0.07,type='sine',vol=0.16,when=0){ if(!this.ctx||this.muted) return; const t=this.ctx.currentTime+when;
+    const o=this.ctx.createOscillator(),g=this.ctx.createGain(); o.type=type;o.frequency.value=f;
+    o.connect(g);g.connect(this.ctx.destination); g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    o.start(t);o.stop(t+d+0.02); },
+  deal(){ this.beep(520,0.05,'triangle',0.10); },
+  play(){ this.beep(380,0.07,'square',0.12); this.beep(560,0.06,'square',0.08,0.04); },
+  flip(){ this.beep(300,0.05,'sawtooth',0.08); },
+  good(){ [523,659,784,1047].forEach((f,i)=>this.beep(f,0.12,'triangle',0.14,i*0.08)); },
+  bad(){ this.beep(200,0.18,'sawtooth',0.14); this.beep(150,0.22,'sawtooth',0.12,0.1); },
+  win(){ [523,659,784,1047,1319].forEach((f,i)=>this.beep(f,0.16,'triangle',0.16,i*0.1)); },
+  toggle(){ this.muted=!this.muted; $('muteBtn').textContent=this.muted?'🔈':'🔊'; if(!this.muted) this.init(); }
+};
+document.addEventListener('touchstart', ()=>Snd.init(), {once:true});
+document.addEventListener('click', ()=>Snd.init(), {once:true});
+
+/* ============================================================
+   小物 UI
+   ============================================================ */
+function toast(msg, ms=1700){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'), ms); }
+function openModal(html){ $('sheet').innerHTML=html; $('modal').classList.add('on'); }
+function closeModal(){ $('modal').classList.remove('on'); }
+
+/* ============================================================
+   画面遷移・ロビー・選択
+   ============================================================ */
+const UI = {
+  cur:'home',
+  show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $(id).classList.add('on'); this.cur=id; },
+  goOnlineMenu(){ Snd.init(); const ses=loadSession();
+    if(ses){ $('nameIn').value=ses.name||''; } this.show('onmenu'); $('onmenuHint').textContent=''; },
+  startLocal(){ Snd.init(); MODE='local'; room={code:'LOCAL', state:Net.freshState()};
+    room.state.players=[{name:'プレイヤー1',cid:'L0',connected:true},{name:'プレイヤー2',cid:'L1',connected:true}];
+    mySeat=0; this.toSelect(); },
+  enterLobby(){ this.show('lobby'); this.renderLobby();
+    if(room.state.phase==='play'){ this.openTable(room.state.game); render(); } },
+  renderLobby(){
+    if(!room) return;
+    $('lobbyCode').textContent = room.code;
+    const ps = room.state.players;
+    const live = seat => MODE==='online' ? (presentSeats.has(seat) || (ps[seat]&&ps[seat].connected)) : true;
+    $('lobbySeats').innerHTML = [0,1].map(i=>{
+      const p=ps[i]; const on = p && live(i);
+      return `<div class="seat ${on?'live':''}"><div class="who">${i===0?'🧑':'🧑‍🤝‍🧑'}</div>
+        <div class="nm">${p?esc(p.name):'まち中…'}</div>
+        <div class="st"><span class="dot ${on?'on':''}"></span>${p?(on?'オンライン':'オフライン'):'あいて待ち'}</div></div>`;
+    }).join('');
+    const ready = ps[0]&&ps[1];
+    $('lobbyGo').disabled = !ready;
+    $('lobbyHint').textContent = ready ? 'ふたりそろった！どちらでも選べます' : 'もうひとりが入るのを待っています…';
+  },
+  toSelect(){ this.show('select'); $('selMode').textContent = MODE==='online'?'📱':'🤝'; this.renderSelect(); },
+  backFromSelect(){ if(MODE==='online') this.enterLobby(); else this.show('home'); },
+  renderSelect(){
+    const list=$('glist'); list.innerHTML='';
+    GAME_ORDER.forEach(id=>{
+      const g=GAMES[id]; if(!g) return;
+      const t=document.createElement('div'); t.className='gtile';
+      t.innerHTML = `<div class="em">${g.emoji}</div><div class="gname">${g.name}</div>
+        <div class="gdesc">${g.desc}</div>
+        <div class="tags"><span class="tag len${g.len}">${['短い','ふつう','長い'][g.len]}</span>
+        <span class="tag tm">⏱ ${g.time}</span></div>`;
+      t.onclick = ()=>Game.choose(id);
+      list.appendChild(t);
+    });
+  },
+  openTable(id){ Game.id=id; this.show('table'); $('gTtl').textContent = GAMES[id].emoji+' '+GAMES[id].name; },
+  quitGame(){
+    if(MODE==='online'){ casMutate(st=>{ st.phase='lobby'; st.game=null; st.g=null; st.rematch=[false,false]; }).then(()=>this.enterLobby()); }
+    else this.toSelect();
+  },
+  /* ローカル：手番交代のヴェール */
+  showVeil(seat){ const nm = room.state.players[seat]?room.state.players[seat].name:('プレイヤー'+(seat+1));
+    $('veilName').textContent = nm+' のターン'; $('veil').classList.add('on'); localPending=seat; },
+  dropVeil(){ $('veil').classList.remove('on'); if(localPending!=null){ mySeat=localPending; localPending=null; render(); } }
+};
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ============================================================
+   ゲーム共通ドライバ
+   ============================================================ */
+const Game = {
+  id:null,
+  defOf(){ return GAMES[this.id]; },
+  /* タイルからゲーム選択 → セットアップして play へ */
+  choose(id){
+    Snd.deal();
+    const def = GAMES[id];
+    if(MODE==='online'){
+      const ps=room.state.players; if(!(ps[0]&&ps[1])){ toast('ふたりそろってから！'); return; }
+      casMutate(st=>{ st.game=id; st.phase='play'; st.rematch=[false,false]; st.g=def.setup(st.players); }).then(()=>{ this.id=id; UI.openTable(id); render(); });
+    } else {
+      this.id=id; room.state.game=id; room.state.phase='play'; room.state.rematch=[false,false];
+      room.state.g = def.setup(room.state.players);
+      UI.openTable(id);
+      // ローカルは最初の手番者を表示
+      const ft = room.state.g.turn; if(ft!=null && GAMES[id].hidden){ mySeat=ft; render(); UI.showVeil(ft); }
+      else { mySeat=0; render(); }
+    }
+  },
+  /* 状態変更：オンラインはCAS、ローカルは直接 */
+  async act(fn, opts={}){
+    if(MODE==='online'){
+      try{ const n = await casMutate(st=>{ return fn(st.g, mySeat, st); }); if(n) render(); }
+      catch(e){ toast('もう一度ためしてね'); render(); }
+    } else {
+      const before = room.state.g.turn;
+      const r = fn(room.state.g, mySeat, room.state);
+      if(r===false) return;
+      room.state.v++;
+      const after = room.state.g.turn;
+      render();
+      // ローカル：手番が相手に移り、隠し情報ゲームならヴェール
+      if(this.defOf().hidden && after!=null && after!==before && room.state.phase==='play'){
+        setTimeout(()=>UI.showVeil(after), opts.veilDelay||550);
+      }
+    }
+  },
+  showRules(){ const d=this.defOf(); openModal(
+    `<h2>${d.emoji} ${d.name}</h2><p class="muted">⏱ ${d.time}・${['短い','ふつう','長い'][d.len]}</p>
+     ${d.rules}<div class="row"><button class="btn" style="flex:1" onclick="closeModal()">とじる</button></div>`); },
+  /* 勝敗表示 */
+  result(seatWinner, opts={}){
+    const me = (MODE==='online')?mySeat:(opts.localPerspective!=null?opts.localPerspective:0);
+    const draw = seatWinner==null;
+    const iWon = !draw && seatWinner===me;
+    Snd[draw?'good':(iWon?'win':'bad')] && (draw?Snd.good():(iWon?Snd.win():Snd.bad()));
+    const wname = draw?'':esc(room.state.players[seatWinner]?room.state.players[seatWinner].name:('プレイヤー'+(seatWinner+1)));
+    const head = draw ? {em:'🤝', wl:'ひきわけ！'} :
+      (MODE==='online' ? (iWon?{em:'🏆',wl:'あなたの勝ち！'}:{em:'😿',wl:'あいての勝ち'})
+                       : {em:'🏆', wl:wname+' の勝ち！'});
+    openModal(
+      `<div class="bigresult"><div class="em">${head.em}</div><div class="wl">${head.wl}</div>
+       ${opts.detail?`<p>${opts.detail}</p>`:''}</div>
+       <div class="row"><button class="btn" style="flex:1" onclick="Game.rematch()">もう一度</button>
+       <button class="btn gh" style="flex:1" onclick="closeModal();UI.quitGame()">ゲーム選択へ</button></div>`);
+  },
+  rematch(){ closeModal(); this.choose(this.id); }
+};
+
+/* メインの描画ディスパッチ */
+function render(){
+  if(!room) return;
+  const s = room.state;
+  if(s.phase==='lobby'){ UI.renderLobby(); return; }
+  const def = GAMES[s.game]; if(!def) return;
+  $('gTtl').textContent = def.emoji+' '+def.name;
+  // statusbar/actbar はゲームが setStatus/setActions で更新
+  def.view(s.g, viewSeat(), s);
+}
+/* 「自分」とみなす席（オンライン=固定 / ローカル=現手番） */
+function viewSeat(){
+  if(MODE==='online') return mySeat;
+  const g = room.state.g;
+  return (g && g.turn!=null) ? g.turn : mySeat;
+}
+function oppSeat(){ return 1 - viewSeat(); }
+/* 操作可能か（オンラインは自分の手番のみ） */
+function myTurn(g){ if(MODE==='local') return true; return g.turn===mySeat; }
+/* 実際に操作している席 */
+function actorSeat(g){ return MODE==='local' ? (g.turn==null?0:g.turn) : mySeat; }
+
+/* ステータス・操作バー（ゲームから呼ぶ） */
+function setStatus(txt){ const e=$('statusTxt'); if(txt){ e.style.display='block'; e.innerHTML=txt; } else e.style.display='none'; }
+function setActions(btns){  // btns: [{label, on, cls, dis}]
+  const bar=$('actBar'); bar.innerHTML='';
+  (btns||[]).forEach(b=>{ const el=document.createElement('button'); el.className='btn sm '+(b.cls||''); el.textContent=b.label; if(b.dis) el.disabled=true; el.onclick=b.on; bar.appendChild(el); });
+}
+/* ゾーン（相手/場/自分）を用意して返す */
+function lanes(){
+  const z=$('zone'); z.innerHTML='';
+  const opp=document.createElement('div'); opp.className='lane opp';
+  const mid=document.createElement('div'); mid.className='lane mid';
+  const me =document.createElement('div'); me.className='lane me';
+  z.append(opp,mid,me);
+  return {opp,mid,me};
+}
+/* 相手・自分のネームプレート */
+function nameplates(myTurn){
+  const z=$('zone');
+  const opp=room.state.players[oppSeat()], meP=room.state.players[viewSeat()];
+  const mk=(p,cls,extra,turn)=>{ const d=document.createElement('div'); d.className='nameplate '+cls+(turn?' turn':'');
+    d.innerHTML = (cls==='np-opp'?'🧑‍🤝‍🧑 ':'🧑 ')+esc(p?p.name:'？')+(extra||''); z.appendChild(d); return d; };
+  mk(opp,'np-opp', _oppExtra, myTurn===false);
+  mk(meP,'np-me', _meExtra, myTurn===true);
+}
+let _oppExtra='', _meExtra='';
+function setPlateExtra(meTxt, oppTxt){ _meExtra = meTxt?(' <span class="countpill">'+meTxt+'</span>'):''; _oppExtra = oppTxt?(' <span class="countpill">'+oppTxt+'</span>'):''; }
+
+/* ============================================================
+   起動
+   ============================================================ */
+window.addEventListener('load', async ()=>{
+  fitCards();
+  const ses = loadSession();
+  if(ses && ses.code){
+    try{
+      const s = await sbGet(ses.code);
+      if(s){ room={code:ses.code, state:s}; mySeat=ses.seat; myName=ses.name; MODE='online';
+        Net.connect(ses.code);
+        if(s.phase==='play'){ UI.openTable(s.game); render(); }
+        else UI.enterLobby();
+        return;
+      }
+    }catch(e){}
+    clearSession();
+  }
+  UI.show('home');
+});
+function fitCards(){
+  // 画面幅に応じてカード幅を最適化
+  const w = Math.min(window.innerWidth, 900);
+  let cw = Math.round(w/7.2);
+  cw = Math.max(46, Math.min(82, cw));
+  document.documentElement.style.setProperty('--cw', cw+'px');
+}
+window.addEventListener('resize', fitCards);
+window.addEventListener('orientationchange', ()=>setTimeout(fitCards,300));
+
+/* ============================================================
+   ゲーム登録
+   ============================================================ */
+const GAMES = {};
+const GAME_ORDER = ['highlow','war','speed','memory','oldmaid','sevens','doubt','pigtail','daifugo','ginrummy'];
+
+/* ---------- ゲーム共通ヘルパ ---------- */
+function sortHand(cards){
+  return cards.slice().sort((a,b)=>{
+    if(a.j&&b.j) return a.id-b.id; if(a.j) return 1; if(b.j) return -1;
+    if(a.s!==b.s) return a.s-b.s; return a.r-b.r;
+  });
+}
+function rootCW(){ return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw'))||52; }
+/* 枚数に応じてカードの重なり量を決め、画面幅に収める */
+function fanLayout(h){
+  const cards=[...h.children]; const n=cards.length; if(!n) return;
+  const cw=rootCW(); const avail=Math.min(window.innerWidth*0.93, 880);
+  let step = n===1 ? cw : Math.min(Math.max((avail-cw)/(n-1), cw*0.14), cw*0.64);
+  cards.forEach((el,i)=>{ el.style.marginLeft = i===0?'0':((step-cw).toFixed(1)+'px'); });
+}
+function handFan(cards, opts={}){
+  const h=document.createElement('div'); h.className='hand fan';
+  cards.forEach((c,idx)=>{
+    const el=cardEl(c, opts.faceUp===false?false:true, {
+      playable: opts.playable?opts.playable(c,idx):false,
+      sel: opts.selKeys?opts.selKeys.has(cardKey(c)):false,
+      dim: opts.dim?opts.dim(c,idx):false,
+      onClick: opts.onClick?(()=>opts.onClick(c,idx)):null
+    });
+    h.appendChild(el);
+  });
+  fanLayout(h); return h;
+}
+function faceDownFan(n, onTap){
+  const h=document.createElement('div'); h.className='hand fan';
+  for(let i=0;i<n;i++){ const el=cardEl(null,false,{tap:!!onTap, onClick:onTap?(idx=>()=>onTap(idx))(i):null}); h.appendChild(el); }
+  fanLayout(h); return h;
+}
+function stackEl(n, faceUp, top){
+  const w=document.createElement('div'); w.className='pile'; w.style.width='var(--cw)'; w.style.height='var(--ch)';
+  const show=Math.min(n,4);
+  for(let i=0;i<show;i++){ const c=cardEl((faceUp&&i===show-1)?top:null, !!faceUp&&i===show-1, {}); c.style.transform=`translate(${i*1.5}px,${-i*1.5}px)`; w.appendChild(c); }
+  if(n===0){ w.innerHTML=''; const e=document.createElement('div'); e.style.cssText='width:var(--cw);height:var(--ch);border:2px dashed rgba(255,255,255,.25);border-radius:var(--rad);'; w.appendChild(e); }
+  return w;
+}
+function bigCard(c, faceUp=true){ const el=cardEl(c,faceUp,{}); el.style.transform='scale(1.15)'; return el; }
+function deal(deck, n){ return deck.splice(0,n); }
+const rankCmp = (a,b)=> a-b;   // A=1 … K=13
+
+/*__GAMES__*/
+
+/* ============================================================
+   1. ハイ&ロー（超短）
+   ============================================================ */
+GAMES.highlow = {
+  name:'ハイ&ロー', emoji:'🔼', len:0, time:'2分', hidden:false,
+  desc:'次のカードが上か下かを予想。交互に当てて多く当てた方が勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>中央のカードより、次のカードが <b>ハイ（大きい）</b>か<b>ロー（小さい）</b>かを予想します。</li>
+    <li>当たったら1ポイント。交互に予想していきます。</li>
+    <li>同じ数字（ひきわけ）はノーカウント。</li>
+    <li>山札がなくなった時点で、ポイントが多い方の勝ち。</li></ul>`,
+  setup(){ const deck=shuffle(buildDeck()); const cur=deck.pop();
+    return {deck, cur, scores:[0,0], turn:0, last:null}; },
+  view(g, me, s){
+    const ln=lanes();
+    setPlateExtra(g.scores[viewSeat()]+'点', g.scores[oppSeat()]+'点');
+    nameplates(myTurn(g));
+    // 中央：現在カード＋直前結果
+    const wrap=document.createElement('div'); wrap.style.cssText='display:flex;flex-direction:column;align-items:center;gap:14px;';
+    const row=document.createElement('div'); row.style.cssText='display:flex;align-items:center;gap:18px;';
+    if(g.last){ const lc=bigCard(g.last.card,true); if(g.last.hit) lc.classList.add('flash'); row.appendChild(wrapLabel(lc, g.last.hit?'✅ 当たり':(g.last.push?'➖ 同じ':'❌ はずれ'))); }
+    row.appendChild(wrapLabel(bigCard(g.cur,true),'いまのカード'));
+    wrap.appendChild(row);
+    const cnt=document.createElement('div'); cnt.className='muted'; cnt.textContent='のこり '+g.deck.length+'枚'; wrap.appendChild(cnt);
+    ln.mid.appendChild(wrap);
+    // 操作
+    if(g.deck.length===0){ setStatus('しょうぶあり！'); setActions([]); finishHL(g); return; }
+    if(myTurn(g)){ setStatus('上(ハイ)か下(ロー)か？');
+      setActions([
+        {label:'🔼 ハイ', cls:'', on:()=>guessHL('hi')},
+        {label:'🔽 ロー', cls:'sec', on:()=>guessHL('lo')} ]); }
+    else { setStatus('あいてが予想中…'); setActions([]); }
+  }
+};
+function wrapLabel(el, txt){ const d=document.createElement('div'); d.style.cssText='display:flex;flex-direction:column;align-items:center;gap:6px;';
+  d.appendChild(el); const l=document.createElement('div'); l.className='muted'; l.style.fontSize='12px'; l.textContent=txt; d.appendChild(l); return d; }
+function guessHL(dir){
+  Snd.flip();
+  Game.act((g,seat)=>{
+    if(g.turn!==seat || g.deck.length===0) return false;
+    const nx=g.deck.pop(); const push = nx.r===g.cur.r;
+    const hit = !push && ((dir==='hi'&&nx.r>g.cur.r)||(dir==='lo'&&nx.r<g.cur.r));
+    if(hit) g.scores[seat]++;
+    g.last={card:nx, by:seat, dir, hit, push}; g.cur=nx; g.turn=1-seat;
+  });
+}
+function finishHL(g){ if(g._done) return; g._done=true;
+  const [a,b]=g.scores; const w = a===b?null:(a>b?0:1);
+  setTimeout(()=>Game.result(w,{detail:`スコア ${a} - ${b}`, localPerspective:w==null?0:w}), 500);
+}
+
+/* ============================================================
+   2. 戦争（短）
+   ============================================================ */
+GAMES.war = {
+  name:'戦争', emoji:'⚔️', len:0, time:'3分', hidden:false,
+  desc:'せーので1枚ずつ勝負。強い方がペアを獲得。最後に多く取った方が勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>山札を半分ずつ持ち、毎回1枚ずつ同時にめくります（「めくる」ボタン）。</li>
+    <li>数字が大きい方が2枚とも獲得（A が最強）。</li>
+    <li>引き分けは「場（ポット）」にたまり、次に勝った人がまとめて獲得。</li>
+    <li>全部めくり終えたとき、獲得枚数が多い方の勝ち。</li></ul>`,
+  setup(){ const d=shuffle(buildDeck()); return {p:[d.slice(0,26), d.slice(26)], won:[0,0], pot:0, shown:null, round:0}; },
+  view(g){
+    const ln=lanes();
+    setPlateExtra('獲得 '+g.won[viewSeat()], '獲得 '+g.won[oppSeat()]);
+    nameplates(null);
+    // 相手の山
+    ln.opp.appendChild(labeled(stackEl(g.p[oppSeat()].length,false), 'のこり '+g.p[oppSeat()].length));
+    // 中央：めくられた2枚
+    const mid=document.createElement('div'); mid.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px;';
+    if(g.shown){ const row=document.createElement('div'); row.style.cssText='display:flex;align-items:center;gap:24px;';
+      const meIsTop = false;
+      const meCard = bigCard(g.shown.cards[viewSeat()],true), opCard=bigCard(g.shown.cards[oppSeat()],true);
+      if(g.shown.winner===viewSeat()) meCard.classList.add('flash'); else if(g.shown.winner===oppSeat()) opCard.classList.add('flash');
+      row.appendChild(wrapLabel(opCard,'あいて')); const vs=document.createElement('div'); vs.textContent='VS'; vs.style.cssText='font-weight:900;font-size:20px;'; row.appendChild(vs); row.appendChild(wrapLabel(meCard,'あなた'));
+      mid.appendChild(row);
+      const r=document.createElement('div'); r.className='muted';
+      r.textContent = g.shown.winner==null?('引き分け…ポットへ（'+g.pot+'枚）'):(g.shown.winner===viewSeat()?'あなたの勝ち！':'あいての勝ち');
+      mid.appendChild(r);
+    } else { const r=document.createElement('div'); r.className='muted'; r.textContent='「めくる」で勝負！'; mid.appendChild(r); }
+    if(g.pot>0){ const p=document.createElement('div'); p.className='muted'; p.textContent='🪙 ポット '+g.pot+'枚たまり中'; mid.appendChild(p); }
+    ln.mid.appendChild(mid);
+    // 自分の山
+    ln.me.appendChild(labeled(stackEl(g.p[viewSeat()].length,false), 'のこり '+g.p[viewSeat()].length));
+    const over = g.p[0].length===0 || g.p[1].length===0;
+    if(over){ setStatus('しょうぶあり！'); setActions([]); finishWar(g); }
+    else { setStatus(''); setActions([{label:'🃏 めくる', cls:'', on:flipWar}]); }
+  }
+};
+function labeled(el, txt){ const d=document.createElement('div'); d.style.cssText='display:flex;flex-direction:column;align-items:center;gap:6px;'; d.appendChild(el);
+  const l=document.createElement('div'); l.className='muted'; l.style.fontSize='12px'; l.textContent=txt; d.appendChild(l); return d; }
+function warVal(c){ return c.r===1?14:c.r; }
+function flipWar(){
+  Snd.flip();
+  Game.act((g)=>{
+    if(g.p[0].length===0||g.p[1].length===0) return false;
+    const a=g.p[0].pop(), b=g.p[1].pop();
+    const va=warVal(a), vb=warVal(b);
+    let winner=null;
+    if(va>vb) winner=0; else if(vb>va) winner=1;
+    if(winner==null){ g.pot+=2; }
+    else { g.won[winner]+=2+g.pot; g.pot=0; }
+    g.shown={cards:[a,b], winner}; g.round++;
+  });
+}
+function finishWar(g){ if(g._done) return; g._done=true;
+  // 残ったポットは引き分け扱いでそのまま
+  const [a,b]=g.won; const w=a===b?null:(a>b?0:1);
+  setTimeout(()=>Game.result(w,{detail:`獲得枚数 ${a} - ${b}`, localPerspective:w==null?0:w}), 600);
+}
+
+/* ============================================================
+   3. スピード（短・リアルタイム）
+   ============================================================ */
+GAMES.speed = {
+  name:'スピード', emoji:'⚡', len:0, time:'3分', hidden:false,
+  desc:'手番なし！場のカードに±1で続けて出し、早く手札を無くした方の勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>中央2つの場に、自分の手札（4枚）から <b>±1</b> の数字を重ねて出せます（A と K もつながる）。</li>
+    <li>出したら山札から補充。手番はなく、ふたり同時に好きなだけ出せます。</li>
+    <li>両者とも出せなくなったら「せーの！」を両方が押して場に1枚ずつめくります。</li>
+    <li>手札と山札を先に全部なくした方の勝ち！</li></ul>`,
+  setup(){
+    const d=shuffle(buildDeck());
+    const center=[d.pop(), d.pop()];
+    const side=[d.splice(0,5), d.splice(0,5)];
+    const hand=[d.splice(0,4), d.splice(0,4)];
+    const stock=[d.splice(0,d.length/2|0), d];   // 残りを二分
+    return {center, side, hand, stock, flip:[false,false], turn:null, done:false};
+  },
+  view(g, me, s){
+    const ln=lanes();
+    const op=oppSeat(), my=viewSeat();
+    setPlateExtra('手'+g.hand[my].length+'/山'+g.stock[my].length, '手'+g.hand[op].length+'/山'+g.stock[op].length);
+    nameplates(null);
+    // 相手手札（見える＝レース）
+    ln.opp.appendChild(handFan(g.hand[op], {faceUp:true}));
+    // 中央2場
+    const mid=document.createElement('div'); mid.style.cssText='display:flex;gap:26px;align-items:center;';
+    g.center.forEach((c,pi)=>{ const w=cardEl(c,true,{}); w.style.transform='scale(1.12)'; w.dataset.pile=pi; mid.appendChild(w); });
+    ln.mid.appendChild(mid);
+    // 自分手札（出せるものを光らせる）
+    const playable = (c)=> g.center.some(t=>speedAdj(c,t));
+    ln.me.appendChild(handFan(g.hand[my], {
+      playable, onClick:(c,idx)=>speedPlay(idx)
+    }));
+    // 状態・操作
+    const stuck = !g.hand[0].some(c=>playable(c)) && !g.hand[1].some(c=>playable(c))
+      || (!g.hand[my].some(c=>playable(c)) && MODE==='online');
+    const iCanMove = g.hand[my].some(c=>g.center.some(t=>speedAdj(c,t)));
+    if(g.hand[my].length===0 && g.stock[my].length===0){ setStatus('あがり！'); }
+    else if(!iCanMove){
+      setStatus('出せない…「せーの！」で場をめくろう');
+      setActions([{label: (MODE==='online'?(g.flip[my]?'まってます…':'せーの！めくる'):'せーの！めくる'), cls:'', dis:(MODE==='online'&&g.flip[my]), on:speedFlip}]);
+    } else { setStatus('出せるカードをタップ！（手番なし）'); setActions([]); }
+    checkSpeedWin(g);
+  }
+};
+function speedAdj(c, top){ if(c.j||top.j) return true; const d=Math.abs(c.r-top.r); return d===1||d===12; }
+function speedPlay(idx){
+  Snd.play();
+  Game.act((g,seat)=>{
+    const my = MODE==='online'?seat:viewSeat();
+    const c=g.hand[my][idx]; if(!c) return false;
+    const pile = g.center.findIndex(t=>speedAdj(c,t));
+    if(pile<0) return false;
+    g.center[pile]=c;
+    if(g.stock[my].length){ g.hand[my][idx]=g.stock[my].pop(); }
+    else { g.hand[my].splice(idx,1); }
+    g.flip=[false,false];
+  });
+}
+function speedFlip(){
+  Game.act((g,seat)=>{
+    const my=MODE==='online'?seat:viewSeat();
+    g.flip[my]=true;
+    if(g.flip[0]&&g.flip[1]){
+      // 両者準備OK→側山から1枚ずつ場へ
+      if(g.side[0].length&&g.side[1].length){ g.center[0]=g.side[0].pop(); g.center[1]=g.side[1].pop(); Snd.flip(); }
+      else { g.done=true; } // めくれない→終了判定
+      g.flip=[false,false];
+    }
+  });
+}
+function checkSpeedWin(g){
+  if(g._done) return;
+  const empt=[0,1].map(i=>g.hand[i].length===0&&g.stock[i].length===0);
+  if(empt[0]||empt[1]){ g._done=true; const w=empt[0]&&empt[1]?null:(empt[0]?0:1); setTimeout(()=>Game.result(w,{localPerspective:w==null?0:w}),300); return; }
+  if(g.done){ g._done=true; const cnt=[0,1].map(i=>g.hand[i].length+g.stock[i].length); const w=cnt[0]===cnt[1]?null:(cnt[0]<cnt[1]?0:1); setTimeout(()=>Game.result(w,{detail:'のこり手数で判定', localPerspective:w==null?0:w}),300); }
+}
+
+/* ============================================================
+   4. 神経衰弱（短〜中）
+   ============================================================ */
+GAMES.memory = {
+  name:'神経衰弱', emoji:'🧠', len:1, time:'5分', hidden:false,
+  desc:'同じ数字を2枚めくればゲット＆もう一回。多くそろえた方が勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>裏向きのカードから2枚めくります。</li>
+    <li>同じ数字ならゲット！続けてもう一度めくれます。</li>
+    <li>ちがったら「つぎへ」で裏返し、相手の番に。</li>
+    <li>全部なくなったとき、多く取った方の勝ち。</li></ul>`,
+  setup(){
+    let cards=[]; for(let r=1;r<=12;r++){ cards.push({c:{s:r%4,r}}); cards.push({c:{s:(r+2)%4,r}}); }
+    shuffle(cards); cards.forEach(x=>x.taken=null);
+    return {cards, up:[], scores:[0,0], turn:0, phase:'pick'};
+  },
+  view(g){
+    const ln=lanes();
+    setPlateExtra(g.scores[viewSeat()]+'組', g.scores[oppSeat()]+'組');
+    nameplates(myTurn(g));
+    const grid=document.createElement('div');
+    grid.style.cssText='display:grid;grid-template-columns:repeat(6,1fr);gap:5px;--cw:42px;padding:0 8px;';
+    g.cards.forEach((x,idx)=>{
+      const faceUp = x.taken!=null || g.up.includes(idx);
+      const el=cardEl(x.c, faceUp, {dim:x.taken!=null, tap:(g.phase==='pick'&&myTurn(g)&&x.taken==null&&!g.up.includes(idx)),
+        onClick:(g.phase==='pick'&&myTurn(g)&&x.taken==null&&!g.up.includes(idx))?(()=>memFlip(idx)):null});
+      grid.appendChild(el);
+    });
+    ln.mid.appendChild(grid);
+    const remain=g.cards.some(x=>x.taken==null);
+    if(!remain){ setStatus('しょうぶあり！'); setActions([]); finishMem(g); return; }
+    if(g.phase==='review' && myTurn(g)){ setStatus('ざんねん…つぎの人へ'); setActions([{label:'つぎへ', cls:'sec', on:memNext}]); }
+    else if(myTurn(g)){ setStatus(g.up.length===1?'もう1枚めくろう':'2枚めくってね'); setActions([]); }
+    else { setStatus('あいてがめくり中…'); setActions([]); }
+  }
+};
+function memFlip(idx){
+  Snd.flip();
+  Game.act((g,seat)=>{
+    if(g.phase!=='pick'||g.turn!==seat) return false;
+    if(g.cards[idx].taken!=null||g.up.includes(idx)) return false;
+    g.up.push(idx);
+    if(g.up.length===2){
+      const [i,j]=g.up;
+      if(g.cards[i].c.r===g.cards[j].c.r){ g.cards[i].taken=seat; g.cards[j].taken=seat; g.scores[seat]++; g.up=[]; }
+      else { g.phase='review'; }
+    }
+  }, {});
+}
+function memNext(){
+  Game.act((g,seat)=>{ if(g.phase!=='review'||g.turn!==seat) return false; g.up=[]; g.phase='pick'; g.turn=1-seat; });
+}
+function finishMem(g){ if(g._done) return; g._done=true; const [a,b]=g.scores; const w=a===b?null:(a>b?0:1);
+  setTimeout(()=>Game.result(w,{detail:`そろえた組 ${a} - ${b}`, localPerspective:w==null?0:w}),500); }
+
+/* ============================================================
+   5. ばば抜き（短〜中）
+   ============================================================ */
+GAMES.oldmaid = {
+  name:'ばば抜き', emoji:'🃏', len:1, time:'7分', hidden:true,
+  desc:'相手の手札から1枚引き、ペアを捨てる。最後にジョーカーを持つと負け。',
+  rules:`<h3>ルール</h3><ul>
+    <li>同じ数字のペアは自動で捨てられます。</li>
+    <li>自分の番に、相手の手札（裏向き）から1枚を引きます。</li>
+    <li>ペアができたら捨てる。先に手札を0枚にした人の勝ち。</li>
+    <li>最後にジョーカー🃏を持っていた人の負け！</li></ul>`,
+  setup(){
+    const d=shuffle(buildDeck(1)); const hands=[[],[]];
+    d.forEach((c,i)=>hands[i%2].push(c));
+    hands[0]=removePairs(hands[0]); hands[1]=removePairs(hands[1]);
+    return {hands, turn:0, lastDraw:null};
+  },
+  view(g){
+    const ln=lanes(); const my=viewSeat(), op=oppSeat();
+    setPlateExtra(g.hands[my].length+'枚', g.hands[op].length+'枚');
+    nameplates(myTurn(g));
+    // 相手手札：裏向き（自分の番なら引ける）
+    ln.opp.appendChild(faceDownFan(g.hands[op].length, (myTurn(g))?(idx=>oldmaidDraw(idx)):null));
+    if(g.lastDraw){ const m=document.createElement('div'); m.className='muted';
+      m.textContent = g.lastDraw.paired?'ペアができた！':'引いた…'; ln.mid.appendChild(m); }
+    // 自分手札：表向き
+    ln.me.appendChild(handFan(sortHand(g.hands[my]), {}));
+    if(myTurn(g)){ setStatus('相手のカードを1枚タップして引こう'); setActions([]); }
+    else { setStatus('あいてが引くのを待っています…'); setActions([]); }
+  }
+};
+function removePairs(hand){
+  const byRank={}; const jokers=[]; const out=[];
+  hand.forEach(c=>{ if(c.j){jokers.push(c);return;} (byRank[c.r]=byRank[c.r]||[]).push(c); });
+  Object.values(byRank).forEach(arr=>{ if(arr.length%2===1) out.push(arr[0]); });  // 奇数なら1枚残る
+  return out.concat(jokers);
+}
+function oldmaidDraw(idx){
+  Snd.deal();
+  Game.act((g,seat)=>{
+    if(g.turn!==seat) return false;
+    const op=1-seat; if(idx>=g.hands[op].length) return false;
+    const c=g.hands[op].splice(idx,1)[0];
+    g.hands[seat].push(c);
+    const before=g.hands[seat].length;
+    g.hands[seat]=removePairs(g.hands[seat]);
+    g.lastDraw={paired:g.hands[seat].length<before};
+    shuffle(g.hands[op]);            // 次に引かれる位置をランダム化
+    g.turn=op;
+  }, {veilDelay:900});
+  setTimeout(()=>{ const g=room.state.g; if(!g) return;
+    if(g.hands[0].length===0||g.hands[1].length===0){
+      const w=g.hands[0].length===0?0:1; Game.result(w,{detail:'手札を先になくした！', localPerspective:w});
+    }
+  }, 950);
+}
+
+/* ============================================================
+   6. 七並べ（中）
+   ============================================================ */
+GAMES.sevens = {
+  name:'七並べ', emoji:'🎴', len:1, time:'10分', hidden:true,
+  desc:'7の隣から順に並べる定番。先に手札を出し切れば勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>各スートの7は最初から場に並んでいます。</li>
+    <li>場のカードの両隣（±1）の数字を順に出せます。</li>
+    <li>出せるときは必ず出します。出せないときだけ「パス」。</li>
+    <li>先に手札を全部出した人の勝ち。両者出せなくなったら手札が少ない方の勝ち。</li></ul>`,
+  setup(){
+    const d=shuffle(buildDeck()); const hands=[[],[]];
+    const board=[null,null,null,null];
+    d.forEach(c=>{ if(c.r===7){ board[c.s]={lo:7,hi:7}; } else hands[0].push(c); });
+    // 7以外を配り直し（均等に）
+    const rest=hands[0]; shuffle(rest); hands[0]=[]; rest.forEach((c,i)=>hands[i%2].push(c));
+    return {hands, board, turn:0, lastPass:false};
+  },
+  view(g){
+    const ln=lanes(); const my=viewSeat(), op=oppSeat();
+    setPlateExtra(g.hands[my].length+'枚', g.hands[op].length+'枚');
+    nameplates(myTurn(g));
+    ln.opp.appendChild(faceDownFan(g.hands[op].length));
+    // 場：4スート行
+    const bd=document.createElement('div'); bd.style.cssText='display:flex;flex-direction:column;gap:4px;--cw:34px;';
+    for(let s=0;s<4;s++){
+      const row=document.createElement('div'); row.style.cssText='display:flex;align-items:center;gap:2px;height:calc(var(--ch));';
+      const lab=document.createElement('div'); lab.style.cssText='width:22px;text-align:center;font-size:18px;'+(isRed(s)?'color:#ff6b73':'color:#dfe9f0'); lab.textContent=SUITS[s]; row.appendChild(lab);
+      const rg=g.board[s];
+      if(rg){ for(let r=rg.lo;r<=rg.hi;r++){ row.appendChild(cardEl({s,r},true,{})); } }
+      bd.appendChild(row);
+    }
+    ln.mid.appendChild(bd);
+    // 自分手札：出せるものを光らせる
+    const legal=(c)=>sevensLegal(c,g.board);
+    ln.me.appendChild(handFan(sortHand(g.hands[my]), { playable:legal, dim:(c)=>!legal(c),
+      onClick:(c)=>{ if(legal(c)) sevensPlay(c); } }));
+    const anyLegal=g.hands[my].some(legal);
+    if(myTurn(g)){
+      if(anyLegal){ setStatus('出せるカードをタップ！'); setActions([]); }
+      else { setStatus('出せるカードがない…'); setActions([{label:'パス', cls:'sec', on:sevensPass}]); }
+    } else { setStatus('あいてのばん…'); setActions([]); }
+  }
+};
+function sevensLegal(c, board){ if(c.j) return false; const r=board[c.s]; return !!r && (c.r===r.lo-1||c.r===r.hi+1); }
+function sevensPlay(c){
+  Snd.play();
+  Game.act((g,seat)=>{
+    if(g.turn!==seat||!sevensLegal(c,g.board)) return false;
+    const r=g.board[c.s]; if(c.r===r.lo-1) r.lo--; else r.hi++;
+    const i=g.hands[seat].findIndex(x=>sameCard(x,c)); g.hands[seat].splice(i,1);
+    g.lastPass=false;
+    if(g.hands[seat].length===0){ g._win=seat; }
+    g.turn=1-seat;
+  });
+  setTimeout(()=>{ const g=room.state.g; if(g&&g._win!=null) Game.result(g._win,{detail:'手札を出し切った！',localPerspective:g._win}); },300);
+}
+function sevensPass(){
+  Game.act((g,seat)=>{
+    if(g.turn!==seat) return false;
+    if(g.hands[seat].some(c=>sevensLegal(c,g.board))) return false;
+    if(g.lastPass){ g._dead=true; return; }      // 両者パス→デッドロック
+    g.lastPass=true; g.turn=1-seat;
+  });
+  setTimeout(()=>{ const g=room.state.g; if(g&&g._dead){ const w=g.hands[0].length===g.hands[1].length?null:(g.hands[0].length<g.hands[1].length?0:1);
+    Game.result(w,{detail:'両者パス…手札が少ない方の勝ち', localPerspective:w==null?0:w}); } },300);
+}
+
+/* ============================================================
+   7. ダウト（中）
+   ============================================================ */
+let doubtSel = new Set();
+GAMES.doubt = {
+  name:'ダウト', emoji:'🤥', len:1, time:'10分', hidden:true,
+  desc:'A→2→3…の順で枚数を宣言して伏せる。ウソを見破れ！先に出し切れば勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>A,2,3…と順番に進みます。自分の番は今の数字だと言い張って1〜4枚を伏せて出します（ウソOK）。</li>
+    <li>相手は「ダウト！」か「しんじる」を選びます。</li>
+    <li>ダウトが当たり（ウソだった）→出した人が場を全部回収。はずれ（本当だった）→ダウトした人が回収。</li>
+    <li>先に手札を全部出し切った人の勝ち！</li></ul>`,
+  setup(){
+    const d=shuffle(buildDeck()); const hands=[[],[]]; d.forEach((c,i)=>hands[i%2].push(c));
+    doubtSel.clear();
+    return {hands:[sortHand(hands[0]),sortHand(hands[1])], pile:[], claim:1, turn:0, phase:'play', last:null};
+  },
+  view(g){
+    const ln=lanes(); const my=viewSeat(), op=oppSeat();
+    setPlateExtra(g.hands[my].length+'枚', g.hands[op].length+'枚');
+    nameplates(myTurn(g));
+    ln.opp.appendChild(faceDownFan(g.hands[op].length));
+    // 中央：場の山＋宣言
+    const mid=document.createElement('div'); mid.style.cssText='display:flex;flex-direction:column;align-items:center;gap:8px;';
+    mid.appendChild(stackEl(g.pile.length, false));
+    const info=document.createElement('div'); info.className='muted';
+    info.innerHTML = `場 ${g.pile.length}枚 ／ いまの数字 <b style="color:var(--gold);font-size:17px">${RANKS[g.claim]}</b>`;
+    mid.appendChild(info);
+    if(g.last && g.phase==='doubt'){ const l=document.createElement('div'); l.style.cssText='font-weight:800;';
+      l.textContent = `あいては「${RANKS[g.last.claim]}」を ${g.last.n}枚 出した`; mid.appendChild(l); }
+    ln.mid.appendChild(mid);
+    // 自分手札
+    const selectable = g.phase==='play' && myTurn(g);
+    ln.me.appendChild(handFan(g.hands[my], { selKeys:doubtSel,
+      onClick: selectable?((c)=>{ const k=cardKey(c); doubtSel.has(k)?doubtSel.delete(k):(doubtSel.size<4&&doubtSel.add(k)); render(); }):null }));
+    if(g.phase==='play' && myTurn(g)){
+      setStatus(`「${RANKS[g.claim]}」として出す（1〜4枚・ウソOK）`);
+      setActions([{label:`出す（${doubtSel.size}枚）`, cls:'', dis:doubtSel.size===0, on:doubtPlay}]);
+    } else if(g.phase==='doubt' && myTurn(g)){
+      setStatus('信じる？それともダウト？');
+      setActions([{label:'🚨 ダウト！', cls:'', on:()=>doubtDecide(true)},
+                  {label:'🙂 しんじる', cls:'sec', on:()=>doubtDecide(false)}]);
+    } else { setStatus('あいてのばん…'); setActions([]); }
+  }
+};
+function nextClaim(r){ return r>=13?1:r+1; }
+function doubtPlay(){
+  if(doubtSel.size===0) return; Snd.play();
+  const sel=new Set(doubtSel);
+  Game.act((g,seat)=>{
+    if(g.phase!=='play'||g.turn!==seat) return false;
+    const picked=g.hands[seat].filter(c=>sel.has(cardKey(c)));
+    if(picked.length===0||picked.length>4) return false;
+    g.hands[seat]=g.hands[seat].filter(c=>!sel.has(cardKey(c)));
+    g.pile.push(...picked);
+    g.last={by:seat, claim:g.claim, n:picked.length, cards:picked};
+    g.phase='doubt'; g.turn=1-seat;
+  });
+  doubtSel.clear();
+}
+function doubtDecide(callDoubt){
+  Game.act((g,seat)=>{
+    if(g.phase!=='doubt'||g.turn!==seat) return false;
+    const lp=g.last, liar=lp.by, caller=seat;
+    if(!callDoubt){
+      // 信じる：次の数字へ、信じた人（caller）が次に出す
+      g.claim=nextClaim(g.claim); g.phase='play'; g.turn=caller;
+      if(g.hands[liar].length===0) g._win=liar;     // 出し切って信じられた→勝ち
+      return;
+    }
+    // ダウト：出されたカードを判定
+    const honest = lp.cards.every(c=>c.r===lp.claim);
+    const loser = honest ? caller : liar;            // はずれたら宣言者でなく…：honestなら caller が回収
+    g.hands[loser].push(...g.pile); g.hands[loser]=sortHand(g.hands[loser]); g.pile=[];
+    g.last=null; g.claim=nextClaim(lp.claim); g.phase='play';
+    g.turn = 1-loser;                                 // 回収しなかった人から再開
+    if(g.hands[0].length===0) g._win=0; else if(g.hands[1].length===0) g._win=1;
+    g._doubtMsg = honest ? 'ダウトはずれ！本当だった' : 'ダウト成功！ウソを見破った';
+  });
+  setTimeout(()=>{ const g=room.state.g; if(!g) return;
+    if(g._doubtMsg){ toast(g._doubtMsg); g._doubtMsg=null; }
+    if(g._win!=null) Game.result(g._win,{detail:'手札を出し切った！',localPerspective:g._win});
+  }, 250);
+}
+
+/* ============================================================
+   8. ぶたのしっぽ（中・運だめし）
+   ============================================================ */
+GAMES.pigtail = {
+  name:'ぶたのしっぽ', emoji:'🐷', len:1, time:'5分', hidden:false,
+  desc:'輪から1枚ずつめくる。同じマークが出たら全部引き取り。最後に少ない方が勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>輪になった山から交互に1枚めくって中央へ重ねます。</li>
+    <li>前のカードと同じマーク（♠♥♦♣）が出たら、めくった人が中央のカードを全部引き取ります（ペナルティ）。</li>
+    <li>輪のカードがなくなったら終了。引き取った枚数が少ない方の勝ち！</li></ul>`,
+  setup(){ return {ring:shuffle(buildDeck()), center:[], penalty:[0,0], turn:0, last:null}; },
+  view(g){
+    const ln=lanes();
+    setPlateExtra('引取 '+g.penalty[viewSeat()], '引取 '+g.penalty[oppSeat()]);
+    nameplates(myTurn(g));
+    ln.opp.appendChild(labeled(stackEl(g.ring.length,false), '輪 のこり '+g.ring.length));
+    const mid=document.createElement('div'); mid.style.cssText='display:flex;flex-direction:column;align-items:center;gap:10px;';
+    const top=g.center.length?g.center[g.center.length-1]:null;
+    mid.appendChild(labeled(stackEl(g.center.length, true, top), '中央 '+g.center.length+'枚'));
+    if(g.last){ const m=document.createElement('div'); m.style.fontWeight='800';
+      m.textContent = g.last.took ? `${esc(room.state.players[g.last.seat]?room.state.players[g.last.seat].name:'')}が ${g.last.n}枚 引き取り！` : 'セーフ';
+      mid.appendChild(m); }
+    ln.mid.appendChild(mid);
+    if(g.ring.length===0){ setStatus('しょうぶあり！'); setActions([]); finishPig(g); return; }
+    if(myTurn(g)){ setStatus('「めくる」！同じマークに注意'); setActions([{label:'🐷 めくる', cls:'', on:pigFlip}]); }
+    else { setStatus('あいてがめくり中…'); setActions([]); }
+  }
+};
+function pigFlip(){
+  Snd.flip();
+  Game.act((g,seat)=>{
+    if(g.turn!==seat||g.ring.length===0) return false;
+    const c=g.ring.pop();
+    const prev=g.center.length?g.center[g.center.length-1]:null;
+    const match=prev&&prev.s===c.s;
+    g.center.push(c);
+    if(match){ const n=g.center.length; g.penalty[seat]+=n; g.center=[]; g.last={seat, took:true, n}; }
+    else { g.last={seat, took:false}; }
+    g.turn=1-seat;
+  });
+}
+function finishPig(g){ if(g._done) return; g._done=true; const [a,b]=g.penalty; const w=a===b?null:(a<b?0:1);
+  setTimeout(()=>Game.result(w,{detail:`引き取り枚数 ${a} - ${b}（少ない方が勝ち）`, localPerspective:w==null?0:w}),500); }
+
+/* ============================================================
+   9. 大富豪（中〜長）
+   ============================================================ */
+const DF_ORDER=[3,4,5,6,7,8,9,10,11,12,13,1,2];
+function dfStr(r){ return DF_ORDER.indexOf(r); }
+let dfSel=new Set();
+function dfClassify(cards){
+  if(cards.length===0) return null;
+  if(cards.some(c=>c.j)){ return cards.length===1?{type:'set',n:1,str:99}:null; }
+  const rs=cards.map(c=>c.r);
+  if(rs.every(r=>r===rs[0])) return {type:'set', n:cards.length, str:dfStr(rs[0])};
+  if(cards.length>=3){ const s=cards[0].s;
+    if(cards.every(c=>c.s===s)){ const sr=rs.slice().sort((a,b)=>a-b); let ok=true;
+      for(let i=1;i<sr.length;i++) if(sr[i]!==sr[i-1]+1){ok=false;break;}
+      if(ok) return {type:'seq', n:cards.length, str:dfStr(sr[sr.length-1])}; } }
+  return null;
+}
+function dfBeats(cand, field){ if(!field) return true; return cand.type===field.type && cand.n===field.n && cand.str>field.str; }
+GAMES.daifugo = {
+  name:'大富豪', emoji:'👑', len:2, time:'15分', hidden:true,
+  desc:'1枚・ペア・階段で勝負。8切りあり。先に手札を出し切れば勝ち。',
+  rules:`<h3>ルール</h3><ul>
+    <li>弱⇢強：3,4,5…K,A,2,ジョーカー🃏。</li>
+    <li>場と同じ枚数・同じ形（1枚／ペア／3枚／同じマークの階段）で、より強いものを出します。出せない・出したくないときは「パス」。</li>
+    <li>相手がパスしたら場が流れ、勝った人から新しく出します。</li>
+    <li><b>8切り</b>：8を含めて出すと場が流れ、続けて自分が出せます。</li>
+    <li>先に手札を全部出し切った人の勝ち！</li></ul>`,
+  setup(){ const d=shuffle(buildDeck(2)); const hands=[[],[]]; d.forEach((c,i)=>hands[i%2].push(c)); dfSel.clear();
+    return {hands:[sortHand(hands[0]),sortHand(hands[1])], field:null, turn:0}; },
+  view(g){
+    const ln=lanes(); const my=viewSeat(), op=oppSeat();
+    setPlateExtra(g.hands[my].length+'枚', g.hands[op].length+'枚');
+    nameplates(myTurn(g));
+    ln.opp.appendChild(faceDownFan(g.hands[op].length));
+    // 場
+    const mid=document.createElement('div'); mid.style.cssText='display:flex;flex-direction:column;align-items:center;gap:8px;';
+    if(g.field){ const f=document.createElement('div'); f.className='hand'; f.style.gap='3px';
+      g.field.cards.forEach(c=>f.appendChild(cardEl(c,true,{}))); mid.appendChild(f);
+      const t=document.createElement('div'); t.className='muted'; t.textContent=({single:'1枚',set:g.field.n+'枚出し',seq:g.field.n+'枚の階段'})[g.field.type]||(g.field.n+'枚'); mid.appendChild(t);
+    } else { const t=document.createElement('div'); t.className='muted'; t.textContent='場は空き。好きな形で出せます'; mid.appendChild(t); }
+    ln.mid.appendChild(mid);
+    // 自分手札（選択式）
+    const selectable=myTurn(g);
+    ln.me.appendChild(handFan(g.hands[my], { selKeys:dfSel,
+      onClick: selectable?((c)=>{ const k=cardKey(c); dfSel.has(k)?dfSel.delete(k):dfSel.add(k); render(); }):null }));
+    if(myTurn(g)){
+      const sel=g.hands[my].filter(c=>dfSel.has(cardKey(c)));
+      const combo=dfClassify(sel); const ok=combo&&dfBeats(combo,g.field);
+      setStatus(g.field?'場より強いものを出すかパス':'好きな形で出そう');
+      const acts=[{label:'出す', cls:'', dis:!ok, on:dfPlay}];
+      if(g.field) acts.push({label:'パス', cls:'sec', on:dfPass});
+      setActions(acts);
+    } else { setStatus('あいてのばん…'); setActions([]); }
+  }
+};
+function dfPlay(){
+  const my=viewSeat(); const sel=room.state.g.hands[my].filter(c=>dfSel.has(cardKey(c)));
+  const combo=dfClassify(sel); if(!combo){ toast('その組み合わせは出せないよ'); return; }
+  if(!dfBeats(combo, room.state.g.field)){ toast('場より強くないよ'); return; }
+  Snd.play();
+  const keys=new Set(dfSel);
+  Game.act((g,seat)=>{
+    if(g.turn!==seat) return false;
+    const cards=g.hands[seat].filter(c=>keys.has(cardKey(c)));
+    const cb=dfClassify(cards); if(!cb||!dfBeats(cb,g.field)) return false;
+    g.hands[seat]=g.hands[seat].filter(c=>!keys.has(cardKey(c)));
+    g.field={...cb, cards, by:seat};
+    const eightCut = cards.some(c=>!c.j&&c.r===8);
+    if(g.hands[seat].length===0){ g._win=seat; }
+    if(eightCut){ g.field=null; g._eight=true; /* turn stays */ }
+    else g.turn=1-seat;
+  });
+  dfSel.clear();
+  setTimeout(()=>{ const g=room.state.g; if(!g) return; if(g._eight){ toast('8切り！もう一度どうぞ'); g._eight=false; }
+    if(g._win!=null) Game.result(g._win,{detail:'手札を出し切った！',localPerspective:g._win}); },250);
+}
+function dfPass(){
+  dfSel.clear();
+  Game.act((g,seat)=>{ if(g.turn!==seat||!g.field) return false; const leader=g.field.by; g.field=null; g.turn=leader; });
+  setTimeout(()=>toast('パス。場が流れました'),100);
+}
+
+/* ============================================================
+   10. ジン・ラミー（長）
+   ============================================================ */
+function ginPts(c){ return c.r===1?1:(c.r>=11?10:c.r); }
+function combos(arr,k){ const res=[]; (function rec(start,cur){ if(cur.length===k){res.push(cur.slice());return;}
+  for(let i=start;i<arr.length;i++){ cur.push(arr[i]); rec(i+1,cur); cur.pop(); } })(0,[]); return res; }
+function ginAllMelds(hand){
+  const melds=[];
+  const byR={}; hand.forEach((c,i)=>{ (byR[c.r]=byR[c.r]||[]).push(i); });
+  Object.values(byR).forEach(idxs=>{ if(idxs.length>=3){ combos(idxs,3).forEach(m=>melds.push(m)); if(idxs.length>=4) melds.push(idxs.slice()); } });
+  const byS={}; hand.forEach((c,i)=>{ (byS[c.s]=byS[c.s]||[]).push(i); });
+  Object.values(byS).forEach(idxs=>{ const sorted=idxs.slice().sort((a,b)=>hand[a].r-hand[b].r);
+    let run=[sorted[0]];
+    for(let k=1;k<sorted.length;k++){ if(hand[sorted[k]].r===hand[sorted[k-1]].r+1) run.push(sorted[k]);
+      else { ginAddRuns(run,melds); run=[sorted[k]]; } }
+    ginAddRuns(run,melds); });
+  return melds;
+}
+function ginAddRuns(run,melds){ for(let i=0;i<run.length;i++) for(let j=i+2;j<run.length;j++) melds.push(run.slice(i,j+1)); }
+function ginBest(hand){
+  const melds=ginAllMelds(hand); const n=hand.length;
+  const ptsOf=idxs=>idxs.reduce((s,i)=>s+ginPts(hand[i]),0);
+  let bestCov=-1, bestSel=[];
+  (function rec(start,mask,cov,sel){
+    if(cov>bestCov){ bestCov=cov; bestSel=sel.slice(); }
+    for(let mi=start;mi<melds.length;mi++){ const m=melds[mi]; if(m.some(i=>mask&(1<<i))) continue;
+      let nm=mask; m.forEach(i=>nm|=(1<<i)); rec(mi+1,nm,cov+ptsOf(m),sel.concat(mi)); }
+  })(0,0,0,[]);
+  const mask=bestSel.reduce((mm,mi)=>{melds[mi].forEach(i=>mm|=(1<<i));return mm;},0);
+  const meldCards=bestSel.map(mi=>melds[mi].map(i=>hand[i]));
+  const deadIdx=[]; for(let i=0;i<n;i++) if(!(mask&(1<<i))) deadIdx.push(i);
+  const meldKeys=new Set(); meldCards.forEach(m=>m.forEach(c=>meldKeys.add(cardKey(c))));
+  return {melds:meldCards, deadCards:deadIdx.map(i=>hand[i]), deadwood:deadIdx.reduce((s,i)=>s+ginPts(hand[i]),0), meldKeys};
+}
+function ginLayoff(knockerMelds, oppDead){
+  const melds=knockerMelds.map(m=>m.slice()); let dead=oppDead.slice(); let ch=true;
+  while(ch){ ch=false;
+    for(let di=0;di<dead.length;di++){ const c=dead[di]; let placed=false;
+      for(const m of melds){
+        const isSet=m.every(x=>x.r===m[0].r);
+        if(isSet){ if(m.length<4 && m[0].r===c.r){ m.push(c); placed=true; break; } }
+        else if(m[0].s===c.s){ const rs=m.map(x=>x.r).sort((a,b)=>a-b);
+          if(c.r===rs[0]-1||c.r===rs[rs.length-1]+1){ m.push(c); placed=true; break; } }
+      }
+      if(placed){ dead.splice(di,1); ch=true; break; }
+    }
+  }
+  return dead;
+}
+let ginSel=null;      // 捨てる候補カードのkey
+let ginNextCfg=null;  // 次ラウンドへの持ち越し（スコア等）
+let ginShownRound=-1; // この端末で結果モーダルを表示済みのラウンド番号
+GAMES.ginrummy = {
+  name:'ジン・ラミー', emoji:'🎩', len:2, time:'20分〜', hidden:true,
+  desc:'役を作って手札の余りを減らす本格派。100点先取の長期戦。',
+  rules:`<h3>ルール</h3><ul>
+    <li>役＝<b>同じ数字3枚以上</b>、または<b>同じマークの連番3枚以上</b>。</li>
+    <li>自分の番：山札か捨て札から1枚引き→1枚捨てる。</li>
+    <li>役に入らない「デッドウッド」の合計が <b>10点以下</b>になったら「ノック」できます（A=1,絵札=10）。</li>
+    <li>ノック時、相手より少なければ差分が得点。0点なら「ジン」で+25点。逆転（アンダーカット）でも+25点。</li>
+    <li>合計 <b>100点</b> に先に到達した方の勝ち！</li></ul>`,
+  setup(){
+    const cfg=ginNextCfg; ginNextCfg=null;
+    const carry = cfg?cfg.scores.slice():[0,0];
+    const round = cfg?cfg.round:1;
+    const first = cfg?cfg.first:0;
+    const d=shuffle(buildDeck());
+    const hands=[d.splice(0,10), d.splice(0,10)];
+    const discard=[d.pop()];
+    ginSel=null; ginShownRound=-1;
+    return {hands:[sortHand(hands[0]),sortHand(hands[1])], stock:d, discard, turn:first, phase:'draw',
+            tookKey:null, scores:carry, round, target:100, over:null, round_result:null};
+  },
+  view(g){
+    const ln=lanes(); const my=viewSeat(), op=oppSeat();
+    const best=ginBest(g.hands[my]);
+    setPlateExtra(g.scores[my]+'点', g.scores[op]+'点');
+    nameplates(myTurn(g));
+    ln.opp.appendChild(faceDownFan(g.hands[op].length));
+    // 中央：山札＋捨て札
+    const mid=document.createElement('div'); mid.style.cssText='display:flex;gap:24px;align-items:center;';
+    const stock=stackEl(g.stock.length,false);
+    if(myTurn(g)&&g.phase==='draw'&&g.stock.length>2){ stock.style.cursor='pointer'; stock.querySelectorAll('.card').forEach(e=>e.classList.add('playable')); stock.onclick=()=>ginDraw('stock'); }
+    mid.appendChild(labeled(stock,'山札 '+g.stock.length));
+    const disc=g.discard.length?cardEl(g.discard[g.discard.length-1],true,{}):document.createElement('div');
+    if(myTurn(g)&&g.phase==='draw'&&g.discard.length){ disc.classList.add('playable'); disc.style.cursor='pointer'; disc.onclick=()=>ginDraw('discard'); }
+    mid.appendChild(labeled(disc,'捨て札'));
+    ln.mid.appendChild(mid);
+    // 自分手札：役は緑、捨て候補は持ち上げ
+    const selectable=myTurn(g)&&g.phase==='discard';
+    ln.me.appendChild(handFan(g.hands[my], {
+      playable:(c)=>best.meldKeys.has(cardKey(c)),
+      selKeys: ginSel?new Set([ginSel]):null,
+      onClick: selectable?((c)=>{ ginSel=(ginSel===cardKey(c))?null:cardKey(c); render(); }):null
+    }));
+    // ラウンド終了→両端末で結果表示（端末ごとに1回だけ）
+    if(g.round_result){ setStatus(''); setActions([]);
+      if(ginShownRound!==g.round){ ginShownRound=g.round; ginShowRound(g); } return; }
+    if(g.over!=null){ setStatus(''); setActions([]); return; }
+    if(myTurn(g)){
+      if(g.phase==='draw'){ setStatus(`ラウンド${g.round}・山札か捨て札から1枚引こう（デッドウッド ${best.deadwood}）`); setActions([]); }
+      else {
+        const after = ginSel ? ginBest(g.hands[my].filter(c=>cardKey(c)!==ginSel)) : null;
+        const acts=[{label:'捨てる', cls:'sec', dis:!ginSel, on:()=>ginDiscard(false)}];
+        if(after){ if(after.deadwood===0) acts.push({label:'⭐ ジン！', cls:'', on:()=>ginDiscard(true)});
+          else if(after.deadwood<=10) acts.push({label:`ノック(${after.deadwood})`, cls:'', on:()=>ginDiscard(true)}); }
+        setStatus(`捨てるカードを選ぼう（残デッドウッド ${after?after.deadwood:best.deadwood}）`); setActions(acts);
+      }
+    } else { setStatus('あいてのばん…'); setActions([]); }
+  }
+};
+function ginDraw(from){
+  Snd.deal();
+  Game.act((g,seat)=>{
+    if(g.turn!==seat||g.phase!=='draw') return false;
+    if(from==='stock'){ if(g.stock.length<=2) return false; const c=g.stock.pop(); g.hands[seat].push(c); g.tookKey=null; }
+    else { if(!g.discard.length) return false; const c=g.discard.pop(); g.hands[seat].push(c); g.tookKey=cardKey(c); }
+    g.hands[seat]=sortHand(g.hands[seat]); g.phase='discard';
+  });
+  setTimeout(()=>{ const g=room.state.g; if(g&&g.stock.length<=2&&g.phase==='draw'){ ginRoundDraw(); } },200);
+}
+function ginDiscard(knock){
+  if(!ginSel) return;
+  if(room.state.g.tookKey===ginSel){ toast('引いたばかりの捨て札は捨てられないよ'); return; }
+  Snd.play(); const key=ginSel;
+  Game.act((g,seat)=>{
+    if(g.turn!==seat||g.phase!=='discard') return false;
+    if(g.tookKey===key) return false;
+    const idx=g.hands[seat].findIndex(c=>cardKey(c)===key); if(idx<0) return false;
+    const card=g.hands[seat].splice(idx,1)[0]; g.discard.push(card); g.tookKey=null;
+    if(knock){
+      const me=ginBest(g.hands[seat]); if(me.deadwood>10) return false;
+      const opp=1-seat; const ob=ginBest(g.hands[opp]);
+      const gin = me.deadwood===0;
+      let oppDeadCards = gin ? ob.deadCards : ginLayoff(me.melds, ob.deadCards);
+      const oppDead = oppDeadCards.reduce((s,c)=>s+ginPts(c),0);
+      let winner, delta, label;
+      if(gin){ winner=seat; delta=oppDead+25; label='ジン！ +25'; }
+      else if(me.deadwood<=oppDead){ winner=seat; delta=oppDead-me.deadwood; label='ノック成功'; }
+      else { winner=opp; delta=me.deadwood-oppDead+25; label='アンダーカット！ +25'; }
+      g.scores[winner]+=delta;
+      g.over=null;
+      g.round_result={knocker:seat, gin, myDead:me.deadwood, oppDead, winner, delta, label,
+        knockerMelds:me.melds, oppMelds:ob.melds};
+      g.nextFirst=1-seat;
+      if(g.scores[winner]>=g.target){ g.over=winner; }
+    } else {
+      if(g.hands[seat].length!==10) {/*安全網*/}
+      g.turn=1-seat; g.phase='draw';
+    }
+  });
+  ginSel=null;
+  setTimeout(()=>render(),150);
+}
+function ginShowRound(g){
+  const rr=g.round_result; if(!rr) return;
+  const me=(MODE==='online')?mySeat:rr.knocker;
+  const won=rr.winner;
+  const nm=s=>esc(room.state.players[s]?room.state.players[s].name:('P'+(s+1)));
+  if(g.over!=null){ Snd.win(); setTimeout(()=>Game.result(g.over,{detail:`最終スコア ${g.scores[0]} - ${g.scores[1]}`, localPerspective:g.over}),300); return; }
+  Snd[won===me?'good':'bad']();
+  openModal(
+    `<div class="bigresult"><div class="em">${rr.gin?'⭐':'🎴'}</div>
+     <div class="wl" style="font-size:24px">${rr.label}</div></div>
+     <p style="text-align:center">${nm(won)} が <b>${rr.delta}点</b> 獲得<br>
+     <span class="muted">デッドウッド ${nm(rr.knocker)}:${rr.myDead} / ${nm(1-rr.knocker)}:${rr.oppDead}</span></p>
+     <p style="text-align:center;font-size:18px;font-weight:900">スコア ${g.scores[0]} - ${g.scores[1]} <span class="muted">(100で勝ち)</span></p>
+     <div class="row"><button class="btn" style="flex:1" onclick="ginNextRound()">つぎのラウンド →</button></div>`);
+}
+function ginNextRound(){
+  closeModal();
+  const cur=room.state.g; if(!cur||!cur.round_result) return;
+  ginNextCfg={scores:cur.scores.slice(), round:cur.round+1, first:cur.nextFirst};
+  if(MODE==='online'){
+    casMutate(st=>{ if(!st.g.round_result) return false; st.g=GAMES.ginrummy.setup(); }).then(()=>render());
+  } else {
+    room.state.g=GAMES.ginrummy.setup(); room.state.v++; mySeat=room.state.g.turn; render();
+    if(GAMES.ginrummy.hidden) UI.showVeil(room.state.g.turn);
+  }
+}
+function ginRoundDraw(){   // 山札が尽きたら流局→再配（スコア据え置き）
+  const cur=room.state.g; toast('山札ぎれ。このラウンドは流局');
+  ginNextCfg={scores:cur.scores.slice(), round:cur.round+1, first:1-cur.turn};
+  setTimeout(()=>{ if(MODE==='online') casMutate(st=>{ st.g=GAMES.ginrummy.setup(); }).then(()=>render());
+    else { room.state.g=GAMES.ginrummy.setup(); room.state.v++; render(); } }, 1200);
+}
+
+/*__GAMES3__*/
+</script>
+</body>
+</html>
