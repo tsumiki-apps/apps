@@ -37,6 +37,7 @@ APPS = {
     "jinsei":      ("🎲", "#ff8fc8", "#9a6df0"),
     "trump":       ("🃏", "#2fa86b", "#0d6b3f"),
     "yuzuwari":    ("🍋", "#ffe26b", "#f0a319"),
+    "kakeru":      ("🏃", "#3ad6c5", "#1f7fe0"),
 }
 
 
