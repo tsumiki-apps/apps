@@ -135,7 +135,6 @@
   .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
     padding:14px; border-radius:15px; font-weight:700; font-size:15px;}
   .btn.primary{background:var(--accent); color:#fff; box-shadow:0 6px 18px rgba(240,163,25,.35);}
-  .btn.ghost{flex:0 0 auto; width:54px; background:var(--card); border:1px solid var(--line); color:var(--ink); font-size:20px;}
   .btn:active{transform:scale(.96);}
 
   /* ===== モーダル ===== */
@@ -184,15 +183,6 @@
   .secbtn{width:100%; text-align:center; background:var(--card); border:1px solid var(--line);
     padding:14px; border-radius:14px; font-weight:700; font-size:15px; margin-top:10px;}
 
-  /* 書き出しプレビュー */
-  .exptabs{display:flex; gap:7px; margin-bottom:14px;}
-  .exptabs button{flex:1; padding:10px; border-radius:11px; border:1.5px solid var(--line);
-    background:var(--card); font-weight:700; font-size:14px; color:var(--sub);}
-  .exptabs button.on{border-color:var(--accent); background:rgba(240,163,25,.10); color:var(--ink);}
-  .exptext{width:100%; min-height:230px; padding:14px; border:1px solid var(--line);
-    border-radius:14px; background:var(--card); font-size:13px; line-height:1.7; resize:none;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre;}
-  #imgPrev{width:100%; border-radius:16px; border:1px solid var(--line); display:block;}
   .hint{font-size:11px; color:var(--sub); text-align:center; margin-top:9px;}
 
   .toast{position:fixed; bottom:calc(env(safe-area-inset-bottom) + 96px); left:50%; transform:translateX(-50%) translateY(20px);
@@ -228,7 +218,6 @@
 
 <!-- 下部アクションバー（詳細時のみ） -->
 <div class="actionbar" id="actionBar" hidden>
-  <button class="btn ghost" id="exportBtn" title="書き出し">📤</button>
   <button class="btn primary" id="addEntryBtn">＋ 立て替えを追加</button>
 </div>
 
@@ -647,136 +636,6 @@ function openSettings(proj){
   if(ro) ro.onclick=()=>{proj.archived=false; save(); closeSheet();};
 }
 
-/* ============ 書き出し（テキスト＆画像） ============ */
-function openExport(proj){
-  const txt=buildText(proj);
-  openSheet(
-    '<h2>ゆずちゃんに共有 📤</h2>'+
-    '<div class="exptabs"><button class="on" data-t="text">📝 テキスト</button><button data-t="image">🖼️ 画像カード</button></div>'+
-    '<div id="expText"><textarea class="exptext" id="expArea" readonly>'+esc(txt)+'</textarea>'+
-      '<div class="sheetbtns"><button class="save" id="copyBtn">コピーする</button>'+
-      (navigator.share?'<button class="save" id="shareTxt" style="flex:0 0 auto;background:var(--card);border:1px solid var(--line);color:var(--ink);width:64px">共有</button>':'')+
-      '</div><div class="hint">LINEなどに貼り付けて送れます</div></div>'+
-    '<div id="expImg" style="display:none"><img id="imgPrev" alt="精算カード"><div class="sheetbtns">'+
-      '<button class="save" id="saveImg">画像を保存</button>'+
-      (navigator.canShare?'<button class="save" id="shareImg" style="flex:0 0 auto;background:var(--card);border:1px solid var(--line);color:var(--ink);width:64px">共有</button>':'')+
-      '</div><div class="hint">長押しでも保存できます</div></div>'
-  );
-  let imgBuilt=false, imgBlob=null;
-  ov.querySelectorAll('.exptabs button').forEach(b=>b.onclick=()=>{
-    ov.querySelectorAll('.exptabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
-    const isImg=b.dataset.t==='image';
-    ov.querySelector('#expText').style.display=isImg?'none':'';
-    ov.querySelector('#expImg').style.display=isImg?'':'none';
-    if(isImg&&!imgBuilt){imgBuilt=true; buildImage(proj).then(blob=>{imgBlob=blob; ov.querySelector('#imgPrev').src=URL.createObjectURL(blob);});}
-  });
-  ov.querySelector('#copyBtn').onclick=()=>{
-    const ta=ov.querySelector('#expArea'); ta.select();
-    navigator.clipboard?.writeText(txt).then(()=>toast('コピーしました ✓'),()=>{document.execCommand('copy');toast('コピーしました ✓');});
-  };
-  const st=ov.querySelector('#shareTxt'); if(st) st.onclick=()=>navigator.share({text:txt}).catch(()=>{});
-  ov.querySelector('#saveImg').onclick=()=>{
-    if(!imgBlob){toast('準備中…'); return;}
-    const a=document.createElement('a'); a.href=URL.createObjectURL(imgBlob);
-    a.download='ゆずわり_'+proj.name+'.png'; a.click(); toast('保存しました ✓');
-  };
-  const si=ov.querySelector('#shareImg'); if(si) si.onclick=async()=>{
-    if(!imgBlob) return;
-    const file=new File([imgBlob],'ゆずわり.png',{type:'image/png'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
-      try{await navigator.share({files:[file],text:proj.name+'の精算'});}catch(e){}
-    } else toast('この端末は画像共有に未対応');
-  };
-}
-
-function buildText(proj){
-  const s=settle(proj);
-  const L=[];
-  L.push('🍋 ゆずわり — '+proj.name);
-  L.push('────────────');
-  const sorted=[...proj.entries].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  sorted.forEach(e=>{
-    const c=CATMAP[e.category]||CATMAP.other;
-    const d=(e.date||'').slice(5).replace('-','/');
-    L.push(d+' '+c.e+(e.title||c.n)+'  '+yen(e.amount)+'（'+nm(e.payer)+'/'+splitText(e)+'）');
-  });
-  L.push('────────────');
-  L.push(nm('kodai')+'の立て替え  '+yen(s.paidK));
-  L.push(nm('yuzu')+'の立て替え  '+yen(s.paidY));
-  L.push('合計  '+yen(s.total));
-  L.push('');
-  if(s.amt===0) L.push('🤝 トントン！差額はありません');
-  else L.push('👉 精算：'+nm(s.from)+' → '+nm(s.to)+'  '+yen(s.amt));
-  return L.join('\n');
-}
-
-async function buildImage(proj){
-  const s=settle(proj);
-  const dpr=2, W=600, pad=40;
-  // 高さは明細数で可変
-  const sorted=[...proj.entries].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const rows=Math.min(sorted.length,12);
-  const H=360 + rows*34 + (sorted.length>12?30:0);
-  const cv=document.createElement('canvas'); cv.width=W*dpr; cv.height=H*dpr;
-  const x=cv.getContext('2d'); x.scale(dpr,dpr);
-  // 背景グラデ
-  const g=x.createLinearGradient(0,0,W,H);
-  g.addColorStop(0,'#fff6e6'); g.addColorStop(1,'#ffe7bd');
-  x.fillStyle=g; roundRect(x,0,0,W,H,0); x.fill();
-  // カード白
-  x.fillStyle='#fff'; x.shadowColor='rgba(180,140,40,.18)'; x.shadowBlur=24; x.shadowOffsetY=8;
-  roundRect(x,pad-12,pad-12,W-(pad-12)*2,H-(pad-12)*2,28); x.fill(); x.shadowColor='transparent';
-  const ff='-apple-system,"Hiragino Sans",sans-serif';
-  // ヘッダー
-  x.textBaseline='alphabetic';
-  x.font='28px '+ff; x.fillText((proj.emoji||'💕'),pad,pad+34);
-  x.fillStyle='#2a2419'; x.font='bold 24px '+ff; x.fillText(proj.name,pad+44,pad+33);
-  x.fillStyle='#b39a5e'; x.font='13px '+ff; x.fillText('🍋 ゆずわり',W-pad-86,pad+30);
-  // 精算バナー
-  let y=pad+62;
-  const bh=92;
-  x.fillStyle = s.amt===0? '#e3f7e8':'#fff0d6';
-  roundRect(x,pad,y,W-pad*2,bh,18); x.fill();
-  x.textAlign='center';
-  if(s.amt===0){
-    x.fillStyle='#2e9a52'; x.font='bold 15px '+ff; x.fillText('🤝 トントン！差額はありません',W/2,y+54);
-  } else {
-    x.fillStyle='#a98a4a'; x.font='bold 12px '+ff; x.fillText('精算',W/2,y+24);
-    x.fillStyle='#2a2419'; x.font='bold 16px '+ff; x.fillText(nm(s.from)+'  →  '+nm(s.to),W/2,y+46);
-    x.fillStyle='#c47e0a'; x.font='bold 30px '+ff; x.fillText('¥'+Math.round(s.amt).toLocaleString('ja-JP'),W/2,y+82);
-  }
-  x.textAlign='left';
-  // サマリー2列
-  y+=bh+22;
-  const colW=(W-pad*2-16)/2;
-  drawSum(x,pad,y,colW,'#3b93ff',nm('kodai'),yen(s.paidK),ff);
-  drawSum(x,pad+colW+16,y,colW,'#f5a623',nm('yuzu'),yen(s.paidY),ff);
-  // 明細
-  y+=78;
-  x.fillStyle='#8a8270'; x.font='bold 12px '+ff; x.fillText('明細（合計 '+yen(s.total)+'）',pad,y); y+=20;
-  x.font='13px '+ff;
-  sorted.slice(0,12).forEach(e=>{
-    const c=CATMAP[e.category]||CATMAP.other;
-    const d=(e.date||'').slice(5).replace('-','/');
-    x.fillStyle='#8a8270'; x.fillText(d,pad,y);
-    x.fillStyle='#2a2419'; x.fillText(c.e+' '+truncate(e.title||c.n,16),pad+46,y);
-    x.fillStyle='#8a8270'; x.font='11px '+ff; x.fillText(nm(e.payer),pad+46,y+14); x.font='13px '+ff;
-    x.fillStyle='#2a2419'; x.textAlign='right'; x.font='bold 14px '+ff;
-    x.fillText(yen(e.amount),W-pad,y); x.textAlign='left'; x.font='13px '+ff;
-    y+=34;
-  });
-  if(sorted.length>12){x.fillStyle='#8a8270'; x.font='12px '+ff; x.fillText('…ほか'+(sorted.length-12)+'件',pad,y);}
-  return new Promise(res=>cv.toBlob(res,'image/png'));
-}
-function drawSum(x,px,py,w,color,name,val,ff){
-  x.fillStyle='#fbf8f1'; roundRect(x,px,py,w,62,14); x.fill();
-  x.fillStyle=color; x.beginPath(); x.arc(px+18,py+22,5,0,7); x.fill();
-  x.fillStyle='#8a8270'; x.font='bold 12px '+ff; x.fillText(name,px+30,py+26);
-  x.fillStyle='#2a2419'; x.font='bold 20px '+ff; x.fillText(val,px+16,py+50);
-}
-function roundRect(x,a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();}
-function truncate(s,n){return s.length>n?s.slice(0,n)+'…':s;}
-
 /* ============ トースト ============ */
 let toastT=null;
 function toast(msg){
@@ -790,7 +649,6 @@ function toast(msg){
 document.getElementById('addProjBtn').onclick=()=>openProjSheet();
 document.getElementById('backBtn').onclick=()=>{curProj=null; render(); window.scrollTo(0,0);};
 document.getElementById('addEntryBtn').onclick=()=>{const p=db.projects.find(x=>x.id===curProj); if(p)openEntrySheet(p);};
-document.getElementById('exportBtn').onclick=()=>{const p=db.projects.find(x=>x.id===curProj); if(p)openExport(p);};
 document.getElementById('projMenuBtn').onclick=()=>{const p=db.projects.find(x=>x.id===curProj); if(p)openSettings(p);};
 
 /* ============ 起動 ============ */
