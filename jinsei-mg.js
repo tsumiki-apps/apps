@@ -11,7 +11,6 @@ window.MG = (function(){
     timing:  { e:'🎯', n:'ぴったりストップ', d:'うごくバーを まんなかで止めよう（3回）' },
     taprush: { e:'⚡', n:'れんだバトル',     d:'5秒間 ボタンをぜんりょく連打！' },
     memory:  { e:'🧠', n:'すうじおぼえ',     d:'6けたの数字を 2秒でおぼえて入力！' },
-    highlow: { e:'🃏', n:'ハイ&ロー',        d:'つぎのカードは上か下か？ 5回勝負' },
     janken:  { e:'✊', n:'あとだしじゃんけん', d:'おだい どおりに 勝ち負けしよう（5回）' },
   };
   const KEYS = Object.keys(META);
@@ -128,60 +127,7 @@ window.MG = (function(){
     });
   }
 
-  /* ---------- 4. ハイ&ロー（わかりやすい版） ----------
-     ・カードは 1〜13 の「数字」だけ（A/J/Q/K 表記をやめた）
-     ・ボタンに正解の範囲をそのまま表示（「⬆️ 8〜13 がでる」など）
-     ・1〜13 の数直線で いまの数字の位置が見える
-     ・同じ数字は出ない問題だけを出す（引き分けの混乱なし） */
-  function gHighlow(stage, seed, sfx){
-    return new Promise(resolve=>{
-      const R = rng(seed);
-      const cards = [1+Math.floor(R()*13)];
-      while(cards.length < 6){
-        const v = 1+Math.floor(R()*13);
-        if(v !== cards[cards.length-1]) cards.push(v);   // となり同士が同じ数字にならないように
-      }
-      let i = 0, score = 0, tmo = null, ended = false;
-      function numline(cur, reveal){
-        let s = '<div class="mg-numline">';
-        for(let v=1; v<=13; v++){
-          const cls = v===cur ? 'now' : (reveal!=null && v===reveal ? 'next' : '');
-          s += `<span class="${cls}">${v}</span>`;
-        }
-        return s + '</div>';
-      }
-      function show(){
-        if(i>=5){ ended=true; clearTimeout(tmo); setTimeout(()=>resolve(score),500); return; }
-        const cur = cards[i];
-        stage.innerHTML = `
-          <div class="mg-sub">${i+1}/5 もん ・ つぎのカード（1〜13）は？</div>
-          <div class="mg-cardface">${cur}</div>
-          ${numline(cur, null)}
-          <div class="mg-row">
-            <button class="mg-tap mg-hl" data-g="up" ${cur>=13?'disabled':''}>⬆️ ${Math.min(cur+1,13)}〜13<br><small>がでる！</small></button>
-            <button class="mg-tap mg-hl" data-g="down" ${cur<=1?'disabled':''}>⬇️ 1〜${Math.max(cur-1,1)}<br><small>がでる！</small></button>
-          </div>
-          <div class="mg-sub" id="mgHLScore">いまのとくてん：${score}てん</div>`;
-        stage.querySelectorAll('.mg-hl').forEach(b=>{ if(!b.disabled) b.onclick=()=>pick(b.dataset.g); });
-        clearTimeout(tmo); tmo = setTimeout(()=>pick(null), 8000);  // 8秒未回答=ハズレ扱い
-      }
-      function pick(g){
-        if(ended) return;
-        const a = cards[i], b = cards[i+1];
-        const correct = (g==='up' && b>a) || (g==='down' && b<a);
-        stage.querySelector('.mg-cardface').textContent = b;
-        const nl = stage.querySelector('.mg-numline');
-        if(nl) nl.outerHTML = numline(a, b);
-        if(correct){ score += 30; sfx.coin(); flash(stage, `${b} がでた！ せいかい ＋30`); }
-        else { sfx.bad(); flash(stage, g===null ? 'じかんぎれ…' : `${b} がでた… はずれ`); }
-        i++;
-        setTimeout(show, 1100);
-      }
-      show();
-    });
-  }
-
-  /* ---------- 5. あとだしじゃんけん ---------- */
+  /* ---------- 4. あとだしじゃんけん ---------- */
   function gJanken(stage, seed, sfx){
     return new Promise(resolve=>{
       const R = rng(seed);
@@ -223,7 +169,7 @@ window.MG = (function(){
     setTimeout(()=>f.remove(), 950);
   }
 
-  const GAMES = { timing:gTiming, taprush:gTaprush, memory:gMemory, highlow:gHighlow, janken:gJanken };
+  const GAMES = { timing:gTiming, taprush:gTaprush, memory:gMemory, janken:gJanken };
 
   function play(stage, key, seed, sfx){
     const fn = GAMES[key] || gTaprush;
