@@ -36,6 +36,7 @@ APPS = {
     "serifu":      ("🎭", "#b08bff", "#7a4ddb"),
     "jinsei":      ("🎲", "#ff8fc8", "#9a6df0"),
     "trump":       ("🃏", "#2fa86b", "#0d6b3f"),
+    "yuzuwari":    ("🍋", "#ffe26b", "#f0a319"),
 }
 
 
