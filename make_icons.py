@@ -41,6 +41,7 @@ APPS = {
     "chiritsumo":  ("🪙", "#34d8a0", "#0fb6c9"),
     "rashinban":   ("🧭", "#7b86ff", "#4f57c7"),
     "minori":      ("🌾", "#e6b34d", "#c8860d"),
+    "komame":      ("🧹", "#5fd0bd", "#15a584"),
 }
 
 
