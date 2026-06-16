@@ -724,8 +724,10 @@ function renderIdeaDetail(el){
   if(!all.length){
     html += '<div class="empty"><span class="e-ico">'+meta.emoji+'</span>下の入力欄から<br>アイデアを箇条書きで足していこう</div>';
   } else {
-    if(active.length >= 2){
-      html += '<div class="bulk-bar"><button data-completeallidea="1">✓ 表示中の'+active.length+'件をまとめて完了</button></div>';
+    // 未完了（あとで🌙も含む）が2件以上なら、このアプリのアイデアをまとめて完了できるボタンを出す
+    const completable = active.length + later.length;
+    if(completable >= 2){
+      html += '<div class="bulk-bar"><button data-completeallidea="1">✓ このアプリのアイデア'+completable+'件をまとめて完了</button></div>';
     }
     html += active.map(ideaItemHTML).join('');
     if(later.length){
@@ -965,11 +967,15 @@ document.getElementById('panel-idea').addEventListener('click', e=>{
   }
   const tile = e.target.closest('[data-app]');
   if(tile){ openIdeaApp(tile.dataset.app); return; }
-  // 詳細：表示中のアイデアをまとめて完了
+  // 詳細：このアプリの未完了アイデア（あとで🌙も含む）をまとめて完了
   if(e.target.closest('[data-completeallidea]')){
-    const actives = db.ideas.filter(i=>i.app===ideaApp && !i.done && !i.later);
+    const actives = db.ideas.filter(i=>i.app===ideaApp && !i.done);
     if(!actives.length) return;
-    if(!confirm('表示中の'+actives.length+'件をまとめて完了にします。よろしいですか？')) return;
+    const laterCnt = actives.filter(i=>i.later).length;
+    const msg = laterCnt
+      ? 'このアプリのアイデア'+actives.length+'件（🌙あとで'+laterCnt+'件を含む）をまとめて完了にします。よろしいですか？'
+      : 'このアプリのアイデア'+actives.length+'件をまとめて完了にします。よろしいですか？';
+    if(!confirm(msg)) return;
     const now = Date.now();
     actives.forEach(i=>{ i.done = true; i.doneAt = now; });
     save(); renderCounts(); renderIdeas();
