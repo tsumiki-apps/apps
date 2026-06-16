@@ -104,13 +104,14 @@
   }
   .row .check.on { background: var(--green); border-color: var(--green); }
   .row .body { flex: 1; min-width: 0; }
-  .row .label { font-size: 15px; word-break: break-word; cursor: pointer; }
+  .row .label { font-size: 15px; word-break: break-word; cursor: pointer; white-space: pre-wrap; }
   .row.is-done .label { color: var(--sub); text-decoration: line-through; }
-  /* やこと・買い物のテキスト編集（インライン） */
+  /* やること・買い物のテキスト編集（インライン／内容に合わせて自動で伸びる） */
   .row .label-edit {
-    width: 100%; font: inherit; font-size: 16px; color: var(--text);
+    width: 100%; font: inherit; font-size: 16px; line-height: 1.5; color: var(--text);
     border: none; border-bottom: 2px solid var(--accent); background: transparent;
-    border-radius: 0; padding: 0 0 2px; margin: -1px 0; outline: none;
+    border-radius: 0; padding: 0 0 3px; margin: -1px 0; outline: none;
+    display: block; resize: none; overflow: hidden; box-sizing: border-box;
   }
   .row .dx {
     flex: 0 0 auto; border: none; background: var(--chip); color: var(--sub);
@@ -194,8 +195,18 @@
   .ib-edit {
     flex: 1; min-width: 0; font: inherit; font-size: 15px; line-height: 1.5; color: var(--text);
     border: none; border-bottom: 2px solid var(--accent); background: transparent;
-    padding: 0 0 3px; outline: none; resize: none;
+    padding: 0 0 3px; outline: none; resize: none; overflow: hidden; box-sizing: border-box;
   }
+
+  /* ===== まとめて完了バー ===== */
+  .bulk-bar { margin: 2px 4px 12px; }
+  .bulk-bar button {
+    width: 100%; border: 1px dashed var(--green); background: var(--card);
+    color: var(--green); font-family: inherit; font-size: 13.5px; font-weight: 700;
+    border-radius: 12px; padding: 11px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .bulk-bar button:active { transform: scale(.98); background: #f1fbf3; }
 
   /* アプリ選択ピッカー */
   .sheet-sub { font-size: 13px; color: var(--sub); margin: 2px 2px 14px; }
@@ -436,6 +447,11 @@ const KEY = 'yarukoto_db_v1';
 
 /* ===================== ユーティリティ ===================== */
 function uid(){ return Date.now().toString(36) + Math.floor(Math.random()*1e6).toString(36); }
+// テキストエリアを中身の高さに合わせて自動で伸ばす（編集中に全文が見える）
+function autoGrow(el){
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight + 2) + 'px';
+}
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 // 日本語入力（IME）の「変換確定Enter」を送信と誤認しないためのガード。
 // Macでは変換確定のEnterが isComposing=false / keyCode=13 で飛んでくることがあるので、
@@ -617,6 +633,9 @@ function renderChecklist(kind){
   const active = sortActive(list.filter(x=>!x.done));
   const done = list.filter(x=>x.done);
   let html = '';
+  if(active.length >= 2){
+    html += '<div class="bulk-bar"><button data-completeall="'+kind+'">✓ 表示中の'+active.length+'件をまとめて完了</button></div>';
+  }
   html += active.map(x=>rowHTML(x, kind)).join('');
   if(done.length){
     html += '<div class="group-label">✓ '+(isTodo?'完了':'買ったもの')+'（'+done.length+'）<span class="gl-note">日付が変わると自動的に消えます</span></div>';
@@ -705,6 +724,9 @@ function renderIdeaDetail(el){
   if(!all.length){
     html += '<div class="empty"><span class="e-ico">'+meta.emoji+'</span>下の入力欄から<br>アイデアを箇条書きで足していこう</div>';
   } else {
+    if(active.length >= 2){
+      html += '<div class="bulk-bar"><button data-completeallidea="1">✓ 表示中の'+active.length+'件をまとめて完了</button></div>';
+    }
     html += active.map(ideaItemHTML).join('');
     if(later.length){
       html += '<div class="group-label">🌙 あとで・優先度低め（'+later.length+'）</div>';
@@ -840,6 +862,19 @@ document.querySelectorAll('.tab').forEach(btn=>{
   el.addEventListener('click', onChecklistClick);
 });
 function onChecklistClick(e){
+  const completeAll = e.target.closest('[data-completeall]');
+  if(completeAll){
+    const kind = completeAll.dataset.completeall;
+    const arr = kind==='todo' ? db.todos : db.shopping;
+    const actives = arr.filter(x=>!x.done);
+    if(!actives.length) return;
+    if(!confirm('表示中の'+actives.length+'件をまとめて完了にします。よろしいですか？')) return;
+    const now = Date.now();
+    actives.forEach(x=>{ x.done = true; x.doneAt = now; });
+    save(); render();
+    toast('✅ '+actives.length+'件を完了にしました');
+    return;
+  }
   const clear = e.target.closest('[data-clear]');
   if(clear){
     if(clear.dataset.clear==='todo') db.todos = db.todos.filter(x=>!x.done);
@@ -860,13 +895,15 @@ function onChecklistClick(e){
 function startInlineEdit(row, item){
   const labelEl = row.querySelector('.label');
   if(!labelEl) return;
-  const input = document.createElement('input');
-  input.type = 'text';
+  const input = document.createElement('textarea');
   input.className = 'label-edit';
   input.value = item.text;
+  input.rows = 1;
   input.setAttribute('enterkeyhint','done');
   labelEl.replaceWith(input);
   input.focus();
+  autoGrow(input);   // 中身の高さに合わせて全文を表示
+  input.addEventListener('input', ()=>autoGrow(input));
   // キャレットを末尾に
   const v = input.value; input.value=''; input.value=v;
   let committed = false;
@@ -928,6 +965,17 @@ document.getElementById('panel-idea').addEventListener('click', e=>{
   }
   const tile = e.target.closest('[data-app]');
   if(tile){ openIdeaApp(tile.dataset.app); return; }
+  // 詳細：表示中のアイデアをまとめて完了
+  if(e.target.closest('[data-completeallidea]')){
+    const actives = db.ideas.filter(i=>i.app===ideaApp && !i.done && !i.later);
+    if(!actives.length) return;
+    if(!confirm('表示中の'+actives.length+'件をまとめて完了にします。よろしいですか？')) return;
+    const now = Date.now();
+    actives.forEach(i=>{ i.done = true; i.doneAt = now; });
+    save(); renderCounts(); renderIdeas();
+    toast('✅ '+actives.length+'件を完了にしました');
+    return;
+  }
   // 詳細：完了したものをまとめて消す
   if(e.target.closest('[data-clearidea]')){
     db.ideas = db.ideas.filter(i=>!(i.app===ideaApp && i.done));
@@ -951,9 +999,11 @@ function startIdeaEdit(bul, item){
   const input = document.createElement('textarea');
   input.className = 'ib-edit';
   input.value = item.text;
-  input.rows = Math.min(8, item.text.split('\n').length + 1);
+  input.rows = 1;
   textEl.replaceWith(input);
   input.focus();
+  autoGrow(input);   // 中身の高さに合わせて全文を表示（行数の上限なし）
+  input.addEventListener('input', ()=>autoGrow(input));
   const v = input.value; input.value=''; input.value=v;   // キャレットを末尾に
   let committed = false;
   function commit(persist){
