@@ -38,6 +38,9 @@ APPS = {
     "trump":       ("🃏", "#2fa86b", "#0d6b3f"),
     "yuzuwari":    ("🍋", "#ffe26b", "#f0a319"),
     "kakeru":      ("🏃", "#3ad6c5", "#1f7fe0"),
+    "chiritsumo":  ("🪙", "#34d8a0", "#0fb6c9"),
+    "rashinban":   ("🧭", "#7b86ff", "#4f57c7"),
+    "minori":      ("🌾", "#e6b34d", "#c8860d"),
 }
 
 
