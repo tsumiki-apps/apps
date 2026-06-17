@@ -33,6 +33,28 @@ h1{font-size:22px;font-weight:600;text-align:center;margin:4px 0 2px}
 .stat .value{font-size:19px;font-weight:600}
 .stat .sub{font-size:10px;color:var(--sub);margin-top:2px}
 .stat.highlight{background:var(--soft-blue)}.stat.highlight .value{color:var(--blue)}
+.stat.span2{grid-column:1/-1}
+/* 月タブ（年＋総決済額の2行チップ） */
+.month-tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:6px 13px;line-height:1.22}
+.month-tab .mt-period{font-size:12px}
+.month-tab .mt-amt{font-size:11px;font-weight:600;opacity:.82}
+/* 未処理キューバナー */
+.queue-banner{display:flex;gap:8px;margin-bottom:12px}
+.queue-item{flex:1;display:flex;align-items:center;gap:8px;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-family:inherit;font-size:13px;color:var(--text);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06);text-align:left}
+.queue-item.triage{background:var(--soft-orange);border-color:#ffe0d6}
+.queue-item.loans{background:var(--soft-pink);border-color:#ffd9e4}
+.queue-item .qi-ic{font-size:17px;flex:none}
+.queue-item .qi-txt{flex:1;min-width:0;line-height:1.3}
+.queue-item .qi-txt b{font-weight:600}
+.queue-item .qi-sub{font-size:10px;color:var(--sub);margin-left:3px}
+.queue-item .qi-go{color:var(--sub);font-size:15px;flex:none}
+/* アップロードカードの畳み（データ取込後は小さな再取込バーに） */
+.upload-card .up-compact{display:none}
+.upload-card.collapsed{padding:0;background:none;box-shadow:none;margin-bottom:12px}
+.upload-card.collapsed>h2{display:none}
+.upload-card.collapsed .upload-icon,.upload-card.collapsed .up-full{display:none}
+.upload-card.collapsed .up-compact{display:block;font-size:13px;font-weight:500}
+.upload-card.collapsed .upload-area{padding:10px 14px;border-style:solid;border-width:1px;border-color:var(--line);background:var(--card);color:var(--blue)}
 .stat.warning{background:var(--soft-orange)}.stat.warning .value{color:var(--red)}
 .stat.success{background:var(--soft-green)}.stat.success .value{color:var(--green)}
 .upload-area{display:block;border:2px dashed var(--line);border-radius:12px;padding:22px 16px;text-align:center;color:var(--sub);cursor:pointer;transition:all .2s}
@@ -219,13 +241,15 @@ h1{font-size:22px;font-weight:600;text-align:center;margin:4px 0 2px}
   <!-- クレカ明細タブ -->
   <div class="tab-content active" id="tab-credit">
     <div class="month-tabs" id="monthTabs"></div>
-    <div class="card">
+    <div id="triageQueueBanner"></div>
+    <div class="card upload-card" id="creditUploadCard">
       <h2>クレカ明細CSVをアップロード</h2>
       <label class="upload-area" id="creditUploadArea">
         <input type="file" id="creditFileInput" accept=".csv">
         <div class="upload-icon">💳</div>
-        <div>CSVをドロップ または タップ</div>
-        <div style="font-size:10px;margin-top:4px;opacity:.7">三井住友カード明細想定・Shift-JIS/UTF-8 自動判定</div>
+        <div class="up-full">CSVをドロップ または タップ</div>
+        <div class="up-compact">＋ クレカCSVを再取込</div>
+        <div class="up-full" style="font-size:10px;margin-top:4px;opacity:.7">三井住友カード明細想定・Shift-JIS/UTF-8 自動判定</div>
       </label>
     </div>
     <div class="card" id="summaryCard" style="display:none">
@@ -233,8 +257,7 @@ h1{font-size:22px;font-weight:600;text-align:center;margin:4px 0 2px}
       <div class="summary-grid">
         <div class="stat"><div class="label">クレカ総決済額</div><div class="value" id="totalAmount">¥0</div><div class="sub" id="totalCount">0件</div></div>
         <div class="stat"><div class="label">立て替え化</div><div class="value" id="loanedAmount">¥0</div><div class="sub" id="loanedCount">0件</div></div>
-        <div class="stat highlight"><div class="label">🎯 自分の実質支出</div><div class="value" id="selfAmount">¥0</div><div class="sub">立て替え分を差し引き</div></div>
-        <div class="stat warning"><div class="label">⚠️ 未回収（全期間）</div><div class="value" id="outstandingAmount">¥0</div><div class="sub" id="outstandingCount">0件</div></div>
+        <div class="stat highlight span2"><div class="label">🎯 自分の実質支出</div><div class="value" id="selfAmount">¥0</div><div class="sub">立て替え分を差し引き</div></div>
       </div>
     </div>
     <div class="card" id="categoryCard" style="display:none">
@@ -248,6 +271,7 @@ h1{font-size:22px;font-weight:600;text-align:center;margin:4px 0 2px}
         <button class="filter-btn" data-filter="self">自分の支出のみ</button>
         <button class="filter-btn" data-filter="has-loan">立て替えあり</button>
         <button class="filter-btn" data-filter="amazon">Amazon</button>
+        <button class="filter-btn" data-filter="unclassified">🗂️未分類</button>
         <button class="filter-btn" data-filter="save">✂️節約候補</button>
         <button class="filter-btn" data-filter="need">✅必要経費</button>
       </div>
@@ -1019,16 +1043,38 @@ function switchTab(t){if(typeof exitSelectMode==='function')exitSelectMode();sta
 
 function renderCreditTab(){
   renderMonthTabs();
+  renderUploadCollapse();
+  renderTriageQueueBanner();
   const show=state.currentMonth&&data.months[state.currentMonth];
   ['summaryCard','categoryCard','txCard'].forEach(id=>document.getElementById(id).style.display=show?'':'none');
   if(show){renderSummary();renderCategories();renderTransactions();}
+}
+// データ取込後はアップロードカードを小さな「再取込」バーに畳む
+function renderUploadCollapse(){
+  const card=document.getElementById('creditUploadCard');if(!card)return;
+  card.classList.toggle('collapsed',Object.keys(data.months).length>0);
+}
+// 明細ホーム上部の未処理キュー（この期間の仕分け／全期間の未回収）。両方0なら非表示
+function renderTriageQueueBanner(){
+  const el=document.getElementById('triageQueueBanner');if(!el)return;
+  const triageN=triagePending().filter(t=>!state.triageSkipped.has(t.id)).length;
+  let out=0,oc=0;data.loans.forEach(l=>{const r=getRemaining(l);if(r>0){out+=r;oc++;}});
+  const items=[];
+  if(triageN>0)items.push(`<button class="queue-item triage" onclick="switchTab('triage')"><span class="qi-ic">✂️</span><span class="qi-txt"><b>この期間の仕分け</b> ${triageN}件</span><span class="qi-go">›</span></button>`);
+  if(out>0)items.push(`<button class="queue-item loans" onclick="switchTab('loans')"><span class="qi-ic">🤝</span><span class="qi-txt"><b>未回収</b> ¥${out.toLocaleString()}<span class="qi-sub">全期間・${oc}件</span></span><span class="qi-go">›</span></button>`);
+  if(!items.length){el.innerHTML='';el.style.display='none';return;}
+  el.style.display='';
+  el.innerHTML=`<div class="queue-banner">${items.join('')}</div>`;
 }
 function renderMonthTabs(){
   const wrap=document.getElementById('monthTabs');
   const months=Object.keys(data.months).sort().reverse();
   wrap.innerHTML=months.map(m=>{
-    const lbl=cycleLabel(m);
-    return `<div class="month-tab ${m===state.currentMonth?'active':''}" onclick="switchMonth('${m}')">${lbl}</div>`;
+    const txs=data.months[m].transactions||[];
+    const tot=txs.reduce((s,t)=>s+t.amount,0);
+    const ym=String(m).match(/^(\d{4})-(\d{2})/);
+    const yr=ym?("'"+ym[1].slice(2)+" "):'';
+    return `<div class="month-tab ${m===state.currentMonth?'active':''}" onclick="switchMonth('${m}')"><span class="mt-period">${yr}${cycleLabel(m)}</span><span class="mt-amt">¥${tot.toLocaleString()}</span></div>`;
   }).join('');
 }
 function switchMonth(m){exitSelectMode();state.currentMonth=m;render();}
@@ -1039,16 +1085,12 @@ function renderSummary(){
   let loaned=0,loanedCount=0;
   txs.forEach(t=>{const lt=getLoanTotalForTx(t.id);if(lt>0){loaned+=lt;loanedCount++;}});
   const self=total-loaned;
-  let outstanding=0,oc=0;
-  data.loans.forEach(l=>{const r=getRemaining(l);if(r>0){outstanding+=r;oc++;}});
   document.getElementById('summaryMonth').textContent=cycleLabel(state.currentMonth,true);
   document.getElementById('totalAmount').textContent='¥'+total.toLocaleString();
   document.getElementById('totalCount').textContent=txs.length+'件';
   document.getElementById('loanedAmount').textContent='¥'+loaned.toLocaleString();
   document.getElementById('loanedCount').textContent=loanedCount+'件';
   document.getElementById('selfAmount').textContent='¥'+self.toLocaleString();
-  document.getElementById('outstandingAmount').textContent='¥'+outstanding.toLocaleString();
-  document.getElementById('outstandingCount').textContent=oc+'件';
 }
 
 function selfAmt(t){return t.amount-getLoanTotalForTx(t.id);}
@@ -1129,6 +1171,7 @@ function renderTransactions(){
     if(state.currentFilter==='self')return lt<t.amount;
     if(state.currentFilter==='has-loan')return lt>0;
     if(state.currentFilter==='amazon')return isAmazonTx(t);
+    if(state.currentFilter==='unclassified')return !t.necessity&&selfAmt(t)>0;
     if(state.currentFilter==='save')return t.necessity==='save';
     if(state.currentFilter==='need')return t.necessity==='need';
     return true;
