@@ -313,6 +313,7 @@
   let saltB64 = localStorage.getItem(SALT_KEY) || null;
   let online = null;                                     // null=確認中, true=同期OK, false=オフライン
   let lastPushed = null;
+  let writeToken = null;                                 // 書き込み用トークン（MPW由来・メモリ上のみ）
 
   function b64e(buf){ let s=""; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
   function b64d(str){ return Uint8Array.from(atob(str), c=>c.charCodeAt(0)); }
@@ -322,6 +323,17 @@
     return crypto.subtle.deriveKey(
       { name:"PBKDF2", salt, iterations:150000, hash:"SHA-256" },
       base, { name:"AES-GCM", length:256 }, false, ["encrypt","decrypt"]);
+  }
+  // 書き込み用トークンをMPWから導出。暗号鍵と同じ遅いKDF(15万回)＋別ソルトで分離するため、
+  // DB側に保存される sha256(token) が露出してもMPWの高速総当たり検証器にならない。
+  async function deriveWriteToken(password, salt){
+    const label = _enc.encode("vault-write-v1");
+    const wtSalt = new Uint8Array(salt.length + label.length);
+    wtSalt.set(salt, 0); wtSalt.set(label, salt.length);
+    const base = await crypto.subtle.importKey("raw", _enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits(
+      { name:"PBKDF2", salt:wtSalt, iterations:150000, hash:"SHA-256" }, base, 256);
+    return b64e(bits);
   }
   async function encryptData(obj){
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -342,11 +354,13 @@
     saveTimer = setTimeout(pushRemote, 350);
   }
   async function pushRemote(){
-    if(!sb || !cryptoKey) return;
+    if(!sb || !cryptoKey || !writeToken) return;
     try{
       const blob = await encryptData(data);
       lastPushed = JSON.stringify(blob);
-      const { error } = await sb.from(STATE_TABLE).upsert({ id:STATE_ID, state:blob, updated_at:new Date().toISOString() });
+      // 書き込みは security definer RPC 経由（トークン照合）。直接upsertはしない。
+      const { error } = await sb.rpc('save_vault_state', { p_id:STATE_ID, p_token:writeToken, p_state:blob });
+      if(error) console.warn('vault 保存失敗:', error.message || error);   // token mismatch等の切り分け用
       online = !error;
     }catch(e){ online=false; }
     renderSync();
@@ -393,7 +407,9 @@
       try{
         cryptoKey = await deriveKey(pw, salt);
         const obj = await decryptBlob(blob);     // 復号に失敗（=パス違い）なら例外
+        writeToken = await deriveWriteToken(pw, salt);
         mergeRemote(obj);
+        pushRemote();   // 開いた直後に1回保存し、DB側のwrite_token_hashを確実に確定させる（TOFU窓も縮小）
         return true;
       }catch(e){ cryptoKey=null; return false; }
     });
@@ -405,6 +421,7 @@
       saltB64 = b64e(salt);
       localStorage.setItem(SALT_KEY, saltB64);
       cryptoKey = await deriveKey(pw, salt);
+      writeToken = await deriveWriteToken(pw, salt);
       await pushRemote();        // 今あるローカルを暗号化して初回アップ
       return true;
     });
