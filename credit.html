@@ -42,6 +42,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .stat-trend{margin-top:5px;font-size:12px;font-weight:600}
 .stat-trend .trend.up{color:var(--red)}
 .stat-trend .trend.down{color:var(--green)}
+.self-mini{font-size:10px;color:var(--blue);font-weight:600}
 .nec-pill.unset-go{border:none;cursor:pointer;font-family:inherit;text-align:left;align-items:flex-start}
 .nec-pill.unset-go span{color:var(--blue);font-weight:600}
 .triage-back{display:inline-flex;align-items:center;gap:2px;margin:2px 0 14px;padding:7px 14px 7px 10px;background:var(--card);border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:500;color:var(--blue);cursor:pointer;font-family:inherit;box-shadow:0 1px 3px rgba(0,0,0,.05)}
@@ -350,7 +351,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
     <p class="muted" style="margin-top:10px;line-height:1.5">
       全データをJSON形式で書き出し／読み込みできます。iCloud Drive / AirDrop でMac↔iPhone間を引き継ぎ可能。
     </p>
-    <button class="btn btn-danger" style="margin-top:6px" onclick="deleteMonth()">🗑 表示中の期間の明細を削除</button>
+    <button class="btn btn-danger" id="deleteMonthBtn" style="margin-top:6px" onclick="deleteMonth()">🗑 表示中の期間の明細を削除</button>
   </details>
 </div>
 
@@ -952,6 +953,9 @@ function render(){
   else if(state.currentTab==='amazon')renderAmazonTab();
   else if(state.currentTab==='loans')renderLoansTab();
   renderLoanBadge();renderTriageBadge();
+  // 危険操作の期間削除は明細タブ(かつ期間あり)でだけ見せる
+  const dmb=document.getElementById('deleteMonthBtn');
+  if(dmb)dmb.style.display=(state.currentTab==='credit'&&state.currentMonth)?'':'none';
 }
 function triagePending(){
   if(!state.currentMonth||!data.months[state.currentMonth])return [];
@@ -1270,7 +1274,7 @@ function renderTxRow(t){
   return `<div class="${classes.join(' ')}" data-id="${t.id}">
     <div onclick="toggleTxExpand('${t.id}')">
       <div class="desc">${escapeHtml(displayMerchantName(t.description))}</div>
-      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${necTag}${amzTag}${movedTag}</div>
+      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${necTag}${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}</div>
       ${expanded?strip+amzHtml+actions:''}
     </div>
     <div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div>
