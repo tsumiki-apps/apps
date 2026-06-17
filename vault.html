@@ -276,7 +276,8 @@
 
 <script>
   const STORE = "tsumiki-vault-v1";        // この端末の復号済みデータ
-  const MPW_KEY = "tsumiki-vault-mpw";     // この端末に記憶するマスターパス（クラウドは暗号文のみ）
+  const MPW_KEY = "tsumiki-vault-mpw";     // 旧仕様の平文マスターパス保存キー（廃止）
+  try{ localStorage.removeItem(MPW_KEY); }catch(e){}  // 過去に保存された平文パスワードを端末から消去
   const SALT_KEY = "tsumiki-vault-salt";   // 端末キャッシュ用のソルト
   const DEFAULT_CATS = ["SNS","金融・銀行","買い物","仕事","メール","ゲーム","その他"];
 
@@ -387,34 +388,23 @@
   }
   async function unlockExisting(blob){
     const salt = b64d(blob.salt);
-    const cached = localStorage.getItem(MPW_KEY);
-    if(cached){
-      try{ cryptoKey = await deriveKey(cached, salt); mergeRemote(await decryptBlob(blob)); return; }
-      catch(e){ cryptoKey=null; }
-    }
+    // マスターパスワードは保存せず、毎回入力させる（復号鍵はメモリ上のみ）
     showLock("unlock", async (pw)=>{
       try{
         cryptoKey = await deriveKey(pw, salt);
         const obj = await decryptBlob(blob);     // 復号に失敗（=パス違い）なら例外
-        localStorage.setItem(MPW_KEY, pw);
         mergeRemote(obj);
         return true;
       }catch(e){ cryptoKey=null; return false; }
     });
   }
   async function setupNew(){
-    const cached = localStorage.getItem(MPW_KEY);
-    if(cached && saltB64){       // この端末では設定済み → そのままクラウドへ種を上げる
-      cryptoKey = await deriveKey(cached, b64d(saltB64));
-      await pushRemote();
-      return;
-    }
+    // マスターパスワードは保存しないため、初回も毎回ロック画面から開始する
     showLock("setup", async (pw)=>{
       const salt = crypto.getRandomValues(new Uint8Array(16));
       saltB64 = b64e(salt);
       localStorage.setItem(SALT_KEY, saltB64);
       cryptoKey = await deriveKey(pw, salt);
-      localStorage.setItem(MPW_KEY, pw);
       await pushRemote();        // 今あるローカルを暗号化して初回アップ
       return true;
     });
