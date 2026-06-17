@@ -34,6 +34,11 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .stat .sub{font-size:10px;color:var(--sub);margin-top:2px}
 .stat.highlight{background:var(--soft-blue)}.stat.highlight .value{color:var(--blue)}
 .stat.span2{grid-column:1/-1}
+.manage-card{background:var(--surf)}
+.manage-card>summary{font-size:13px;font-weight:800;color:var(--sub);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px}
+.manage-card>summary::-webkit-details-marker{display:none}
+.manage-card>summary::after{content:'›';margin-left:auto;color:var(--sub);transition:transform .15s}
+.manage-card[open]>summary::after{transform:rotate(90deg)}
 .stat-trend{margin-top:5px;font-size:12px;font-weight:600}
 .stat-trend .trend.up{color:var(--red)}
 .stat-trend .trend.down{color:var(--green)}
@@ -73,7 +78,8 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .filter-btn.active{background:var(--text);color:#fff;border-color:var(--text)}
 .tx-list{display:flex;flex-direction:column;gap:7px}
 /* 行背景は全行ニュートラル。立替状態はチップ＋取り消し線で示し、背景塗りはしない（原則3） */
-.tx{padding:11px 12px;border-radius:14px;background:var(--surf);border:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start}
+.tx{padding:11px 12px;border-radius:14px;background:var(--surf);border:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}
+.tx>div:first-child{min-width:0}
 .tx .desc{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tx .meta{font-size:11px;color:var(--sub);margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .cat-tag{padding:1px 6px;border-radius:4px;background:#fff;border:1px solid var(--line);font-size:10px}
@@ -110,7 +116,8 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .cat-caret{flex:0 0 auto;color:var(--sub);font-size:14px;transition:transform .15s;transform:rotate(0deg)}
 .cat-caret.open{transform:rotate(90deg)}
 .cat-drill{display:flex;flex-direction:column;gap:5px;padding:6px 4px 8px 18px;border-left:2px solid var(--line);margin:4px 0 4px 8px}
-.cat-drill-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;background:var(--bg);border-radius:8px;padding:8px 10px}
+.cat-drill-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start;background:var(--bg);border-radius:8px;padding:8px 10px}
+.cat-drill-row>div:first-child{min-width:0}
 .cd-desc{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cd-meta{font-size:10px;color:var(--sub);margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .cd-amt{font-size:14px;font-weight:600;text-align:right;white-space:nowrap}
@@ -212,7 +219,8 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .payment-row .amt{font-weight:500}
 .loan-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 .amz-order-list{display:flex;flex-direction:column;gap:7px}
-.amz-order-item{background:var(--bg);border-radius:10px;padding:11px 13px;display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:start}
+.amz-order-item{background:var(--bg);border-radius:10px;padding:11px 13px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;align-items:start}
+.amz-order-item>div:first-child{min-width:0}
 .amz-order-item.linked{background:var(--soft-blue)}
 .amz-order-item .product{font-size:13px;font-weight:500;word-break:break-word}
 .amz-order-item .meta{font-size:11px;color:var(--sub);margin-top:3px}
@@ -262,7 +270,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
       <div class="summary-grid">
         <div class="stat"><div class="label">クレカ総決済額</div><div class="value" id="totalAmount">¥0</div><div class="sub" id="totalCount">0件</div></div>
         <div class="stat"><div class="label">立て替え化</div><div class="value" id="loanedAmount">¥0</div><div class="sub" id="loanedCount">0件</div></div>
-        <div class="stat highlight span2"><div class="label">🎯 自分の実質支出</div><div class="value" id="selfAmount">¥0</div><div class="sub">立て替え分を差し引き</div><div class="stat-trend" id="selfTrend"></div></div>
+        <div class="stat highlight span2"><div class="label">🎯 自分の実質支出</div><div class="value" id="selfAmount">¥0</div><div class="stat-trend" id="selfTrend"></div></div>
       </div>
     </div>
     <div class="card" id="categoryCard" style="display:none">
@@ -270,20 +278,13 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
       <div class="cat-list" id="categoryList"></div>
     </div>
     <div class="card" id="txCard" style="display:none">
-      <h2><span>明細</span><span style="display:flex;gap:6px"><button class="btn" id="selectModeBtn" onclick="toggleSelectMode()">選択</button><button class="btn btn-danger" onclick="deleteMonth()">この期間を削除</button></span></h2>
+      <h2><span>明細</span><button class="btn" id="selectModeBtn" onclick="toggleSelectMode()">選択</button></h2>
       <div class="filter-bar">
-        <button class="filter-btn active" data-filter="all">すべて</button>
-        <button class="filter-btn" data-filter="self">自分の支出のみ</button>
-        <button class="filter-btn" data-filter="has-loan">立て替えあり</button>
+        <button class="filter-btn active" data-filter="self">自分分</button>
+        <button class="filter-btn" data-filter="all">すべて</button>
+        <button class="filter-btn" data-filter="unclassified">未分類</button>
+        <button class="filter-btn" data-filter="has-loan">立替</button>
         <button class="filter-btn" data-filter="amazon">Amazon</button>
-        <button class="filter-btn" data-filter="unclassified">🗂️未分類</button>
-        <button class="filter-btn" data-filter="save">✂️節約候補</button>
-        <button class="filter-btn" data-filter="need">✅必要経費</button>
-      </div>
-      <div class="filter-bar" style="margin-top:-4px">
-        <span class="muted" style="align-self:center;margin-right:2px">並び:</span>
-        <button class="filter-btn active" data-sort="date-desc">日付 新→古</button>
-        <button class="filter-btn" data-sort="amount-desc">金額 高→低</button>
       </div>
       <div class="tx-list" id="txList"></div>
     </div>
@@ -336,10 +337,10 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
     <div id="loansByPerson"></div>
   </div>
 
-  <!-- データ引き継ぎ（全タブ共通） -->
-  <div class="card" id="dataMgmtCard" style="margin-top:18px;background:#fafafa">
-    <h2>💾 データの引き継ぎ</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
+  <!-- 管理（データ引き継ぎ・削除／全タブ共通・既定で閉じる） -->
+  <details class="card manage-card" id="dataMgmtCard" style="margin-top:18px">
+    <summary>⚙️ 管理（データ・削除）</summary>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn" onclick="exportData()">📤 エクスポート (JSON)</button>
       <label class="btn" style="display:inline-flex;align-items:center;cursor:pointer">
         📥 インポート (JSON)
@@ -347,10 +348,10 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
       </label>
     </div>
     <p class="muted" style="margin-top:10px;line-height:1.5">
-      全データをJSON形式で書き出し／読み込みできます。<br>
-      iCloud Drive または AirDrop 経由で Mac と iPhone 間のデータを引き継ぎ可能。
+      全データをJSON形式で書き出し／読み込みできます。iCloud Drive / AirDrop でMac↔iPhone間を引き継ぎ可能。
     </p>
-  </div>
+    <button class="btn btn-danger" style="margin-top:6px" onclick="deleteMonth()">🗑 表示中の期間の明細を削除</button>
+  </details>
 </div>
 
 <!-- モーダル: 立て替え化 -->
@@ -461,7 +462,7 @@ const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
 let data={months:{},amazonOrders:[],loans:[],payments:[],people:[]};
-let state={currentTab:'credit',currentMonth:null,currentFilter:'all',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),triageSkipped:new Set(),triageLast:null,selectMode:false,selectedTxIds:new Set()};
+let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),triageSkipped:new Set(),triageLast:null,selectMode:false,selectedTxIds:new Set()};
 
 function load(){
   try{
@@ -1184,7 +1185,7 @@ function renderCatDrillRow(t){
   const loanNote=lt>0?`<span>（決済¥${t.amount.toLocaleString()}）</span>`:'';
   return `<div class="cat-drill-row">
     <div>
-      <div class="cd-desc">${escapeHtml(t.description)}</div>
+      <div class="cd-desc">${escapeHtml(displayMerchantName(t.description))}</div>
       <div class="cd-meta"><span>${t.date}</span>${loanNote}${necTag}</div>
     </div>
     <div class="cd-amt">¥${self.toLocaleString()}</div>
@@ -1255,25 +1256,32 @@ function renderTxRow(t){
     classes.push('selectable');if(checked)classes.push('selected');
     return `<div class="${classes.join(' ')}" data-id="${t.id}">
       <div onclick="toggleTxSelect('${t.id}')">
-        <div class="desc"><span class="tx-check">${checked?'☑️':'⬜'}</span>${escapeHtml(t.description)}</div>
+        <div class="desc"><span class="tx-check">${checked?'☑️':'⬜'}</span>${escapeHtml(displayMerchantName(t.description))}</div>
         <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${necTag}${amzTag}${movedTag}</div>
       </div>
       <div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div>
     </div>`;
   }
-  return `<div class="${classes.join(' ')}" data-id="${t.id}">
-    <div onclick="toggleTxExpand('${t.id}')">
-      <div class="desc">${escapeHtml(t.description)}</div>
-      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${necTag}${amzTag}${movedTag}</div>
-      ${strip}
-      ${amzHtml}
-      <div class="tx-actions">
+  const actions=`<div class="tx-actions">
         <button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>
         ${loans.length>0?`<button class="btn-mini" onclick="event.stopPropagation();switchTab('loans')">台帳で見る</button>`:''}
-      </div>
+      </div>`;
+  // 折りたたみ時は「店名 … 金額」＋薄いメタだけ。立替チップ/Amazon/操作ボタンは展開時のみ（一覧=読む / 展開=処理）
+  return `<div class="${classes.join(' ')}" data-id="${t.id}">
+    <div onclick="toggleTxExpand('${t.id}')">
+      <div class="desc">${escapeHtml(displayMerchantName(t.description))}</div>
+      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${necTag}${amzTag}${movedTag}</div>
+      ${expanded?strip+amzHtml+actions:''}
     </div>
     <div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div>
   </div>`;
+}
+// 表示専用の店名整形：末尾の「 都道府県＋以降」を除去、カタカナ間の文字化け「?」を除去（元descは保持）
+const PREF_RE=/[\s　]+[?？]?(北海道|青森県|岩手県|宮城県|秋田県|山形県|福島県|茨城県|栃木県|群馬県|埼玉県|千葉県|東京都|神奈川県|新潟県|富山県|石川県|福井県|山梨県|長野県|岐阜県|静岡県|愛知県|三重県|滋賀県|京都府|大阪府|兵庫県|奈良県|和歌山県|鳥取県|島根県|岡山県|広島県|山口県|徳島県|香川県|愛媛県|高知県|福岡県|佐賀県|長崎県|熊本県|大分県|宮崎県|鹿児島県|沖縄県)(?:[\s　].*|.*)?$/;
+function displayMerchantName(desc){
+  let s=String(desc||'').replace(PREF_RE,'');
+  s=s.replace(/([ァ-ヶ])[?？]+([ァ-ヶ])/g,'$1$2').replace(/([ァ-ヶ])[?？]+(?=\s|$)/g,'$1');
+  return s.trim()||String(desc||'');
 }
 
 function toggleTxExpand(id){
