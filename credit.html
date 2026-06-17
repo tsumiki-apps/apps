@@ -34,6 +34,13 @@ h1{font-size:22px;font-weight:600;text-align:center;margin:4px 0 2px}
 .stat .sub{font-size:10px;color:var(--sub);margin-top:2px}
 .stat.highlight{background:var(--soft-blue)}.stat.highlight .value{color:var(--blue)}
 .stat.span2{grid-column:1/-1}
+.stat-trend{margin-top:5px;font-size:12px;font-weight:600}
+.stat-trend .trend.up{color:var(--red)}
+.stat-trend .trend.down{color:var(--green)}
+.nec-pill.unset-go{border:none;cursor:pointer;font-family:inherit;text-align:left;align-items:flex-start}
+.nec-pill.unset-go span{color:var(--blue);font-weight:600}
+.triage-back{display:inline-flex;align-items:center;gap:2px;margin:2px 0 14px;padding:7px 14px 7px 10px;background:var(--card);border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:500;color:var(--blue);cursor:pointer;font-family:inherit;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.triage-back:active{transform:scale(.96)}
 /* 月タブ（年＋総決済額の2行チップ） */
 .month-tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:6px 13px;line-height:1.22}
 .month-tab .mt-period{font-size:12px}
@@ -233,7 +240,6 @@ h1{font-size:22px;font-weight:600;text-align:center;margin:4px 0 2px}
 
   <div class="top-tabs">
     <button class="top-tab active" data-tab="credit">💳 明細</button>
-    <button class="top-tab" data-tab="triage">🗂️ 仕分け <span class="badge" id="triageBadge" style="display:none"></span></button>
     <button class="top-tab" data-tab="amazon">📦 Amazon</button>
     <button class="top-tab" data-tab="loans">🤝 立て替え <span class="badge" id="loanBadge" style="display:none"></span></button>
   </div>
@@ -257,7 +263,7 @@ h1{font-size:22px;font-weight:600;text-align:center;margin:4px 0 2px}
       <div class="summary-grid">
         <div class="stat"><div class="label">クレカ総決済額</div><div class="value" id="totalAmount">¥0</div><div class="sub" id="totalCount">0件</div></div>
         <div class="stat"><div class="label">立て替え化</div><div class="value" id="loanedAmount">¥0</div><div class="sub" id="loanedCount">0件</div></div>
-        <div class="stat highlight span2"><div class="label">🎯 自分の実質支出</div><div class="value" id="selfAmount">¥0</div><div class="sub">立て替え分を差し引き</div></div>
+        <div class="stat highlight span2"><div class="label">🎯 自分の実質支出</div><div class="value" id="selfAmount">¥0</div><div class="sub">立て替え分を差し引き</div><div class="stat-trend" id="selfTrend"></div></div>
       </div>
     </div>
     <div class="card" id="categoryCard" style="display:none">
@@ -958,8 +964,9 @@ function renderTriageBadge(){
 }
 function renderTriageTab(){
   const body=document.getElementById('triageBody');
+  const back='<button class="triage-back" onclick="switchTab(\'credit\')">‹ 明細へ戻る</button>';
   if(!state.currentMonth||!data.months[state.currentMonth]){
-    body.innerHTML='<div class="card"><div class="empty">明細を取り込むと、必要経費か節約かを仕分けできます。</div></div>';return;
+    body.innerHTML=back+'<div class="card"><div class="empty">明細を取り込むと、必要経費か節約かを仕分けできます。</div></div>';return;
   }
   const txs=data.months[state.currentMonth].transactions;
   const total=txs.filter(t=>selfAmt(t)>0).length;
@@ -971,7 +978,7 @@ function renderTriageTab(){
 
   if(queue.length===0){
     const skipN=pending.length;
-    body.innerHTML=`<div class="card triage-done">
+    body.innerHTML=back+`<div class="card triage-done">
       <div class="big">🎉</div>
       <div style="font-size:18px;font-weight:600">${cycleLabel(state.currentMonth,true)} の仕分け完了！</div>
       <div class="muted" style="margin-top:6px">自分の支出 ${total}件をすべて分類しました</div>
@@ -986,7 +993,7 @@ function renderTriageTab(){
   const self=selfAmt(t);
   const done=total-pending.length;
   const pct=total?Math.round(done/total*100):0;
-  body.innerHTML=`
+  body.innerHTML=back+`
     <div class="triage-head">
       <div class="triage-progress">${cycleLabel(state.currentMonth,true)} ・ 残り <strong>${queue.length}</strong>件</div>
       <div class="triage-bar"><div style="width:${pct}%"></div></div>
@@ -1030,6 +1037,9 @@ function resetTriageSkip(){state.triageSkipped=new Set();renderTriageTab();rende
 function renderTopTabs(){
   document.querySelectorAll('.top-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.currentTab));
   document.querySelectorAll('.tab-content').forEach(el=>el.classList.toggle('active',el.id==='tab-'+state.currentTab));
+  // 仕分けは"処理モード"。上部タブは消し、戻る導線だけにする
+  const tabsEl=document.querySelector('.top-tabs');
+  if(tabsEl)tabsEl.style.display=state.currentTab==='triage'?'none':'';
 }
 function renderLoanBadge(){
   const n=data.loans.filter(l=>!isFullyPaid(l)).length;
@@ -1091,6 +1101,21 @@ function renderSummary(){
   document.getElementById('loanedAmount').textContent='¥'+loaned.toLocaleString();
   document.getElementById('loanedCount').textContent=loanedCount+'件';
   document.getElementById('selfAmount').textContent='¥'+self.toLocaleString();
+  renderSelfTrend(self);
+}
+// 前期間比（自分の実質支出 同士で1つ前のサイクルと比較。前期間が無い／差0なら非表示）
+function renderSelfTrend(self){
+  const el=document.getElementById('selfTrend');if(!el)return;
+  const keys=Object.keys(data.months).sort();
+  const idx=keys.indexOf(state.currentMonth);
+  if(idx<=0){el.innerHTML='';return;}
+  const prevTxs=data.months[keys[idx-1]].transactions||[];
+  let prevTotal=0,prevLoaned=0;
+  prevTxs.forEach(t=>{prevTotal+=t.amount;prevLoaned+=getLoanTotalForTx(t.id);});
+  const diff=self-(prevTotal-prevLoaned);
+  if(diff===0){el.innerHTML='';return;}
+  const up=diff>0;
+  el.innerHTML=`<span class="trend ${up?'up':'down'}">前期間比 ${up?'+':'−'}¥${Math.abs(diff).toLocaleString()}</span>`;
 }
 
 function selfAmt(t){return t.amount-getLoanTotalForTx(t.id);}
@@ -1138,10 +1163,13 @@ function renderCategories(){
     </div>`;
   }).join('');
 
+  const unsetPill=unsetSum>0
+    ?`<button class="nec-pill unset-go" onclick="switchTab('triage')"><span>未分類 ›</span><strong>¥${unsetSum.toLocaleString()}</strong></button>`
+    :`<div class="nec-pill"><span>未分類</span><strong>¥${unsetSum.toLocaleString()}</strong></div>`;
   const necBar=`<div class="nec-summary">
     <div class="nec-pill need"><span>✅ 必要経費</span><strong>¥${needSum.toLocaleString()}</strong></div>
     <div class="nec-pill save"><span>✂️ 節約できそう</span><strong>¥${saveSum.toLocaleString()}</strong></div>
-    <div class="nec-pill"><span>未分類</span><strong>¥${unsetSum.toLocaleString()}</strong></div>
+    ${unsetPill}
   </div>`;
 
   list.innerHTML=`<div class="cat-chart-wrap">${donut}<div class="cat-rows">${rows}</div></div>${necBar}`;
