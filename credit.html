@@ -1280,12 +1280,71 @@ function renderTxRow(t){
     <div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div>
   </div>`;
 }
-// 表示専用の店名整形：末尾の「 都道府県＋以降」を除去、カタカナ間の文字化け「?」を除去（元descは保持）
-const PREF_RE=/[\s　]+[?？]?(北海道|青森県|岩手県|宮城県|秋田県|山形県|福島県|茨城県|栃木県|群馬県|埼玉県|千葉県|東京都|神奈川県|新潟県|富山県|石川県|福井県|山梨県|長野県|岐阜県|静岡県|愛知県|三重県|滋賀県|京都府|大阪府|兵庫県|奈良県|和歌山県|鳥取県|島根県|岡山県|広島県|山口県|徳島県|香川県|愛媛県|高知県|福岡県|佐賀県|長崎県|熊本県|大分県|宮崎県|鹿児島県|沖縄県)(?:[\s　].*|.*)?$/;
+// 表示専用の店名整形（元descは常に保持）：
+//  ① 文字化け「?」をカタカナ隣接なら長音「ー」と推定して補正
+//  ② 既知ブランドは短い正式名へ正規化（「アマゾン JP マーケットプレイス」→Amazon 等）
+//  ③ 未知店名は末尾の都道府県（途中で切れた形も含む）以降と残りの「?」を除去
+// 末尾の住所（都道府県。CSVで「東京」「神奈川」のように途中で切れている場合も拾う）
+const PREF_RE=/[\s　]+[?？]?(?:北海道|青森|岩手|宮城|秋田|山形|福島|茨城|栃木|群馬|埼玉|千葉|東京|神奈川|新潟|富山|石川|福井|山梨|長野|岐阜|静岡|愛知|三重|滋賀|京都|大阪|兵庫|奈良|和歌山|鳥取|島根|岡山|広島|山口|徳島|香川|愛媛|高知|福岡|佐賀|長崎|熊本|大分|宮崎|鹿児島|沖縄)(?:都|府|県)?[^\s　]*(?:[\s　].*)?$/;
+// 既知ブランド→短い表示名。複合語(ローソンチケット等)は意味が消えないよう先に置く。keysはカタカナ/漢字 or 小文字ASCII(全角も小文字化して照合)
+const BRAND_RULES=[
+  {name:'Amazonプライム', keys:['プライム会費']},
+  {name:'Amazon', keys:['アマゾン','amazon']},
+  {name:'Apple', keys:['アップル','apple','itunes']},
+  {name:'マクドナルド', keys:['マクドナルド']},
+  {name:'セブンイレブン', keys:['セブンイレブン']},
+  {name:'ローソンチケット', keys:['ローソンチケット']},
+  {name:'ローソン', keys:['ローソン','lawson']},
+  {name:'ファミリーマート', keys:['ファミリーマート']},
+  {name:'ミニストップ', keys:['ミニストップ']},
+  {name:'すき家', keys:['すき家']},
+  {name:'松屋', keys:['松屋フーズ','松屋 ']},
+  {name:'吉野家', keys:['吉野家']},
+  {name:'スシロー', keys:['スシロー']},
+  {name:'一蘭', keys:['一蘭']},
+  {name:'牛角', keys:['牛角']},
+  {name:'バーミヤン', keys:['バーミヤン']},
+  {name:'蒙古タンメン中本', keys:['蒙古タンメン']},
+  {name:'スターバックス', keys:['スターバックス']},
+  {name:'ゴンチャ', keys:['ゴンチャ']},
+  {name:'DEAN & DELUCA', keys:['dean']},
+  {name:"I'm donut", keys:['donut']},
+  {name:'ユニクロ', keys:['ユニクロ','uniqlo']},
+  {name:'無印良品', keys:['無印良品']},
+  {name:'ナイキ', keys:['ナイキ','nike']},
+  {name:'マツモトキヨシ', keys:['マツモトキヨシ','マツキヨ']},
+  {name:'クリエイト', keys:['クリエイトエス','クリエイトＳ']},
+  {name:'ドン・キホーテ', keys:['ドン キホーテ','ドンキホーテ']},
+  {name:'セリア', keys:['セリア']},
+  {name:'ダイソー', keys:['ダイソー','daiso']},
+  {name:'IKEA', keys:['ikea']},
+  {name:'イトーヨーカドー', keys:['イトーヨーカドー']},
+  {name:'ナショナル麻布', keys:['ナショナル麻布']},
+  {name:'TOHOシネマズ', keys:['tohoシネマズ','toho']},
+  {name:'Netflix', keys:['netflix']},
+  {name:'Spotify', keys:['spotify']},
+  {name:'YouTube', keys:['youtube']},
+  {name:'Claude', keys:['claude']},
+  {name:'スマートEX', keys:['スマート']},
+  {name:'Hello Cycling', keys:['hello cycling']},
+  {name:'東京ガス', keys:['東京ガス']},
+  {name:'BIGLOBE', keys:['biglobe']},
+  {name:'クイックペイ', keys:['クイックペイ']},
+  {name:'FIT PLACE', keys:['fit place']},
+];
+function toAsciiLower(str){return String(str).replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).toLowerCase();}
 function displayMerchantName(desc){
-  let s=String(desc||'').replace(PREF_RE,'');
-  s=s.replace(/([ァ-ヶ])[?？]+([ァ-ヶ])/g,'$1$2').replace(/([ァ-ヶ])[?？]+(?=\s|$)/g,'$1');
-  return s.trim()||String(desc||'');
+  const raw=String(desc||'');
+  // ① 文字化け補正: カタカナに隣接する「?」は長音「ー」と推定（コ?ヒ?→コーヒー / オ?ダ?→オーダー）
+  let s=raw.replace(/([ァ-ヶ])[?？]/g,'$1ー').replace(/ー{2,}/g,'ー');
+  // ② 既知ブランドは短い正式名へ
+  const norm=toAsciiLower(s);
+  for(const b of BRAND_RULES){
+    for(const k of b.keys){ if(s.indexOf(k)>=0||norm.indexOf(k)>=0)return b.name; }
+  }
+  // ③ 未知店名: 末尾の都道府県以降を除去 → 残った「?」除去 → 余分な空白整理
+  s=s.replace(PREF_RE,'').replace(/[?？]/g,'').replace(/[\s　]{2,}/g,' ').trim();
+  return s||raw;
 }
 
 function toggleTxExpand(id){
