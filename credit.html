@@ -482,9 +482,17 @@ function migrateToCycles(){
   const allTx=[];
   keys.forEach(k=>{(data.months[k].transactions||[]).forEach(t=>allTx.push(t));});
   const byCycle={};
-  allTx.forEach(t=>{const ck=t.cycleOverride||cycleStartFromDate(t.date);const key=ck||'unknown';(byCycle[key]=byCycle[key]||{transactions:[]}).transactions.push(t);});
+  allTx.forEach(t=>{const ck=t.cycleOverride||txCycle(t);const key=ck||'unknown';(byCycle[key]=byCycle[key]||{transactions:[]}).transactions.push(t);});
   data.months=byCycle;
   save();
+}
+// 全明細を cycleOverride||請求サイクル(確定日優先) で1箇所へ再配置。手動移動(override)は尊重。
+// postDateが無い明細は利用日基準のままなので動かない＝既存配置を壊さない。
+function normalizeBuckets(){
+  const all=[];Object.values(data.months).forEach(m=>(m.transactions||[]).forEach(t=>all.push(t)));
+  const nm={};
+  all.forEach(t=>{const k=t.cycleOverride||txCycle(t)||'unknown';(nm[k]=nm[k]||{transactions:[]}).transactions.push(t);});
+  data.months=nm;
 }
 // ===== 非破壊マージ：クラウド採用時に「明細をidで和集合」する（丸ごと置換しない） =====
 // 端末間でlast-write-winsの全置換をすると、片方にしか無い明細が消える事故になる。
@@ -515,7 +523,7 @@ function mergeState(a,b){
   // 明細を cycleOverride||自然サイクル で1箇所へ再配置。消えた注文への紐付けは外す
   txMap.forEach(t=>{
     if(t.linkedAmazonId&&!liveAmz.has(t.linkedAmazonId)){t={...t};delete t.linkedAmazonId;}
-    const k=t.cycleOverride||cycleStartFromDate(t.date);
+    const k=t.cycleOverride||txCycle(t);
     if(!k)return;
     (out.months[k]=out.months[k]||{transactions:[]}).transactions.push(t);
   });
@@ -715,6 +723,9 @@ async function parseCreditCSV(file){
   const header=parseCsvLine(lines[0]);
   // 三井住友/Amex/その他カード明細の列名ゆれを吸収
   const dIdx=findHeaderIdx(header,['ご利用日','利用日','取引日','日付','ご利用年月日','Date','TransactionDate']);
+  // データ処理日(=確定日)。請求サイクルの締めはこの日で決まるので利用日と別に取得。具体名を先、広い「処理日」は最後。利用日列とは別indexのみ採用。
+  const pIdxRaw=findHeaderIdx(header,['データ処理日','ご請求確定日','確定日','売上日','計上日','処理日']);
+  const postIdx=(pIdxRaw>=0&&pIdxRaw!==dIdx)?pIdxRaw:-1;
   const descIdx=findHeaderIdx(header,['ご利用内容','ご利用先','ご利用店名','ご利用店名・商品名','店名','内容','店舗','摘要','利用店名','加盟店名','Description','Merchant','明細','ご利用明細']);
   // 金額列は誤検出が事故になるため、具体名を最優先→一般「金額」は補助/手数料/割引/海外現地レート系を除外
   // 金額列: まず除外語（海外/現地/手数料/割引等）を含まない「金額」系の列だけを候補化し、
@@ -737,10 +748,13 @@ async function parseCreditCSV(file){
     const amount=parseInt((cols[amtIdx]||'').replace(/[,"¥]/g,'').trim(),10);
     if(!date||!desc||isNaN(amount))continue;
     if(amount<0)continue;
-    const baseKey=date+'|'+desc+'|'+amount;
+    const postDate=postIdx>=0?(cols[postIdx]||'').trim():'';
+    const baseKey=date+'|'+desc+'|'+amount;           // idは利用日基準のまま（既存idを壊さない）
     counter[baseKey]=(counter[baseKey]||0)+1;
     const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
-    txs.push({id:'tx_'+hashStr(baseKey+sfx),date,description:desc.replace(/\s+/g,' '),amount,category:categorize(desc)});
+    const tx={id:'tx_'+hashStr(baseKey+sfx),date,description:desc.replace(/\s+/g,' '),amount,category:categorize(desc)};
+    if(postDate)tx.postDate=postDate;                 // 請求サイクル判定に使う（表示は利用日のまま）
+    txs.push(tx);
   }
   return txs;
 }
@@ -753,6 +767,10 @@ function cycleStartFromDate(dStr){
   if(d<7){mo--;if(mo<1){mo=12;y--;}} // 6日以前は前月始まりのサイクル
   return y+'-'+String(mo).padStart(2,'0')+'-07';
 }
+// 明細の「請求サイクル」は“データ処理日(確定日)”優先。カード請求は確定日で締まるため、
+// 利用日が締め前でも確定日が翌期なら翌期に入れる（=ご利用日基準のズレを解消）。
+// postDateが無い/不正なら利用日(t.date)へフォールバック。表示・id・並びは利用日のまま。
+function txCycle(t){return cycleStartFromDate(t.postDate)||cycleStartFromDate(t.date);}
 // サイクルキー → 期間ラベル。withYear=true で開始年を付与
 function cycleLabel(key,withYear){
   const m=String(key).match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -768,32 +786,39 @@ async function handleCreditCSV(file){
   if(!txs||txs.length===0)return;
   // 追記マージ方式：同じ明細(id一致=日付/内容/金額が同一)は既存をそのまま保持し、
   // 仕分け(necessity)・Amazon紐付け・期間移動・立替などのユーザー情報を一切消さない。
-  // CSVに無い過去の明細も削除しない。新規明細だけを自然サイクルへ追加する。
-  const oldIds=new Set();
-  Object.values(data.months).forEach(m=>m.transactions.forEach(t=>oldIds.add(t.id)));
-  let added=0,dup=0,nodate=0;
+  // CSVに無い過去の明細も削除しない。新規明細だけを追加。既存には確定日(postDate)だけ補完して請求期間を正す。
+  const idMap=new Map();
+  Object.values(data.months).forEach(m=>m.transactions.forEach(t=>idMap.set(t.id,t)));
+  let added=0,dup=0,nodate=0,fixed=0;
   const touched=new Set();
   const newIds=new Set();
   txs.forEach(t=>{
-    if(oldIds.has(t.id)){dup++;return;}              // 既存：手を触れない（保持・自動リンクもしない）
-    const k=cycleStartFromDate(t.date);
+    const ex=idMap.get(t.id);
+    if(ex){                                            // 既存：仕分け/移動/紐付けは一切触らない
+      dup++;
+      if(t.postDate&&ex.postDate!==t.postDate){ex.postDate=t.postDate;fixed++;} // 確定日だけ補完（請求期間の正規化用）
+      return;
+    }
+    const k=txCycle(t);                                // 請求サイクルはデータ処理日優先（確定日で締まる）
     if(!k){nodate++;return;}
     if(data.deletedTxIds&&data.deletedTxIds[t.id]){t.revivedAt=Date.now();delete data.deletedTxIds[t.id];} // 再取込は過去の削除より優先＝復活(他端末の古いtombstoneにも勝つ)
     if(!data.months[k])data.months[k]={transactions:[]};
     data.months[k].transactions.push(t);
-    oldIds.add(t.id);                                  // 同一CSV内の重複も二重登録しない
+    idMap.set(t.id,t);                                 // 同一CSV内の重複も二重登録しない
     newIds.add(t.id);
     added++;touched.add(k);
   });
   if(added===0&&dup===0){alert('日付が認識できる明細がありません');return;}
+  normalizeBuckets();                                  // 確定日で請求期間を正規化（手動移動=cycleOverrideは尊重）
   autoLinkAmazon(newIds);save();flushSave();           // 自動リンクは“新規だけ”／取込は即クラウド反映（350ms待ちの欠落窓を無くす）
   if(touched.size)state.currentMonth=[...touched].sort().pop();
-  else if(!state.currentMonth){const ks=Object.keys(data.months).sort();if(ks.length)state.currentMonth=ks[ks.length-1];}
+  if(!state.currentMonth||!data.months[state.currentMonth]){const ks=Object.keys(data.months).sort();state.currentMonth=ks.length?ks[ks.length-1]:null;}
   render();
   const ds=txs.map(t=>t.date).filter(Boolean).sort();
   const range=ds.length?`\n対象期間: ${ds[0]}〜${ds[ds.length-1]}`:'';
   showSyncToast(`💳 新規${added}件を追加しました`);
-  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${range}\n\n※既存の明細・仕分け・立替・Amazon紐付けは保持され、消えません。`),50);
+  const fixedLine=fixed>0?`\n請求期間を補正: ${fixed}件（確定日でカード請求どおりの期へ）`:'';
+  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${fixedLine}${range}\n\n※明細・仕分け・立替・Amazon紐付け・手動移動は保持され、消えません。`),50);
 }
 
 // Amazon注文の取り込みはブックマークレット(amazon-import-bookmarklet.js)経由でSupabaseへ直接追記。
@@ -927,7 +952,7 @@ function openMoveModalFor(ids){
   state.moveTxTargets=ids;
   let sub,natural=null;
   if(ids.length===1){
-    const loc=findTxLocation(ids[0]);const t=loc.tx;natural=cycleStartFromDate(t.date);
+    const loc=findTxLocation(ids[0]);const t=loc.tx;natural=txCycle(t);
     sub=`${t.description} ／ ${t.date} ／ ¥${t.amount.toLocaleString()}\n現在: ${cycleLabel(loc.key,true)}`;
   }else{
     sub=`${ids.length}件をまとめて移動します`;
@@ -959,7 +984,7 @@ function moveOneTxToCycle(txId,targetKey){
   if(loc.key===targetKey)return;
   const t=loc.tx;
   data.months[loc.key].transactions.splice(loc.idx,1);
-  const natural=cycleStartFromDate(t.date);
+  const natural=txCycle(t);
   if(targetKey===natural)delete t.cycleOverride;else t.cycleOverride=targetKey;
   if(!data.months[targetKey])data.months[targetKey]={transactions:[]};
   data.months[targetKey].transactions.push(t);
