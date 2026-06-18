@@ -698,41 +698,31 @@ function cycleLabel(key,withYear){
 async function handleCreditCSV(file){
   const txs=await parseCreditCSV(file);
   if(!txs||txs.length===0)return;
-  // 既存明細の紐付け・手動移動(cycleOverride)を id で引き継ぐ
-  const oldById={};
-  Object.values(data.months).forEach(m=>m.transactions.forEach(t=>{oldById[t.id]=t;}));
-  const byNatural={};   // 日付どおりのサイクルに入る明細（バケットを上書き）
-  const moved=[];       // 手動移動済みの明細（移動先へ個別にupsert）
-  const inCsv=new Set();
+  // 追記マージ方式：同じ明細(id一致=日付/内容/金額が同一)は既存をそのまま保持し、
+  // 仕分け(necessity)・Amazon紐付け・期間移動・立替などのユーザー情報を一切消さない。
+  // CSVに無い過去の明細も削除しない。新規明細だけを自然サイクルへ追加する。
+  const oldIds=new Set();
+  Object.values(data.months).forEach(m=>m.transactions.forEach(t=>oldIds.add(t.id)));
+  let added=0,dup=0,nodate=0;
+  const touched=new Set();
   txs.forEach(t=>{
-    inCsv.add(t.id);
-    const old=oldById[t.id];
-    if(old){if(old.linkedAmazonId)t.linkedAmazonId=old.linkedAmazonId;if(old.cycleOverride)t.cycleOverride=old.cycleOverride;}
-    if(t.cycleOverride){moved.push(t);return;}
-    const k=cycleStartFromDate(t.date);if(k)(byNatural[k]=byNatural[k]||[]).push(t);
+    if(oldIds.has(t.id)){dup++;return;}              // 既存：手を触れない（保持）
+    const k=cycleStartFromDate(t.date);
+    if(!k){nodate++;return;}
+    if(!data.months[k])data.months[k]={transactions:[]};
+    data.months[k].transactions.push(t);
+    oldIds.add(t.id);                                  // 同一CSV内の重複も二重登録しない
+    added++;touched.add(k);
   });
-  const keys=Object.keys(byNatural);
-  if(keys.length===0&&moved.length===0){alert('日付が認識できる明細がありません');return;}
-  // 日付どおりのバケットは上書き。ただし他所から移動してきた明細（今回のCSVに無いもの）は残す
-  keys.forEach(mk=>{
-    const keepMovedIn=(data.months[mk]?.transactions||[]).filter(t=>t.cycleOverride===mk&&!inCsv.has(t.id));
-    data.months[mk]={transactions:[...byNatural[mk],...keepMovedIn]};
-  });
-  // 移動済み明細は移動先バケットへupsert（バケットの他の中身は消さない）
-  moved.forEach(t=>{
-    const mk=t.cycleOverride;
-    if(!data.months[mk])data.months[mk]={transactions:[]};
-    const arr=data.months[mk].transactions;
-    const i=arr.findIndex(x=>x.id===t.id);
-    if(i>=0)arr[i]=t;else arr.push(t);
-  });
+  if(added===0&&dup===0){alert('日付が認識できる明細がありません');return;}
   autoLinkAmazon();save();
-  state.currentMonth=[...keys,...moved.map(t=>t.cycleOverride)].sort().pop();
+  if(touched.size)state.currentMonth=[...touched].sort().pop();
+  else if(!state.currentMonth){const ks=Object.keys(data.months).sort();if(ks.length)state.currentMonth=ks[ks.length-1];}
   render();
   const ds=txs.map(t=>t.date).filter(Boolean).sort();
   const range=ds.length?`\n対象期間: ${ds[0]}〜${ds[ds.length-1]}`:'';
-  showSyncToast(`💳 ${txs.length}件を取り込みました`);
-  setTimeout(()=>alert(`クレカ明細を取り込みました\n取込: ${txs.length}件${range}\n\n※取り込めるのはCSVに含まれる明細のみです。期間に抜けが無いかご確認ください。`),50);
+  showSyncToast(`💳 新規${added}件を追加しました`);
+  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${range}\n\n※既存の明細・仕分け・立替・Amazon紐付けは保持され、消えません。`),50);
 }
 
 // Amazon注文の取り込みはブックマークレット(amazon-import-bookmarklet.js)経由でSupabaseへ直接追記。
