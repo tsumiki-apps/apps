@@ -4,21 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="apple-touch-icon" href="icons/icon-money.png">
-<meta name="apple-mobile-web-app-title" content="残高計算">
+<meta name="apple-mobile-web-app-title" content="残高">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f5f5f7">
+<meta name="theme-color" content="#f4f5fa">
 <title>お金の残高</title>
 <style>
   :root {
-    --bg: #f5f5f7;
+    --bg: #f4f5fa;          /* 淡いラベンダーグレー */
     --card: #ffffff;
-    --text: #1d1d1f;
-    --sub: #6e6e73;
-    --line: #e3e3e6;
-    --blue: #0071e3;
-    --green: #34c759;
-    --red: #ff3b30;
+    --text: #45454f;        /* やわらかいチャコール */
+    --sub: #a2a2af;         /* ミュート */
+    --line: #ecedf4;
+    --accent: #8c9ce0;      /* パステル・ペリウィンクル（唯一のアクセント） */
+    --accent-soft: #eef1fb;
+    --neg: #e29393;         /* パステル・コーラル（不足の時だけ） */
   }
   * { box-sizing: border-box; }
   body {
@@ -26,198 +26,192 @@
     background: var(--bg);
     color: var(--text);
     margin: 0;
-    padding: 24px 16px 64px;
+    padding: 28px 16px 56px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 560px; margin: 0 auto; }
-  h1 { font-size: 24px; font-weight: 600; text-align: center; margin: 8px 0 4px; }
-  .tagline { text-align: center; color: var(--sub); font-size: 14px; margin-bottom: 20px; }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 600; text-align: center; margin: 0 0 16px; letter-spacing: .01em; }
 
-  .syncbar { text-align: center; margin: -10px 0 18px; }
-  .sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);background:rgba(120,120,128,.12);padding:4px 10px;border-radius:999px}
-  .sync-chip .dot{width:7px;height:7px;border-radius:50%;background:#8e8e93;flex:none}
-  .sync-chip.ok .dot{background:#34c759}.sync-chip.ok{color:#0a7d2e}
-  .sync-chip.off .dot{background:#ff9f0a}
-  .sync-chip.local .dot{background:#8e8e93}
-  .sync-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:rgba(20,20,22,.92);color:#fff;font-size:13px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:9999}
+  .syncbar { text-align: center; margin: -6px 0 16px; }
+  .sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);background:rgba(140,156,224,.12);padding:4px 10px;border-radius:999px}
+  .sync-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--sub);flex:none}
+  .sync-chip.ok .dot{background:var(--accent)}
+  .sync-chip.off .dot{background:var(--neg)}
+  .sync-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:rgba(60,60,72,.94);color:#fff;font-size:13px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:9999}
   .sync-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
   /* 移行のお知らせ帯（旧「済み」データがある時だけ初回1回） */
   .migrate {
-    display: none; align-items: flex-start; gap: 10px;
-    background: #fff8e8; border: 1px solid #f3e2b3; border-radius: 12px;
-    padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #6b5a1e;
+    display: none; align-items: center; gap: 10px;
+    background: var(--accent-soft); border-radius: 12px;
+    padding: 11px 14px; margin-bottom: 16px; font-size: 12px; color: var(--sub);
   }
   .migrate.show { display: flex; }
   .migrate .x {
     margin-left: auto; flex-shrink: 0; border: none; background: none;
-    color: #b08a1e; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px;
+    color: var(--accent); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 2px;
   }
 
   .card {
     background: var(--card);
-    border-radius: 18px;
+    border-radius: 20px;
     padding: 20px;
-    margin-bottom: 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    margin-bottom: 14px;
+    box-shadow: 0 1px 2px rgba(80,80,110,.05);
   }
   .card h2 {
     font-size: 15px; font-weight: 600; color: var(--text);
-    margin: 0 0 14px; letter-spacing: .01em;
+    margin: 0 0 12px;
     display: flex; align-items: baseline; justify-content: space-between;
   }
   .card h2 .subtotal { font-size: 15px; font-weight: 600; color: var(--sub); }
 
   /* 結果カード */
-  .result { text-align: center; padding: 26px 20px; }
-  .remain-label { font-size: 13px; color: var(--sub); }
+  .result { text-align: center; padding: 28px 20px; }
+  .remain-label { font-size: 12px; color: var(--sub); }
   .remain-big {
-    font-size: 56px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1;
+    font-size: 54px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1;
     color: var(--text); word-break: break-all; margin-top: 2px;
   }
-  .remain-big.minus { color: var(--red); }
+  .remain-big.minus { color: var(--neg); }
   .breakdown {
     display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap;
-    gap: 2px 4px; margin-top: 14px; font-size: 14px; color: var(--sub);
+    gap: 2px 6px; margin-top: 14px; font-size: 13px; color: var(--sub);
   }
-  .breakdown span { padding: 0 4px; white-space: nowrap; }
-  .breakdown .op { color: #c4c4c8; }
+  .breakdown span { white-space: nowrap; }
+  .breakdown .op { color: #cfd1de; }
   .breakdown b { color: var(--text); font-weight: 600; }
-  .remain-note {
-    margin-top: 16px; font-size: 13px; color: var(--sub);
-  }
-  .remain-note.minus { color: var(--red); font-weight: 600; }
 
   /* 入力行 */
-  .item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .item { display: flex; align-items: center; gap: 9px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .item:last-of-type { border-bottom: none; }
   .item input.name {
-    flex: 1 1 90px; min-width: 0; font-size: 16px; padding: 9px 11px;
-    border: 1px solid var(--line); border-radius: 10px; background: #fafafa;
+    flex: 1 1 80px; min-width: 0; font-size: 16px; padding: 9px 11px;
+    border: 1px solid var(--line); border-radius: 11px; background: #fafbfd;
     font-family: inherit; color: var(--text);
   }
   .item .amount-wrap { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .item .amount-wrap .yen { color: var(--sub); font-size: 16px; }
   .item input.amount {
-    width: 120px; text-align: right; font-size: 17px; padding: 9px 11px;
-    border: 1px solid var(--line); border-radius: 10px; background: #fafafa;
+    width: 116px; text-align: right; font-size: 17px; padding: 9px 11px;
+    border: 1px solid var(--line); border-radius: 11px; background: #fafbfd;
     font-family: inherit; color: var(--text);
   }
-  .item input:focus { outline: none; border-color: var(--blue); background: #fff; }
+  .item input:focus { outline: none; border-color: var(--accent); background: #fff; }
   .item .del {
-    width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%;
+    width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%;
     border: 1px solid var(--line); background: #fff; color: var(--sub);
-    font-size: 18px; line-height: 1; cursor: pointer;
+    font-size: 17px; line-height: 1; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .item .del:hover { background: #fff0f0; border-color: var(--red); color: var(--red); }
-
-  .empty { color: var(--sub); font-size: 13px; padding: 4px 0 2px; }
+  .item .del:active { background: var(--accent-soft); }
 
   .btn-add {
-    margin-top: 12px; width: 100%; padding: 12px;
-    border: 1px dashed var(--line); border-radius: 12px; background: #fafafa;
-    color: var(--blue); font-size: 15px; font-family: inherit; cursor: pointer;
+    margin-top: 10px; width: 100%; padding: 11px;
+    border: 1px dashed #d8dbe8; border-radius: 12px; background: #fafbfd;
+    color: var(--accent); font-size: 18px; font-family: inherit; cursor: pointer;
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .btn-add:hover { background: #f0f7ff; border-color: var(--blue); }
+  .btn-add:active { background: var(--accent-soft); }
 
-  /* バックアップ */
-  .h2-note { font-size: 12px; color: var(--sub); margin: -6px 0 14px; }
-  .backup-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  /* 管理（折りたたみ） */
+  details.manage { background: var(--card); border-radius: 20px; box-shadow: 0 1px 2px rgba(80,80,110,.05); margin-bottom: 14px; }
+  details.manage > summary {
+    list-style: none; cursor: pointer; padding: 18px 20px;
+    font-size: 15px; font-weight: 600; color: var(--text);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  details.manage > summary::-webkit-details-marker { display: none; }
+  details.manage > summary .chev { color: var(--sub); font-size: 13px; transition: transform .2s; }
+  details.manage[open] > summary .chev { transform: rotate(90deg); }
+  .manage-body { padding: 0 20px 20px; }
+  .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
   .btn-sec {
-    flex: 1 1 30%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px;
-    background: #fff; color: var(--blue); font-size: 14px; font-family: inherit; cursor: pointer;
+    flex: 1 1 28%; padding: 11px 8px; border: 1px solid var(--line); border-radius: 12px;
+    background: #fff; color: var(--accent); font-size: 13px; font-family: inherit; cursor: pointer;
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .btn-sec:hover { background: #f0f7ff; border-color: var(--blue); }
-  .btn-sec.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
-  .btn-sec.primary:hover { background: #0063c6; }
+  .btn-sec:active { background: var(--accent-soft); }
+  .btn-sec.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   .bk-text {
-    width: 100%; height: 84px; font-size:16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fafafa; color: var(--text);
+    width: 100%; height: 72px; font-size:16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--line); border-radius: 11px; padding: 10px; background: #fafbfd; color: var(--sub);
     resize: vertical;
   }
-  .bk-text:focus { outline: none; border-color: var(--blue); background: #fff; }
-  .bk-msg { font-size: 13px; color: var(--green); margin-top: 8px; min-height: 18px; }
-  .bk-msg.err { color: var(--red); }
-
-  .actions { text-align: center; margin-top: 4px; }
-  .btn-reset { background: none; border: none; color: var(--sub); font-size: 14px; cursor: pointer; font-family: inherit; }
-  .btn-reset:hover { text-decoration: underline; color: var(--red); }
+  .bk-text:focus { outline: none; border-color: var(--accent); background: #fff; }
+  .bk-msg { font-size: 12px; color: var(--accent); margin-top: 8px; min-height: 16px; }
+  .bk-msg.err { color: var(--neg); }
+  .btn-reset { display: block; width: 100%; margin-top: 16px; background: none; border: none; color: var(--sub); font-size: 13px; cursor: pointer; font-family: inherit; padding: 6px; }
+  .btn-reset:active { color: var(--neg); }
 
   @media (max-width: 400px) {
-    .item input.amount { width: 104px; }
-    .remain-big { font-size: 46px; }
+    .item input.amount { width: 100px; }
+    .remain-big { font-size: 44px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>お金の残高</h1>
-  <p class="tagline">手元にいくら残るか、サッと計算</p>
-  <div class="syncbar"><div class="sync-chip local" id="syncChip"><span class="dot"></span><span id="syncText">接続中…</span></div></div>
+  <div class="syncbar"><div class="sync-chip local" id="syncChip"><span class="dot"></span><span id="syncText"></span></div></div>
 
   <div class="migrate" id="migrateBar">
-    <span>以前「引き落とし済み」にした項目も、いまは予定として合算しています。不要な行は × で消してください。</span>
+    <span>以前の「済み」も予定として合算しています</span>
     <button class="x" id="migrateClose" aria-label="閉じる">×</button>
   </div>
 
   <!-- 結果 -->
   <div class="card result">
-    <div class="remain-label">手元に残る</div>
+    <div class="remain-label">残り</div>
     <div class="remain-big" id="remainBig">¥0</div>
     <div class="breakdown">
       <span>🏦 <b id="bdBank">¥0</b></span>
       <span class="op">＋</span>
-      <span>入金 <b id="bdAdv">¥0</b></span>
+      <span>🤝 <b id="bdAdv">¥0</b></span>
       <span class="op">−</span>
-      <span>引落 <b id="bdCard">¥0</b></span>
+      <span>💳 <b id="bdCard">¥0</b></span>
     </div>
-    <div class="remain-note" id="remainNote">銀行・引き落とし・入金を入力すると計算されます</div>
   </div>
 
   <!-- 銀行 -->
   <div class="card">
-    <h2>🏦 銀行のお金 <span class="subtotal" id="subBanks">¥0</span></h2>
+    <h2>🏦 銀行 <span class="subtotal" id="subBanks">¥0</span></h2>
     <div id="banks"></div>
-    <button class="btn-add" id="addBank">＋ 追加</button>
+    <button class="btn-add" id="addBank" aria-label="銀行を追加">＋</button>
   </div>
 
-  <!-- 引き落とし予定 -->
+  <!-- 引き落とし -->
   <div class="card">
-    <h2>💳 引き落とし予定 <span class="subtotal" id="subCards">¥0</span></h2>
+    <h2>💳 引き落とし <span class="subtotal" id="subCards">¥0</span></h2>
     <div id="cards"></div>
-    <button class="btn-add" id="addCard">＋ 追加</button>
+    <button class="btn-add" id="addCard" aria-label="引き落としを追加">＋</button>
   </div>
 
-  <!-- 入ってくるお金 -->
+  <!-- 入金 -->
   <div class="card">
-    <h2>🤝 入ってくるお金 <span class="subtotal" id="subAdv">¥0</span></h2>
+    <h2>🤝 入金 <span class="subtotal" id="subAdv">¥0</span></h2>
     <div id="advs"></div>
-    <button class="btn-add" id="addAdv">＋ 追加</button>
+    <button class="btn-add" id="addAdv" aria-label="入金を追加">＋</button>
   </div>
 
-  <!-- データの引き継ぎ・バックアップ -->
-  <div class="card">
-    <h2>⚙️ データの引き継ぎ・バックアップ</h2>
-    <p class="h2-note">入力した数字を書き出して保存できます。別の端末へ引き継ぐときもこれを使います。</p>
-    <div class="backup-actions">
-      <button class="btn-sec" id="bkCopy">📋 コピー</button>
-      <button class="btn-sec" id="bkDownload">💾 ファイルに保存</button>
-      <button class="btn-sec" id="bkFileBtn">📂 ファイルから読み込み</button>
-      <input type="file" id="bkFileInput" accept="application/json,.json,.txt" hidden>
+  <!-- 管理（引き継ぎ・バックアップ・リセット） -->
+  <details class="manage">
+    <summary>⚙️ 管理 <span class="chev">›</span></summary>
+    <div class="manage-body">
+      <div class="backup-actions">
+        <button class="btn-sec" id="bkCopy">コピー</button>
+        <button class="btn-sec" id="bkDownload">保存</button>
+        <button class="btn-sec" id="bkFileBtn">読み込み</button>
+        <input type="file" id="bkFileInput" accept="application/json,.json,.txt" hidden>
+      </div>
+      <textarea class="bk-text" id="bkText" spellcheck="false" placeholder="ここに貼り付けて復元"></textarea>
+      <button class="btn-sec primary" id="bkRestore" style="margin-top:8px;width:100%;flex:none;">復元する</button>
+      <div class="bk-msg" id="bkMsg"></div>
+      <button class="btn-reset" id="resetBtn">すべてリセット</button>
     </div>
-    <textarea class="bk-text" id="bkText" spellcheck="false" placeholder="ここにバックアップの内容を貼り付けて「この内容で復元する」を押します"></textarea>
-    <button class="btn-sec primary" id="bkRestore" style="margin-top:10px;width:100%;flex:none;">この内容で復元する</button>
-    <div class="bk-msg" id="bkMsg"></div>
-  </div>
-
-  <div class="actions">
-    <button class="btn-reset" id="resetBtn">すべてリセット</button>
-  </div>
+  </details>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -337,9 +331,9 @@
       if (!chip) return;
       chip.classList.remove("ok", "off", "local");
       if (!sb) { chip.classList.add("local"); txt.textContent = "この端末に保存"; return; }
-      if (online === true) { chip.classList.add("ok"); txt.textContent = "クラウド同期中"; }
-      else if (online === false) { chip.classList.add("off"); txt.textContent = "オフライン（この端末に保存）"; }
-      else { chip.classList.add("local"); txt.textContent = "接続中…"; }
+      if (online === true) { chip.classList.add("ok"); txt.textContent = "クラウド同期"; }
+      else if (online === false) { chip.classList.add("off"); txt.textContent = "オフライン"; }
+      else { chip.classList.add("local"); txt.textContent = "接続中"; }
     }
     function toast(msg) {
       var t = document.getElementById("syncToast");
@@ -363,9 +357,9 @@
   "use strict";
   var STORAGE_KEY = "money-balance-v1";
   var MIGRATE_KEY = "money-migrate-dismiss-v1";
-  var BANK_PH = "銀行名（例：三菱UFJ）";
-  var CARD_PH = "内容（例：楽天カード・家賃）";
-  var ADV_PH = "内容（例：立替の返金）";
+  var BANK_PH = "銀行名";
+  var CARD_PH = "項目";
+  var ADV_PH = "項目";
 
   var state = { banks: [], cards: [], advances: [] };
   var seq = 1;
@@ -385,7 +379,6 @@
     bdAdv: document.getElementById("bdAdv"),
     bdCard: document.getElementById("bdCard"),
     remainBig: document.getElementById("remainBig"),
-    remainNote: document.getElementById("remainNote"),
     resetBtn: document.getElementById("resetBtn"),
     migrateBar: document.getElementById("migrateBar"),
     migrateClose: document.getElementById("migrateClose")
@@ -450,17 +443,9 @@
       '<button class="del" aria-label="削除">×</button>';
   }
 
-  function buildRows(listKey, container, placeholder, emptyMsg) {
+  function buildRows(listKey, container, placeholder) {
     container.innerHTML = "";
-    var arr = state[listKey];
-    if (arr.length === 0) {
-      var em = document.createElement("div");
-      em.className = "empty";
-      em.textContent = emptyMsg;
-      container.appendChild(em);
-      return;
-    }
-    arr.forEach(function (item) {
+    state[listKey].forEach(function (item) {
       var row = document.createElement("div");
       row.className = "item";
       row.setAttribute("data-id", item.id);
@@ -477,7 +462,7 @@
     return null;
   }
 
-  function wireList(listKey, container, placeholder, emptyMsg) {
+  function wireList(listKey, container, placeholder) {
     container.addEventListener("input", function (e) {
       var row = e.target.closest(".item"); if (!row) return;
       var item = findItem(listKey, row.getAttribute("data-id")); if (!item) return;
@@ -501,7 +486,7 @@
         if (!confirm("「" + (item.name || "無名") + "」を削除しますか？")) return;
       }
       state[listKey] = state[listKey].filter(function (x) { return x.id !== id; });
-      buildRows(listKey, container, placeholder, emptyMsg);
+      buildRows(listKey, container, placeholder);
       render(); save();
     });
   }
@@ -526,58 +511,47 @@
 
     el.remainBig.textContent = (remain < 0 ? "−" : "") + yen(Math.abs(remain));
     el.remainBig.classList.toggle("minus", remain < 0);
-
-    if (b === 0 && cards === 0 && adv === 0) {
-      el.remainNote.className = "remain-note";
-      el.remainNote.textContent = "銀行・引き落とし・入金を入力すると計算されます";
-    } else if (remain >= 0) {
-      el.remainNote.className = "remain-note";
-      el.remainNote.textContent = "引き落としが済むと " + yen(remain) + " 残ります";
-    } else {
-      el.remainNote.className = "remain-note minus";
-      el.remainNote.textContent = yen(Math.abs(remain)) + " 足りません";
-    }
   }
 
-  function addItem(listKey, container, placeholder, emptyMsg) {
+  function addItem(listKey, container, placeholder) {
     state[listKey].push(makeItem());
-    buildRows(listKey, container, placeholder, emptyMsg);
+    buildRows(listKey, container, placeholder);
     render(); save();
     var rows = container.querySelectorAll(".item");
     if (rows.length) { var inp = rows[rows.length - 1].querySelector(".name"); if (inp) inp.focus(); }
   }
 
   function reset() {
-    if (!confirm("銀行・引き落とし・入金の入力をすべて消します。よろしいですか？")) return;
+    if (!confirm("すべて消します。よろしいですか？")) return;
     state.banks = [makeItem()];
     state.cards = [makeItem()];
     state.advances = [];
-    buildRows("banks", el.banks, BANK_PH, "");
-    buildRows("cards", el.cards, CARD_PH, "");
-    buildRows("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加");
+    buildRows("banks", el.banks, BANK_PH);
+    buildRows("cards", el.cards, CARD_PH);
+    buildRows("advances", el.advs, ADV_PH);
     render(); save();
   }
 
   // init
   load();
-  buildRows("banks", el.banks, BANK_PH, "");
-  buildRows("cards", el.cards, CARD_PH, "");
-  buildRows("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加");
-  wireList("banks", el.banks, BANK_PH, "");
-  wireList("cards", el.cards, CARD_PH, "");
-  wireList("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加");
+  buildRows("banks", el.banks, BANK_PH);
+  buildRows("cards", el.cards, CARD_PH);
+  buildRows("advances", el.advs, ADV_PH);
+  wireList("banks", el.banks, BANK_PH);
+  wireList("cards", el.cards, CARD_PH);
+  wireList("advances", el.advs, ADV_PH);
   render();
   maybeMigrateNotice();
 
-  el.addBank.addEventListener("click", function () { addItem("banks", el.banks, BANK_PH, ""); });
-  el.addCard.addEventListener("click", function () { addItem("cards", el.cards, CARD_PH, ""); });
-  el.addAdv.addEventListener("click", function () { addItem("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加"); });
+  el.addBank.addEventListener("click", function () { addItem("banks", el.banks, BANK_PH); });
+  el.addCard.addEventListener("click", function () { addItem("cards", el.cards, CARD_PH); });
+  el.addAdv.addEventListener("click", function () { addItem("advances", el.advs, ADV_PH); });
   el.resetBtn.addEventListener("click", reset);
 })();
 </script>
 
 <script>
-/* データの引き継ぎ・バックアップ（共通） */
+/* データの引き継ぎ・バックアップ（管理セクション内） */
 (function () {
   "use strict";
   var KEYS = ["money-balance-v1", "money-forecast-v1"];
@@ -609,7 +583,7 @@
   bk.copy.addEventListener("click", function () {
     refresh();
     var txt = bk.text.value;
-    function ok() { setMsg("コピーしました。メモやLINE等に貼り付けて保存できます。"); }
+    function ok() { setMsg("コピーしました"); }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(txt).then(ok).catch(function () { fallbackCopy(); ok(); });
     } else { fallbackCopy(); ok(); }
@@ -626,7 +600,7 @@
     a.download = "money-backup-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
     document.body.appendChild(a); a.click();
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-    setMsg("バックアップファイルを書き出しました。");
+    setMsg("保存しました");
   });
 
   bk.fileBtn.addEventListener("click", function () { bk.fileInput.click(); });
@@ -642,16 +616,16 @@
   function doRestore() {
     var data;
     try { data = JSON.parse(bk.text.value); }
-    catch (e) { setMsg("読み込めませんでした。バックアップの内容（文字列）を確認してください。", true); return; }
+    catch (e) { setMsg("読み込めませんでした", true); return; }
     var found = 0;
     KEYS.forEach(function (k) {
       if (data && Object.prototype.hasOwnProperty.call(data, k) && data[k] != null) {
         try { localStorage.setItem(k, typeof data[k] === "string" ? data[k] : JSON.stringify(data[k])); found++; } catch (e) {}
       }
     });
-    if (found === 0) { setMsg("このバックアップに引き継げるデータが見つかりませんでした。", true); return; }
+    if (found === 0) { setMsg("引き継げるデータがありません", true); return; }
     if (window.MoneySync && MoneySync.touch) MoneySync.touch();
-    setMsg("復元しました。画面を更新します…");
+    setMsg("復元しました。更新します…");
     setTimeout(function () { location.reload(); }, 700);
   }
 })();
@@ -666,7 +640,7 @@
     -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
     border:1px solid rgba(0,0,0,.06); border-radius:50%;
     box-shadow:0 6px 20px rgba(0,0,0,.18);
-    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    color:#8c9ce0; font-size:24px; font-weight:600; line-height:1;
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
     transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
   }
