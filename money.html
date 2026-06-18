@@ -7,9 +7,8 @@
 <meta name="apple-mobile-web-app-title" content="残高計算">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="残高計算">
 <meta name="theme-color" content="#f5f5f7">
-<title>お金の残高 計算ツール</title>
+<title>お金の残高</title>
 <style>
   :root {
     --bg: #f5f5f7;
@@ -19,7 +18,6 @@
     --line: #e3e3e6;
     --blue: #0071e3;
     --green: #34c759;
-    --orange: #ff9f0a;
     --red: #ff3b30;
   }
   * { box-sizing: border-box; }
@@ -32,59 +30,67 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 760px; margin: 0 auto; }
-  h1 { font-size: 26px; font-weight: 600; text-align: center; margin: 8px 0 4px; }
-  .tagline { text-align: center; color: var(--sub); font-size: 14px; margin-bottom: 24px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 24px; font-weight: 600; text-align: center; margin: 8px 0 4px; }
+  .tagline { text-align: center; color: var(--sub); font-size: 14px; margin-bottom: 20px; }
+
+  .syncbar { text-align: center; margin: -10px 0 18px; }
+  .sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);background:rgba(120,120,128,.12);padding:4px 10px;border-radius:999px}
+  .sync-chip .dot{width:7px;height:7px;border-radius:50%;background:#8e8e93;flex:none}
+  .sync-chip.ok .dot{background:#34c759}.sync-chip.ok{color:#0a7d2e}
+  .sync-chip.off .dot{background:#ff9f0a}
+  .sync-chip.local .dot{background:#8e8e93}
+  .sync-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:rgba(20,20,22,.92);color:#fff;font-size:13px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:9999}
+  .sync-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* 移行のお知らせ帯（旧「済み」データがある時だけ初回1回） */
+  .migrate {
+    display: none; align-items: flex-start; gap: 10px;
+    background: #fff8e8; border: 1px solid #f3e2b3; border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #6b5a1e;
+  }
+  .migrate.show { display: flex; }
+  .migrate .x {
+    margin-left: auto; flex-shrink: 0; border: none; background: none;
+    color: #b08a1e; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px;
+  }
 
   .card {
     background: var(--card);
     border-radius: 18px;
-    padding: 22px;
-    margin-bottom: 18px;
+    padding: 20px;
+    margin-bottom: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
   .card h2 {
-    font-size: 15px; font-weight: 600; color: var(--sub);
-    margin: 0 0 16px; letter-spacing: .02em;
+    font-size: 15px; font-weight: 600; color: var(--text);
+    margin: 0 0 14px; letter-spacing: .01em;
     display: flex; align-items: baseline; justify-content: space-between;
   }
-  .card h2 .subtotal { font-size: 15px; font-weight: 600; color: var(--text); }
-  .card h2 .subtotal.minus { color: var(--red); }
+  .card h2 .subtotal { font-size: 15px; font-weight: 600; color: var(--sub); }
 
-  /* result (上に固定表示の要約) */
-  .result { text-align: center; }
-  .result .breakdown {
-    display: flex; justify-content: center; gap: 0;
-    margin-bottom: 6px; font-size: 14px; color: var(--sub);
-    flex-wrap: wrap;
-  }
-  .result .breakdown span { padding: 0 10px; }
-  .result .breakdown .op { color: var(--line); }
-  .result .breakdown b { color: var(--text); font-weight: 600; }
-  .result .breakdown b.minus { color: var(--red); }
-
-  .remain-label { font-size: 13px; color: var(--sub); margin-top: 14px; }
+  /* 結果カード */
+  .result { text-align: center; padding: 26px 20px; }
+  .remain-label { font-size: 13px; color: var(--sub); }
   .remain-big {
     font-size: 56px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1;
-    color: var(--green); word-break: break-all;
+    color: var(--text); word-break: break-all; margin-top: 2px;
   }
   .remain-big.minus { color: var(--red); }
+  .breakdown {
+    display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap;
+    gap: 2px 4px; margin-top: 14px; font-size: 14px; color: var(--sub);
+  }
+  .breakdown span { padding: 0 4px; white-space: nowrap; }
+  .breakdown .op { color: #c4c4c8; }
+  .breakdown b { color: var(--text); font-weight: 600; }
   .remain-note {
-    margin-top: 12px; padding: 12px 16px; border-radius: 12px;
-    background: #effaf1; font-size: 14px; color: var(--text);
+    margin-top: 16px; font-size: 13px; color: var(--sub);
   }
-  .remain-note.minus { background: #ffeceb; }
+  .remain-note.minus { color: var(--red); font-weight: 600; }
 
-  .bar {
-    height: 10px; background: var(--green); border-radius: 5px;
-    margin: 20px 0 8px; position: relative; overflow: hidden;
-  }
-  .bar-fill { height: 100%; border-radius: 5px 0 0 5px; background: var(--orange); width: 0; transition: width .3s; }
-  .bar-fill.over { background: var(--red); border-radius: 5px; }
-  .bar-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--sub); }
-
-  /* item rows */
-  .item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  /* 入力行 */
+  .item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
   .item:last-of-type { border-bottom: none; }
   .item input.name {
     flex: 1 1 90px; min-width: 0; font-size: 16px; padding: 9px 11px;
@@ -94,7 +100,7 @@
   .item .amount-wrap { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .item .amount-wrap .yen { color: var(--sub); font-size: 16px; }
   .item input.amount {
-    width: 130px; text-align: right; font-size: 17px; padding: 9px 11px;
+    width: 120px; text-align: right; font-size: 17px; padding: 9px 11px;
     border: 1px solid var(--line); border-radius: 10px; background: #fafafa;
     font-family: inherit; color: var(--text);
   }
@@ -108,84 +114,18 @@
   }
   .item .del:hover { background: #fff0f0; border-color: var(--red); color: var(--red); }
 
-  .empty { color: var(--sub); font-size: 14px; padding: 6px 0 2px; }
+  .empty { color: var(--sub); font-size: 13px; padding: 4px 0 2px; }
 
   .btn-add {
-    margin-top: 14px; width: 100%; padding: 12px;
+    margin-top: 12px; width: 100%; padding: 12px;
     border: 1px dashed var(--line); border-radius: 12px; background: #fafafa;
     color: var(--blue); font-size: 15px; font-family: inherit; cursor: pointer;
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
   .btn-add:hover { background: #f0f7ff; border-color: var(--blue); }
 
-  .topnav { text-align: center; margin: -10px 0 24px; }
-  .nav-link {
-    display: inline-block; color: var(--blue); font-size: 15px; text-decoration: none;
-    padding: 8px 16px; border: 1px solid var(--line); border-radius: 999px; background: #fff;
-  }
-  .nav-link:hover { background: #f0f7ff; border-color: var(--blue); }
-
-  .actions { text-align: center; margin-top: 4px; }
-  .btn-reset { background: none; border: none; color: var(--blue); font-size: 14px; cursor: pointer; font-family: inherit; }
-  .btn-reset:hover { text-decoration: underline; }
-
-  /* card item (引き落とし日・済みチェック付き) */
-  .item.citem { display: block; }
-  .citem-main { display: flex; align-items: center; gap: 10px; }
-  .citem .chk {
-    width: 22px; height: 22px; flex-shrink: 0; margin: 0;
-    accent-color: var(--green); cursor: pointer;
-  }
-  .citem-meta {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; margin: 8px 0 2px; padding-left: 32px;
-    font-size: 13px; color: var(--sub); flex-wrap: wrap;
-  }
-  .citem-meta .daywrap { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .citem-meta input.day {
-    width: 48px; text-align: center; font-size:16px; padding: 5px 4px;
-    border: 1px solid var(--line); border-radius: 8px; background: #fafafa;
-    font-family: inherit; color: var(--text);
-  }
-  .citem-meta input.day:focus { outline: none; border-color: var(--blue); background: #fff; }
-  .citem-meta .status { font-size: 13px; white-space: nowrap; }
-  .citem-meta .status.soon { color: var(--orange); font-weight: 600; }
-  .citem-meta .status.done { color: var(--green); font-weight: 600; }
-  .citem.paid .name, .citem.paid .amount { color: var(--sub); text-decoration: line-through; }
-  .citem.paid { opacity: .85; }
-
-  .paid-info { margin-top: 10px; font-size: 12px; color: var(--sub); line-height: 1.5; }
-
-  /* クレカ行の 自分/立替 内訳 */
-  .citem-breakdown { padding-left: 32px; margin: 0 0 2px; font-size: 12px; color: var(--sub); }
-  .citem-breakdown b { color: var(--text); font-weight: 600; }
-
-  /* 立て替えサマリー（結果カード内） */
-  .adv-summary {
-    margin-top: 14px; padding: 14px 16px; border-radius: 12px;
-    background: #f3f1fb; text-align: left;
-  }
-  .adv-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; padding: 3px 0; color: var(--sub); }
-  .adv-line b { color: var(--text); font-weight: 600; }
-  .adv-line b.recv { color: var(--orange); }
-  .adv-line.hl { margin-top: 6px; padding-top: 10px; border-top: 1px solid #e1dcf4; font-size: 15px; color: var(--text); }
-  .adv-line.hl b { font-size: 18px; color: var(--blue); }
-
-  /* 立て替え行のカード選択・回収チェック */
-  .adv-meta { justify-content: flex-start; gap: 16px; padding-left: 0; }
-  .adv-meta .cardsel { display: inline-flex; align-items: center; gap: 6px; }
-  .adv-meta select.cardId {
-    font-size:16px; padding: 5px 8px; border: 1px solid var(--line);
-    border-radius: 8px; background: #fafafa; font-family: inherit; color: var(--text); max-width: 170px;
-  }
-  .adv-meta select.cardId:focus { outline: none; border-color: var(--blue); background: #fff; }
-  .adv-meta .recv-wrap { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
-  .adv-meta .recv-wrap input { width: 20px; height: 20px; margin: 0; accent-color: var(--orange); cursor: pointer; }
-  .citem.recvd .name, .citem.recvd .amount { color: var(--sub); text-decoration: line-through; }
-  .citem.recvd { opacity: .85; }
-
   /* バックアップ */
-  .h2-note { font-size: 12px; color: var(--sub); margin: -8px 0 14px; }
+  .h2-note { font-size: 12px; color: var(--sub); margin: -6px 0 14px; }
   .backup-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
   .btn-sec {
     flex: 1 1 30%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px;
@@ -204,105 +144,66 @@
   .bk-msg { font-size: 13px; color: var(--green); margin-top: 8px; min-height: 18px; }
   .bk-msg.err { color: var(--red); }
 
-  /* 同期チップ・トースト（credit.html と共通デザイン） */
-  .syncbar { text-align: center; margin: -14px 0 18px; }
-  .sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);background:rgba(120,120,128,.12);padding:4px 10px;border-radius:999px}
-  .sync-chip .dot{width:7px;height:7px;border-radius:50%;background:#8e8e93;flex:none}
-  .sync-chip.ok .dot{background:#34c759}.sync-chip.ok{color:#0a7d2e}
-  .sync-chip.off .dot{background:#ff9f0a}
-  .sync-chip.local .dot{background:#8e8e93}
-  .sync-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:rgba(20,20,22,.92);color:#fff;font-size:13px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:9999}
-  .sync-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .actions { text-align: center; margin-top: 4px; }
+  .btn-reset { background: none; border: none; color: var(--sub); font-size: 14px; cursor: pointer; font-family: inherit; }
+  .btn-reset:hover { text-decoration: underline; color: var(--red); }
 
-  /* クレカ明細マネージャーからの取り込み */
-  .pull {
-    margin-top: 10px; width: 100%; padding: 11px;
-    border: 1px dashed var(--line); border-radius: 12px; background: #fafafa;
-    color: var(--blue); font-size: 14px; font-family: inherit; cursor: pointer;
-    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-  }
-  .pull:hover { background: #f0f7ff; border-color: var(--blue); }
-  .pull:disabled { color: var(--sub); cursor: default; }
-  .pull-info { font-size: 12px; color: var(--sub); margin-top: 8px; }
-  .pull-picker { margin-top: 10px; display: none; }
-  .pull-picker .ttl { font-size: 13px; color: var(--sub); margin-bottom: 8px; }
-  .pull-picker .opts { display: flex; flex-wrap: wrap; gap: 8px; }
-  .pull-picker .opts button {
-    padding: 9px 14px; border: 1px solid var(--line); border-radius: 10px;
-    background: #fff; color: var(--blue); font-size: 14px; font-family: inherit; cursor: pointer;
-    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-  }
-  .pull-picker .opts button:hover { background: #f0f7ff; border-color: var(--blue); }
-  .pull-picker .opts button.cancel { color: var(--sub); }
-
-  @media (max-width: 460px) {
-    .item input.amount { width: 108px; }
+  @media (max-width: 400px) {
+    .item input.amount { width: 104px; }
     .remain-big { font-size: 46px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>お金の残高 計算ツール</h1>
-  <p class="tagline">銀行のお金から、クレジットカードの請求を引いた「残り」がひと目でわかります</p>
-  <div class="topnav"><a class="nav-link" href="forecast.html">📈 資産予測グラフを見る →</a></div>
+  <h1>お金の残高</h1>
+  <p class="tagline">手元にいくら残るか、サッと計算</p>
   <div class="syncbar"><div class="sync-chip local" id="syncChip"><span class="dot"></span><span id="syncText">接続中…</span></div></div>
 
-  <!-- 結果（上に表示） -->
+  <div class="migrate" id="migrateBar">
+    <span>以前「引き落とし済み」にした項目も、いまは予定として合算しています。不要な行は × で消してください。</span>
+    <button class="x" id="migrateClose" aria-label="閉じる">×</button>
+  </div>
+
+  <!-- 結果 -->
   <div class="card result">
-    <div class="remain-label">引き落とし後に残るお金</div>
+    <div class="remain-label">手元に残る</div>
     <div class="remain-big" id="remainBig">¥0</div>
-
     <div class="breakdown">
-      <span>銀行 <b id="sumBanks">¥0</b></span>
+      <span>🏦 <b id="bdBank">¥0</b></span>
+      <span class="op">＋</span>
+      <span>入金 <b id="bdAdv">¥0</b></span>
       <span class="op">−</span>
-      <span>未引き落とし <b class="minus" id="sumPending">¥0</b></span>
+      <span>引落 <b id="bdCard">¥0</b></span>
     </div>
-
-    <div class="bar"><div class="bar-fill" id="barFill"></div></div>
-    <div class="bar-meta"><span>未引き落としの割合</span><span id="barPct">0%</span></div>
-
-    <div class="remain-note" id="remainNote">銀行とクレジットカードを入力すると計算されます</div>
-    <div class="paid-info" id="paidInfo" style="display:none"></div>
-
-    <div class="adv-summary" id="advSummary" style="display:none">
-      <div class="adv-line"><span>自分のカード利用（立て替え除く）</span><b id="ownSpend">¥0</b></div>
-      <div class="adv-line"><span>🤝 立て替え（友達の分）</span><b id="advTotalEl">¥0</b></div>
-      <div class="adv-line"><span>友達から回収予定（未回収）</span><b class="recv" id="advUnrecEl">¥0</b></div>
-      <div class="adv-line" id="creditUnLine" style="display:none"><span>💳 台帳の未回収（<a href="credit.html" style="color:var(--blue);text-decoration:none">明細マネージャー</a>）</span><b class="recv" id="creditUnEl">¥0</b></div>
-      <div class="adv-line hl"><span>実質の残り（回収後）</span><b id="realRemain">¥0</b></div>
-    </div>
+    <div class="remain-note" id="remainNote">銀行・引き落とし・入金を入力すると計算されます</div>
   </div>
 
   <!-- 銀行 -->
   <div class="card">
     <h2>🏦 銀行のお金 <span class="subtotal" id="subBanks">¥0</span></h2>
     <div id="banks"></div>
-    <button class="btn-add" id="addBank">＋ 銀行を追加</button>
+    <button class="btn-add" id="addBank">＋ 追加</button>
   </div>
 
-  <!-- クレジットカード -->
+  <!-- 引き落とし予定 -->
   <div class="card">
-    <h2>💳 クレジットカードの請求 <span class="subtotal minus" id="subCards">¥0</span></h2>
+    <h2>💳 引き落とし予定 <span class="subtotal" id="subCards">¥0</span></h2>
     <div id="cards"></div>
-    <button class="btn-add" id="addCard">＋ クレジットカードを追加</button>
-    <button class="pull" id="pullBill">💳 明細マネージャーから最新の請求額を取り込む</button>
-    <div class="pull-picker" id="pullBillPicker"></div>
-    <div class="pull-info" id="pullBillInfo"></div>
+    <button class="btn-add" id="addCard">＋ 追加</button>
   </div>
 
-  <!-- 立て替え（友達の分） -->
+  <!-- 入ってくるお金 -->
   <div class="card">
-    <h2>🤝 立て替え（友達の分） <span class="subtotal" id="subAdv">¥0</span></h2>
-    <p class="h2-note">クレカでの立て替えは「<a href="credit.html" style="color:var(--blue);text-decoration:none">💳 クレジット明細マネージャー</a>」の台帳で管理すると、未回収分がこのページの計算に自動で反映されます。同じ立て替えを両方に登録しないよう注意してください。</p>
+    <h2>🤝 入ってくるお金 <span class="subtotal" id="subAdv">¥0</span></h2>
     <div id="advs"></div>
-    <button class="btn-add" id="addAdv">＋ 立て替えを追加</button>
+    <button class="btn-add" id="addAdv">＋ 追加</button>
   </div>
 
   <!-- データの引き継ぎ・バックアップ -->
   <div class="card">
     <h2>⚙️ データの引き継ぎ・バックアップ</h2>
-    <p class="h2-note">入力した数字を書き出して保存できます。iPhoneなど別の端末へ引き継ぐときもこれを使います（資産予測ページのデータも一緒に保存されます）。</p>
+    <p class="h2-note">入力した数字を書き出して保存できます。別の端末へ引き継ぐときもこれを使います。</p>
     <div class="backup-actions">
       <button class="btn-sec" id="bkCopy">📋 コピー</button>
       <button class="btn-sec" id="bkDownload">💾 ファイルに保存</button>
@@ -321,10 +222,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-/* ===== Asset連携の共通部品（money.html / forecast.html で同じものを使う） =====
-   - AssetDB:    Supabaseクライアント。credit.html / たびのき と同じプロジェクトを再利用
-   - CreditLink: クレジット明細マネージャー（credit.html）のデータを「読み取り専用」で参照
-   - MoneySync:  残高計算＋資産予測のデータを money_state テーブル（id='kodai' の1行）へ同期 */
+/* ===== クラウド同期（money.html / forecast.html で共通） =====
+   - AssetDB:   Supabaseクライアント（credit.html / たびのき と同じプロジェクトを再利用）
+   - MoneySync: 残高(money-balance-v1)＋資産予測(money-forecast-v1)を money_state テーブルへ同期 */
 (function () {
   "use strict";
   var SUPABASE_URL = "https://okbjqtdirrathscctyvx.supabase.co";
@@ -332,80 +232,9 @@
   window.AssetDB = (window.supabase && window.supabase.createClient)
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 
-  /* --- CreditLink: credit.html のデータ参照（書き込みは一切しない） --- */
-  window.CreditLink = (function () {
-    var KEY = "creditMgr_v2", TABLE = "credit_state", ID = "kodai";
-    function local() {
-      try { var r = localStorage.getItem(KEY); return r ? JSON.parse(r) : null; }
-      catch (e) { return null; }
-    }
-    function remote() {
-      if (!window.AssetDB) return Promise.resolve(null);
-      return window.AssetDB.from(TABLE).select("state").eq("id", ID).maybeSingle()
-        .then(function (r) {
-          return (r && r.data && r.data.state && typeof r.data.state === "object") ? r.data.state : null;
-        })
-        .catch(function () { return null; });
-    }
-    // ローカルとクラウドの新しい方を返す（credit.html 側と同じ updatedAt 比較）
-    function getData() {
-      var l = local();
-      return remote().then(function (r) {
-        if (l && r) return ((r.updatedAt || 0) >= (l.updatedAt || 0)) ? r : l;
-        return r || l;
-      });
-    }
-    function loanTotalForTx(d, txId) {
-      return (d.loans || []).reduce(function (s, l) { return s + (l.txId === txId ? (+l.amount || 0) : 0); }, 0);
-    }
-    // サイクルキー "YYYY-MM-07" → 期間ラベル（credit.html の cycleLabel と同じ表示）
-    function cycleLabel(key) {
-      var m = String(key).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!m) return String(key);
-      var y = +m[1], mo = +m[2], d = +m[3], p = function (n) { return String(n).padStart(2, "0"); };
-      var em = mo + 1, ey = y; if (em > 12) { em = 1; ey++; }
-      return y + "/" + p(mo) + "/" + p(d) + "〜" + (ey !== y ? ey + "/" : "") + p(em) + "/06";
-    }
-    function cycleEndDate(key) {
-      var m = String(key).match(/^(\d{4})-(\d{2})-\d{2}$/);
-      if (!m) return null;
-      var y = +m[1], mo = +m[2] + 1; if (mo > 12) { mo = 1; y++; }
-      return new Date(y, mo - 1, 6);
-    }
-    // サイクルごとの集計（古い順）。total=総決済額 / self=自分の実質支出 / complete=締め済みか
-    function cycles(d) {
-      if (!d || !d.months) return [];
-      var today = new Date(); today.setHours(0, 0, 0, 0);
-      return Object.keys(d.months)
-        .filter(function (k) { return /^\d{4}-\d{2}-\d{2}$/.test(k); })
-        .sort()
-        .map(function (k) {
-          var txs = (d.months[k] && d.months[k].transactions) || [];
-          var total = 0, self = 0;
-          txs.forEach(function (t) {
-            var a = +t.amount || 0;
-            total += a;
-            self += Math.max(0, a - loanTotalForTx(d, t.id));
-          });
-          var end = cycleEndDate(k);
-          return { key: k, label: cycleLabel(k), total: total, self: self, count: txs.length, complete: end ? end < today : false };
-        })
-        .filter(function (c) { return c.count > 0; });
-    }
-    // 立て替え台帳の未回収合計（loans − payments）
-    function unrecovered(d) {
-      if (!d) return 0;
-      var paid = {};
-      (d.payments || []).forEach(function (p) { paid[p.loanId] = (paid[p.loanId] || 0) + (+p.amount || 0); });
-      return (d.loans || []).reduce(function (s, l) { return s + Math.max(0, (+l.amount || 0) - (paid[l.id] || 0)); }, 0);
-    }
-    return { local: local, getData: getData, cycles: cycles, unrecovered: unrecovered };
-  })();
-
-  /* --- MoneySync: money-balance-v1 + money-forecast-v1 をまとめて同期 --- */
   window.MoneySync = (function () {
     var KEYS = ["money-balance-v1", "money-forecast-v1"];
-    var META = "money-sync-meta-v1";   // この端末の最終更新時刻（updatedAt）だけを覚えるキー
+    var META = "money-sync-meta-v1";   // この端末の最終更新時刻
     var TABLE = "money_state", ID = "kodai";
     var sb = window.AssetDB;
     var online = null, pending = false, timer = null, lastPushed = "";
@@ -422,7 +251,6 @@
       return b;
     }
 
-    // 各ページの save() から呼ぶ。350ms デバウンスでクラウドへ送る
     function schedule() {
       setMeta({ updatedAt: Date.now() });
       if (!sb) { renderChip(); return; }
@@ -445,7 +273,6 @@
         })
         .catch(function () { online = false; pending = true; renderChip(); });
     }
-    // バックアップ復元など「ページ側で localStorage を直接書き換えた」直後に呼ぶ
     function touch() { setMeta({ updatedAt: Date.now() }); pending = true; flush(); }
 
     function applyRemote(incoming, toastMsg) {
@@ -474,7 +301,6 @@
           if (row && row.state && typeof row.state === "object") {
             var remoteT = row.state.updatedAt || 0;
             if (remoteT > localT) {
-              // この端末がまだ一度も同期していないのに両方にデータがある → 消失防止のため必ず確認
               if (!localT && hasLocalData()) {
                 var useRemote = confirm("クラウドに保存済みの残高データが見つかりました。\n\nOK：クラウドのデータをこの端末に反映する\nキャンセル：この端末のデータを正としてクラウドへ送る");
                 if (!useRemote) { touch(); subscribe(); renderChip(); return; }
@@ -484,7 +310,6 @@
             }
             if (localT > remoteT) { pending = true; flush(); }
           } else if (hasLocalData()) {
-            // クラウドが空 → 手元のデータを初回アップロード
             if (!localT) setMeta({ updatedAt: Date.now() });
             pending = true;
             flush();
@@ -499,9 +324,9 @@
         .on("postgres_changes", { event: "*", schema: "public", table: TABLE, filter: "id=eq." + ID }, function (p) {
           var inc = p.new && p.new.state;
           if (!inc) return;
-          if (JSON.stringify(inc) === lastPushed) return;          // 自分の書き込みのエコー
-          if ((inc.updatedAt || 0) <= (meta().updatedAt || 0)) return; // 自分の方が新しい
-          if (isEditing()) return;                                  // 入力中は上書きしない
+          if (JSON.stringify(inc) === lastPushed) return;
+          if ((inc.updatedAt || 0) <= (meta().updatedAt || 0)) return;
+          if (isEditing()) return;
           applyRemote(inc, "🔄 他の端末の変更を反映します");
         })
         .subscribe();
@@ -537,9 +362,10 @@
 (function () {
   "use strict";
   var STORAGE_KEY = "money-balance-v1";
+  var MIGRATE_KEY = "money-migrate-dismiss-v1";
   var BANK_PH = "銀行名（例：三菱UFJ）";
-  var CARD_PH = "カード名（例：楽天カード）";
-  var ADV_PH = "友達・内容（例：田中 ゲーム代）";
+  var CARD_PH = "内容（例：楽天カード・家賃）";
+  var ADV_PH = "内容（例：立替の返金）";
 
   var state = { banks: [], cards: [], advances: [] };
   var seq = 1;
@@ -555,25 +381,34 @@
     subBanks: document.getElementById("subBanks"),
     subCards: document.getElementById("subCards"),
     subAdv: document.getElementById("subAdv"),
-    sumBanks: document.getElementById("sumBanks"),
-    sumPending: document.getElementById("sumPending"),
+    bdBank: document.getElementById("bdBank"),
+    bdAdv: document.getElementById("bdAdv"),
+    bdCard: document.getElementById("bdCard"),
     remainBig: document.getElementById("remainBig"),
     remainNote: document.getElementById("remainNote"),
-    paidInfo: document.getElementById("paidInfo"),
-    advSummary: document.getElementById("advSummary"),
-    ownSpend: document.getElementById("ownSpend"),
-    advTotalEl: document.getElementById("advTotalEl"),
-    advUnrecEl: document.getElementById("advUnrecEl"),
-    realRemain: document.getElementById("realRemain"),
-    barFill: document.getElementById("barFill"),
-    barPct: document.getElementById("barPct"),
     resetBtn: document.getElementById("resetBtn"),
-    creditUnLine: document.getElementById("creditUnLine"),
-    creditUnEl: document.getElementById("creditUnEl"),
-    pullBill: document.getElementById("pullBill"),
-    pullBillPicker: document.getElementById("pullBillPicker"),
-    pullBillInfo: document.getElementById("pullBillInfo")
+    migrateBar: document.getElementById("migrateBar"),
+    migrateClose: document.getElementById("migrateClose")
   };
+
+  function toNum(v) {
+    var n = parseInt(String(v).replace(/[^0-9]/g, ""), 10);
+    return isNaN(n) || n < 0 ? 0 : n;
+  }
+  function yen(n) { return "¥" + Math.round(n).toLocaleString("ja-JP"); }
+  function comma(n) { return Number(n).toLocaleString("ja-JP"); }
+
+  // 旧フィールド(paid/day/cardId/repaid)は壊さず温存。name/amount だけ正規化する。
+  function normItem(o) {
+    var base = (o && typeof o === "object") ? o : {};
+    var out = {};
+    for (var k in base) { if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k]; }
+    out.id = base.id ? String(base.id) : nextId();
+    out.name = typeof base.name === "string" ? base.name : "";
+    out.amount = toNum(base.amount);
+    return out;
+  }
+  function makeItem() { return { id: nextId(), name: "", amount: 0 }; }
 
   function load() {
     try {
@@ -582,109 +417,56 @@
         var s = JSON.parse(raw);
         if (Array.isArray(s.banks)) state.banks = s.banks.map(normItem);
         if (Array.isArray(s.cards)) state.cards = s.cards.map(normItem);
-        if (Array.isArray(s.advances)) state.advances = s.advances.map(normAdvance);
+        if (Array.isArray(s.advances)) state.advances = s.advances.map(normItem);
       }
     } catch (e) { /* ignore */ }
     if (state.banks.length === 0) state.banks.push(makeItem());
     if (state.cards.length === 0) state.cards.push(makeItem());
   }
 
-  function normItem(o) {
-    return { id: o && o.id ? String(o.id) : nextId(),
-             name: o && typeof o.name === "string" ? o.name : "",
-             amount: o ? toNum(o.amount) : 0,
-             day: o ? clampDay(o.day) : 0,
-             paid: !!(o && o.paid) };
-  }
-  function makeItem() { return { id: nextId(), name: "", amount: 0, day: 0, paid: false }; }
-
-  function normAdvance(o) {
-    return { id: o && o.id ? String(o.id) : nextId(),
-             name: o && typeof o.name === "string" ? o.name : "",
-             amount: o ? toNum(o.amount) : 0,
-             cardId: o && o.cardId ? String(o.cardId) : "",
-             repaid: !!(o && o.repaid) };
-  }
-  function makeAdvance() { return { id: nextId(), name: "", amount: 0, cardId: "", repaid: false }; }
-
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
     if (window.MoneySync) MoneySync.schedule();
   }
 
-  function toNum(v) {
-    var n = parseInt(String(v).replace(/[^0-9]/g, ""), 10);
-    return isNaN(n) || n < 0 ? 0 : n;
-  }
-  function clampDay(v) {
-    var n = parseInt(String(v).replace(/[^0-9]/g, ""), 10);
-    if (isNaN(n) || n < 1) return 0;
-    return n > 31 ? 31 : n;
-  }
-
-  function yen(n) { return "¥" + Math.round(n).toLocaleString("ja-JP"); }
-  function comma(n) { return Number(n).toLocaleString("ja-JP"); }
-
-  // 毎月の引き落とし日(1-31)から次の引き落とし日を求める
-  function nextWithdrawal(day) {
-    if (!day) return null;
-    var now = new Date(); now.setHours(0, 0, 0, 0);
-    function build(y, m, d) {
-      var last = new Date(y, m + 1, 0).getDate();
-      return new Date(y, m, Math.min(d, last));
-    }
-    var cand = build(now.getFullYear(), now.getMonth(), day);
-    if (cand < now) {
-      var m = now.getMonth() + 1, y = now.getFullYear();
-      if (m > 11) { m = 0; y++; }
-      cand = build(y, m, day);
-    }
-    return cand;
-  }
-  function daysUntil(date) {
-    if (!date) return null;
-    var now = new Date(); now.setHours(0, 0, 0, 0);
-    return Math.round((date - now) / 86400000);
+  // 旧「済み」データがある時だけ、初回1回の移行案内
+  function maybeMigrateNotice() {
+    var dismissed = false;
+    try { dismissed = localStorage.getItem(MIGRATE_KEY) === "1"; } catch (e) {}
+    if (dismissed) return;
+    var hasPaid = state.cards.some(function (c) { return c.paid === true; });
+    if (!hasPaid) return;
+    el.migrateBar.classList.add("show");
+    el.migrateClose.addEventListener("click", function () {
+      el.migrateBar.classList.remove("show");
+      try { localStorage.setItem(MIGRATE_KEY, "1"); } catch (e) {}
+    });
   }
 
-  function rowMarkup(item, isCard, placeholder) {
-    var main =
-      (isCard ? '<input class="chk" type="checkbox" aria-label="引き落とし済み">' : '') +
-      '<input class="name" type="text" placeholder="' + placeholder + '" value="">' +
+  function rowMarkup(placeholder) {
+    return '<input class="name" type="text" placeholder="' + placeholder + '" value="">' +
       '<div class="amount-wrap"><span class="yen">¥</span>' +
       '<input class="amount" type="text" inputmode="numeric" placeholder="0" value=""></div>' +
       '<button class="del" aria-label="削除">×</button>';
-    if (!isCard) return main;
-    return '<div class="citem-main">' + main + '</div>' +
-      '<div class="citem-meta">' +
-        '<span class="daywrap">毎月 <input class="day" type="text" inputmode="numeric" maxlength="2" placeholder="–"> 日 引き落とし</span>' +
-        '<span class="status"></span>' +
-      '</div>' +
-      '<div class="citem-breakdown" style="display:none"></div>';
   }
 
-  function buildRows(listKey, container, isCard) {
-    var placeholder = isCard ? CARD_PH : BANK_PH;
+  function buildRows(listKey, container, placeholder, emptyMsg) {
     container.innerHTML = "";
     var arr = state[listKey];
     if (arr.length === 0) {
       var em = document.createElement("div");
       em.className = "empty";
-      em.textContent = "「＋」から追加してください";
+      em.textContent = emptyMsg;
       container.appendChild(em);
       return;
     }
     arr.forEach(function (item) {
       var row = document.createElement("div");
-      row.className = "item" + (isCard ? " citem" : "");
+      row.className = "item";
       row.setAttribute("data-id", item.id);
-      row.innerHTML = rowMarkup(item, isCard, placeholder);
+      row.innerHTML = rowMarkup(placeholder);
       row.querySelector(".name").value = item.name;
       row.querySelector(".amount").value = item.amount ? comma(item.amount) : "";
-      if (isCard) {
-        row.querySelector(".day").value = item.day ? String(item.day) : "";
-        row.querySelector(".chk").checked = item.paid;
-      }
       container.appendChild(row);
     });
   }
@@ -695,34 +477,20 @@
     return null;
   }
 
-  function wireList(listKey, container, isCard) {
+  function wireList(listKey, container, placeholder, emptyMsg) {
     container.addEventListener("input", function (e) {
       var row = e.target.closest(".item"); if (!row) return;
       var item = findItem(listKey, row.getAttribute("data-id")); if (!item) return;
       var t = e.target;
       if (t.classList.contains("name")) {
-        item.name = t.value; render(); save();
+        item.name = t.value; save();
       } else if (t.classList.contains("amount")) {
         var n = toNum(t.value);
         item.amount = n;
         t.value = n ? comma(n) : "";
         try { t.setSelectionRange(t.value.length, t.value.length); } catch (x) {}
         render(); save();
-      } else if (t.classList.contains("day")) {
-        var d = clampDay(t.value);
-        item.day = d;
-        t.value = d ? String(d) : "";
-        try { t.setSelectionRange(t.value.length, t.value.length); } catch (x) {}
-        render(); save();
-      } else if (t.classList.contains("chk")) {
-        item.paid = t.checked; render(); save();
       }
-    });
-    container.addEventListener("change", function (e) {
-      if (!e.target.classList.contains("chk")) return;
-      var row = e.target.closest(".item"); if (!row) return;
-      var item = findItem(listKey, row.getAttribute("data-id")); if (!item) return;
-      item.paid = e.target.checked; render(); save();
     });
     container.addEventListener("click", function (e) {
       var btn = e.target.closest(".del"); if (!btn) return;
@@ -733,362 +501,77 @@
         if (!confirm("「" + (item.name || "無名") + "」を削除しますか？")) return;
       }
       state[listKey] = state[listKey].filter(function (x) { return x.id !== id; });
-      if (isCard) {
-        state.advances.forEach(function (a) { if (a.cardId === id) a.cardId = ""; });
-        buildAdvs();
-      }
-      buildRows(listKey, container, isCard);
+      buildRows(listKey, container, placeholder, emptyMsg);
       render(); save();
     });
   }
 
-  function sumBanks() {
-    return state.banks.reduce(function (a, x) { return a + toNum(x.amount); }, 0);
-  }
-  function sumCards(paid) {
-    return state.cards.reduce(function (a, x) {
-      return a + (x.paid === paid ? toNum(x.amount) : 0);
-    }, 0);
-  }
-
-  // ---- 立て替え（友達の分） ----
-  function findAdv(id) {
-    for (var i = 0; i < state.advances.length; i++) if (state.advances[i].id === id) return state.advances[i];
-    return null;
-  }
-  function advForCard(cardId) {
-    if (!cardId) return 0;
-    return state.advances.reduce(function (a, x) { return a + (x.cardId === cardId ? toNum(x.amount) : 0); }, 0);
-  }
-  function advTotal() { return state.advances.reduce(function (a, x) { return a + toNum(x.amount); }, 0); }
-  function advUnrecovered() { return state.advances.reduce(function (a, x) { return a + (x.repaid ? 0 : toNum(x.amount)); }, 0); }
-
-  function fillCardOptions(sel, selectedId) {
-    sel.innerHTML = "";
-    var o0 = document.createElement("option");
-    o0.value = ""; o0.textContent = "（カード未選択）";
-    sel.appendChild(o0);
-    state.cards.forEach(function (c) {
-      var o = document.createElement("option");
-      o.value = c.id; o.textContent = c.name || "無名カード";
-      sel.appendChild(o);
-    });
-    sel.value = selectedId || "";
-    if (sel.value !== (selectedId || "")) sel.value = ""; // 紐づけたカードが消えていたら未選択へ
-  }
-  function syncAdvSelects() {
-    var rows = el.advs.querySelectorAll(".item");
-    for (var i = 0; i < rows.length; i++) {
-      var item = findAdv(rows[i].getAttribute("data-id"));
-      var sel = rows[i].querySelector(".cardId");
-      if (item && sel) fillCardOptions(sel, item.cardId);
-    }
-  }
-  function advRowMarkup() {
-    return '<div class="citem-main">' +
-      '<input class="name" type="text" placeholder="' + ADV_PH + '" value="">' +
-      '<div class="amount-wrap"><span class="yen">¥</span>' +
-      '<input class="amount" type="text" inputmode="numeric" placeholder="0" value=""></div>' +
-      '<button class="del" aria-label="削除">×</button>' +
-    '</div>' +
-    '<div class="citem-meta adv-meta">' +
-      '<span class="cardsel">カード <select class="cardId"></select></span>' +
-      '<label class="recv-wrap"><input class="recv" type="checkbox"> 回収済み</label>' +
-    '</div>';
-  }
-  function buildAdvs() {
-    el.advs.innerHTML = "";
-    if (state.advances.length === 0) {
-      var em = document.createElement("div");
-      em.className = "empty";
-      em.textContent = "友達の分を立て替えたら「＋」から追加してください";
-      el.advs.appendChild(em);
-      return;
-    }
-    state.advances.forEach(function (item) {
-      var row = document.createElement("div");
-      row.className = "item citem";
-      row.setAttribute("data-id", item.id);
-      row.innerHTML = advRowMarkup();
-      row.querySelector(".name").value = item.name;
-      row.querySelector(".amount").value = item.amount ? comma(item.amount) : "";
-      fillCardOptions(row.querySelector(".cardId"), item.cardId);
-      row.querySelector(".recv").checked = item.repaid;
-      el.advs.appendChild(row);
-    });
-  }
-  function wireAdvs() {
-    el.advs.addEventListener("input", function (e) {
-      var row = e.target.closest(".item"); if (!row) return;
-      var item = findAdv(row.getAttribute("data-id")); if (!item) return;
-      var t = e.target;
-      if (t.classList.contains("name")) {
-        item.name = t.value; save();
-      } else if (t.classList.contains("amount")) {
-        var n = toNum(t.value);
-        item.amount = n;
-        t.value = n ? comma(n) : "";
-        try { t.setSelectionRange(t.value.length, t.value.length); } catch (x) {}
-        render(); save();
-      } else if (t.classList.contains("recv")) {
-        item.repaid = t.checked; render(); save();
-      }
-    });
-    el.advs.addEventListener("change", function (e) {
-      var row = e.target.closest(".item"); if (!row) return;
-      var item = findAdv(row.getAttribute("data-id")); if (!item) return;
-      var t = e.target;
-      if (t.classList.contains("cardId")) { item.cardId = t.value; render(); save(); }
-      else if (t.classList.contains("recv")) { item.repaid = t.checked; render(); save(); }
-    });
-    el.advs.addEventListener("click", function (e) {
-      var btn = e.target.closest(".del"); if (!btn) return;
-      var row = e.target.closest(".item"); if (!row) return;
-      var id = row.getAttribute("data-id");
-      var item = findAdv(id);
-      if (item && (item.name || item.amount)) {
-        if (!confirm("立て替え「" + (item.name || "無名") + "」を削除しますか？")) return;
-      }
-      state.advances = state.advances.filter(function (x) { return x.id !== id; });
-      buildAdvs(); render(); save();
-    });
-  }
-
-  function updateCardRow(row, item) {
-    row.classList.toggle("paid", !!item.paid);
-    var bd = row.querySelector(".citem-breakdown");
-    if (bd) {
-      var a = advForCard(item.id);
-      if (a > 0) {
-        var own = Math.max(0, toNum(item.amount) - a);
-        bd.style.display = "block";
-        bd.innerHTML = "うち 自分 <b>" + yen(own) + "</b> ＋ 立て替え <b>" + yen(a) + "</b>";
-      } else {
-        bd.style.display = "none";
-        bd.textContent = "";
-      }
-    }
-    var status = row.querySelector(".status");
-    if (!status) return;
-    if (item.paid) {
-      status.className = "status done";
-      status.textContent = "✓ 引き落とし済み";
-    } else if (item.day) {
-      var nd = nextWithdrawal(item.day);
-      var d = daysUntil(nd);
-      var label;
-      if (d === 0) label = "今日が引き落とし日";
-      else if (d === 1) label = "明日 引き落とし";
-      else label = "あと " + d + " 日";
-      status.className = "status" + (d <= 3 ? " soon" : "");
-      status.textContent = label + "（" + (nd.getMonth() + 1) + "/" + nd.getDate() + "）";
-    } else {
-      status.className = "status";
-      status.textContent = "";
-    }
+  function sumList(listKey) {
+    return state[listKey].reduce(function (a, x) { return a + toNum(x.amount); }, 0);
   }
 
   function render() {
-    var b = sumBanks();
-    var pending = sumCards(false);
-    var paid = sumCards(true);
-    var remain = b - pending;
+    var b = sumList("banks");
+    var cards = sumList("cards");
+    var adv = sumList("advances");
+    var remain = b + adv - cards;
 
     el.subBanks.textContent = yen(b);
-    el.subCards.textContent = "−" + yen(pending) + (paid > 0 ? " ・済 " + yen(paid) : "");
-    el.sumBanks.textContent = yen(b);
-    el.sumPending.textContent = "−" + yen(pending);
+    el.subCards.textContent = yen(cards);
+    el.subAdv.textContent = yen(adv);
+
+    el.bdBank.textContent = yen(b);
+    el.bdAdv.textContent = yen(adv);
+    el.bdCard.textContent = yen(cards);
 
     el.remainBig.textContent = (remain < 0 ? "−" : "") + yen(Math.abs(remain));
     el.remainBig.classList.toggle("minus", remain < 0);
 
-    // bar: 未引き落としが銀行残高に占める割合
-    var pct = b > 0 ? (pending / b) * 100 : (pending > 0 ? 100 : 0);
-    el.barFill.style.width = Math.min(100, pct) + "%";
-    el.barFill.classList.toggle("over", pending > b);
-    el.barPct.textContent = (b > 0 ? Math.round(pct) + "%" : (pending > 0 ? "—" : "0%"));
-
-    if (b === 0 && pending === 0 && paid === 0) {
+    if (b === 0 && cards === 0 && adv === 0) {
       el.remainNote.className = "remain-note";
-      el.remainNote.textContent = "銀行とクレジットカードを入力すると計算されます";
+      el.remainNote.textContent = "銀行・引き落とし・入金を入力すると計算されます";
     } else if (remain >= 0) {
       el.remainNote.className = "remain-note";
-      el.remainNote.textContent = "未引き落としの請求 " + yen(pending) + " が引き落とされると、" + yen(remain) + " 残ります。";
+      el.remainNote.textContent = "引き落としが済むと " + yen(remain) + " 残ります";
     } else {
       el.remainNote.className = "remain-note minus";
-      el.remainNote.textContent = yen(Math.abs(remain)) + " 不足しています。銀行残高か請求額を確認してください。";
-    }
-
-    if (paid > 0) {
-      el.paidInfo.style.display = "block";
-      el.paidInfo.textContent = "✓ 引き落とし済み " + yen(paid) + " は、銀行残高にすでに反映済みとして残りの計算から除外しています。";
-    } else {
-      el.paidInfo.style.display = "none";
-    }
-
-    // 立て替えサマリー（このページの立て替え ＋ 明細マネージャー台帳の未回収）
-    var advT = advTotal();
-    var advUn = advUnrecovered();
-    var ownAll = Math.max(0, (pending + paid) - advT);
-    var realRemain = remain + advUn + creditUn;
-    el.subAdv.textContent = yen(advT) + (advUn > 0 ? " ・未回収 " + yen(advUn) : "");
-    if (state.advances.length > 0 || creditUn > 0) {
-      el.advSummary.style.display = "block";
-      el.ownSpend.textContent = yen(ownAll);
-      el.advTotalEl.textContent = yen(advT);
-      el.advUnrecEl.textContent = yen(advUn);
-      el.creditUnLine.style.display = creditUn > 0 ? "" : "none";
-      el.creditUnEl.textContent = yen(creditUn);
-      el.realRemain.textContent = (realRemain < 0 ? "−" : "") + yen(Math.abs(realRemain));
-    } else {
-      el.advSummary.style.display = "none";
-    }
-
-    // 各クレカ行の状態（済み表示・次回までの日数・内訳）を更新
-    var rows = el.cards.querySelectorAll(".item");
-    for (var i = 0; i < rows.length; i++) {
-      var it = findItem("cards", rows[i].getAttribute("data-id"));
-      if (it) updateCardRow(rows[i], it);
-    }
-
-    // 立て替え行のカード選択肢と回収済み表示を更新
-    syncAdvSelects();
-    var arows = el.advs.querySelectorAll(".item");
-    for (var j = 0; j < arows.length; j++) {
-      var ai = findAdv(arows[j].getAttribute("data-id"));
-      if (ai) arows[j].classList.toggle("recvd", !!ai.repaid);
+      el.remainNote.textContent = yen(Math.abs(remain)) + " 足りません";
     }
   }
 
-  function addItem(listKey, container, isCard) {
+  function addItem(listKey, container, placeholder, emptyMsg) {
     state[listKey].push(makeItem());
-    buildRows(listKey, container, isCard);
+    buildRows(listKey, container, placeholder, emptyMsg);
     render(); save();
     var rows = container.querySelectorAll(".item");
     if (rows.length) { var inp = rows[rows.length - 1].querySelector(".name"); if (inp) inp.focus(); }
   }
 
   function reset() {
-    if (!confirm("銀行・クレジットカード・立て替えの入力をすべて消去します。よろしいですか？")) return;
+    if (!confirm("銀行・引き落とし・入金の入力をすべて消します。よろしいですか？")) return;
     state.banks = [makeItem()];
     state.cards = [makeItem()];
     state.advances = [];
-    buildRows("banks", el.banks, false);
-    buildRows("cards", el.cards, true);
-    buildAdvs();
+    buildRows("banks", el.banks, BANK_PH, "");
+    buildRows("cards", el.cards, CARD_PH, "");
+    buildRows("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加");
     render(); save();
-  }
-
-  function addAdv() {
-    state.advances.push(makeAdvance());
-    buildAdvs(); render(); save();
-    var rows = el.advs.querySelectorAll(".item");
-    if (rows.length) { var inp = rows[rows.length - 1].querySelector(".name"); if (inp) inp.focus(); }
-  }
-
-  // ---- クレジット明細マネージャー連携（読み取りのみ） ----
-  var creditUn = 0;   // 台帳の未回収合計
-
-  function latestCycle(d) {
-    var cs = window.CreditLink ? CreditLink.cycles(d) : [];
-    if (!cs.length) return null;
-    // 締め済みの最新サイクル（＝次に引き落とされる請求）を優先。無ければ進行中のサイクル
-    for (var i = cs.length - 1; i >= 0; i--) if (cs[i].complete) return cs[i];
-    return cs[cs.length - 1];
-  }
-
-  function updateBillInfo(d) {
-    if (!el.pullBillInfo) return;
-    var c = d && latestCycle(d);
-    el.pullBillInfo.textContent = c
-      ? "最新の請求サイクル " + c.label + "：総決済額 " + yen(c.total) + "（うち自分の実質 " + yen(c.self) + "）"
-      : "";
-  }
-
-  function refreshCreditLedger() {
-    if (!window.CreditLink) return;
-    var applyData = function (d) {
-      if (!d) return;
-      var un = CreditLink.unrecovered(d);
-      updateBillInfo(d);
-      if (un !== creditUn) { creditUn = un; render(); }
-    };
-    applyData(CreditLink.local());                                  // まず手元のデータで即表示
-    CreditLink.getData().then(applyData).catch(function () {});     // クラウドの新しいデータで更新
-  }
-
-  function setupBillImport() {
-    if (!el.pullBill || !window.CreditLink) return;
-    function applyTo(card, c) {
-      el.pullBillPicker.style.display = "none";
-      var nm = card.name || "無名カード";
-      if (!confirm("「" + nm + "」の請求額を " + yen(c.total) + " にします。\n（" + c.label + " の総決済額・未引き落としとして反映）\nよろしいですか？")) return;
-      card.amount = c.total;
-      card.paid = false;
-      buildRows("cards", el.cards, true);
-      render(); save();
-    }
-    el.pullBill.addEventListener("click", function () {
-      var orig = el.pullBill.textContent;
-      el.pullBill.disabled = true;
-      el.pullBill.textContent = "明細を読み込み中…";
-      CreditLink.getData().then(function (d) {
-        el.pullBill.disabled = false;
-        el.pullBill.textContent = orig;
-        var c = d && latestCycle(d);
-        if (!c) {
-          alert("クレジット明細マネージャーのデータが見つかりませんでした。\n先に「クレジット明細マネージャー」でクレカ明細CSVを取り込んでください。");
-          return;
-        }
-        updateBillInfo(d);
-        if (state.cards.length === 0) {
-          state.cards.push(makeItem());
-          buildRows("cards", el.cards, true);
-        }
-        if (state.cards.length === 1) { applyTo(state.cards[0], c); return; }
-        // 複数カード → どのカードに反映するか選ぶ
-        el.pullBillPicker.innerHTML = "";
-        var ttl = document.createElement("div");
-        ttl.className = "ttl";
-        ttl.textContent = c.label + " の総決済額 " + yen(c.total) + " をどのカードに反映しますか？";
-        var opts = document.createElement("div");
-        opts.className = "opts";
-        state.cards.forEach(function (card) {
-          var b = document.createElement("button");
-          b.textContent = card.name || "無名カード";
-          b.addEventListener("click", function () { applyTo(card, c); });
-          opts.appendChild(b);
-        });
-        var cancel = document.createElement("button");
-        cancel.className = "cancel";
-        cancel.textContent = "キャンセル";
-        cancel.addEventListener("click", function () { el.pullBillPicker.style.display = "none"; });
-        opts.appendChild(cancel);
-        el.pullBillPicker.appendChild(ttl);
-        el.pullBillPicker.appendChild(opts);
-        el.pullBillPicker.style.display = "block";
-      }).catch(function () {
-        el.pullBill.disabled = false;
-        el.pullBill.textContent = orig;
-      });
-    });
   }
 
   // init
   load();
-  buildRows("banks", el.banks, false);
-  buildRows("cards", el.cards, true);
-  buildAdvs();
-  wireList("banks", el.banks, false);
-  wireList("cards", el.cards, true);
-  wireAdvs();
+  buildRows("banks", el.banks, BANK_PH, "");
+  buildRows("cards", el.cards, CARD_PH, "");
+  buildRows("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加");
+  wireList("banks", el.banks, BANK_PH, "");
+  wireList("cards", el.cards, CARD_PH, "");
+  wireList("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加");
   render();
-  refreshCreditLedger();
-  setupBillImport();
+  maybeMigrateNotice();
 
-  el.addBank.addEventListener("click", function () { addItem("banks", el.banks, false); });
-  el.addCard.addEventListener("click", function () { addItem("cards", el.cards, true); });
-  el.addAdv.addEventListener("click", addAdv);
+  el.addBank.addEventListener("click", function () { addItem("banks", el.banks, BANK_PH, ""); });
+  el.addCard.addEventListener("click", function () { addItem("cards", el.cards, CARD_PH, ""); });
+  el.addAdv.addEventListener("click", function () { addItem("advances", el.advs, ADV_PH, "返金など、入る予定があれば追加"); });
   el.resetBtn.addEventListener("click", reset);
 })();
 </script>
@@ -1167,7 +650,7 @@
       }
     });
     if (found === 0) { setMsg("このバックアップに引き継げるデータが見つかりませんでした。", true); return; }
-    if (window.MoneySync && MoneySync.touch) MoneySync.touch();   // 復元した内容を「最新」としてクラウドにも送る
+    if (window.MoneySync && MoneySync.touch) MoneySync.touch();
     setMsg("復元しました。画面を更新します…");
     setTimeout(function () { location.reload(); }, 700);
   }
