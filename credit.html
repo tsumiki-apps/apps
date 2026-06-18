@@ -66,8 +66,8 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .upload-card.collapsed{padding:0;background:none;box-shadow:none;margin-bottom:12px}
 .upload-card.collapsed>h2{display:none}
 .upload-card.collapsed .upload-icon,.upload-card.collapsed .up-full{display:none}
-.upload-card.collapsed .up-compact{display:block;font-size:13px;font-weight:500}
-.upload-card.collapsed .upload-area{padding:10px 14px;border-style:solid;border-width:1px;border-color:var(--line);background:var(--card);color:var(--blue)}
+.upload-card.collapsed .up-compact{display:block;font-size:15px;font-weight:600}
+.upload-card.collapsed .upload-area{padding:13px 14px;border:none;border-radius:12px;background:var(--blue);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .stat.warning{background:var(--soft-orange)}.stat.warning .value{color:var(--red)}
 .stat.success{background:var(--soft-green)}.stat.success .value{color:var(--green)}
 .upload-area{display:block;border:2px dashed var(--line);border-radius:12px;padding:22px 16px;text-align:center;color:var(--sub);cursor:pointer;transition:all .2s}
@@ -261,9 +261,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
       <label class="upload-area" id="creditUploadArea">
         <input type="file" id="creditFileInput" accept=".csv">
         <div class="upload-icon">💳</div>
-        <div class="up-full">CSVをドロップ または タップ</div>
-        <div class="up-compact">＋ クレカCSVを再取込</div>
-        <div class="up-full" style="font-size:10px;margin-top:4px;opacity:.7">Amex／三井住友等のカード明細CSV対応・Shift-JIS/UTF-8 自動判定</div>
+        <div class="up-compact">＋ 新しいCSVを読み込む</div>
       </label>
     </div>
     <div class="card" id="summaryCard" style="display:none">
@@ -457,7 +455,7 @@ const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
-let data={months:{},amazonOrders:[],loans:[],payments:[],people:[]};
+let data={months:{},amazonOrders:[],loans:[],payments:[],people:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{}};
 let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),triageSkipped:new Set(),triageLast:null,selectMode:false,selectedTxIds:new Set()};
 
 function load(){
@@ -470,6 +468,10 @@ function load(){
     if(!data.loans)data.loans=[];
     if(!data.payments)data.payments=[];
     if(!data.people)data.people=[];
+    if(!data.deletedTxIds)data.deletedTxIds={};
+    if(!data.deletedLoanIds)data.deletedLoanIds={};
+    if(!data.deletedPaymentIds)data.deletedPaymentIds={};
+    if(!data.deletedAmazonIds)data.deletedAmazonIds={};
     migrateToCycles();
   }catch(e){console.error(e);}
 }
@@ -480,9 +482,70 @@ function migrateToCycles(){
   const allTx=[];
   keys.forEach(k=>{(data.months[k].transactions||[]).forEach(t=>allTx.push(t));});
   const byCycle={};
-  allTx.forEach(t=>{const ck=cycleStartFromDate(t.date);const key=ck||'unknown';(byCycle[key]=byCycle[key]||{transactions:[]}).transactions.push(t);});
+  allTx.forEach(t=>{const ck=t.cycleOverride||cycleStartFromDate(t.date);const key=ck||'unknown';(byCycle[key]=byCycle[key]||{transactions:[]}).transactions.push(t);});
   data.months=byCycle;
   save();
+}
+// ===== 非破壊マージ：クラウド採用時に「明細をidで和集合」する（丸ごと置換しない） =====
+// 端末間でlast-write-winsの全置換をすると、片方にしか無い明細が消える事故になる。
+// 削除は tombstone（deleted*Ids）で表現し、和集合後に除外する。
+function mergeTomb(a,b){const m={...(a||{})};for(const k in (b||{}))m[k]=Math.max(m[k]||0,b[k]||0);return m;}
+function allTxArr(d){const out=[];Object.values((d&&d.months)||{}).forEach(m=>(m.transactions||[]).forEach(t=>out.push(t)));return out;}
+function mergeState(a,b){
+  a=a||{};b=b||{};
+  const out={months:{},amazonOrders:[],loans:[],payments:[],people:[]};
+  out.deletedTxIds=mergeTomb(a.deletedTxIds,b.deletedTxIds);
+  out.deletedLoanIds=mergeTomb(a.deletedLoanIds,b.deletedLoanIds);
+  out.deletedPaymentIds=mergeTomb(a.deletedPaymentIds,b.deletedPaymentIds);
+  out.deletedAmazonIds=mergeTomb(a.deletedAmazonIds,b.deletedAmazonIds);
+  const aPref=(a.updatedAt||0)>=(b.updatedAt||0);
+  const pref=aPref?a:b, non=aPref?b:a;                 // 新しい方のフィールドを優先採用
+  const txMap=new Map();
+  allTxArr(non).forEach(t=>{if(t&&t.id)txMap.set(t.id,t);});
+  allTxArr(pref).forEach(t=>{if(t&&t.id)txMap.set(t.id,t);});
+  // tombstone除外。ただし再取込で復活させた明細(revivedAt>tombstone)は残す＝古いtombstoneに負けない
+  for(const id in out.deletedTxIds){const t=txMap.get(id);if(t&&(t.revivedAt||0)>out.deletedTxIds[id])continue;txMap.delete(id);}
+  // Amazon注文：idで和集合→tombstone除外
+  const amzMap=new Map();
+  (non.amazonOrders||[]).forEach(o=>{if(o&&o.id)amzMap.set(o.id,o);});
+  (pref.amazonOrders||[]).forEach(o=>{if(o&&o.id)amzMap.set(o.id,o);});
+  for(const id in out.deletedAmazonIds)amzMap.delete(id);
+  out.amazonOrders=[...amzMap.values()];
+  const liveAmz=new Set(amzMap.keys());
+  // 明細を cycleOverride||自然サイクル で1箇所へ再配置。消えた注文への紐付けは外す
+  txMap.forEach(t=>{
+    if(t.linkedAmazonId&&!liveAmz.has(t.linkedAmazonId)){t={...t};delete t.linkedAmazonId;}
+    const k=t.cycleOverride||cycleStartFromDate(t.date);
+    if(!k)return;
+    (out.months[k]=out.months[k]||{transactions:[]}).transactions.push(t);
+  });
+  // 立て替え：idで和集合→tombstone除外
+  const loanMap=new Map();
+  (non.loans||[]).forEach(l=>{if(l&&l.id)loanMap.set(l.id,l);});
+  (pref.loans||[]).forEach(l=>{if(l&&l.id)loanMap.set(l.id,l);});
+  for(const id in out.deletedLoanIds)loanMap.delete(id);
+  out.loans=[...loanMap.values()];
+  const liveLoans=new Set(loanMap.keys());
+  // 回収：idで和集合→tombstone除外＋親の立て替えが消えたら除外
+  const payMap=new Map();
+  (non.payments||[]).forEach(p=>{if(p&&p.id)payMap.set(p.id,p);});
+  (pref.payments||[]).forEach(p=>{if(p&&p.id)payMap.set(p.id,p);});
+  for(const id in out.deletedPaymentIds)payMap.delete(id);
+  out.payments=[...payMap.values()].filter(p=>liveLoans.has(p.loanId));
+  out.people=((pref.people||non.people||[])).slice();   // 人名は新しい方を採用（削除を許す）
+  out.updatedAt=Math.max(a.updatedAt||0,b.updatedAt||0);
+  return out;
+}
+// 収束判定用：保存内容の指紋（updatedAtは無視）。同一なら再保存しない＝同期のping-pong防止
+function stateSig(d){
+  if(!d)return '';
+  const tx=[];allTxArr(d).forEach(t=>tx.push(t.id+':'+(t.cycleOverride||'')+':'+(t.linkedAmazonId||'')+':'+(t.necessity||'')));tx.sort();
+  const ln=(d.loans||[]).map(l=>l.id+':'+l.amount+':'+(l.personName||'')).sort();
+  const pm=(d.payments||[]).map(p=>p.id+':'+p.amount).sort();
+  const az=(d.amazonOrders||[]).map(o=>o.id).sort();
+  const tb=[...Object.keys(d.deletedTxIds||{}),...Object.keys(d.deletedLoanIds||{}),...Object.keys(d.deletedPaymentIds||{}),...Object.keys(d.deletedAmazonIds||{})].sort();
+  const pe=(d.people||[]).slice().sort();
+  return JSON.stringify([tx,ln,pm,az,tb,pe]);
 }
 function save(){
   data.updatedAt=Date.now();                       // 古いクラウドデータでの上書きを防ぐ
@@ -514,9 +577,11 @@ async function loadRemote(){
     if(error){online=false;renderSync();return;}
     online=true;
     if(row&&row.state&&typeof row.state==='object'){
-      const localT=data.updatedAt||0, remoteT=row.state.updatedAt||0;
-      if(remoteT>=localT){ data={months:{},amazonOrders:[],loans:[],payments:[],people:[],...row.state}; migrateToCycles(); localStorage.setItem(STORAGE_KEY,JSON.stringify(data)); refreshAfterSync(); }
-      else { save(); } // ローカルの方が新しい（前回未送信）→ 送り直す
+      // 丸ごと置換せず明細id単位で和集合マージ（片方にしか無い明細を消さない）
+      data=mergeState(data,row.state);
+      localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+      if(stateSig(data)!==stateSig(row.state)) save(); // クラウドに無い明細を持っていた→マージ結果を送り返す
+      refreshAfterSync();
     } else {
       // クラウドが空：手元にデータがあれば初回アップロード
       if(Object.keys(data.months).length||data.loans.length||data.amazonOrders.length) save();
@@ -532,12 +597,14 @@ function subscribeRealtime(){
       if(!incoming)return;
       if(JSON.stringify(incoming)===lastPushed)return;           // 自分の書き込みのエコー
       if(isEditing())return;                                     // 編集中は上書きしない
-      if((incoming.updatedAt||0)<(data.updatedAt||0))return;     // 自分の方が新しければ無視
-      data={months:{},amazonOrders:[],loans:[],payments:[],people:[],...incoming};
-      migrateToCycles();
+      // 古い受信でも丸ごと置換せず和集合マージ（片方にしか無い明細を救う）
+      const merged=mergeState(data,incoming);
+      const changedForUs=stateSig(merged)!==stateSig(data);
+      data=merged;
       localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
-      refreshAfterSync();
-      showSyncToast('🔄 他の端末から更新しました');
+      if(stateSig(data)!==stateSig(incoming)) save();            // クラウドに無い明細を持っていた→送り返す
+      refreshAfterSync();                                        // 常に再描画（フィールド編集の表示遅延を防ぐ）
+      if(changedForUs) showSyncToast('🔄 他の端末から更新しました');
     })
     .subscribe();
 }
@@ -710,13 +777,14 @@ async function handleCreditCSV(file){
     if(oldIds.has(t.id)){dup++;return;}              // 既存：手を触れない（保持）
     const k=cycleStartFromDate(t.date);
     if(!k){nodate++;return;}
+    if(data.deletedTxIds&&data.deletedTxIds[t.id]){t.revivedAt=Date.now();delete data.deletedTxIds[t.id];} // 再取込は過去の削除より優先＝復活(他端末の古いtombstoneにも勝つ)
     if(!data.months[k])data.months[k]={transactions:[]};
     data.months[k].transactions.push(t);
     oldIds.add(t.id);                                  // 同一CSV内の重複も二重登録しない
     added++;touched.add(k);
   });
   if(added===0&&dup===0){alert('日付が認識できる明細がありません');return;}
-  autoLinkAmazon();save();
+  autoLinkAmazon();save();flushSave();                 // 取込は即クラウド反映（350ms待ちで失う窓を無くす）
   if(touched.size)state.currentMonth=[...touched].sort().pop();
   else if(!state.currentMonth){const ks=Object.keys(data.months).sort();if(ks.length)state.currentMonth=ks[ks.length-1];}
   render();
@@ -1367,6 +1435,7 @@ function toggleTxExpand(id){
 function deleteMonth(){
   if(!state.currentMonth)return;
   openConfirmModal('この期間を削除',`${cycleLabel(state.currentMonth,true)} の明細をすべて削除しますか？\nクレカ明細から作成された立て替えは残ります（台帳から手動で削除してください）。`,()=>{
+    const now=Date.now();(data.months[state.currentMonth]?.transactions||[]).forEach(t=>{data.deletedTxIds[t.id]=now;});
     delete data.months[state.currentMonth];save();
     const ms=Object.keys(data.months).sort();
     state.currentMonth=ms.length>0?ms[ms.length-1]:null;
@@ -1535,6 +1604,8 @@ function saveManualLoan(){
 function deleteCurrentLoan(){const id=state.editingLoanId;if(!id)return;closeManualLoanModal();deleteLoan(id);}
 function deleteLoan(id){
   openConfirmModal('立て替えの削除','この立て替えを削除しますか？\n紐付く回収レコードも削除されます。',()=>{
+    const now=Date.now();data.deletedLoanIds[id]=now;
+    data.payments.filter(p=>p.loanId===id).forEach(p=>{data.deletedPaymentIds[p.id]=now;});
     data.loans=data.loans.filter(l=>l.id!==id);
     data.payments=data.payments.filter(p=>p.loanId!==id);
     save();render();
@@ -1566,6 +1637,7 @@ function savePayment(){
 }
 function deletePayment(id){
   openConfirmModal('回収記録の削除','この回収記録を削除しますか？',()=>{
+    data.deletedPaymentIds[id]=Date.now();
     data.payments=data.payments.filter(p=>p.id!==id);
     save();render();
   });
@@ -1617,6 +1689,7 @@ function deleteCurrentAmazon(){
   const id=state.editingAmazonId;closeManualAmazonModal();
   openConfirmModal('注文の削除','このAmazon注文を削除しますか？\n紐付きも解除されます。',()=>{
     Object.values(data.months).forEach(m=>m.transactions.forEach(t=>{if(t.linkedAmazonId===id)delete t.linkedAmazonId;}));
+    data.deletedAmazonIds[id]=Date.now();
     data.amazonOrders=data.amazonOrders.filter(o=>o.id!==id);
     save();render();
   });
@@ -1627,6 +1700,7 @@ function clearAmazonData(){
   if(!n){alert('削除するAmazon取込データがありません。');return;}
   openConfirmModal('Amazon取込データを全削除',`登録済みの${n}件のAmazon注文をすべて削除しますか？\n各クレカ明細との紐付けも解除されます。\nこの操作は取り消せません。`,()=>{
     Object.values(data.months).forEach(m=>m.transactions.forEach(t=>{if(t.linkedAmazonId)delete t.linkedAmazonId;}));
+    const now=Date.now();data.amazonOrders.forEach(o=>{data.deletedAmazonIds[o.id]=now;});
     data.amazonOrders=[];
     save();render();
   });
