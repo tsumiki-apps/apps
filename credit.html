@@ -293,14 +293,8 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 
   <!-- Amazonタブ -->
   <div class="tab-content" id="tab-amazon">
-    <div class="card">
-      <h2>Amazon注文履歴CSVをアップロード</h2>
-      <label class="upload-area" id="amazonUploadArea">
-        <input type="file" id="amazonFileInput" accept=".csv">
-        <div class="upload-icon">📦</div>
-        <div>注文履歴レポートをドロップ または タップ</div>
-        <div style="font-size:10px;margin-top:4px;opacity:.7">amazon.co.jp「注文履歴レポート」を想定</div>
-      </label>
+    <div class="card" style="padding:12px 14px">
+      <div style="font-size:12px;line-height:1.6;opacity:.85">📦 Amazon注文は<strong>ブックマークレット</strong>で取り込みます。取りこぼしは下の「＋手動追加」で補えます。</div>
     </div>
     <div class="card" id="amazonStatsCard" style="display:none">
       <h2>Amazon統計</h2>
@@ -734,65 +728,8 @@ async function handleCreditCSV(file){
   setTimeout(()=>alert(`クレカ明細を取り込みました\n取込: ${txs.length}件${range}\n\n※取り込めるのはCSVに含まれる明細のみです。期間に抜けが無いかご確認ください。`),50);
 }
 
-// Amazon CSV
-async function parseAmazonCSV(file){
-  const buf=await file.arrayBuffer();
-  const text=decodeBuffer(buf);
-  const lines=text.split(/\r?\n/).filter(l=>l.trim());
-  if(lines.length<2){alert('CSVに注文がありません');return null;}
-  const header=parseCsvLine(lines[0]);
-  const idxDate=findHeaderIdx(header,['注文日','OrderDate']);
-  const idxOrderId=findHeaderIdx(header,['注文番号','OrderID','OrderNumber']);
-  const idxTitle=findHeaderIdx(header,['商品名','タイトル','ProductName','Title','商品']);
-  const idxTotal=findHeaderIdx(header,['TotalAmount','商品合計','ItemTotal','TotalCharged','合計','Amount']);
-  const idxQty=findHeaderIdx(header,['OriginalQuantity','数量','Quantity']);
-  const idxShip=findHeaderIdx(header,['お届け先','配送先','ShippingAddress','ShipTo','Recipient']);
-  if(idxDate<0||idxTitle<0||idxTotal<0){
-    alert('Amazon CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / ')+'\n\n必要列: 注文日 / 商品名 / 商品合計');
-    return null;
-  }
-  const orders={};
-  for(let i=1;i<lines.length;i++){
-    const cols=parseCsvLine(lines[i]);
-    if(cols.length<3)continue;
-    const rawDate=cols[idxDate]?.trim();
-    const orderDate=rawDate?rawDate.split('T')[0].replace(/-/g,'/'):'';
-    const title=cols[idxTitle]?.trim();
-    const itemTotal=parseInt((cols[idxTotal]||'').replace(/[,"'¥\s]/g,''),10);
-    if(!orderDate||!title||isNaN(itemTotal))continue;
-    const orderId=(idxOrderId>=0&&cols[idxOrderId]?.trim())||(orderDate+'__'+title.slice(0,10)+'__'+itemTotal);
-    const qty=idxQty>=0?(parseInt(cols[idxQty],10)||1):1;
-    const ship=idxShip>=0?cols[idxShip]?.trim()||'':'';
-    if(!orders[orderId])orders[orderId]={orderId,orderDate,items:[],amount:0,deliveryTo:ship};
-    orders[orderId].items.push({title,quantity:qty,amount:itemTotal});
-    orders[orderId].amount+=itemTotal;
-    if(!orders[orderId].deliveryTo&&ship)orders[orderId].deliveryTo=ship;
-  }
-  return Object.values(orders).map(o=>({
-    id:'ao_'+hashStr(o.orderId),
-    orderId:o.orderId,
-    orderDate:o.orderDate,
-    productName:o.items.map(it=>it.title+(it.quantity>1?' x'+it.quantity:'')).join(' / '),
-    amount:o.amount,
-    deliveryTo:o.deliveryTo||'',
-    memo:''
-  }));
-}
-
-async function handleAmazonCSV(file){
-  const orders=await parseAmazonCSV(file);
-  if(!orders||orders.length===0)return;
-  const exMap={};data.amazonOrders.forEach(o=>{exMap[o.id]=o;});
-  let added=0,updated=0;
-  orders.forEach(o=>{
-    if(exMap[o.id]){Object.assign(exMap[o.id],{orderDate:o.orderDate,productName:o.productName,amount:o.amount,deliveryTo:o.deliveryTo});updated++;}
-    else{data.amazonOrders.push(o);added++;}
-  });
-  autoLinkAmazon();save();render();
-  const ds=orders.map(o=>o.orderDate).filter(Boolean).sort();
-  const range=ds.length?`\n対象期間: ${ds[0]}〜${ds[ds.length-1]}`:'';
-  alert(`Amazon注文を取り込みました\n新規: ${added}件 / 更新: ${updated}件（CSV内 ${orders.length}件）${range}\n\n※取り込めるのはCSVに含まれる注文のみです。期間に抜けが無いかご確認ください。`);
-}
+// Amazon注文の取り込みはブックマークレット(amazon-import-bookmarklet.js)経由でSupabaseへ直接追記。
+// アプリ内のCSVアップロードUIは廃止（取りこぼしは「＋手動追加」で補完）。
 
 function isAmazonTx(tx){return /アマゾン|Amazon|ＡＭＡＺＯＮ|ａｍａｚｏｎ/i.test(tx.description)&&!/プライム会費|ＰＲＩＭＥ/i.test(tx.description);}
 function daysBetween(d1,d2){const t1=new Date(d1.replace(/\//g,'-')).getTime();const t2=new Date(d2.replace(/\//g,'-')).getTime();if(isNaN(t1)||isNaN(t2))return Infinity;return(t1-t2)/86400000;}
@@ -1385,13 +1322,27 @@ function shortenOneAmazonItem(seg){
   s=s.replace(/[、，,・/／]{2,}/g,'・').replace(/\s{2,}/g,' ').replace(/^[\s、，,・/／\-—–]+|[\s、，,・/／\-—–]+$/g,'').trim();
   return s||String(seg);
 }
+// 表示幅でハードカット（全角=1.0 / 半角=0.5 換算）。超えたら末尾に「…」。rawはtitleで保持。
+function cutAmazonWidth(s,maxW){
+  let w=0,out='';
+  for(const ch of String(s)){
+    w+=/[\x00-\x7E｡-ﾟ]/.test(ch)?0.5:1; // ASCII・半角カナは0.5
+    if(w>maxW)return out+'…';
+    out+=ch;
+  }
+  return out;
+}
 function shortenAmazonProduct(name){
   const raw=String(name||'');
   if(!raw.trim())return raw;
   // 複数商品（" / " 連結）は各商品を短縮。3件以上は先頭2件＋「他N件」
   const segs=raw.split(' / ').map(x=>x.trim()).filter(Boolean);
-  const short=segs.map(shortenOneAmazonItem).filter(Boolean);
-  if(short.length===0)return raw;
+  const cleaned=segs.map(shortenOneAmazonItem).filter(Boolean);
+  if(cleaned.length===0)return raw;
+  // ブランド推定での語削除はしない（核語を消す事故を避ける）。代わりに幅で強制的に短く。
+  // 1商品なら全角14、複数なら各全角9で切って横に並べても収まるように。
+  const w=cleaned.length>1?9:14;
+  const short=cleaned.map(s=>cutAmazonWidth(s,w));
   if(short.length<=2)return short.join(' / ');
   return short.slice(0,2).join(' / ')+' 他'+(short.length-2)+'件';
 }
@@ -1726,15 +1677,14 @@ document.querySelectorAll('.filter-btn[data-amz-filter]').forEach(b=>b.addEventL
   document.querySelectorAll('.filter-btn[data-amz-filter]').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');state.currentAmzFilter=b.dataset.amzFilter;renderAmazonTab();
 }));
-['creditUploadArea','amazonUploadArea'].forEach(id=>{
+['creditUploadArea'].forEach(id=>{
   const a=document.getElementById(id);
+  if(!a)return;
   ['dragenter','dragover'].forEach(ev=>a.addEventListener(ev,e=>{e.preventDefault();a.classList.add('drag');}));
   ['dragleave','drop'].forEach(ev=>a.addEventListener(ev,e=>{e.preventDefault();a.classList.remove('drag');}));
 });
 document.getElementById('creditFileInput').addEventListener('change',e=>{if(e.target.files[0])handleCreditCSV(e.target.files[0]);});
 document.getElementById('creditUploadArea').addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)handleCreditCSV(f);});
-document.getElementById('amazonFileInput').addEventListener('change',e=>{if(e.target.files[0])handleAmazonCSV(e.target.files[0]);});
-document.getElementById('amazonUploadArea').addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)handleAmazonCSV(f);});
 document.getElementById('importFileInput').addEventListener('change',e=>{
   if(e.target.files[0])importData(e.target.files[0]);
   e.target.value='';
