@@ -773,18 +773,20 @@ async function handleCreditCSV(file){
   Object.values(data.months).forEach(m=>m.transactions.forEach(t=>oldIds.add(t.id)));
   let added=0,dup=0,nodate=0;
   const touched=new Set();
+  const newIds=new Set();
   txs.forEach(t=>{
-    if(oldIds.has(t.id)){dup++;return;}              // 既存：手を触れない（保持）
+    if(oldIds.has(t.id)){dup++;return;}              // 既存：手を触れない（保持・自動リンクもしない）
     const k=cycleStartFromDate(t.date);
     if(!k){nodate++;return;}
     if(data.deletedTxIds&&data.deletedTxIds[t.id]){t.revivedAt=Date.now();delete data.deletedTxIds[t.id];} // 再取込は過去の削除より優先＝復活(他端末の古いtombstoneにも勝つ)
     if(!data.months[k])data.months[k]={transactions:[]};
     data.months[k].transactions.push(t);
     oldIds.add(t.id);                                  // 同一CSV内の重複も二重登録しない
+    newIds.add(t.id);
     added++;touched.add(k);
   });
   if(added===0&&dup===0){alert('日付が認識できる明細がありません');return;}
-  autoLinkAmazon();save();flushSave();                 // 取込は即クラウド反映（350ms待ちで失う窓を無くす）
+  autoLinkAmazon(newIds);save();flushSave();           // 自動リンクは“新規だけ”／取込は即クラウド反映（350ms待ちの欠落窓を無くす）
   if(touched.size)state.currentMonth=[...touched].sort().pop();
   else if(!state.currentMonth){const ks=Object.keys(data.months).sort();if(ks.length)state.currentMonth=ks[ks.length-1];}
   render();
@@ -800,12 +802,14 @@ async function handleCreditCSV(file){
 function isAmazonTx(tx){return /アマゾン|Amazon|ＡＭＡＺＯＮ|ａｍａｚｏｎ/i.test(tx.description)&&!/プライム会費|ＰＲＩＭＥ/i.test(tx.description);}
 function daysBetween(d1,d2){const t1=new Date(d1.replace(/\//g,'-')).getTime();const t2=new Date(d2.replace(/\//g,'-')).getTime();if(isNaN(t1)||isNaN(t2))return Infinity;return(t1-t2)/86400000;}
 
-function autoLinkAmazon(){
+// eligibleIds を渡すと「新たにリンクを“付ける”対象」をその集合に限定する（取込時=新規明細だけ）。
+// 既存リンクは常に占有として尊重するので、ユーザーが意図的に未リンクにした既存行には触れない。
+function autoLinkAmazon(eligibleIds){
   const linked=new Set();
   const pending=[];
   Object.values(data.months).forEach(m=>m.transactions.forEach(t=>{
     if(t.linkedAmazonId){linked.add(t.linkedAmazonId);return;}
-    if(isAmazonTx(t))pending.push(t);
+    if(isAmazonTx(t)&&(!eligibleIds||eligibleIds.has(t.id)))pending.push(t);
   }));
   // 確信度の高いものから1件ずつ確定（金額一致＋日付が最も近い順／候補が少ない明細を優先）
   let newLinks=0,changed=true;
