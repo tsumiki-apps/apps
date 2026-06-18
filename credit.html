@@ -304,7 +304,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
       </div>
     </div>
     <div class="card" id="amazonListCard" style="display:none">
-      <h2><span>注文一覧</span><button class="btn" onclick="openManualAmazonModal()">+ 手動追加</button></h2>
+      <h2><span>注文一覧</span><span style="display:flex;gap:6px"><button class="btn" onclick="manualAutoLinkAmazon()">🔗 自動紐付け</button><button class="btn" onclick="openManualAmazonModal()">+ 手動追加</button></span></h2>
       <div class="filter-bar">
         <button class="filter-btn active" data-amz-filter="all">すべて</button>
         <button class="filter-btn" data-amz-filter="unlinked">未紐付け</button>
@@ -545,6 +545,7 @@ function subscribeRealtime(){
 function refreshAfterSync(){
   const keys=Object.keys(data.months).sort();
   if(!keys.includes(state.currentMonth)) state.currentMonth=keys.length?keys[keys.length-1]:null;
+  autoLinkAmazonAndSave(); // ブックマークレット等で同期されてきたAmazon注文も金額一致で自動紐付け
   render();
 }
 function renderSync(){
@@ -739,7 +740,7 @@ function autoLinkAmazon(){
     if(isAmazonTx(t))pending.push(t);
   }));
   // 確信度の高いものから1件ずつ確定（金額一致＋日付が最も近い順／候補が少ない明細を優先）
-  let changed=true;
+  let newLinks=0,changed=true;
   while(changed){
     changed=false;let best=null;
     pending.forEach(t=>{
@@ -751,8 +752,21 @@ function autoLinkAmazon(){
       const c={t,o:cands[0],n:cands.length,dist:Math.abs(daysBetween(t.date,cands[0].orderDate))};
       if(!best||c.n<best.n||(c.n===best.n&&c.dist<best.dist))best=c;
     });
-    if(best){best.t.linkedAmazonId=best.o.id;linked.add(best.o.id);changed=true;}
+    if(best){best.t.linkedAmazonId=best.o.id;linked.add(best.o.id);changed=true;newLinks++;}
   }
+  return newLinks; // 今回新たに紐付けた件数（同期後の保存判定に使う）
+}
+// 同期/起動で注文が入ってきた時にも金額一致を自動紐付けし、付いたら保存する
+function autoLinkAmazonAndSave(){
+  const n=autoLinkAmazon();
+  if(n>0)save();
+  return n;
+}
+// Amazonタブの手動トリガー（金額一致の未紐付けを今すぐ自動紐付け）
+function manualAutoLinkAmazon(){
+  const n=autoLinkAmazonAndSave();
+  render();
+  alert(n>0?`金額が一致する注文を ${n}件 自動で紐付けました。`:'金額が一致する未紐付けの注文はありませんでした。\n（一致するものが無いものはそのまま残ります）');
 }
 
 function findAmazonMatches(tx){
@@ -1691,6 +1705,7 @@ document.getElementById('importFileInput').addEventListener('change',e=>{
 load();
 const ms=Object.keys(data.months).sort();
 if(ms.length>0)state.currentMonth=ms[ms.length-1];
+autoLinkAmazon(); // 起動時にも金額一致を自動紐付け（保存はloadRemoteの整合後に任せる）
 render();
 renderSync();
 loadRemote();
