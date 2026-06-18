@@ -649,9 +649,16 @@ async function parseCreditCSV(file){
   const dIdx=findHeaderIdx(header,['ご利用日','利用日','取引日','日付','ご利用年月日','Date','TransactionDate']);
   const descIdx=findHeaderIdx(header,['ご利用内容','ご利用先','ご利用店名','ご利用店名・商品名','店名','内容','店舗','摘要','利用店名','加盟店名','Description','Merchant','明細','ご利用明細']);
   // 金額列は誤検出が事故になるため、具体名を最優先→一般「金額」は補助/手数料/割引/海外現地レート系を除外
-  let amtIdx=findHeaderIdx(header,['ご利用金額','ご請求金額','請求金額','利用金額','お支払金額','支払金額','本体金額']);
-  if(amtIdx<0)amtIdx=header.findIndex(h=>h.includes('金額')&&!/海外|現地|手数料|割引|ポイント|レート|為替|税|キャッシュバック/.test(h));
-  if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']); // ※『金額』は再追加しない（除外列を拾い戻すため）
+  // 金額列: まず除外語（海外/現地/手数料/割引等）を含まない「金額」系の列だけを候補化し、
+  // その中で具体名を優先。部分一致(例:「海外通貨利用金額」⊃「利用金額」)の誤検出を防ぐ。
+  const AMT_BAD=/海外|現地|手数料|割引|ポイント|レート|為替|キャッシュバック|処理日|利用日/;
+  const amtCand=header.map((h,i)=>({h,i})).filter(o=>/金額/.test(o.h)&&!AMT_BAD.test(o.h));
+  let amtIdx=-1;
+  if(amtCand.length){
+    const pri=amtCand.find(o=>/ご利用金額|ご請求金額|請求金額|お支払金額|支払金額|利用金額|本体金額/.test(o.h));
+    amtIdx=pri?pri.i:amtCand[0].i;
+  }
+  if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']);
   if(dIdx<0||descIdx<0||amtIdx<0){alert('CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / ')+'\n\n必要列: ご利用日 / ご利用内容(店名) / 金額\nこのヘッダをClaudeに伝えてもらえれば対応を追加します。');return null;}
   const txs=[];const counter={};
   for(let i=1;i<lines.length;i++){
