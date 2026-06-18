@@ -263,7 +263,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
         <div class="upload-icon">💳</div>
         <div class="up-full">CSVをドロップ または タップ</div>
         <div class="up-compact">＋ クレカCSVを再取込</div>
-        <div class="up-full" style="font-size:10px;margin-top:4px;opacity:.7">三井住友カード明細想定・Shift-JIS/UTF-8 自動判定</div>
+        <div class="up-full" style="font-size:10px;margin-top:4px;opacity:.7">Amex／三井住友等のカード明細CSV対応・Shift-JIS/UTF-8 自動判定</div>
       </label>
     </div>
     <div class="card" id="summaryCard" style="display:none">
@@ -650,10 +650,14 @@ async function parseCreditCSV(file){
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   if(lines.length<2){alert('CSVに明細がありません');return null;}
   const header=parseCsvLine(lines[0]);
-  const dIdx=findHeaderIdx(header,['ご利用日']);
-  const descIdx=findHeaderIdx(header,['ご利用内容','内容','店舗']);
-  const amtIdx=header.findIndex(h=>h.includes('金額')&&!h.includes('海外'));
-  if(dIdx<0||descIdx<0||amtIdx<0){alert('CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / '));return null;}
+  // 三井住友/Amex/その他カード明細の列名ゆれを吸収
+  const dIdx=findHeaderIdx(header,['ご利用日','利用日','取引日','日付','ご利用年月日','Date','TransactionDate']);
+  const descIdx=findHeaderIdx(header,['ご利用内容','ご利用先','ご利用店名','ご利用店名・商品名','店名','内容','店舗','摘要','利用店名','加盟店名','Description','Merchant','明細','ご利用明細']);
+  // 金額列は誤検出が事故になるため、具体名を最優先→一般「金額」は補助/手数料/割引/海外現地レート系を除外
+  let amtIdx=findHeaderIdx(header,['ご利用金額','ご請求金額','請求金額','利用金額','お支払金額','支払金額','本体金額']);
+  if(amtIdx<0)amtIdx=header.findIndex(h=>h.includes('金額')&&!/海外|現地|手数料|割引|ポイント|レート|為替|税|キャッシュバック/.test(h));
+  if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']); // ※『金額』は再追加しない（除外列を拾い戻すため）
+  if(dIdx<0||descIdx<0||amtIdx<0){alert('CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / ')+'\n\n必要列: ご利用日 / ご利用内容(店名) / 金額\nこのヘッダをClaudeに伝えてもらえれば対応を追加します。');return null;}
   const txs=[];const counter={};
   for(let i=1;i<lines.length;i++){
     const cols=parseCsvLine(lines[i]);
@@ -723,6 +727,10 @@ async function handleCreditCSV(file){
   autoLinkAmazon();save();
   state.currentMonth=[...keys,...moved.map(t=>t.cycleOverride)].sort().pop();
   render();
+  const ds=txs.map(t=>t.date).filter(Boolean).sort();
+  const range=ds.length?`\n対象期間: ${ds[0]}〜${ds[ds.length-1]}`:'';
+  showSyncToast(`💳 ${txs.length}件を取り込みました`);
+  setTimeout(()=>alert(`クレカ明細を取り込みました\n取込: ${txs.length}件${range}\n\n※取り込めるのはCSVに含まれる明細のみです。期間に抜けが無いかご確認ください。`),50);
 }
 
 // Amazon CSV
@@ -780,7 +788,9 @@ async function handleAmazonCSV(file){
     else{data.amazonOrders.push(o);added++;}
   });
   autoLinkAmazon();save();render();
-  alert(`Amazon注文を取り込みました\n新規: ${added}件 / 更新: ${updated}件`);
+  const ds=orders.map(o=>o.orderDate).filter(Boolean).sort();
+  const range=ds.length?`\n対象期間: ${ds[0]}〜${ds[ds.length-1]}`:'';
+  alert(`Amazon注文を取り込みました\n新規: ${added}件 / 更新: ${updated}件（CSV内 ${orders.length}件）${range}\n\n※取り込めるのはCSVに含まれる注文のみです。期間に抜けが無いかご確認ください。`);
 }
 
 function isAmazonTx(tx){return /アマゾン|Amazon|ＡＭＡＺＯＮ|ａｍａｚｏｎ/i.test(tx.description)&&!/プライム会費|ＰＲＩＭＥ/i.test(tx.description);}
@@ -1004,7 +1014,7 @@ function renderTriageTab(){
     </div>
     <div class="triage-card">
       <div class="triage-meta"><span>${t.date}</span><span class="triage-cat">${t.category}</span></div>
-      <div class="triage-desc">${escapeHtml(t.description)}</div>
+      <div class="triage-desc" title="${escapeHtml(t.description)}">${escapeHtml(displayMerchantName(t.description))}</div>
       <div class="triage-amt">¥${self.toLocaleString()}</div>
       ${self!==t.amount?`<div class="muted" style="font-size:11px">（決済¥${t.amount.toLocaleString()} のうち自分の分）</div>`:''}
       <div class="triage-btns">
@@ -1241,11 +1251,11 @@ function renderTxRow(t){
   let amzHtml='';
   if(amz){
     if(linked){
-      amzHtml=`<div class="amz-link-info"><div class="label">📦 紐付け済み</div><div>${escapeHtml(linked.productName)}</div><div style="display:flex;justify-content:space-between;margin-top:4px;align-items:center"><span class="muted">${linked.orderDate}${linked.deliveryTo?' ／ '+escapeHtml(linked.deliveryTo):''}</span><button class="btn-mini" onclick="event.stopPropagation();unlinkAmazon('${t.id}')">解除</button></div></div>`;
+      amzHtml=`<div class="amz-link-info"><div class="label">📦 紐付け済み</div><div title="${escapeHtml(linked.productName)}">${escapeHtml(shortenAmazonProduct(linked.productName))}</div><div style="display:flex;justify-content:space-between;margin-top:4px;align-items:center"><span class="muted">${linked.orderDate}${linked.deliveryTo?' ／ '+escapeHtml(linked.deliveryTo):''}</span><button class="btn-mini" onclick="event.stopPropagation();unlinkAmazon('${t.id}')">解除</button></div></div>`;
     }else if(expanded){
       const matches=findAmazonMatches(t);
       if(matches.length>0){
-        amzHtml=`<div class="amz-link-info"><div class="label">📦 Amazon候補（金額一致 ${matches.length}件）</div><div class="amz-candidates">${matches.map(o=>`<button class="amz-candidate-btn" onclick="event.stopPropagation();linkAmazon('${t.id}','${o.id}')"><strong>${escapeHtml(o.productName)}</strong><br><span class="muted">${o.orderDate}${o.deliveryTo?' ／ '+escapeHtml(o.deliveryTo):''} ／ ¥${o.amount.toLocaleString()}</span></button>`).join('')}</div></div>`;
+        amzHtml=`<div class="amz-link-info"><div class="label">📦 Amazon候補（金額一致 ${matches.length}件）</div><div class="amz-candidates">${matches.map(o=>`<button class="amz-candidate-btn" title="${escapeHtml(o.productName)}" onclick="event.stopPropagation();linkAmazon('${t.id}','${o.id}')"><strong>${escapeHtml(shortenAmazonProduct(o.productName))}</strong><br><span class="muted">${o.orderDate}${o.deliveryTo?' ／ '+escapeHtml(o.deliveryTo):''} ／ ¥${o.amount.toLocaleString()}</span></button>`).join('')}</div></div>`;
       }else{
         amzHtml=`<div class="amz-link-info"><div class="label">📦 Amazon候補なし</div><div style="margin-top:4px"><button class="btn-mini" onclick="event.stopPropagation();openManualAmazonModal(${t.amount})">この金額で注文を追加</button></div></div>`;
       }
@@ -1347,6 +1357,44 @@ function displayMerchantName(desc){
   return s||raw;
 }
 
+// Amazon商品名を名詞レベルに短縮（表示専用・元名は常に保持しタップで全文表示）。
+// 例: フラットクラフトアマニ油360g → アマニ油（に近づける）。完全な頭名詞抽出は不可能なので
+// 「明確なノイズ（容量/数量/梱包/SEO語/宣伝括弧）の除去」を中心に保守的に整形する。
+// 意味を持つ括弧タグ（第○類医薬品・正規品・冷凍 等）は残す。
+// 残す括弧タグ（意味を持つもの）。医薬品分類・正規品・状態・巻数 等。
+const AMZ_KEEP_BRACKET=/(第\s*[0-9０-９一二三]\s*類医薬品|指定医薬部外品|医薬部外品|正規品|純正|冷凍|冷蔵|常温|詰替|詰め替え|防水|ＰＳ５|PS5|PS4|Switch|上巻|下巻|前編|後編|全巻|第[0-9０-９]+巻|[上中下])/i;
+const AMZ_NOISE_WORDS=['まとめ買い','ラベルレス','最新版','送料無料','日本正規代理店品','正規代理店','Amazon.co.jp限定','Amazon限定','Amazonブランド','数量限定','期間限定','お買い得','大人気','人気','売れ筋','ランキング','新生活','ギフト対応','ペットボトル'];
+function shortenOneAmazonItem(seg){
+  let s=String(seg||'').trim();
+  if(!s)return s;
+  // ① 括弧（【】[]（））内の宣伝文句を除去。意味タグは残す
+  s=s.replace(/[【\[（(][^】\]）)]{0,40}[】\]）)]/g,m=>AMZ_KEEP_BRACKET.test(m)?m:'');
+  // ② 「×9本 / x8本 / ×3個」等の数量表記をまず丸ごと除去（末尾の助数詞・梱包語も一緒に）
+  s=s.replace(/[x×]\s*[0-9０-９]+\s*(?:本|個|枚|袋|包|缶|箱|セット|パック|組|ケース)?/gi,' ');
+  // ③ ASCII単位（g/kg/mg/ml/cc/L）。後ろに英字が続く場合(8GB,10000mAh)は単位ではないので除外
+  s=s.replace(/[0-9０-９][0-9０-９.,]*\s*(?:kg|ｋｇ|mg|ml|ｍｌ|cc|g|ｇ|l|ℓ)(?![A-Za-zＡ-Ｚａ-ｚ])/gi,'');
+  // ④ 日本語の助数詞（語境界が効かないので末尾の梱包語まで一括で吸収）
+  s=s.replace(/[0-9０-９][0-9０-９.,]*\s*(?:リットル|錠|粒|カプセル|本|個|枚|袋|包|缶|玉|食|杯|冊|束|色|回分|日分|ヶ月分|か月分)(?:\s*(?:入り?|パック|セット|箱|袋|組|ケース))?/g,'');
+  // ⑤ 数量除去で残った梱包語・記号の孤立トークンを掃除
+  s=s.replace(/(?:^|[\s・/／])(?:パック|セット|入り|マルチパック)(?=$|[\s・/／])/g,' ');
+  s=s.replace(/(?:^|[\s・/／])[x×PET]+(?=$|[\s・/／])/gi,' ');
+  // ⑥ SEO/梱包ノイズ語を除去
+  AMZ_NOISE_WORDS.forEach(w=>{s=s.split(w).join('');});
+  // ⑦ 区切り・余分な記号/空白の整理
+  s=s.replace(/[、，,・/／]{2,}/g,'・').replace(/\s{2,}/g,' ').replace(/^[\s、，,・/／\-—–]+|[\s、，,・/／\-—–]+$/g,'').trim();
+  return s||String(seg);
+}
+function shortenAmazonProduct(name){
+  const raw=String(name||'');
+  if(!raw.trim())return raw;
+  // 複数商品（" / " 連結）は各商品を短縮。3件以上は先頭2件＋「他N件」
+  const segs=raw.split(' / ').map(x=>x.trim()).filter(Boolean);
+  const short=segs.map(shortenOneAmazonItem).filter(Boolean);
+  if(short.length===0)return raw;
+  if(short.length<=2)return short.join(' / ');
+  return short.slice(0,2).join(' / ')+' 他'+(short.length-2)+'件';
+}
+
 function toggleTxExpand(id){
   if(state.expandedTxIds.has(id))state.expandedTxIds.delete(id);
   else state.expandedTxIds.add(id);
@@ -1385,7 +1433,7 @@ function renderAmazonTab(){
   listEl.innerHTML=f.map(o=>{
     const lt=findTxLinkedToAmazon(o.id);
     return `<div class="amz-order-item ${lt?'linked':''}">
-      <div><div class="product">${escapeHtml(o.productName)}</div><div class="meta">${o.orderDate}${o.deliveryTo?' ／ '+escapeHtml(o.deliveryTo):''}${o.memo?' ／ '+escapeHtml(o.memo):''}</div></div>
+      <div><div class="product" title="${escapeHtml(o.productName)}">${escapeHtml(shortenAmazonProduct(o.productName))}</div><div class="meta">${o.orderDate}${o.deliveryTo?' ／ '+escapeHtml(o.deliveryTo):''}${o.memo?' ／ '+escapeHtml(o.memo):''}</div></div>
       <div class="amt">¥${o.amount.toLocaleString()}</div>
       <div class="link-info ${lt?'linked-info':'unlinked'}">${lt?'🔗 紐付け済み: '+lt.date:'未紐付け'}<button class="btn-mini" onclick="openManualAmazonModal(null,'${o.id}')">編集</button></div>
     </div>`;
