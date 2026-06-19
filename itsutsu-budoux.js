@@ -8,7 +8,7 @@ const EXCLUDE = ['en', 'sub', 'foot', 'kicker', 'date', 'big'];
 function run() {
   let parser;
   try { parser = loadDefaultJapaneseParser(); } catch (e) { return; }
-  document.querySelectorAll('p, li, h2, h3, .cta-note, .ui-row .t').forEach((el) => {
+  document.querySelectorAll('p, li, .cta-note, .ui-row .t').forEach((el) => {
     if (el.closest('header, nav, footer')) return;        // ナビ・フッターは除外
     if (el.matches('.closing .t')) return;                // LPの締めタグラインは手動nbを維持
     if (EXCLUDE.some((c) => el.classList.contains(c))) return; // 英文/メタ/ブランド文は除外
