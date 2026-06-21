@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#F4F2EE">
+<title>まいつき</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F2EE; --surface:#ECE9E3; --ink:#242321; --muted:#77736B;
+    --hair:#D8D4CC; --ghost:#BEB9B0; --control:#F8F7F4;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+    background:var(--paper); color:var(--ink);
+    min-height:100vh; min-height:100dvh;
+    padding:max(18px,env(safe-area-inset-top)) 20px calc(40px + env(safe-area-inset-bottom));
+    max-width:520px; margin:0 auto;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* header */
+  header{display:flex; align-items:center; justify-content:center; gap:9px; padding:6px 0 2px; position:relative;}
+  .logo{width:13px; height:13px; border-radius:50%; background:var(--ink);}
+  .brand{font-size:15px; font-weight:700; letter-spacing:.16em;}
+  .sync{position:absolute; right:0; top:50%; transform:translateY(-50%);
+    display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:var(--muted);}
+  .sync .dot{width:6px; height:6px; border-radius:50%; background:var(--ghost); flex:none; transition:.3s;}
+  .sync.ok .dot{background:#7E9A8C;} .sync.off .dot{background:#C17A52;}
+
+  /* hero / donut */
+  .hero{display:flex; flex-direction:column; align-items:center; margin:18px 0 6px;}
+  .chartwrap{position:relative; width:240px; height:240px;}
+  svg.donut{width:100%; height:100%; transform:rotate(-90deg);}
+  svg.donut circle{fill:none; stroke-linecap:round;
+    transition:stroke-dasharray .6s cubic-bezier(.4,0,.1,1), stroke-dashoffset .6s cubic-bezier(.4,0,.1,1), stroke .3s;}
+  .center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;}
+  .kicker{font-size:11px; letter-spacing:.22em; color:var(--muted);}
+  .total{font-size:34px; font-weight:700; letter-spacing:.01em; line-height:1; display:flex; align-items:baseline; gap:1px;}
+  .total .yen{font-size:18px; font-weight:500; color:var(--muted);}
+  .total.empty{color:var(--ghost);}
+
+  /* month/year toggle */
+  .toggle{display:inline-flex; background:var(--surface); border:1px solid var(--hair);
+    border-radius:999px; padding:3px; margin-top:14px; gap:2px;}
+  .toggle button{appearance:none; border:none; background:none; font-family:inherit;
+    font-size:12.5px; color:var(--muted); padding:6px 18px; border-radius:999px; cursor:pointer; letter-spacing:.1em; transition:.2s;}
+  .toggle button.on{background:var(--paper); color:var(--ink); font-weight:700; box-shadow:0 1px 3px rgba(36,35,33,.08);}
+
+  /* list */
+  .list{margin-top:24px; display:flex; flex-direction:column;}
+  .row{display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hair); position:relative;}
+  .row:first-child{border-top:1px solid var(--hair);}
+  .swatch{width:11px; height:11px; border-radius:50%; flex:none; transition:background .3s;}
+  .name{flex:1; min-width:0; appearance:none; border:none; background:none; font-family:inherit;
+    font-size:16px; color:var(--ink); padding:2px 0; letter-spacing:.02em;}
+  .name::placeholder{color:var(--ghost);}
+  .amt{appearance:none; border:none; background:none; font-family:inherit; text-align:right;
+    font-size:16px; font-weight:500; color:var(--ink); width:96px; padding:2px 0;}
+  .amt::placeholder{color:var(--ghost); font-weight:400;}
+  .pct{font-size:11px; color:var(--muted); width:34px; text-align:right; flex:none; font-variant-numeric:tabular-nums;}
+  .del{appearance:none; border:none; background:none; color:var(--ghost); font-size:17px; line-height:1;
+    width:22px; height:22px; flex:none; cursor:pointer; opacity:0; transition:.2s; border-radius:50%;}
+  .row:focus-within .del{opacity:1;}
+  .del:active{color:var(--ink); background:var(--surface);}
+  input:focus{outline:none;}
+
+  /* add */
+  .add{display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+    margin-top:18px; padding:14px; border:1px dashed var(--ghost); border-radius:16px;
+    background:none; font-family:inherit; font-size:14px; color:var(--muted); cursor:pointer;
+    letter-spacing:.08em; transition:.2s;}
+  .add:active{background:var(--surface);}
+  .add .plus{font-size:17px; line-height:1;}
+
+  /* empty hint */
+  .hint{text-align:center; color:var(--ghost); font-size:12.5px; letter-spacing:.1em; margin-top:22px;}
+  .hint.hide{display:none;}
+
+  /* toast */
+  .toast{position:fixed; left:50%; bottom:calc(26px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(16px);
+    background:rgba(36,35,33,.94); color:var(--paper); font-size:13px; padding:10px 18px; border-radius:12px;
+    opacity:0; pointer-events:none; transition:.25s; z-index:99; letter-spacing:.04em;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+  <header>
+    <span class="logo"></span>
+    <span class="brand">まいつき</span>
+    <span class="sync" id="sync"><span class="dot"></span><span id="syncText"></span></span>
+  </header>
+
+  <div class="hero">
+    <div class="chartwrap">
+      <svg class="donut" viewBox="0 0 120 120" id="donut" aria-hidden="true">
+        <circle cx="60" cy="60" r="50" stroke="var(--hair)" stroke-width="13"></circle>
+        <g id="segs"></g>
+      </svg>
+      <div class="center">
+        <span class="kicker" id="kicker">毎月</span>
+        <span class="total empty" id="total"><span class="yen">¥</span><span id="totalNum">0</span></span>
+      </div>
+    </div>
+    <div class="toggle" id="toggle">
+      <button data-v="month" class="on">月</button>
+      <button data-v="year">年</button>
+    </div>
+  </div>
+
+  <div class="list" id="list"></div>
+  <button class="add" id="add"><span class="plus">＋</span>こうもくを ついか</button>
+  <div class="hint" id="hint">毎月かかるお金を ひとつずつ</div>
+
+  <div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+"use strict";
+
+/* ===== palette (earth) ===== */
+var COLORS = ['#C17A52','#A9A06B','#7E9A8C','#C9A36A','#9E6B57','#9A8FA0','#B5806F','#6F8377'];
+function colorAt(i){ return COLORS[i % COLORS.length]; }
+
+/* ===== state ===== */
+var KEY = "fixed-cost-v1";
+var state = load();
+function load(){
+  try{ var s = JSON.parse(localStorage.getItem(KEY)); if(s && s.items) return s; }catch(e){}
+  return { items:[ mk() ], view:"month" };
+}
+function mk(){ return { id: id(), name:"", amount:0 }; }
+function id(){ return "i" + Math.floor(performance.now()*1000).toString(36) + Math.floor(performance.now()).toString(36); }
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  if(window.FixedSync) FixedSync.schedule();
+}
+
+/* ===== format ===== */
+function fmt(n){ return (n||0).toLocaleString("ja-JP"); }
+function digits(s){ return String(s).replace(/[^0-9]/g,""); }
+
+/* ===== render ===== */
+var C = 2*Math.PI*50;
+function total(){ return state.items.reduce(function(a,it){ return a + (it.amount||0); },0); }
+
+function renderChart(){
+  var t = total();
+  var segs = document.getElementById("segs");
+  segs.innerHTML = "";
+  var acc = 0;
+  state.items.forEach(function(it,i){
+    if(!it.amount) return;
+    var frac = t>0 ? it.amount/t : 0;
+    var len = frac * C;
+    var gap = Math.min(2.2, len*0.4);
+    var draw = Math.max(0.5, len - gap);
+    var c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("cx","60"); c.setAttribute("cy","60"); c.setAttribute("r","50");
+    c.setAttribute("stroke", colorAt(i));
+    c.setAttribute("stroke-width","13");
+    c.setAttribute("fill","none");
+    c.setAttribute("stroke-linecap", draw < 3 ? "butt" : "round");
+    c.setAttribute("stroke-dasharray", draw + " " + (C - draw));
+    c.setAttribute("stroke-dashoffset", String(-acc));
+    segs.appendChild(c);
+    acc += len;
+  });
+  var mult = state.view === "year" ? 12 : 1;
+  var shown = t * mult;
+  var totalEl = document.getElementById("total");
+  document.getElementById("totalNum").textContent = fmt(shown);
+  totalEl.classList.toggle("empty", t === 0);
+  document.getElementById("kicker").textContent = state.view === "year" ? "1年で" : "毎月";
+}
+
+function renderList(){
+  var list = document.getElementById("list");
+  var t = total();
+  list.innerHTML = "";
+  state.items.forEach(function(it,i){
+    var row = document.createElement("div"); row.className = "row";
+
+    var sw = document.createElement("span"); sw.className = "swatch";
+    sw.style.background = it.amount ? colorAt(i) : "var(--ghost)";
+
+    var name = document.createElement("input");
+    name.className = "name"; name.type = "text"; name.placeholder = "こうもく";
+    name.value = it.name; name.maxLength = 18;
+    name.addEventListener("input", function(){ it.name = name.value; save(); });
+
+    var amt = document.createElement("input");
+    amt.className = "amt"; amt.type = "text"; amt.inputMode = "numeric"; amt.placeholder = "0";
+    amt.value = it.amount ? fmt(it.amount) : "";
+    amt.addEventListener("input", function(){
+      var d = digits(amt.value);
+      it.amount = d ? parseInt(d,10) : 0;
+      amt.value = d ? fmt(it.amount) : "";
+      sw.style.background = it.amount ? colorAt(i) : "var(--ghost)";
+      renderChart(); updatePct(); save();
+    });
+
+    var pct = document.createElement("span"); pct.className = "pct";
+    pct.textContent = (t>0 && it.amount) ? Math.round(it.amount/t*100) + "%" : "";
+
+    var del = document.createElement("button");
+    del.className = "del"; del.type = "button"; del.textContent = "×";
+    del.setAttribute("aria-label","削除");
+    del.addEventListener("click", function(){ remove(it.id); });
+
+    row.append(sw, name, amt, pct, del);
+    list.appendChild(row);
+  });
+  document.getElementById("hint").classList.toggle("hide", state.items.length > 1 || total() > 0);
+}
+function updatePct(){
+  var t = total();
+  var rows = document.getElementById("list").children;
+  state.items.forEach(function(it,i){
+    var pctEl = rows[i] && rows[i].querySelector(".pct");
+    if(pctEl) pctEl.textContent = (t>0 && it.amount) ? Math.round(it.amount/t*100) + "%" : "";
+  });
+}
+function renderAll(){ renderChart(); renderList(); }
+
+/* ===== actions ===== */
+function add(){
+  state.items.push(mk());
+  save(); renderList();
+  var rows = document.getElementById("list").children;
+  var last = rows[rows.length-1]; if(last) last.querySelector(".name").focus();
+}
+function remove(itemId){
+  state.items = state.items.filter(function(it){ return it.id !== itemId; });
+  if(state.items.length === 0) state.items.push(mk());
+  save(); renderAll();
+}
+
+document.getElementById("add").addEventListener("click", add);
+document.getElementById("toggle").addEventListener("click", function(e){
+  var b = e.target.closest("button"); if(!b) return;
+  state.view = b.dataset.v;
+  Array.prototype.forEach.call(this.children, function(x){ x.classList.toggle("on", x === b); });
+  save(); renderChart();
+});
+
+renderAll();
+
+/* ===== cloud sync (money_state を別IDで再利用) ===== */
+(function(){
+  var SUPABASE_URL = "https://okbjqtdirrathscctyvx.supabase.co";
+  var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y";
+  var sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+
+  var META = "fixed-sync-meta-v1", TABLE = "money_state", ID = "kodai-fixed";
+  var online = null, pending = false, timer = null, lastPushed = "";
+
+  function meta(){ try{ return JSON.parse(localStorage.getItem(META)) || {}; }catch(e){ return {}; } }
+  function setMeta(m){ try{ localStorage.setItem(META, JSON.stringify(m)); }catch(e){} }
+  function hasLocal(){ return !!localStorage.getItem(KEY); }
+  function blob(){
+    var b = { updatedAt: meta().updatedAt || 0 };
+    var raw = localStorage.getItem(KEY);
+    if(raw){ try{ b[KEY] = JSON.parse(raw); }catch(e){} }
+    return b;
+  }
+  function schedule(){
+    setMeta({ updatedAt: Date.now() });
+    if(!sb){ chip(); return; }
+    pending = true; clearTimeout(timer); timer = setTimeout(flush, 400);
+  }
+  function flush(){
+    if(!sb || !pending) return;
+    clearTimeout(timer); pending = false;
+    var b = blob(); b.updatedAt = meta().updatedAt || Date.now();
+    lastPushed = JSON.stringify(b);
+    sb.from(TABLE).upsert({ id: ID, state: b, updated_at: new Date().toISOString() })
+      .then(function(r){ if(r && r.error){ online=false; pending=true; } else online=true; chip(); })
+      .catch(function(){ online=false; pending=true; chip(); });
+  }
+  function applyRemote(inc, msg){
+    if(inc[KEY] != null){ try{ localStorage.setItem(KEY, JSON.stringify(inc[KEY])); }catch(e){} }
+    setMeta({ updatedAt: inc.updatedAt || Date.now() });
+    if(msg){ toast(msg); setTimeout(function(){ location.reload(); }, 900); }
+    else location.reload();
+  }
+  function editing(){
+    var a = document.activeElement;
+    return !!(a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA"));
+  }
+  function init(){
+    if(!sb){ online=false; chip(); return; }
+    sb.from(TABLE).select("state").eq("id", ID).maybeSingle()
+      .then(function(res){
+        if(res && res.error){ online=false; chip(); return; }
+        online = true;
+        var row = res && res.data, localT = meta().updatedAt || 0;
+        if(row && row.state && typeof row.state === "object"){
+          var remoteT = row.state.updatedAt || 0;
+          if(remoteT > localT){
+            if(!localT && hasLocal()){
+              var useRemote = confirm("クラウドに保存ずみの固定費が見つかりました。\n\nOK：クラウドのデータをこの端末に反映\nキャンセル：この端末のデータをクラウドへ送る");
+              if(!useRemote){ touch(); subscribe(); chip(); return; }
+            }
+            applyRemote(row.state, null); return;
+          }
+          if(localT > remoteT){ pending=true; flush(); }
+        } else if(hasLocal()){
+          if(!localT) setMeta({ updatedAt: Date.now() });
+          pending=true; flush();
+        }
+        subscribe(); chip();
+      })
+      .catch(function(){ online=false; chip(); });
+  }
+  function touch(){ setMeta({ updatedAt: Date.now() }); pending=true; flush(); }
+  function subscribe(){
+    sb.channel("fixed-rt")
+      .on("postgres_changes", { event:"*", schema:"public", table:TABLE, filter:"id=eq."+ID }, function(p){
+        var inc = p.new && p.new.state; if(!inc) return;
+        if(JSON.stringify(inc) === lastPushed) return;
+        if((inc.updatedAt || 0) <= (meta().updatedAt || 0)) return;
+        if(editing()) return;
+        applyRemote(inc, "🔄 他の端末の変更を反映");
+      }).subscribe();
+  }
+  function chip(){
+    var el = document.getElementById("sync"), txt = document.getElementById("syncText");
+    if(!el) return;
+    el.classList.remove("ok","off");
+    if(!sb){ txt.textContent = "この端末"; return; }
+    if(online === true){ el.classList.add("ok"); txt.textContent = "同期"; }
+    else if(online === false){ el.classList.add("off"); txt.textContent = "オフライン"; }
+    else txt.textContent = "接続中";
+  }
+  function toast(msg){
+    var t = document.getElementById("toast"); if(!t) return;
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(t._t); t._t = setTimeout(function(){ t.classList.remove("show"); }, 1800);
+  }
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState === "hidden") flush(); });
+  window.addEventListener("pagehide", flush);
+  window.FixedSync = { schedule: schedule };
+  init();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
