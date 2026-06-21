@@ -136,6 +136,20 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .self-chip{padding:2px 8px;border-radius:999px;font-size:11px;background:#fff;border:1px solid var(--line);color:var(--text)}
 .amz-link-info{margin-top:6px;padding:7px 10px;background:var(--soft-blue);border-radius:8px;font-size:11px;color:var(--text)}
 .amz-link-info .label{color:var(--sub);margin-bottom:2px;font-size:10px}
+/* メモ（明細の使い道） */
+.note-mini{font-size:10px;color:var(--orange);font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tx-note-edit{margin-top:8px}
+.tx-note-edit label{display:block;font-size:10px;color:var(--sub);margin-bottom:3px}
+.tx-note-edit textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:16px;font-family:inherit;resize:vertical;min-height:38px;background:#fff;box-sizing:border-box;color:var(--text);line-height:1.45}
+.tx-note-edit textarea:focus{outline:none;border-color:var(--blue)}
+/* カテゴリ手動変更 */
+.cat-tag.editable{cursor:pointer;border-style:dashed}
+.cat-pick{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:4px}
+.cat-pick-btn{padding:7px 13px;font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--text);font-family:inherit}
+.cat-pick-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.cat-add-row{display:flex;gap:8px;margin-top:6px}
+.cat-add-row input{flex:1;min-width:0}
+.cat-memory-note{font-size:11px;color:var(--sub);margin-top:12px;line-height:1.5;background:var(--soft-blue);padding:8px 10px;border-radius:8px}
 .amz-candidates{margin-top:6px;display:flex;flex-direction:column;gap:4px}
 .amz-candidate-btn{text-align:left;background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text)}
 .amz-candidate-btn:hover{border-color:var(--blue);background:var(--soft-blue)}
@@ -455,6 +469,21 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
   </div>
 </div>
 
+<!-- モーダル: カテゴリ変更 -->
+<div class="modal-back" id="catModal">
+  <div class="modal">
+    <h3>🏷 カテゴリを変更</h3>
+    <p class="modal-sub" id="catModalSub"></p>
+    <div class="cat-pick" id="catPickList"></div>
+    <div class="cat-add-row">
+      <input type="text" id="catNewInput" placeholder="新しいカテゴリ名を作る" onkeydown="if(event.key==='Enter')addCustomCategory()">
+      <button class="btn btn-primary" onclick="addCustomCategory()">追加</button>
+    </div>
+    <div class="cat-memory-note">💡 選んだカテゴリはこの店名で記憶します。翌月以降に同じ明細が来たら自動で同じカテゴリに振り分けられます。今ある同じ店名の明細もまとめて変わります。</div>
+    <div class="actions"><button class="btn" onclick="closeCatModal()">閉じる</button></div>
+  </div>
+</div>
+
 <datalist id="peopleList"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -466,7 +495,7 @@ const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
-let data={months:{},amazonOrders:[],loans:[],payments:[],people:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{}};
+let data={months:{},amazonOrders:[],loans:[],payments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{}};
 let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),selectMode:false,selectedTxIds:new Set()};
 
 function load(){
@@ -479,6 +508,8 @@ function load(){
     if(!data.loans)data.loans=[];
     if(!data.payments)data.payments=[];
     if(!data.people)data.people=[];
+    if(!data.categoryRules)data.categoryRules={};
+    if(!data.customCategories)data.customCategories=[];
     if(!data.deletedTxIds)data.deletedTxIds={};
     if(!data.deletedLoanIds)data.deletedLoanIds={};
     if(!data.deletedPaymentIds)data.deletedPaymentIds={};
@@ -552,19 +583,24 @@ function mergeState(a,b){
   for(const id in out.deletedPaymentIds)payMap.delete(id);
   out.payments=[...payMap.values()].filter(p=>liveLoans.has(p.loanId));
   out.people=((pref.people||non.people||[])).slice();   // 人名は新しい方を採用（削除を許す）
+  // カテゴリ記憶：店名→カテゴリのルールは和集合（新しい方を優先）、カスタムカテゴリ名も和集合
+  out.categoryRules={...(non.categoryRules||{}),...(pref.categoryRules||{})};
+  out.customCategories=[...new Set([...(non.customCategories||[]),...(pref.customCategories||[])])];
   out.updatedAt=Math.max(a.updatedAt||0,b.updatedAt||0);
   return out;
 }
 // 収束判定用：保存内容の指紋（updatedAtは無視）。同一なら再保存しない＝同期のping-pong防止
 function stateSig(d){
   if(!d)return '';
-  const tx=[];allTxArr(d).forEach(t=>tx.push(t.id+':'+(t.cycleOverride||'')+':'+(t.linkedAmazonId||'')));tx.sort();
+  const tx=[];allTxArr(d).forEach(t=>tx.push(t.id+':'+(t.cycleOverride||'')+':'+(t.linkedAmazonId||'')+':'+((t.note||'').replace(/:/g,';'))+':'+((t.category||'').replace(/:/g,';'))));tx.sort();
   const ln=(d.loans||[]).map(l=>l.id+':'+l.amount+':'+(l.personName||'')).sort();
   const pm=(d.payments||[]).map(p=>p.id+':'+p.amount).sort();
   const az=(d.amazonOrders||[]).map(o=>o.id).sort();
   const tb=[...Object.keys(d.deletedTxIds||{}),...Object.keys(d.deletedLoanIds||{}),...Object.keys(d.deletedPaymentIds||{}),...Object.keys(d.deletedAmazonIds||{})].sort();
   const pe=(d.people||[]).slice().sort();
-  return JSON.stringify([tx,ln,pm,az,tb,pe]);
+  const cr=Object.entries(d.categoryRules||{}).map(([k,v])=>k+''+v).sort();
+  const cc=(d.customCategories||[]).slice().sort();
+  return JSON.stringify([tx,ln,pm,az,tb,pe,cr,cc]);
 }
 function save(){
   data.updatedAt=Date.now();                       // 古いクラウドデータでの上書きを防ぐ
@@ -701,6 +737,19 @@ function categorize(desc){
 }
 const CAT_COLORS=['#0071e3','#34c759','#ff9f0a','#ff3b30','#ff2d55','#5856d6','#af52de','#ff6482','#00c7be','#a2845e','#ffcc00','#64d2ff','#bf5af2','#30b0c7','#ac8e68','#8e8e93'];
 function catColor(i){return CAT_COLORS[i%CAT_COLORS.length];}
+// 店名キー（表示用に正規化した店名）。同じ店なら同じキー＝カテゴリ記憶の単位。
+function merchantKey(desc){return displayMerchantName(desc).toLowerCase().trim();}
+// 取込時のカテゴリ決定：過去にユーザーが手動で振り分けた店なら、その記憶を最優先。
+function catForImport(desc){const r=(data.categoryRules||{})[merchantKey(desc)];return r||categorize(desc);}
+// 選択肢に出すカテゴリ一覧：標準カテゴリ→カスタム→現在使用中→「その他」を最後に。
+function allCategories(){
+  const seen=new Set(),out=[];
+  CATEGORY_RULES.forEach(r=>{if(!seen.has(r.cat)){seen.add(r.cat);out.push(r.cat);}});
+  (data.customCategories||[]).forEach(c=>{if(c&&!seen.has(c)){seen.add(c);out.push(c);}});
+  allTxArr(data).forEach(t=>{if(t.category&&!seen.has(t.category)){seen.add(t.category);out.push(t.category);}});
+  if(!seen.has('その他'))out.push('その他');
+  return out;
+}
 
 // CSVヘルパ
 function parseCsvLine(line){
@@ -763,7 +812,7 @@ async function parseCreditCSV(file){
     const baseKey=date+'|'+desc+'|'+amount;           // idは利用日基準のまま（既存idを壊さない）
     counter[baseKey]=(counter[baseKey]||0)+1;
     const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
-    const tx={id:'tx_'+hashStr(baseKey+sfx),date,description:desc.replace(/\s+/g,' '),amount,category:categorize(desc)};
+    const tx={id:'tx_'+hashStr(baseKey+sfx),date,description:desc.replace(/\s+/g,' '),amount,category:catForImport(desc)};
     if(postDate)tx.postDate=postDate;                 // 請求サイクル判定に使う（表示は利用日のまま）
     txs.push(tx);
   }
@@ -1273,15 +1322,19 @@ function renderTxRow(t){
     </div>`;
   }
   const actions=`<div class="tx-actions">
+        <button class="btn-mini" onclick="event.stopPropagation();openCatModal('${t.id}')">🏷 ${escapeHtml(t.category)}</button>
         <button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>
         ${loans.length>0?`<button class="btn-mini" onclick="event.stopPropagation();switchTab('loans')">台帳で見る</button>`:''}
       </div>`;
+  const note=(t.note||'').trim();
+  const noteTag=note?`<span class="note-mini">📝 ${escapeHtml(note)}</span>`:'';
+  const noteEdit=`<div class="tx-note-edit"><label>メモ（何に使った？）</label><textarea rows="1" placeholder="例: 友人との夕食代、仕事用の参考書" onclick="event.stopPropagation()" onchange="saveTxNote('${t.id}',this.value)">${escapeHtml(t.note||'')}</textarea></div>`;
   // 折りたたみ時は「店名 … 金額」＋薄いメタだけ。立替チップ/Amazon/操作ボタンは展開時のみ（一覧=読む / 展開=処理）
   return `<div class="${classes.join(' ')}" data-id="${t.id}">
     <div onclick="toggleTxExpand('${t.id}')">
       <div class="desc">${escapeHtml(displayMerchantName(t.description))}</div>
-      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}</div>
-      ${expanded?strip+amzHtml+actions:''}
+      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}${noteTag}</div>
+      ${expanded?strip+amzHtml+noteEdit+actions:''}
     </div>
     <div class="tx-side"><div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div><div class="tx-chev ${expanded?'open':''}">›</div></div>
   </div>`;
@@ -1409,6 +1462,53 @@ function toggleTxExpand(id){
   if(state.expandedTxIds.has(id))state.expandedTxIds.delete(id);
   else state.expandedTxIds.add(id);
   renderTransactions();
+}
+
+// 明細メモの保存。値が変わっていなければ何もしない（無駄なクラウド送信を防ぐ）。
+function saveTxNote(id,val){
+  const loc=findTxLocation(id);if(!loc)return;
+  const v=String(val||'').trim();
+  if((loc.tx.note||'')===v)return;
+  if(v)loc.tx.note=v; else delete loc.tx.note;
+  save();
+  renderTransactions();
+}
+
+// ===== カテゴリの手動変更＋記憶 =====
+function openCatModal(txId){
+  const loc=findTxLocation(txId);if(!loc)return;
+  state.catTargetTxId=txId;
+  document.getElementById('catModalSub').textContent=`「${displayMerchantName(loc.tx.description)}」を分類`;
+  renderCatPickList();
+  document.getElementById('catNewInput').value='';
+  document.getElementById('catModal').classList.add('show');
+}
+function renderCatPickList(){
+  const loc=findTxLocation(state.catTargetTxId);if(!loc)return;
+  const cur=loc.tx.category;
+  document.getElementById('catPickList').innerHTML=allCategories().map(c=>
+    `<button class="cat-pick-btn ${c===cur?'active':''}" onclick="assignCategory('${escapeJs(c)}')">${escapeHtml(c)}</button>`
+  ).join('');
+}
+function closeCatModal(){document.getElementById('catModal').classList.remove('show');state.catTargetTxId=null;}
+function addCustomCategory(){
+  const inp=document.getElementById('catNewInput');
+  const name=(inp.value||'').trim();
+  if(!name)return;
+  if(!data.customCategories)data.customCategories=[];
+  if(!data.customCategories.includes(name)&&!allCategories().includes(name))data.customCategories.push(name);
+  assignCategory(name); // 追加したら即この明細へ割り当て（記憶も同時に行う）
+}
+// このカテゴリをこの店名に割り当て＋記憶。今ある同じ店名の明細もまとめて揃える。
+function assignCategory(cat){
+  const loc=findTxLocation(state.catTargetTxId);if(!loc)return;
+  const key=merchantKey(loc.tx.description);
+  if(!data.categoryRules)data.categoryRules={};
+  data.categoryRules[key]=cat;
+  allTxArr(data).forEach(t=>{if(merchantKey(t.description)===key){t.category=cat;t.catManual=true;}});
+  save();
+  closeCatModal();
+  render();
 }
 
 function deleteMonth(){
