@@ -116,35 +116,37 @@
   }
   .btn-add:active { background: var(--accent-soft); }
 
-  /* 管理（折りたたみ） */
-  details.manage { background: var(--card); border-radius: 20px; box-shadow: 0 1px 2px rgba(80,80,110,.05); margin-bottom: 14px; }
-  details.manage > summary {
-    list-style: none; cursor: pointer; padding: 18px 20px;
-    font-size: 15px; font-weight: 600; color: var(--text);
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  details.manage > summary::-webkit-details-marker { display: none; }
-  details.manage > summary .chev { color: var(--sub); font-size: 13px; transition: transform .2s; }
-  details.manage[open] > summary .chev { transform: rotate(90deg); }
-  .manage-body { padding: 0 20px 20px; }
-  .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-  .btn-sec {
-    flex: 1 1 28%; padding: 11px 8px; border: 1px solid var(--line); border-radius: 12px;
-    background: #fff; color: var(--accent); font-size: 13px; font-family: inherit; cursor: pointer;
+  /* 保存 / 新しい計算 */
+  .calc-actions { display: flex; gap: 10px; margin: 0 0 14px; }
+  .calc-actions button {
+    flex: 1; padding: 12px; border-radius: 14px; font-size: 14px; font-weight: 600;
+    font-family: inherit; cursor: pointer; border: 1px solid var(--line);
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .btn-sec:active { background: var(--accent-soft); }
-  .btn-sec.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .bk-text {
-    width: 100%; height: 72px; font-size:16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    border: 1px solid var(--line); border-radius: 11px; padding: 10px; background: #fafbfd; color: var(--sub);
-    resize: vertical;
+  .ca-save { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .ca-save:active { background: #7e8fd6; }
+  .ca-new { background: #fff; color: var(--accent); }
+  .ca-new:active { background: var(--accent-soft); }
+
+  /* 保存した計算 */
+  .saved-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .saved-item:last-child { border-bottom: none; }
+  .si-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .si-name { font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; word-break: break-word; }
+  .si-remain { font-size: 17px; font-weight: 700; color: var(--text); white-space: nowrap; }
+  .si-remain.minus { color: var(--neg); }
+  .si-bd { margin-top: 4px; font-size: 12px; color: var(--sub); }
+  .si-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .si-date { font-size: 11px; color: var(--sub); }
+  .si-actions { display: flex; gap: 6px; }
+  .si-actions button {
+    padding: 6px 13px; border: 1px solid var(--line); border-radius: 9px;
+    background: #fff; color: var(--accent); font-size: 12px; font-family: inherit; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .bk-text:focus { outline: none; border-color: var(--accent); background: #fff; }
-  .bk-msg { font-size: 12px; color: var(--accent); margin-top: 8px; min-height: 16px; }
-  .bk-msg.err { color: var(--neg); }
-  .btn-reset { display: block; width: 100%; margin-top: 16px; background: none; border: none; color: var(--sub); font-size: 13px; cursor: pointer; font-family: inherit; padding: 6px; }
-  .btn-reset:active { color: var(--neg); }
+  .si-actions button:active { background: var(--accent-soft); }
+  .si-del { color: var(--sub); }
+  .si-del:active { background: #fbeeee; color: var(--neg); }
 
   @media (max-width: 400px) {
     .item input.amount { width: 100px; }
@@ -175,6 +177,12 @@
     </div>
   </div>
 
+  <!-- 保存 / 新しい計算 -->
+  <div class="calc-actions">
+    <button class="ca-save" id="saveCalcBtn">💾 保存</button>
+    <button class="ca-new" id="newCalcBtn">＋ 新しい計算</button>
+  </div>
+
   <!-- 銀行 -->
   <div class="card">
     <h2>🏦 銀行 <span class="subtotal" id="subBanks">¥0</span></h2>
@@ -196,22 +204,11 @@
     <button class="btn-add" id="addAdv" aria-label="入金を追加">＋</button>
   </div>
 
-  <!-- 管理（引き継ぎ・バックアップ・リセット） -->
-  <details class="manage">
-    <summary>⚙️ 管理 <span class="chev">›</span></summary>
-    <div class="manage-body">
-      <div class="backup-actions">
-        <button class="btn-sec" id="bkCopy">コピー</button>
-        <button class="btn-sec" id="bkDownload">保存</button>
-        <button class="btn-sec" id="bkFileBtn">読み込み</button>
-        <input type="file" id="bkFileInput" accept="application/json,.json,.txt" hidden>
-      </div>
-      <textarea class="bk-text" id="bkText" spellcheck="false" placeholder="ここに貼り付けて復元"></textarea>
-      <button class="btn-sec primary" id="bkRestore" style="margin-top:8px;width:100%;flex:none;">復元する</button>
-      <div class="bk-msg" id="bkMsg"></div>
-      <button class="btn-reset" id="resetBtn">すべてリセット</button>
-    </div>
-  </details>
+  <!-- 保存した計算 -->
+  <div class="card" id="savedCard" style="display:none">
+    <h2>📋 保存した計算 <span class="subtotal" id="savedCount"></span></h2>
+    <div id="savedList"></div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -227,7 +224,7 @@
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 
   window.MoneySync = (function () {
-    var KEYS = ["money-balance-v1", "money-forecast-v1"];
+    var KEYS = ["money-balance-v1", "money-forecast-v1", "money-saved-v1"];
     var META = "money-sync-meta-v1";   // この端末の最終更新時刻
     var TABLE = "money_state", ID = "kodai";
     var sb = window.AssetDB;
@@ -379,9 +376,13 @@
     bdAdv: document.getElementById("bdAdv"),
     bdCard: document.getElementById("bdCard"),
     remainBig: document.getElementById("remainBig"),
-    resetBtn: document.getElementById("resetBtn"),
     migrateBar: document.getElementById("migrateBar"),
-    migrateClose: document.getElementById("migrateClose")
+    migrateClose: document.getElementById("migrateClose"),
+    saveBtn: document.getElementById("saveCalcBtn"),
+    newBtn: document.getElementById("newCalcBtn"),
+    savedCard: document.getElementById("savedCard"),
+    savedCount: document.getElementById("savedCount"),
+    savedList: document.getElementById("savedList")
   };
 
   function toNum(v) {
@@ -521,8 +522,8 @@
     if (rows.length) { var inp = rows[rows.length - 1].querySelector(".name"); if (inp) inp.focus(); }
   }
 
-  function reset() {
-    if (!confirm("すべて消します。よろしいですか？")) return;
+  function newCalc() {
+    if (!confirm("入力をクリアしますか？\n（保存した記録は残ります）")) return;
     state.banks = [makeItem()];
     state.cards = [makeItem()];
     state.advances = [];
@@ -530,6 +531,95 @@
     buildRows("cards", el.cards, CARD_PH);
     buildRows("advances", el.advs, ADV_PH);
     render(); save();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ---- 保存した計算（記録） ----
+  var SAVED_KEY = "money-saved-v1";
+  var savedList = [];
+
+  function loadSaved() {
+    try { var r = localStorage.getItem(SAVED_KEY); var a = r ? JSON.parse(r) : []; if (Array.isArray(a)) savedList = a; }
+    catch (e) { /* ignore */ }
+  }
+  function persistSaved() {
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(savedList)); } catch (e) {}
+    if (window.MoneySync) MoneySync.schedule();
+  }
+  function shortDate(ts) { var d = new Date(ts); return (d.getMonth() + 1) + "/" + d.getDate(); }
+
+  function buildSaved() {
+    if (!el.savedList) return;
+    el.savedCard.style.display = savedList.length ? "" : "none";
+    el.savedCount.textContent = savedList.length ? savedList.length + "件" : "";
+    el.savedList.innerHTML = "";
+    savedList.forEach(function (rec) {
+      var r = rec.result || {};
+      var minus = (r.remain || 0) < 0;
+      var div = document.createElement("div");
+      div.className = "saved-item";
+      div.setAttribute("data-id", rec.id);
+      div.innerHTML =
+        '<div class="si-head"><span class="si-name"></span>' +
+          '<span class="si-remain' + (minus ? " minus" : "") + '">' + (minus ? "−" : "") + yen(Math.abs(r.remain || 0)) + '</span></div>' +
+        '<div class="si-bd">🏦' + yen(r.bank || 0) + '　＋ 🤝' + yen(r.adv || 0) + '　− 💳' + yen(r.card || 0) + '</div>' +
+        '<div class="si-foot"><span class="si-date">' + shortDate(rec.savedAt) + '</span>' +
+          '<span class="si-actions"><button class="si-load">戻す</button><button class="si-del">削除</button></span></div>';
+      div.querySelector(".si-name").textContent = rec.name || "（無名）";
+      el.savedList.appendChild(div);
+    });
+  }
+
+  function saveCurrent() {
+    var bank = sumList("banks"), adv = sumList("advances"), card = sumList("cards");
+    if (bank === 0 && adv === 0 && card === 0) { alert("入力された金額がありません"); return; }
+    var d = new Date();
+    var def = (d.getMonth() + 1) + "/" + d.getDate() + " の残高";
+    var name = prompt("名前をつけて保存", def);
+    if (name === null) return;
+    name = (name || "").trim() || def;
+    savedList.unshift({
+      id: nextId(), name: name, savedAt: Date.now(),
+      snapshot: JSON.parse(JSON.stringify({ banks: state.banks, cards: state.cards, advances: state.advances })),
+      result: { bank: bank, adv: adv, card: card, remain: bank + adv - card }
+    });
+    persistSaved(); buildSaved();
+  }
+
+  function restoreSaved(rec) {
+    if (!confirm("「" + (rec.name || "無名") + "」を入力に戻しますか？\n（今の入力は上書きされます）")) return;
+    var s = rec.snapshot || {};
+    state.banks = (Array.isArray(s.banks) ? s.banks : []).map(normItem);
+    state.cards = (Array.isArray(s.cards) ? s.cards : []).map(normItem);
+    state.advances = (Array.isArray(s.advances) ? s.advances : []).map(normItem);
+    if (state.banks.length === 0) state.banks.push(makeItem());
+    if (state.cards.length === 0) state.cards.push(makeItem());
+    buildRows("banks", el.banks, BANK_PH);
+    buildRows("cards", el.cards, CARD_PH);
+    buildRows("advances", el.advs, ADV_PH);
+    render(); save();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function wireSaved() {
+    if (el.savedList) {
+      el.savedList.addEventListener("click", function (e) {
+        var item = e.target.closest(".saved-item"); if (!item) return;
+        var id = item.getAttribute("data-id");
+        var rec = null;
+        for (var i = 0; i < savedList.length; i++) if (savedList[i].id === id) rec = savedList[i];
+        if (!rec) return;
+        if (e.target.closest(".si-del")) {
+          if (!confirm("「" + (rec.name || "無名") + "」を削除しますか？")) return;
+          savedList = savedList.filter(function (x) { return x.id !== id; });
+          persistSaved(); buildSaved();
+        } else if (e.target.closest(".si-load")) {
+          restoreSaved(rec);
+        }
+      });
+    }
+    if (el.saveBtn) el.saveBtn.addEventListener("click", saveCurrent);
+    if (el.newBtn) el.newBtn.addEventListener("click", newCalc);
   }
 
   // init
@@ -542,94 +632,16 @@
   wireList("advances", el.advs, ADV_PH);
   render();
   maybeMigrateNotice();
+  loadSaved();
+  buildSaved();
+  wireSaved();
 
   el.addBank.addEventListener("click", function () { addItem("banks", el.banks, BANK_PH); });
   el.addCard.addEventListener("click", function () { addItem("cards", el.cards, CARD_PH); });
   el.addAdv.addEventListener("click", function () { addItem("advances", el.advs, ADV_PH); });
-  el.resetBtn.addEventListener("click", reset);
 })();
 </script>
 
-<script>
-/* データの引き継ぎ・バックアップ（管理セクション内） */
-(function () {
-  "use strict";
-  var KEYS = ["money-balance-v1", "money-forecast-v1"];
-  var bk = {
-    text: document.getElementById("bkText"),
-    copy: document.getElementById("bkCopy"),
-    download: document.getElementById("bkDownload"),
-    fileBtn: document.getElementById("bkFileBtn"),
-    fileInput: document.getElementById("bkFileInput"),
-    restore: document.getElementById("bkRestore"),
-    msg: document.getElementById("bkMsg")
-  };
-  if (!bk.text) return;
-
-  function pad(n) { return (n < 10 ? "0" : "") + n; }
-  function buildBackup() {
-    var obj = { app: "money-tools", version: 1, exportedAt: new Date().toISOString() };
-    KEYS.forEach(function (k) {
-      var raw = localStorage.getItem(k);
-      if (raw) { try { obj[k] = JSON.parse(raw); } catch (e) { obj[k] = raw; } }
-    });
-    return JSON.stringify(obj, null, 2);
-  }
-  function refresh() { bk.text.value = buildBackup(); }
-  function setMsg(t, err) { bk.msg.textContent = t; bk.msg.className = "bk-msg" + (err ? " err" : ""); }
-
-  refresh();
-
-  bk.copy.addEventListener("click", function () {
-    refresh();
-    var txt = bk.text.value;
-    function ok() { setMsg("コピーしました"); }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(txt).then(ok).catch(function () { fallbackCopy(); ok(); });
-    } else { fallbackCopy(); ok(); }
-  });
-  function fallbackCopy() { bk.text.focus(); bk.text.select(); try { document.execCommand("copy"); } catch (e) {} }
-
-  bk.download.addEventListener("click", function () {
-    refresh();
-    var blob = new Blob([bk.text.value], { type: "application/json" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    var d = new Date();
-    a.href = url;
-    a.download = "money-backup-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
-    document.body.appendChild(a); a.click();
-    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-    setMsg("保存しました");
-  });
-
-  bk.fileBtn.addEventListener("click", function () { bk.fileInput.click(); });
-  bk.fileInput.addEventListener("change", function (e) {
-    var f = e.target.files && e.target.files[0]; if (!f) return;
-    var rd = new FileReader();
-    rd.onload = function () { bk.text.value = rd.result; doRestore(); };
-    rd.readAsText(f);
-    bk.fileInput.value = "";
-  });
-
-  bk.restore.addEventListener("click", doRestore);
-  function doRestore() {
-    var data;
-    try { data = JSON.parse(bk.text.value); }
-    catch (e) { setMsg("読み込めませんでした", true); return; }
-    var found = 0;
-    KEYS.forEach(function (k) {
-      if (data && Object.prototype.hasOwnProperty.call(data, k) && data[k] != null) {
-        try { localStorage.setItem(k, typeof data[k] === "string" ? data[k] : JSON.stringify(data[k])); found++; } catch (e) {}
-      }
-    });
-    if (found === 0) { setMsg("引き継げるデータがありません", true); return; }
-    if (window.MoneySync && MoneySync.touch) MoneySync.touch();
-    setMsg("復元しました。更新します…");
-    setTimeout(function () { location.reload(); }, 700);
-  }
-})();
-</script>
 <!-- tsumiki-back-button -->
 <style>
   #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
