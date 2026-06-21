@@ -25,8 +25,14 @@
   }
 
   /* header */
-  header{display:flex; align-items:center; justify-content:center; gap:9px; padding:6px 0 2px; position:relative;}
+  header{display:flex; align-items:center; justify-content:center; gap:9px; padding:6px 0 2px; position:relative; min-height:30px;}
   .logo{width:13px; height:13px; border-radius:50%; background:var(--ink);}
+  .logo.hide{display:none;}
+  .back{position:absolute; left:-6px; top:50%; transform:translateY(-50%);
+    appearance:none; border:none; background:none; font-family:inherit;
+    font-size:28px; line-height:1; color:var(--ink); cursor:pointer; padding:2px 12px; display:none;}
+  .back.show{display:block;}
+  .brand{max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .brand{font-size:15px; font-weight:700; letter-spacing:.16em;}
   .sync{position:absolute; right:0; top:50%; transform:translateY(-50%);
     display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:var(--muted);}
@@ -54,20 +60,26 @@
 
   /* list */
   .list{margin-top:24px; display:flex; flex-direction:column;}
-  .row{display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hair); position:relative;}
+  .row{display:flex; align-items:center; gap:10px; padding:13px 4px; border-bottom:1px solid var(--hair); position:relative;}
   .row:first-child{border-top:1px solid var(--hair);}
   .swatch{width:11px; height:11px; border-radius:50%; flex:none; transition:background .3s;}
   .name{flex:1; min-width:0; appearance:none; border:none; background:none; font-family:inherit;
     font-size:16px; color:var(--ink); padding:2px 0; letter-spacing:.02em;}
   .name::placeholder{color:var(--ghost);}
   .amt{appearance:none; border:none; background:none; font-family:inherit; text-align:right;
-    font-size:16px; font-weight:500; color:var(--ink); width:96px; padding:2px 0;}
+    font-size:16px; font-weight:500; color:var(--ink); width:88px; padding:2px 0;}
   .amt::placeholder{color:var(--ghost); font-weight:400;}
-  .pct{font-size:11px; color:var(--muted); width:34px; text-align:right; flex:none; font-variant-numeric:tabular-nums;}
-  .del{appearance:none; border:none; background:none; color:var(--ghost); font-size:17px; line-height:1;
-    width:22px; height:22px; flex:none; cursor:pointer; opacity:0; transition:.2s; border-radius:50%;}
+  .amt-text{text-align:right; font-size:16px; font-weight:500; color:var(--ink); width:88px; padding:2px 0; font-variant-numeric:tabular-nums;}
+  .pct{font-size:11px; color:var(--muted); width:30px; text-align:right; flex:none; font-variant-numeric:tabular-nums;}
+  .chev{appearance:none; border:none; background:none; color:var(--ghost); font-size:22px; line-height:1;
+    width:18px; height:30px; flex:none; cursor:pointer; padding:0; transition:.2s; text-align:right;}
+  .chev.has{color:var(--muted);}
+  .chev:active{color:var(--ink); transform:translateX(2px);}
+  .del{appearance:none; border:none; position:absolute; right:-2px; top:50%; transform:translateY(-50%);
+    color:var(--ghost); font-size:17px; line-height:1; width:26px; height:30px; cursor:pointer;
+    opacity:0; transition:opacity .2s; border-radius:50%; padding:0; background:var(--paper);}
   .row:focus-within .del{opacity:1;}
-  .del:active{color:var(--ink); background:var(--surface);}
+  .del:active{color:var(--ink);}
   input:focus{outline:none;}
 
   /* add */
@@ -91,8 +103,9 @@
 </head>
 <body>
   <header>
-    <span class="logo"></span>
-    <span class="brand">まいつき</span>
+    <button class="back" id="back" type="button" aria-label="戻る">‹</button>
+    <span class="logo" id="logo"></span>
+    <span class="brand" id="brand">まいつき</span>
     <span class="sync" id="sync"><span class="dot"></span><span id="syncText"></span></span>
   </header>
 
@@ -130,11 +143,14 @@ function colorAt(i){ return COLORS[i % COLORS.length]; }
 /* ===== state ===== */
 var KEY = "fixed-cost-v1";
 var state = load();
+var path = [];                       // ドリルダウンの現在地（idの配列）
+
 function load(){
-  try{ var s = JSON.parse(localStorage.getItem(KEY)); if(s && s.items) return s; }catch(e){}
+  try{ var s = JSON.parse(localStorage.getItem(KEY)); if(s && s.items){ normalize(s.items); return s; } }catch(e){}
   return { items:[ mk() ], view:"month" };
 }
-function mk(){ return { id: id(), name:"", amount:0 }; }
+function normalize(items){ items.forEach(function(it){ if(!it.children) it.children = []; normalize(it.children); }); }
+function mk(){ return { id: id(), name:"", amount:0, children:[] }; }
 function id(){ return "i" + Math.floor(performance.now()*1000).toString(36) + Math.floor(performance.now()).toString(36); }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
@@ -145,19 +161,52 @@ function save(){
 function fmt(n){ return (n||0).toLocaleString("ja-JP"); }
 function digits(s){ return String(s).replace(/[^0-9]/g,""); }
 
+/* ===== tree helpers ===== */
+function disp(it){
+  return (it.children && it.children.length)
+    ? it.children.reduce(function(s,c){ return s + disp(c); }, 0)
+    : (it.amount || 0);
+}
+function nodeAt(p){
+  var arr = state.items, node = null;
+  for(var i=0;i<p.length;i++){
+    node = null;
+    for(var j=0;j<arr.length;j++){ if(arr[j].id === p[i]){ node = arr[j]; break; } }
+    if(!node) return null;
+    arr = node.children;
+  }
+  return node;
+}
+function listAt(){
+  if(!path.length) return state.items;
+  var n = nodeAt(path); return n ? n.children : state.items;
+}
+function levelTotal(){ return listAt().reduce(function(s,it){ return s + disp(it); }, 0); }
+function centerTotal(){
+  if(!path.length) return levelTotal();
+  var n = nodeAt(path); return n ? disp(n) : 0;
+}
+
 /* ===== render ===== */
 var C = 2*Math.PI*50;
-function total(){ return state.items.reduce(function(a,it){ return a + (it.amount||0); },0); }
+
+function renderHeader(){
+  document.getElementById("back").classList.toggle("show", path.length > 0);
+  document.getElementById("logo").classList.toggle("hide", path.length > 0);
+  var brand = document.getElementById("brand");
+  if(path.length){ var n = nodeAt(path); brand.textContent = (n && n.name) ? n.name : "うちわけ"; }
+  else brand.textContent = "まいつき";
+}
 
 function renderChart(){
-  var t = total();
+  var items = listAt();
+  var t = levelTotal();
   var segs = document.getElementById("segs");
   segs.innerHTML = "";
   var acc = 0;
-  state.items.forEach(function(it,i){
-    if(!it.amount) return;
-    var frac = t>0 ? it.amount/t : 0;
-    var len = frac * C;
+  items.forEach(function(it,i){
+    var v = disp(it); if(!v) return;
+    var len = (t>0 ? v/t : 0) * C;
     var gap = Math.min(2.2, len*0.4);
     var draw = Math.max(0.5, len - gap);
     var c = document.createElementNS("http://www.w3.org/2000/svg","circle");
@@ -172,76 +221,96 @@ function renderChart(){
     acc += len;
   });
   var mult = state.view === "year" ? 12 : 1;
-  var shown = t * mult;
-  var totalEl = document.getElementById("total");
+  var shown = centerTotal() * mult;
   document.getElementById("totalNum").textContent = fmt(shown);
-  totalEl.classList.toggle("empty", t === 0);
+  document.getElementById("total").classList.toggle("empty", shown === 0);
   document.getElementById("kicker").textContent = state.view === "year" ? "1年で" : "毎月";
 }
 
 function renderList(){
   var list = document.getElementById("list");
-  var t = total();
+  var items = listAt();
+  var t = levelTotal();
   list.innerHTML = "";
-  state.items.forEach(function(it,i){
+  items.forEach(function(it,i){
+    var v = disp(it);
+    var group = !!(it.children && it.children.length);
     var row = document.createElement("div"); row.className = "row";
 
     var sw = document.createElement("span"); sw.className = "swatch";
-    sw.style.background = it.amount ? colorAt(i) : "var(--ghost)";
+    sw.style.background = v ? colorAt(i) : "var(--ghost)";
 
     var name = document.createElement("input");
     name.className = "name"; name.type = "text"; name.placeholder = "こうもく";
     name.value = it.name; name.maxLength = 18;
-    name.addEventListener("input", function(){ it.name = name.value; save(); });
+    name.addEventListener("input", function(){ it.name = name.value; if(path.length) renderHeader(); save(); });
 
-    var amt = document.createElement("input");
-    amt.className = "amt"; amt.type = "text"; amt.inputMode = "numeric"; amt.placeholder = "0";
-    amt.value = it.amount ? fmt(it.amount) : "";
-    amt.addEventListener("input", function(){
-      var d = digits(amt.value);
-      it.amount = d ? parseInt(d,10) : 0;
-      amt.value = d ? fmt(it.amount) : "";
-      sw.style.background = it.amount ? colorAt(i) : "var(--ghost)";
-      renderChart(); updatePct(); save();
-    });
+    var amtEl;
+    if(group){
+      amtEl = document.createElement("span"); amtEl.className = "amt-text"; amtEl.textContent = fmt(v);
+    }else{
+      amtEl = document.createElement("input");
+      amtEl.className = "amt"; amtEl.type = "text"; amtEl.inputMode = "numeric"; amtEl.placeholder = "0";
+      amtEl.value = it.amount ? fmt(it.amount) : "";
+      amtEl.addEventListener("input", function(){
+        var d = digits(amtEl.value);
+        it.amount = d ? parseInt(d,10) : 0;
+        amtEl.value = d ? fmt(it.amount) : "";
+        sw.style.background = it.amount ? colorAt(i) : "var(--ghost)";
+        renderChart(); updatePct(); save();
+      });
+    }
 
     var pct = document.createElement("span"); pct.className = "pct";
-    pct.textContent = (t>0 && it.amount) ? Math.round(it.amount/t*100) + "%" : "";
+    pct.textContent = (t>0 && v) ? Math.round(v/t*100) + "%" : "";
+
+    var chev = document.createElement("button");
+    chev.className = "chev" + (group ? " has" : ""); chev.type = "button"; chev.textContent = "›";
+    chev.setAttribute("aria-label","ひらく");
+    chev.addEventListener("click", function(){ drill(it.id); });
 
     var del = document.createElement("button");
     del.className = "del"; del.type = "button"; del.textContent = "×";
     del.setAttribute("aria-label","削除");
     del.addEventListener("click", function(){ remove(it.id); });
 
-    row.append(sw, name, amt, pct, del);
+    row.append(sw, name, amtEl, pct, chev, del);
     list.appendChild(row);
   });
-  document.getElementById("hint").classList.toggle("hide", state.items.length > 1 || total() > 0);
+  var hint = document.getElementById("hint");
+  hint.textContent = path.length ? "ここに うちわけを ついか" : "毎月かかるお金を ひとつずつ";
+  hint.classList.toggle("hide", items.length > 1 || levelTotal() > 0);
 }
 function updatePct(){
-  var t = total();
+  var t = levelTotal();
+  var items = listAt();
   var rows = document.getElementById("list").children;
-  state.items.forEach(function(it,i){
+  items.forEach(function(it,i){
+    var v = disp(it);
     var pctEl = rows[i] && rows[i].querySelector(".pct");
-    if(pctEl) pctEl.textContent = (t>0 && it.amount) ? Math.round(it.amount/t*100) + "%" : "";
+    if(pctEl) pctEl.textContent = (t>0 && v) ? Math.round(v/t*100) + "%" : "";
   });
 }
-function renderAll(){ renderChart(); renderList(); }
+function renderAll(){ renderHeader(); renderChart(); renderList(); window.scrollTo(0,0); }
 
 /* ===== actions ===== */
 function add(){
-  state.items.push(mk());
-  save(); renderList();
+  listAt().push(mk());
+  save(); renderChart(); renderList();
   var rows = document.getElementById("list").children;
   var last = rows[rows.length-1]; if(last) last.querySelector(".name").focus();
 }
 function remove(itemId){
-  state.items = state.items.filter(function(it){ return it.id !== itemId; });
-  if(state.items.length === 0) state.items.push(mk());
+  var arr = listAt();
+  for(var i=arr.length-1;i>=0;i--){ if(arr[i].id === itemId) arr.splice(i,1); }
+  if(!path.length && state.items.length === 0) state.items.push(mk());
   save(); renderAll();
 }
+function drill(itemId){ path.push(itemId); renderAll(); }
+function back(){ path.pop(); renderAll(); }
 
 document.getElementById("add").addEventListener("click", add);
+document.getElementById("back").addEventListener("click", back);
 document.getElementById("toggle").addEventListener("click", function(e){
   var b = e.target.closest("button"); if(!b) return;
   state.view = b.dataset.v;
