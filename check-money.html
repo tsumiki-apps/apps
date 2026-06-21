@@ -235,6 +235,45 @@
   .pull-picker .opts button:hover { background: #f0f7ff; border-color: var(--blue); }
   .pull-picker .opts button.cancel { color: var(--sub); }
 
+  /* この計算を保存 / 新しい計算 */
+  .calc-actions { display: flex; gap: 10px; margin: -6px 0 18px; }
+  .calc-actions button {
+    flex: 1; padding: 13px 10px; border-radius: 14px; font-size: 15px;
+    font-family: inherit; cursor: pointer; border: 1px solid var(--line);
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .btn-save-calc { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 600; }
+  .btn-save-calc:hover { background: #0063c6; }
+  .btn-new-calc { background: #fff; color: var(--blue); }
+  .btn-new-calc:hover { background: #f0f7ff; border-color: var(--blue); }
+
+  /* 保存した計算（記録）リスト */
+  .saved-empty { color: var(--sub); font-size: 14px; padding: 6px 0 2px; }
+  .saved-item {
+    border: 1px solid var(--line); border-radius: 14px; padding: 14px;
+    margin-bottom: 12px; background: #fafafa;
+  }
+  .saved-item:last-child { margin-bottom: 0; }
+  .saved-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .saved-title { min-width: 0; }
+  .saved-name { display: block; font-size: 15px; font-weight: 600; color: var(--text); word-break: break-word; }
+  .saved-date { font-size: 12px; color: var(--sub); }
+  .saved-remain { font-size: 22px; font-weight: 700; color: var(--green); white-space: nowrap; }
+  .saved-remain.minus { color: var(--red); }
+  .saved-bd { margin-top: 10px; font-size: 13px; color: var(--sub); line-height: 1.7; }
+  .saved-bd b { color: var(--text); font-weight: 600; }
+  .saved-bd b.minus { color: var(--red); }
+  .saved-bd b.real { color: var(--blue); }
+  .saved-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .saved-actions button {
+    padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: #fff; color: var(--blue); font-size: 13px; font-family: inherit; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .saved-actions button:hover { background: #f0f7ff; border-color: var(--blue); }
+  .saved-actions .saved-del { color: var(--sub); margin-left: auto; }
+  .saved-actions .saved-del:hover { background: #fff0f0; border-color: var(--red); color: var(--red); }
+
   @media (max-width: 460px) {
     .item input.amount { width: 108px; }
     .remain-big { font-size: 46px; }
@@ -274,6 +313,12 @@
     </div>
   </div>
 
+  <!-- この計算を保存 / 新しい計算 -->
+  <div class="calc-actions">
+    <button class="btn-save-calc" id="saveCalcBtn">💾 この計算を記録に保存</button>
+    <button class="btn-new-calc" id="newCalcBtn">🆕 新しい計算を始める</button>
+  </div>
+
   <!-- 銀行 -->
   <div class="card">
     <h2>🏦 銀行のお金 <span class="subtotal" id="subBanks">¥0</span></h2>
@@ -297,6 +342,13 @@
     <p class="h2-note">クレカでの立て替えは「<a href="credit.html" style="color:var(--blue);text-decoration:none">💳 クレジット明細マネージャー</a>」の台帳で管理すると、未回収分がこのページの計算に自動で反映されます。同じ立て替えを両方に登録しないよう注意してください。</p>
     <div id="advs"></div>
     <button class="btn-add" id="addAdv">＋ 立て替えを追加</button>
+  </div>
+
+  <!-- 保存した計算（記録） -->
+  <div class="card" id="savedCard">
+    <h2>💾 保存した計算 <span class="subtotal" id="savedCount"></span></h2>
+    <p class="h2-note">上の「💾 この計算を記録に保存」で保存した計算がここに並びます。内訳もそのまま残ります。各記録は入力欄に呼び戻したり、削除できます。</p>
+    <div id="savedList"></div>
   </div>
 
   <!-- データの引き継ぎ・バックアップ -->
@@ -404,7 +456,7 @@
 
   /* --- MoneySync: money-balance-v1 + money-forecast-v1 をまとめて同期 --- */
   window.MoneySync = (function () {
-    var KEYS = ["money-balance-v1", "money-forecast-v1"];
+    var KEYS = ["money-balance-v1", "money-forecast-v1", "money-saved-v1"];
     var META = "money-sync-meta-v1";   // この端末の最終更新時刻（updatedAt）だけを覚えるキー
     var TABLE = "money_state", ID = "kodai";
     var sb = window.AssetDB;
@@ -1074,6 +1126,179 @@
     });
   }
 
+  // ---- 保存した計算（記録） ----
+  var SAVED_KEY = "money-saved-v1";
+  var savedList = [];
+  var elSaved = {
+    list: document.getElementById("savedList"),
+    count: document.getElementById("savedCount"),
+    saveBtn: document.getElementById("saveCalcBtn"),
+    newBtn: document.getElementById("newCalcBtn")
+  };
+
+  function loadSaved() {
+    try {
+      var r = localStorage.getItem(SAVED_KEY);
+      var a = r ? JSON.parse(r) : [];
+      if (Array.isArray(a)) savedList = a;
+    } catch (e) { /* ignore */ }
+  }
+  function persistSaved() {
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(savedList)); } catch (e) {}
+    if (window.MoneySync) MoneySync.schedule();
+  }
+  function findSaved(id) {
+    for (var i = 0; i < savedList.length; i++) if (savedList[i].id === id) return savedList[i];
+    return null;
+  }
+  function cloneWorking() {
+    return JSON.parse(JSON.stringify({ banks: state.banks, cards: state.cards, advances: state.advances }));
+  }
+
+  // render() と同じ数式で、いまの内訳・残りを丸ごと取り出す（保存用）
+  function computeSummary() {
+    var b = sumBanks();
+    var pending = sumCards(false);
+    var paid = sumCards(true);
+    var remain = b - pending;
+    var advT = advTotal();
+    var advUn = advUnrecovered();
+    var ownAll = Math.max(0, (pending + paid) - advT);
+    var realRemain = remain + advUn + creditUn;
+    return {
+      banks: b, pending: pending, paid: paid, remain: remain,
+      advTotal: advT, advUnrec: advUn, creditUn: creditUn,
+      ownAll: ownAll, realRemain: realRemain,
+      hasAdv: (state.advances.length > 0 || creditUn > 0)
+    };
+  }
+
+  function defaultName() {
+    var d = new Date();
+    return d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " の残高";
+  }
+  function fmtSavedDate(ts) {
+    var d = new Date(ts);
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " " + d.getHours() + ":" + p(d.getMinutes());
+  }
+
+  function savedBreakdownHtml(r) {
+    var html = "銀行 <b>" + yen(r.banks) + "</b> − 未引き落とし <b class=\"minus\">" + yen(r.pending) + "</b>";
+    if (r.paid > 0) html += "（済 " + yen(r.paid) + "）";
+    html += "<br>引き落とし後に残るお金 <b" + (r.remain < 0 ? " class=\"minus\"" : "") + ">" +
+      (r.remain < 0 ? "−" : "") + yen(Math.abs(r.remain)) + "</b>";
+    if (r.hasAdv) {
+      html += "<br>🤝 立て替え <b>" + yen(r.advTotal) + "</b>";
+      if (r.advUnrec > 0) html += "（未回収 " + yen(r.advUnrec) + "）";
+      if (r.creditUn > 0) html += "<br>💳 台帳の未回収 <b>" + yen(r.creditUn) + "</b>";
+      html += "<br>実質の残り（回収後） <b class=\"real\">" +
+        (r.realRemain < 0 ? "−" : "") + yen(Math.abs(r.realRemain)) + "</b>";
+    }
+    return html;
+  }
+
+  function buildSaved() {
+    if (!elSaved.list) return;
+    elSaved.count.textContent = savedList.length ? savedList.length + " 件" : "";
+    elSaved.list.innerHTML = "";
+    if (savedList.length === 0) {
+      var em = document.createElement("div");
+      em.className = "saved-empty";
+      em.textContent = "まだ保存した計算はありません。上の「💾 この計算を記録に保存」で残せます。";
+      elSaved.list.appendChild(em);
+      return;
+    }
+    savedList.forEach(function (rec) {
+      var r = rec.result || {};
+      var minus = (r.remain || 0) < 0;
+      var div = document.createElement("div");
+      div.className = "saved-item";
+      div.setAttribute("data-id", rec.id);
+      div.innerHTML =
+        '<div class="saved-head">' +
+          '<div class="saved-title"><span class="saved-name"></span>' +
+          '<span class="saved-date">' + fmtSavedDate(rec.savedAt) + '</span></div>' +
+          '<div class="saved-remain' + (minus ? " minus" : "") + '">' +
+            (minus ? "−" : "") + yen(Math.abs(r.remain || 0)) + '</div>' +
+        '</div>' +
+        '<div class="saved-bd">' + savedBreakdownHtml(r) + '</div>' +
+        '<div class="saved-actions">' +
+          '<button class="saved-load">↩ 入力に戻す</button>' +
+          '<button class="saved-rename">✎ 名前変更</button>' +
+          '<button class="saved-del">削除</button>' +
+        '</div>';
+      div.querySelector(".saved-name").textContent = rec.name || "（無名）";
+      elSaved.list.appendChild(div);
+    });
+  }
+
+  function saveCurrentCalc() {
+    var s = computeSummary();
+    if (s.banks === 0 && s.pending === 0 && s.paid === 0 && s.advTotal === 0) {
+      alert("保存できる数字がまだありません。\n銀行やクレジットカードの金額を入力してください。");
+      return;
+    }
+    var def = defaultName();
+    var name = prompt("この計算に名前をつけて記録します。\n（例：6月の残高、ボーナス前 など）", def);
+    if (name === null) return;
+    name = (name || "").trim() || def;
+    savedList.unshift({ id: nextId(), name: name, savedAt: Date.now(), snapshot: cloneWorking(), result: s });
+    persistSaved();
+    buildSaved();
+    var sc = document.getElementById("savedCard");
+    if (sc) sc.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function newCalc() {
+    if (!confirm("入力欄をクリアして、新しい計算を始めます。\n（保存した記録は消えません）\nよろしいですか？")) return;
+    state.banks = [makeItem()];
+    state.cards = [makeItem()];
+    state.advances = [];
+    buildRows("banks", el.banks, false);
+    buildRows("cards", el.cards, true);
+    buildAdvs();
+    render(); save();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function restoreSaved(rec) {
+    if (!confirm("「" + (rec.name || "無名") + "」を入力欄に呼び戻します。\n今の入力は上書きされます（保存した記録はそのまま残ります）。\nよろしいですか？")) return;
+    var snap = rec.snapshot || {};
+    state.banks = (Array.isArray(snap.banks) ? snap.banks : []).map(normItem);
+    state.cards = (Array.isArray(snap.cards) ? snap.cards : []).map(normItem);
+    state.advances = (Array.isArray(snap.advances) ? snap.advances : []).map(normAdvance);
+    if (state.banks.length === 0) state.banks.push(makeItem());
+    if (state.cards.length === 0) state.cards.push(makeItem());
+    buildRows("banks", el.banks, false);
+    buildRows("cards", el.cards, true);
+    buildAdvs();
+    render(); save();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function wireSaved() {
+    if (!elSaved.list) return;
+    elSaved.list.addEventListener("click", function (e) {
+      var item = e.target.closest(".saved-item"); if (!item) return;
+      var rec = findSaved(item.getAttribute("data-id")); if (!rec) return;
+      if (e.target.closest(".saved-del")) {
+        if (!confirm("保存した記録「" + (rec.name || "無名") + "」を削除しますか？")) return;
+        savedList = savedList.filter(function (x) { return x.id !== rec.id; });
+        persistSaved(); buildSaved();
+      } else if (e.target.closest(".saved-rename")) {
+        var nn = prompt("名前を変更します。", rec.name || "");
+        if (nn === null) return;
+        rec.name = (nn || "").trim() || rec.name;
+        persistSaved(); buildSaved();
+      } else if (e.target.closest(".saved-load")) {
+        restoreSaved(rec);
+      }
+    });
+    if (elSaved.saveBtn) elSaved.saveBtn.addEventListener("click", saveCurrentCalc);
+    if (elSaved.newBtn) elSaved.newBtn.addEventListener("click", newCalc);
+  }
+
   // init
   load();
   buildRows("banks", el.banks, false);
@@ -1082,6 +1307,9 @@
   wireList("banks", el.banks, false);
   wireList("cards", el.cards, true);
   wireAdvs();
+  loadSaved();
+  buildSaved();
+  wireSaved();
   render();
   refreshCreditLedger();
   setupBillImport();
@@ -1097,7 +1325,7 @@
 /* データの引き継ぎ・バックアップ（共通） */
 (function () {
   "use strict";
-  var KEYS = ["money-balance-v1", "money-forecast-v1"];
+  var KEYS = ["money-balance-v1", "money-forecast-v1", "money-saved-v1"];
   var bk = {
     text: document.getElementById("bkText"),
     copy: document.getElementById("bkCopy"),
