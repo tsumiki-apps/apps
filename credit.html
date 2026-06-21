@@ -1760,7 +1760,7 @@ function saveLoanFromTx(){
   if(isNaN(amount)||amount<=0){alert('金額を入力してください');return;}
   const ex=getLoanTotalForTx(t.id);
   if(ex+amount>t.amount){if(!confirm(`既存¥${ex.toLocaleString()} + 今回¥${amount.toLocaleString()} が取引金額¥${t.amount.toLocaleString()}を超えます。続行しますか？`))return;}
-  data.loans.push({id:'ln_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),txId:t.id,personName:name,amount,date:t.date,description:t.description,memo,createdAt:Date.now()});
+  data.loans.push({id:'ln_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),txId:t.id,personName:name,amount,date:t.date,description:t.description,memo,createdAt:Date.now(),splitTotal:t.amount});
   addPersonName(name);save();closeLoanFromTxModal();render();
 }
 
@@ -1822,9 +1822,29 @@ function deleteLoan(id){
 const RECEIPT_BANK=['三井住友銀行','オリーブBlue支店（支店番号 783）','普通 0833691','名義 タカハシコウダイ'];
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 function ellipsisText(c,str,maxW){str=String(str||'');if(c.measureText(str).width<=maxW)return str;let s=str;while(s.length&&c.measureText(s+'…').width>maxW)s=s.slice(0,-1);return s+'…';}
+// 立て替え1件から「元のクレカ請求額」と「誰と誰で割っているか」を求める。
+// 割り勘で作ったものは保存済みメタ(splitTotal/Members)を優先。単発/手動は紐付くtxと
+// 同一txの全立て替えから推定（自分=こうだいは未割当分が残っていれば含める）。
+function getChargeContext(l){
+  let original=(l.splitTotal!=null)?l.splitTotal:null;
+  let members=Array.isArray(l.splitMembers)?l.splitMembers.slice():null;
+  let includesSelf=l.splitIncludesSelf;
+  if(original==null&&l.txId){const t=findTx(l.txId);if(t)original=t.amount;}
+  if(original==null)original=l.amount;
+  if(!members){
+    if(l.txId){
+      const co=getLoansForTx(l.txId);
+      members=[...new Set(co.map(x=>x.personName))];
+      const tot=co.reduce((s,x)=>s+x.amount,0);
+      includesSelf=tot<original;
+    }else{members=[l.personName];includesSelf=false;}
+  }
+  return {original,members,includesSelf,count:members.length+(includesSelf?1:0)};
+}
+function membersLabel(ctx){const a=ctx.members.slice();if(ctx.includesSelf)a.push('こうだい');return a.join('・');}
 function openReceiptModal(name){
   const stats=getPersonStats().find(s=>s.name===name);if(!stats){alert('対象が見つかりません');return;}
-  const items=stats.loans.map(l=>({description:l.description,date:l.date,amount:getRemaining(l),splitTotal:l.splitTotal,splitCount:l.splitCount,splitMembers:l.splitMembers,splitIncludesSelf:l.splitIncludesSelf}))
+  const items=stats.loans.map(l=>({loan:l,date:l.date,amount:getRemaining(l)}))
     .filter(it=>it.amount>0).sort((a,b)=>a.date.localeCompare(b.date));
   if(!items.length){alert('未回収の立て替えがありません');return;}
   const cv=buildReceiptCanvas(name,items);
@@ -1846,12 +1866,25 @@ function shareReceipt(){
   },'image/png');
 }
 // シンプルで分かりやすい明細書をCanvasに描画（いつつ風の丸ゴ・温かみのある余白）
+// items=[{loan,date,amount(=請求額/未回収)}]
 function buildReceiptCanvas(name,items){
   const S=2,W=720,ML=56,MR=56,CW=W-ML-MR;
   const ACCENT='#626acb',INK='#2a2a28',SUB='#8a857a',LINE='#e3ddcf',PAPER='#f4f1ea',SURF='#faf7f0';
   const FONT="'Hiragino Maru Gothic ProN','Hiragino Sans','Zen Maru Gothic',sans-serif";
-  const topPad=56,eyebrowH=30,titleH=54,dateH=32,gap1=24,secH=40,rowH=78,afterItems=10,totalH=86,gap2=30,acctH=184,gap3=22,footH=28,botPad=48;
-  const H=topPad+eyebrowH+titleH+dateH+gap1+secH+items.length*rowH+afterItems+totalH+gap2+acctH+gap3+footH+botPad;
+  // 各明細の下段テキスト（元の金額／割る人／メモ）を先に組み立て、高さを可変にする
+  const subLH=29;
+  const rows=items.map(it=>{
+    const ctx=getChargeContext(it.loan);
+    const memo=(it.loan.memo||'').trim();
+    const subs=['この支払いの元の金額 ¥'+ctx.original.toLocaleString()+'（'+it.date+'）'];
+    if(ctx.count>1)subs.push(ctx.count+'人で割り勘：'+membersLabel(ctx));
+    if(memo)subs.push('メモ：'+memo);
+    const h=46+subs.length*subLH+18;
+    return {it,subs,h};
+  });
+  const itemsH=rows.reduce((s,r)=>s+r.h,0);
+  const topPad=56,eyebrowH=30,titleH=54,dateH=32,gap1=24,secH=40,afterItems=10,totalH=86,gap2=30,acctH=184,gap3=22,footH=28,botPad=48;
+  const H=topPad+eyebrowH+titleH+dateH+gap1+secH+itemsH+afterItems+totalH+gap2+acctH+gap3+footH+botPad;
   const cv=document.createElement('canvas');cv.width=W*S;cv.height=H*S;
   const c=cv.getContext('2d');c.scale(S,S);c.textBaseline='alphabetic';
   c.fillStyle=PAPER;c.fillRect(0,0,W,H);
@@ -1863,16 +1896,14 @@ function buildReceiptCanvas(name,items){
   c.fillStyle=SUB;c.font=`600 22px ${FONT}`;c.fillText('ご請求の内訳',ML,y+20);
   c.strokeStyle=LINE;c.lineWidth=1;c.beginPath();c.moveTo(ML,y+34.5);c.lineTo(W-MR,y+34.5);c.stroke();y+=secH;
   const total=items.reduce((s,it)=>s+it.amount,0);
-  items.forEach(it=>{
-    const orig=it.splitTotal||it.amount,cnt=it.splitCount||0;
+  rows.forEach(r=>{
     c.textAlign='left';c.fillStyle=INK;c.font=`600 26px ${FONT}`;
-    c.fillText(ellipsisText(c,displayMerchantName(it.description||'(内容なし)'),CW-160),ML,y+28);
-    c.textAlign='right';c.fillStyle=ACCENT;c.font=`700 30px ${FONT}`;c.fillText('¥'+it.amount.toLocaleString(),W-MR,y+29);
+    c.fillText(ellipsisText(c,displayMerchantName(r.it.loan.description||'(内容なし)'),CW-170),ML,y+28);
+    c.textAlign='right';c.fillStyle=ACCENT;c.font=`700 30px ${FONT}`;c.fillText('¥'+r.it.amount.toLocaleString(),W-MR,y+29);
+    let sy=y+46+22;
     c.textAlign='left';c.fillStyle=SUB;c.font=`400 19px ${FONT}`;
-    let meta=it.date+' ・ 元 ¥'+orig.toLocaleString();
-    if(cnt>1){meta+=' ・ '+cnt+'人で割り勘';const mem=(it.splitMembers||[]).concat(it.splitIncludesSelf?['あなた']:[]);if(mem.length)meta+='（'+mem.join('・')+'）';}
-    c.fillText(ellipsisText(c,meta,CW),ML,y+54);
-    c.strokeStyle=LINE;c.beginPath();c.moveTo(ML,y+rowH-10.5);c.lineTo(W-MR,y+rowH-10.5);c.stroke();y+=rowH;
+    r.subs.forEach(t=>{c.fillText(ellipsisText(c,t,CW),ML,sy);sy+=subLH;});
+    c.strokeStyle=LINE;c.beginPath();c.moveTo(ML,y+r.h-9.5);c.lineTo(W-MR,y+r.h-9.5);c.stroke();y+=r.h;
   });
   y+=afterItems;
   c.textAlign='left';c.fillStyle=INK;c.font=`700 24px ${FONT}`;c.fillText('お支払い合計',ML,y+38);
