@@ -1092,7 +1092,7 @@
 
   // 折れ線描画（ctxへ任意の矩形に描く）。export/onscreen 共用
   function drawChart(ctx, X, Y, W, H, mkey, opts){
-    opts=opts||{}; var compact=!!opts.compact;
+    opts=opts||{}; var compact=!!opts.compact; var TH=chartTheme(!!opts.print);
     var ser=metricSeries(mkey), arr=ser.arr, meta=ser.meta;
     var padL=compact?34:46, padR=compact?10:18, padT=14, padB=compact?22:30;
     var gx=X+padL, gy=Y+padT, gw=W-padL-padR, gh=H-padT-padB;
@@ -1113,7 +1113,7 @@
     function py(v){ return gy + gh - gh*((v-lo)/(hi-lo)); }
 
     // grid + yラベル
-    ctx.strokeStyle="#D8D4CC"; ctx.lineWidth=1; ctx.fillStyle="#77736B";
+    ctx.strokeStyle=TH.grid; ctx.lineWidth=1; ctx.fillStyle=TH.lbl;
     ctx.font=(compact?'10px':'12px')+' -apple-system,"Hiragino Sans",sans-serif'; ctx.textBaseline="middle";
     var steps=compact?3:4;
     for(var i=0;i<=steps;i++){
@@ -1122,18 +1122,18 @@
       ctx.textAlign="right"; ctx.fillText(Math.round(v*10)/10, gx-6, yy);
     }
     // xラベル W1..W13（compactは間引き: W1,4,7,10,13）
-    ctx.textBaseline="top"; ctx.textAlign="center"; ctx.fillStyle="#77736B";
+    ctx.textBaseline="top"; ctx.textAlign="center"; ctx.fillStyle=TH.lbl;
     for(var w=1;w<=13;w++){ if(compact && (w-1)%3!==0) continue; ctx.fillText("W"+w, px(w), gy+gh+(compact?6:8)); }
 
     // benchmark dashed
     if(ser.bench!==null){
-      ctx.save(); ctx.setLineDash([6,5]); ctx.strokeStyle="#BEB9B0"; ctx.lineWidth=1.5;
+      ctx.save(); ctx.setLineDash([6,5]); ctx.strokeStyle=TH.bench; ctx.lineWidth=1.5;
       var by=py(ser.bench);
       ctx.beginPath(); ctx.moveTo(gx,by); ctx.lineTo(gx+gw,by); ctx.stroke(); ctx.restore();
     }
 
     // line
-    ctx.strokeStyle="#242321"; ctx.lineWidth=compact?2:2.5; ctx.lineJoin="round";
+    ctx.strokeStyle=TH.line; ctx.lineWidth=compact?2:2.5; ctx.lineJoin="round";
     ctx.beginPath(); var started=false;
     for(var w2=1;w2<=13;w2++){
       var val=arr[w2-1]; if(val===null){ started=false; continue; }
@@ -1145,7 +1145,7 @@
     for(var w3=1;w3<=13;w3++){
       var val3=arr[w3-1]; if(val3===null) continue;
       var xx3=px(w3), yy3=py(val3);
-      ctx.fillStyle="#242321"; ctx.beginPath(); ctx.arc(xx3,yy3,compact?3:4,0,7); ctx.fill();
+      ctx.fillStyle=TH.pt; ctx.beginPath(); ctx.arc(xx3,yy3,compact?3:4,0,7); ctx.fill();
       ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(xx3,yy3,compact?1.3:1.8,0,7); ctx.fill();
     }
   }
@@ -1308,7 +1308,14 @@
   var teamSeries = "nps";       // "nps" | "progress"
   var teamCompare = false;      // true なら全メンバーを1枚に重ねて比較
   var teamLoaded = false;
-  var teamPalette = ["#5f8f6a","#7b6f96","#b08a3e","#b06a52","#6f8aa6","#9a7b8a","#7a9a8f","#a08a5e"];
+  var teamPalette      = ["#5f8f6a","#7b6f96","#b08a3e","#b06a52","#6f8aa6","#9a7b8a","#7a9a8f","#a08a5e"]; // 画面=warm
+  var teamPalettePrint = ["#0071e3","#34c759","#ff9f0a","#ff3b30","#5856d6","#af52de","#00b8d4","#e0a800"]; // 書き出し=色付き
+  // チャート配色：画面はwarm-mono、書き出し画像/PDF(print=true)はリーダー提出用に色付き
+  function chartTheme(pr){
+    return pr
+      ? {grid:"#ececf0", lbl:"#9a9aa0", line:"#0071e3", bench:"#ff9f0a", pt:"#0071e3", ink:"#1d1d1f", up:"#34c759", team:teamPalettePrint}
+      : {grid:"#D8D4CC", lbl:"#77736B", line:"#242321", bench:"#BEB9B0", pt:"#242321", ink:"#242321", up:"#5f8f6a", team:teamPalette};
+  }
 
   // 同一オリジンの localStorage から grownote を読むフォールバック
   function teamFromLocal(){
@@ -1351,14 +1358,14 @@
 
   // 成長チャート（画面・画像で共用）。accent色つき。
   function drawTeamChart(ctx, X, Y, W, H, member, series, opts){
-    opts=opts||{}; var compact=!!opts.compact;
+    opts=opts||{}; var compact=!!opts.compact; var TH=chartTheme(!!opts.print);
     var pts = teamPoints(member, series);
-    var accent = series==="progress" ? "#5f8f6a" : "#242321";
+    var accent = series==="progress" ? TH.up : TH.line;
     var padL=compact?34:46, padR=compact?12:18, padT=14, padB=compact?22:30;
     var gx=X+padL, gy=Y+padT, gw=W-padL-padR, gh=H-padT-padB;
 
     if(pts.length===0){
-      ctx.fillStyle="#77736B"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillStyle=TH.lbl; ctx.textAlign="center"; ctx.textBaseline="middle";
       ctx.font=(compact?'12px':'14px')+' -apple-system,"Hiragino Sans",sans-serif';
       ctx.fillText(series==="nps"?"数値メモがまだありません":"進捗の記録がまだありません", X+W/2, Y+H/2);
       return;
@@ -1375,14 +1382,14 @@
     function px(i){ return n===1 ? gx+gw/2 : gx + gw*i/(n-1); }
     function py(v){ return gy+gh-gh*((v-lo)/(hi-lo)); }
 
-    ctx.strokeStyle="#D8D4CC"; ctx.lineWidth=1; ctx.fillStyle="#77736B";
+    ctx.strokeStyle=TH.grid; ctx.lineWidth=1; ctx.fillStyle=TH.lbl;
     ctx.font=(compact?'10px':'12px')+' -apple-system,"Hiragino Sans",sans-serif'; ctx.textBaseline="middle";
     var steps=compact?3:4;
     for(var i=0;i<=steps;i++){ var v=lo+(hi-lo)*i/steps, yy=py(v);
       ctx.beginPath(); ctx.moveTo(gx,yy); ctx.lineTo(gx+gw,yy); ctx.stroke();
       ctx.textAlign="right"; ctx.fillText(Math.round(v*10)/10, gx-6, yy);
     }
-    ctx.textBaseline="top"; ctx.textAlign="center"; ctx.fillStyle="#77736B";
+    ctx.textBaseline="top"; ctx.textAlign="center"; ctx.fillStyle=TH.lbl;
     var maxLabels=compact?4:6, stepL=Math.ceil(n/maxLabels);
     pts.forEach(function(p,i){ if(n>maxLabels && i%stepL!==0 && i!==n-1) return;
       var parts=p.date.split("-"); ctx.fillText((+parts[1])+"/"+(+parts[2]), px(i), gy+gh+(compact?6:8));
@@ -1392,7 +1399,7 @@
     pts.forEach(function(p,i){ var x=px(i),y=py(p.v);
       ctx.fillStyle=accent; ctx.beginPath(); ctx.arc(x,y,compact?3:4.5,0,7); ctx.fill();
       ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(x,y,compact?1.3:2,0,7); ctx.fill();
-      if(!compact || n<=6){ ctx.fillStyle="#242321"; ctx.font='600 '+(compact?'10px':'12px')+' -apple-system,"Hiragino Sans",sans-serif';
+      if(!compact || n<=6){ ctx.fillStyle=TH.ink; ctx.font='600 '+(compact?'10px':'12px')+' -apple-system,"Hiragino Sans",sans-serif';
         ctx.textAlign="center"; ctx.textBaseline="bottom";
         ctx.fillText(Math.round(p.v*10)/10, x, Math.max(y-(compact?5:7), gy+8));
       }
@@ -1401,13 +1408,13 @@
 
   // 全メンバーを1枚に重ねて比較（時間軸スケール＋凡例）
   function drawTeamCompare(ctx, X, Y, W, H, members, series, opts){
-    opts=opts||{}; var compact=!!opts.compact;
+    opts=opts||{}; var compact=!!opts.compact; var TH=chartTheme(!!opts.print);
     var data=members.map(function(m,idx){
-      return {name:m.name||"（無名）", color:teamPalette[idx%teamPalette.length], pts:teamPoints(m,series)};
+      return {name:m.name||"（無名）", color:TH.team[idx%TH.team.length], pts:teamPoints(m,series)};
     }).filter(function(d){ return d.pts.length>0; });
 
     if(data.length===0){
-      ctx.fillStyle="#77736B"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillStyle=TH.lbl; ctx.textAlign="center"; ctx.textBaseline="middle";
       ctx.font=(compact?'13px':'16px')+' -apple-system,"Hiragino Sans",sans-serif';
       ctx.fillText(series==="nps"?"数値メモがまだありません":"進捗の記録がまだありません", X+W/2, Y+H/2);
       ctx.textBaseline="alphabetic"; return;
@@ -1420,7 +1427,7 @@
       var tw=ctx.measureText(d.name).width;
       if(lx+18+tw> X+W){ lx=X; ly+=lh; }
       ctx.fillStyle=d.color; ctx.beginPath(); ctx.arc(lx+5, ly, 5, 0, 7); ctx.fill();
-      ctx.fillStyle="#242321"; ctx.fillText(d.name, lx+15, ly);
+      ctx.fillStyle=TH.ink; ctx.fillText(d.name, lx+15, ly);
       lx += 15+tw+18;
     });
     var legendBottom = ly+lh/2+6;
@@ -1442,7 +1449,7 @@
     function px(t){ return tmax===tmin ? gx+gw/2 : gx+gw*(t-tmin)/(tmax-tmin); }
     function py(v){ return gy+gh-gh*((v-lo)/(hi-lo)); }
 
-    ctx.strokeStyle="#D8D4CC"; ctx.lineWidth=1; ctx.fillStyle="#77736B";
+    ctx.strokeStyle=TH.grid; ctx.lineWidth=1; ctx.fillStyle=TH.lbl;
     ctx.font=(compact?'10px':'12px')+' -apple-system,"Hiragino Sans",sans-serif'; ctx.textBaseline="middle";
     var steps=compact?3:4;
     for(var i=0;i<=steps;i++){ var v=lo+(hi-lo)*i/steps, yy=py(v);
@@ -1450,7 +1457,7 @@
       ctx.textAlign="right"; ctx.fillText(Math.round(v*10)/10, gx-6, yy);
     }
     // x（日付）ラベル：tmin..tmax を等間隔に
-    ctx.textBaseline="top"; ctx.textAlign="center"; ctx.fillStyle="#77736B";
+    ctx.textBaseline="top"; ctx.textAlign="center"; ctx.fillStyle=TH.lbl;
     var xticks=compact?3:5;
     for(var k=0;k<=xticks;k++){
       var t = tmin + (tmax-tmin)*k/xticks; var dd=new Date(t);
@@ -1568,19 +1575,19 @@
     var members=(teamData&&teamData.members)||[];
     ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
     var PAD=64;
-    ctx.fillStyle="#242321"; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+    ctx.fillStyle="#1d1d1f"; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
     ctx.font='700 46px -apple-system,"Hiragino Sans",sans-serif';
     ctx.fillText("Team Growth", PAD, PAD+38);
-    ctx.fillStyle="#77736B"; ctx.font='500 22px -apple-system,"Hiragino Sans",sans-serif';
+    ctx.fillStyle="#6e6e73"; ctx.font='500 22px -apple-system,"Hiragino Sans",sans-serif';
     var serLabel = teamSeries==="progress" ? "進捗%" : "NPS実数値";
     var sub = (teamCompare?"全メンバーを比較":"メンタリングメンバーの成長の推移")+"（"+serLabel+"） ・ "+(state.name||"Kodai");
     ctx.fillText(sub, PAD, PAD+74);
 
     var topY=PAD+110, gridH=H-topY-PAD, gridW=W-PAD*2;
     if(teamCompare){
-      ctx.fillStyle="#FBFAF8"; ctx.strokeStyle="#D8D4CC"; ctx.lineWidth=1;
+      ctx.fillStyle="#fafafa"; ctx.strokeStyle="#e3e3e6"; ctx.lineWidth=1;
       roundRectPath(ctx,PAD,topY,gridW,gridH,16); ctx.fill(); ctx.stroke();
-      drawTeamCompare(ctx, PAD+24, topY+24, gridW-48, gridH-48, members, teamSeries);
+      drawTeamCompare(ctx, PAD+24, topY+24, gridW-48, gridH-48, members, teamSeries, {print:true});
       return;
     }
     var n=members.length;
@@ -1591,15 +1598,15 @@
     members.forEach(function(m,i){
       var c=i%cols, rrow=Math.floor(i/cols);
       var x=PAD+c*(cellW+gap), y=topY+rrow*(cellH+gap);
-      ctx.fillStyle="#FBFAF8"; ctx.strokeStyle="#D8D4CC"; ctx.lineWidth=1;
+      ctx.fillStyle="#fafafa"; ctx.strokeStyle="#e3e3e6"; ctx.lineWidth=1;
       roundRectPath(ctx,x,y,cellW,cellH,16); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="#242321"; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+      ctx.fillStyle="#1d1d1f"; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
       ctx.font='700 24px -apple-system,"Hiragino Sans",sans-serif';
       ctx.fillText(ellipsize(ctx, m.name||"（無名）", cellW-150), x+18, y+34);
-      ctx.fillStyle="#77736B"; ctx.textAlign="right"; ctx.font='600 18px -apple-system,"Hiragino Sans",sans-serif';
+      ctx.fillStyle="#6e6e73"; ctx.textAlign="right"; ctx.font='600 18px -apple-system,"Hiragino Sans",sans-serif';
       ctx.fillText("達成 "+(m.progress||0)+"%", x+cellW-18, y+34);
       ctx.textAlign="left";
-      drawTeamChart(ctx, x+6, y+48, cellW-12, cellH-58, m, teamSeries, {compact:true});
+      drawTeamChart(ctx, x+6, y+48, cellW-12, cellH-58, m, teamSeries, {compact:true, print:true});
     });
   }
   // PDF用：Team Growth を 1920×1080 の canvas に描いて返す（メンバー0なら null）
@@ -1716,26 +1723,26 @@
     var ctx=cv.getContext("2d"); ctx.scale(scale,scale); ctx.textBaseline="top";
     function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 
-    ctx.fillStyle="#F4F2EE"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#f5f5f7"; ctx.fillRect(0,0,W,H);
     var PAD=64;
 
     // ===== ヘッダー =====
-    ctx.fillStyle="#242321"; ctx.font=imgFont("700",40); ctx.textAlign="left";
+    ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",40); ctx.textAlign="left";
     ctx.fillText(state.name||"—", PAD, PAD);
-    ctx.fillStyle="#242321"; ctx.font=imgFont("800",30);
+    ctx.fillStyle="#0071e3"; ctx.font=imgFont("800",30);
     ctx.fillText("FY"+(state.fy||"–")+"Q"+(state.q||"–")+"W"+state.w+" Recap", PAD, PAD+52);
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("500",22);
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("500",22);
     ctx.fillText("Connection Manager: "+(state.cm||"—"), PAD, PAD+92);
     // 自分のゴール（入力時のみ・ヘッダー下に常時表示）
     if((state.myGoal||"").trim()){
-      ctx.fillStyle="#77736B"; ctx.font=imgFont("700",20);
+      ctx.fillStyle="#0058b0"; ctx.font=imgFont("700",20);
       ctx.fillText(ellipsize(ctx, "🎯 ゴール: "+state.myGoal.trim(), W-PAD*2), PAD, PAD+122);
     }
     // date chip
     var dt=new Date(); var dtxt=dt.getFullYear()+"/"+(dt.getMonth()+1)+"/"+dt.getDate();
     ctx.font=imgFont("700",20); var dw=ctx.measureText(dtxt).width;
-    ctx.fillStyle="#ECE9E3"; rr(W-PAD-dw-28, PAD+4, dw+28, 34, 17); ctx.fill();
-    ctx.fillStyle="#242321"; ctx.textAlign="center"; ctx.fillText(dtxt, W-PAD-dw/2-14, PAD+11); ctx.textAlign="left";
+    ctx.fillStyle="#e8f1fd"; rr(W-PAD-dw-28, PAD+4, dw+28, 34, 17); ctx.fill();
+    ctx.fillStyle="#0071e3"; ctx.textAlign="center"; ctx.fillText(dtxt, W-PAD-dw/2-14, PAD+11); ctx.textAlign="left";
 
     var bodyY=PAD+150;
     var colGap=40;
@@ -1743,26 +1750,26 @@
 
     // ===== 左カラム =====
     // Personal Results 見出し
-    ctx.fillStyle="#242321"; ctx.font=imgFont("700",26);
+    ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",26);
     ctx.fillText("Personal Results", PAD, bodyY);
     var ly=bodyY+44;
 
     // KPIカード
     var kpiH=64+KPIS.length*64;
     ctx.fillStyle="#fff"; rr(PAD,ly,leftW,kpiH,18); ctx.fill();
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("700",16); ctx.fillText("KPI（自分 / 前Q）", PAD+26, ly+22);
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",16); ctx.fillText("KPI（自分 / 前Q）", PAD+26, ly+22);
     var s=cur(); var ky=ly+58;
     KPIS.forEach(function(m){
       var v=num(s.kpi[m.key].v), b=prevRefInfo(m.key).val;
       var ok = (v!==null&&b!==null&&v>=b);
       var miss = (v!==null&&b!==null&&v<b);
-      var bg = ok?"#e6ede2":(miss?"#efe7d4":"#F4F2EE");
-      var tx = ok?"#456b4a":(miss?"#8a6a2e":"#77736B");
+      var bg = ok?"#d6ecff":(miss?"#fff2cc":"#f5f5f7");
+      var tx = ok?"#0058b0":(miss?"#9a6a00":"#6e6e73");
       rr(PAD+18, ky, leftW-36, 54, 12); ctx.fillStyle=bg; ctx.fill();
-      ctx.fillStyle="#242321"; ctx.font=imgFont("700",18); ctx.fillText(m.name, PAD+36, ky+17);
+      ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",18); ctx.fillText(m.name, PAD+36, ky+17);
       ctx.font=imgFont("700",20); ctx.textAlign="right";
       var valTxt=(v===null?"—":v)+(v===null?"":m.unit)+"  /  "+(b===null?"—":b)+(b===null?"":m.unit);
-      ctx.fillStyle="#242321"; ctx.fillText(valTxt, PAD+leftW-150, ky+16);
+      ctx.fillStyle="#1d1d1f"; ctx.fillText(valTxt, PAD+leftW-150, ky+16);
       // badge
       if(ok||miss){
         var bt=ok?"Achieved":"In Progress"; ctx.font=imgFont("800",15); var bw=ctx.measureText(bt).width;
@@ -1778,29 +1785,29 @@
     var c=npsCalc(s); var G=clamp(num(s.nps.goal)||0,-100,100);
     // need 内容（とペース）を先に決めてカード高さを算出
     var needTxt, needBg, needAccent, npsPaceTxt="";
-    if(c.total===0){ needTxt="回答を入力すると計算されます"; needBg="#ECE9E3"; needAccent="#77736B"; }
-    else if(c.nps>=G){ needTxt="Goal達成中 🎉"; needBg="#e6ede2"; needAccent="#5f8f6a"; }
-    else if(G>=100){ needTxt="到達不可（Passive/Detractorあり）"; needBg="#efe7d4"; needAccent="#b08a3e"; }
-    else{ var k=Math.ceil((G*c.total-100*c.net)/(100-G)); if(k<0)k=0; needTxt="Goal "+G+" まで Promoter あと "+k+" 個"; needBg="#ECE9E3"; needAccent="#242321"; npsPaceTxt=buildPaceText(k); }
+    if(c.total===0){ needTxt="回答を入力すると計算されます"; needBg="#f0f7ff"; needAccent="#6e6e73"; }
+    else if(c.nps>=G){ needTxt="Goal達成中 🎉"; needBg="#effaf1"; needAccent="#34c759"; }
+    else if(G>=100){ needTxt="到達不可（Passive/Detractorあり）"; needBg="#fff6e9"; needAccent="#ff9f0a"; }
+    else{ var k=Math.ceil((G*c.total-100*c.net)/(100-G)); if(k<0)k=0; needTxt="Goal "+G+" まで Promoter あと "+k+" 個"; needBg="#f0f7ff"; needAccent="#0071e3"; npsPaceTxt=buildPaceText(k); }
     var needH = npsPaceTxt ? 122 : 72;
     var npsH=202+needH+26;
     ctx.fillStyle="#fff"; rr(PAD,ly,leftW,npsH,18); ctx.fill();
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("700",16); ctx.fillText("NPS", PAD+26, ly+22);
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",16); ctx.fillText("NPS", PAD+26, ly+22);
     // big score
     ctx.textAlign="left";
-    ctx.fillStyle=(c.nps!==null&&c.nps>=G)?"#5f8f6a":"#242321"; ctx.font=imgFont("800",56);
+    ctx.fillStyle=(c.nps!==null&&c.nps>=G)?"#34c759":"#1d1d1f"; ctx.font=imgFont("800",56);
     ctx.fillText(c.nps===null?"–":fmtScore(c.nps), PAD+26, ly+50);
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("500",16); ctx.fillText("NPS（総計） ・ 回答数 "+c.total+" 件 ・ Goal "+G, PAD+26, ly+118);
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("500",16); ctx.fillText("NPS（総計） ・ 回答数 "+c.total+" 件 ・ Goal "+G, PAD+26, ly+118);
     // breakdown chips
-    var chips=[["Promoter",c.p,"#5f8f6a"],["Passive",c.pa,"#b08a3e"],["Detractor",c.d,"#b06a52"]];
+    var chips=[["Promoter",c.p,"#34c759"],["Passive",c.pa,"#e0a800"],["Detractor",c.d,"#ff3b30"]];
     var cx=PAD+26;
     chips.forEach(function(ch){
       ctx.font=imgFont("700",17); var t=ch[0]+" "+ch[1];
       var w=ctx.measureText(t).width+48;   // 左ドット域+右余白を確保
-      ctx.fillStyle="#F4F2EE"; rr(cx, ly+150, w, 36, 18); ctx.fill();
+      ctx.fillStyle="#f5f5f7"; rr(cx, ly+150, w, 36, 18); ctx.fill();
       ctx.fillStyle=ch[2]; ctx.beginPath(); ctx.arc(cx+17, ly+168, 5, 0, 7); ctx.fill();
       ctx.textAlign="left"; ctx.textBaseline="middle";
-      ctx.fillStyle="#242321"; ctx.fillText(t, cx+30, ly+169);
+      ctx.fillStyle="#1d1d1f"; ctx.fillText(t, cx+30, ly+169);
       ctx.textBaseline="top";
       cx+=w+12;
     });
@@ -1808,7 +1815,7 @@
     rr(PAD+26, ly+202, leftW-52, needH, 14); ctx.fillStyle=needBg; ctx.fill();
     ctx.fillStyle=needAccent; ctx.font=imgFont("800",26); ctx.fillText(needTxt, PAD+46, ly+224);
     if(npsPaceTxt){
-      ctx.fillStyle="#77736B"; ctx.font=imgFont("700",18);
+      ctx.fillStyle="#0058b0"; ctx.font=imgFont("700",18);
       var plines=wrapText(ctx, npsPaceTxt, leftW-52-40);
       var py=ly+264;
       plines.forEach(function(l){ ctx.fillText(l, PAD+46, py); py+=24; });
@@ -1816,7 +1823,7 @@
 
     // ===== 右カラム：グラフ（4KPIを小型グリッド＋NPS総計）=====
     var chTitleY=bodyY;
-    ctx.fillStyle="#242321"; ctx.font=imgFont("700",26);
+    ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",26);
     ctx.fillText("13週トレンド（W1〜W13）", rightX, chTitleY);
     var chCardY=chTitleY+44, chCardH=H-PAD-chCardY;
     ctx.fillStyle="#fff"; rr(rightX, chCardY, rightW, chCardH, 18); ctx.fill();
@@ -1835,19 +1842,19 @@
       var col=i%2, row=Math.floor(i/2);
       var cx=rightX+innerPad+col*(cellW+colGapG);
       var cy=gridTop+row*(cellH+rowGapG);
-      ctx.fillStyle="#77736B"; ctx.font=imgFont("700",15); ctx.textAlign="left"; ctx.textBaseline="top";
+      ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",15); ctx.textAlign="left"; ctx.textBaseline="top";
       ctx.fillText(m.label+(m.unit?" ("+m.unit+")":""), cx+4, cy);
-      drawChart(ctx, cx, cy+20, cellW, cellH-20, m.key, {compact:true});
+      drawChart(ctx, cx, cy+20, cellW, cellH-20, m.key, {compact:true, print:true});
     });
 
     // NPS総計（フル幅）
     var npsY=gridTop+gridH+gap;
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("700",15); ctx.textBaseline="top"; ctx.textAlign="left";
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",15); ctx.textBaseline="top"; ctx.textAlign="left";
     ctx.fillText("NPS総計", rightX+innerPad+4, npsY);
-    drawChart(ctx, rightX+innerPad, npsY+20, rightW-innerPad*2, npsAreaH-20, "nps", {compact:true});
+    drawChart(ctx, rightX+innerPad, npsY+20, rightW-innerPad*2, npsAreaH-20, "nps", {compact:true, print:true});
 
     // footer（FY…W… ＋ 何枚目か通し番号を明示）
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("500",16); ctx.textAlign="left";
+    ctx.fillStyle="#9a9aa0"; ctx.font=imgFont("500",16); ctx.textAlign="left";
     ctx.fillText("Weekly Recap ・ 1ページ目 Personal ・ "+pad3(1)+" / "+pad3(totalSheets())+" 枚 ・ FY"+(state.fy||"–")+"Q"+(state.q||"–")+"W"+state.w+" ・ "+dtxt, PAD, H-PAD+18);
     return cv;
   }
@@ -1869,23 +1876,23 @@
   }
   // ---- 2ページ目 共通ヘッダー ----
   function drawHeader2(ctx, rr, W, PAD, dtxt){
-    ctx.fillStyle="#242321"; ctx.font=imgFont("700",40); ctx.textAlign="left";
+    ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",40); ctx.textAlign="left";
     ctx.fillText(state.name||"—", PAD, PAD);
-    ctx.fillStyle="#242321"; ctx.font=imgFont("800",30);
+    ctx.fillStyle="#0071e3"; ctx.font=imgFont("800",30);
     ctx.fillText("FY"+(state.fy||"–")+"Q"+(state.q||"–")+"W"+state.w+" Recap", PAD, PAD+52);
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("500",22);
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("500",22);
     ctx.fillText("Connection Manager: "+(state.cm||"—"), PAD, PAD+92);
     if((state.myGoal||"").trim()){
-      ctx.fillStyle="#77736B"; ctx.font=imgFont("700",20);
+      ctx.fillStyle="#0058b0"; ctx.font=imgFont("700",20);
       ctx.fillText(ellipsize(ctx, "🎯 ゴール: "+state.myGoal.trim(), W-PAD*2), PAD, PAD+122);
     }
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("700",20); var dw=ctx.measureText(dtxt).width;
-    ctx.fillStyle="#ECE9E3"; rr(W-PAD-dw-28, PAD+4, dw+28, 34, 17); ctx.fill();
-    ctx.fillStyle="#242321"; ctx.textAlign="center"; ctx.fillText(dtxt, W-PAD-dw/2-14, PAD+11); ctx.textAlign="left";
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",20); var dw=ctx.measureText(dtxt).width;
+    ctx.fillStyle="#e8f1fd"; rr(W-PAD-dw-28, PAD+4, dw+28, 34, 17); ctx.fill();
+    ctx.fillStyle="#0071e3"; ctx.textAlign="center"; ctx.fillText(dtxt, W-PAD-dw/2-14, PAD+11); ctx.textAlign="left";
   }
   // ---- 左カラム：Store Results（NPS＋13週トレンド）----
   function drawStoreLeft(ctx, rr, PAD, leftW, bodyY, H){
-    ctx.fillStyle="#242321"; ctx.font=imgFont("700",26); ctx.textAlign="left";
+    ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",26); ctx.textAlign="left";
     ctx.fillText("Store Results", PAD, bodyY);
     var ly=bodyY+44, s=cur();
     var p=s.storeNps.promoter||0, pa=s.storeNps.passive||0, d=s.storeNps.detractor||0;
@@ -1893,42 +1900,42 @@
     var G=clamp(num(s.storeNps.goal)||0,-100,100);
     // need 内容（とペース）を先に決めてカード高さを算出
     var needTxt, needBg, needAccent, npsPaceTxt="";
-    if(total===0){ needTxt="回答を入力すると計算されます"; needBg="#ECE9E3"; needAccent="#77736B"; }
-    else if(nps>=G){ needTxt="Goal達成中 🎉"; needBg="#e6ede2"; needAccent="#5f8f6a"; }
-    else if(G>=100){ needTxt="到達不可（Passive/Detractorあり）"; needBg="#efe7d4"; needAccent="#b08a3e"; }
-    else{ var k=Math.ceil((G*total-100*net)/(100-G)); if(k<0)k=0; needTxt="Goal "+G+" まで Promoter あと "+k+" 個"; needBg="#ECE9E3"; needAccent="#242321"; npsPaceTxt=buildPaceText(k); }
+    if(total===0){ needTxt="回答を入力すると計算されます"; needBg="#f0f7ff"; needAccent="#6e6e73"; }
+    else if(nps>=G){ needTxt="Goal達成中 🎉"; needBg="#effaf1"; needAccent="#34c759"; }
+    else if(G>=100){ needTxt="到達不可（Passive/Detractorあり）"; needBg="#fff6e9"; needAccent="#ff9f0a"; }
+    else{ var k=Math.ceil((G*total-100*net)/(100-G)); if(k<0)k=0; needTxt="Goal "+G+" まで Promoter あと "+k+" 個"; needBg="#f0f7ff"; needAccent="#0071e3"; npsPaceTxt=buildPaceText(k); }
     var needH = npsPaceTxt ? 122 : 72;
     var npsH=202+needH+26;
     ctx.fillStyle="#fff"; rr(PAD,ly,leftW,npsH,18); ctx.fill();
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("700",16); ctx.fillText("NPS（ストア）", PAD+26, ly+22);
-    ctx.fillStyle=(nps!==null&&nps>=G)?"#5f8f6a":"#242321"; ctx.font=imgFont("800",56);
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",16); ctx.fillText("NPS（ストア）", PAD+26, ly+22);
+    ctx.fillStyle=(nps!==null&&nps>=G)?"#34c759":"#1d1d1f"; ctx.font=imgFont("800",56);
     ctx.fillText(nps===null?"–":fmtScore(nps), PAD+26, ly+50);
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("500",16); ctx.fillText("NPS（総計） ・ 回答数 "+total+" 件 ・ Goal "+G, PAD+26, ly+118);
-    var chips=[["Promoter",p,"#5f8f6a"],["Passive",pa,"#b08a3e"],["Detractor",d,"#b06a52"]];
+    ctx.fillStyle="#6e6e73"; ctx.font=imgFont("500",16); ctx.fillText("NPS（総計） ・ 回答数 "+total+" 件 ・ Goal "+G, PAD+26, ly+118);
+    var chips=[["Promoter",p,"#34c759"],["Passive",pa,"#e0a800"],["Detractor",d,"#ff3b30"]];
     var cx=PAD+26;
     chips.forEach(function(ch){
       ctx.font=imgFont("700",17); var t=ch[0]+" "+ch[1]; var w=ctx.measureText(t).width+48;
-      ctx.fillStyle="#F4F2EE"; rr(cx, ly+150, w, 36, 18); ctx.fill();
+      ctx.fillStyle="#f5f5f7"; rr(cx, ly+150, w, 36, 18); ctx.fill();
       ctx.fillStyle=ch[2]; ctx.beginPath(); ctx.arc(cx+17, ly+168, 5, 0, 7); ctx.fill();
       ctx.textAlign="left"; ctx.textBaseline="middle";
-      ctx.fillStyle="#242321"; ctx.fillText(t, cx+30, ly+169); ctx.textBaseline="top";
+      ctx.fillStyle="#1d1d1f"; ctx.fillText(t, cx+30, ly+169); ctx.textBaseline="top";
       cx+=w+12;
     });
     rr(PAD+26, ly+202, leftW-52, needH, 14); ctx.fillStyle=needBg; ctx.fill();
     ctx.fillStyle=needAccent; ctx.font=imgFont("800",26); ctx.fillText(needTxt, PAD+46, ly+224);
     if(npsPaceTxt){
-      ctx.fillStyle="#77736B"; ctx.font=imgFont("700",18);
+      ctx.fillStyle="#0058b0"; ctx.font=imgFont("700",18);
       var plines=wrapText(ctx, npsPaceTxt, leftW-52-40);
       var py=ly+264;
       plines.forEach(function(l){ ctx.fillText(l, PAD+46, py); py+=24; });
     }
     var scTitleY=ly+npsH+24;
-    ctx.fillStyle="#242321"; ctx.font=imgFont("700",18); ctx.textAlign="left";
+    ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",18); ctx.textAlign="left";
     ctx.fillText("Store NPS 13週トレンド（W1〜W13）", PAD, scTitleY);
     var scCardY=scTitleY+30, scCardH=(H-PAD)-scCardY;
     ctx.fillStyle="#fff"; rr(PAD, scCardY, leftW, scCardH, 16); ctx.fill();
     ctx.strokeStyle="#ececf0"; ctx.lineWidth=1; rr(PAD+.5, scCardY+.5, leftW-1, scCardH-1, 16); ctx.stroke();
-    drawChart(ctx, PAD+12, scCardY+16, leftW-24, scCardH-28, "storeNps", {compact:true});
+    drawChart(ctx, PAD+12, scCardY+16, leftW-24, scCardH-28, "storeNps", {compact:true, print:true});
   }
   // ---- アクションカードの寸法計測（途中で切らないための高さ算出）----
   function buildActionLayout(ctx, a, colW){
@@ -1972,10 +1979,10 @@
     }
     var textX=x+IN+L.photoColW+L.gapLR;
     var yy=y+IN; ctx.textAlign="left";
-    ctx.fillStyle="#242321"; ctx.font=imgFont("700",20); L.nameLines.forEach(function(l){ ctx.fillText(l,textX,yy); yy+=26; }); yy+=4;
-    if(L.hasCollab){ ctx.fillStyle="#77736B"; ctx.font=imgFont("600",15); ctx.fillText("👥 "+a.collaborators.join("・"),textX,yy); yy+=26; }
-    if(L.jaLines.length){ ctx.fillStyle="#77736B"; ctx.font=imgFont("700",13); ctx.fillText("進捗（日本語）",textX,yy); yy+=18; ctx.fillStyle="#242321"; ctx.font=imgFont("500",16); L.jaLines.forEach(function(l){ ctx.fillText(l,textX,yy); yy+=22; }); }
-    if(L.enLines.length){ ctx.fillStyle="#77736B"; ctx.font=imgFont("700",13); yy+=4; ctx.fillText("Progress (English)",textX,yy); yy+=18; ctx.fillStyle="#3a3a3c"; ctx.font=imgFont("500",16); L.enLines.forEach(function(l){ ctx.fillText(l,textX,yy); yy+=22; }); }
+    ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",20); L.nameLines.forEach(function(l){ ctx.fillText(l,textX,yy); yy+=26; }); yy+=4;
+    if(L.hasCollab){ ctx.fillStyle="#0058b0"; ctx.font=imgFont("600",15); ctx.fillText("👥 "+a.collaborators.join("・"),textX,yy); yy+=26; }
+    if(L.jaLines.length){ ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",13); ctx.fillText("進捗（日本語）",textX,yy); yy+=18; ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("500",16); L.jaLines.forEach(function(l){ ctx.fillText(l,textX,yy); yy+=22; }); }
+    if(L.enLines.length){ ctx.fillStyle="#6e6e73"; ctx.font=imgFont("700",13); yy+=4; ctx.fillText("Progress (English)",textX,yy); yy+=18; ctx.fillStyle="#3a3a3c"; ctx.font=imgFont("500",16); L.enLines.forEach(function(l){ ctx.fillText(l,textX,yy); yy+=22; }); }
   }
   // 写真を canvas 用に先読み。クラウド同期後の写真は外部URL(https)になり、
   // crossOrigin を付けないと canvas が汚染され toBlob/toDataURL が失敗して画像が一切出せなくなる。
@@ -2010,20 +2017,20 @@
     var ctx=cv.getContext("2d"); ctx.scale(scale,scale); ctx.textBaseline="top";
     function rr(x,yy,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,yy); ctx.arcTo(x+w,yy,x+w,yy+h,r); ctx.arcTo(x+w,yy+h,x,yy+h,r); ctx.arcTo(x,yy+h,x,yy,r); ctx.arcTo(x,yy,x+w,yy,r); ctx.closePath(); }
     function photo(im,x,yy,w,h,r){ ctx.save(); rr(x,yy,w,h,r); ctx.clip(); if(im){ var sc=Math.max(w/im.width,h/im.height); var dw2=im.width*sc, dh2=im.height*sc; ctx.drawImage(im, x+(w-dw2)/2, yy+(h-dh2)/2, dw2, dh2); } else { ctx.fillStyle="#eee"; ctx.fillRect(x,yy,w,h); } ctx.restore(); }
-    ctx.fillStyle="#F4F2EE"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#f5f5f7"; ctx.fillRect(0,0,W,H);
     drawHeader2(ctx, rr, W, PAD, dtxt);
     if(pg.isFirst){
       drawStoreLeft(ctx, rr, PAD, leftW, bodyY, H);
-      ctx.fillStyle="#242321"; ctx.font=imgFont("700",26); ctx.textAlign="left"; ctx.fillText("Personal Action", rightX, bodyY);
-      if(pg.items.length===0){ ctx.fillStyle="#fff"; rr(rightX, actionsTop, rightW, 80, 16); ctx.fill(); ctx.fillStyle="#77736B"; ctx.font=imgFont("500",18); ctx.fillText("アクションが未登録です", rightX+24, actionsTop+30); }
+      ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",26); ctx.textAlign="left"; ctx.fillText("Personal Action", rightX, bodyY);
+      if(pg.items.length===0){ ctx.fillStyle="#fff"; rr(rightX, actionsTop, rightW, 80, 16); ctx.fill(); ctx.fillStyle="#6e6e73"; ctx.font=imgFont("500",18); ctx.fillText("アクションが未登録です", rightX+24, actionsTop+30); }
     } else {
-      ctx.fillStyle="#242321"; ctx.font=imgFont("700",26); ctx.textAlign="left"; ctx.fillText("Personal Action（続き）", contX, bodyY);
+      ctx.fillStyle="#1d1d1f"; ctx.font=imgFont("700",26); ctx.textAlign="left"; ctx.fillText("Personal Action（続き）", contX, bodyY);
     }
     pg.items.forEach(function(it){ drawActionCard(ctx, rr, photo, imgMap, it.a, it.L, pg.colX, it.y, pg.colW); });
     // footer（全体での通し番号：1ページ目=1枚なので 2枚目以降がここ）
     var grandTotal = 1 + totalPages, sheetNo = 2 + idx;
     var lbl = totalPages>1 ? ("2ページ目 Store（"+(idx+1)+"/"+totalPages+"）") : "2ページ目 Store";
-    ctx.fillStyle="#77736B"; ctx.font=imgFont("500",16); ctx.textAlign="left";
+    ctx.fillStyle="#9a9aa0"; ctx.font=imgFont("500",16); ctx.textAlign="left";
     ctx.fillText("Weekly Recap ・ "+lbl+" ・ "+pad3(sheetNo)+" / "+pad3(grandTotal)+" 枚 ・ FY"+(state.fy||"–")+"Q"+(state.q||"–")+"W"+state.w+" ・ "+dtxt, PAD, H-PAD+18);
     return cv;
   }
