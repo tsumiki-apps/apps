@@ -150,6 +150,23 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .cat-add-row{display:flex;gap:8px;margin-top:6px}
 .cat-add-row input{flex:1;min-width:0}
 .cat-memory-note{font-size:11px;color:var(--sub);margin-top:12px;line-height:1.5;background:var(--soft-blue);padding:8px 10px;border-radius:8px}
+/* 立て替えモード切替＋割り勘 */
+.seg{display:flex;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:3px;margin-bottom:14px}
+.seg button{flex:1;padding:9px 6px;border:none;background:transparent;border-radius:8px;font-size:12px;font-weight:600;color:var(--sub);cursor:pointer;font-family:inherit}
+.seg button.active{background:var(--blue);color:#fff}
+.split-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.split-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;background:var(--pink);color:#fff;font-size:12px}
+.split-chip .x{cursor:pointer;opacity:.85;font-size:11px}
+.split-add-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.split-add-tag{padding:6px 12px;font-size:12px;background:var(--bg);border:1px dashed var(--line);border-radius:999px;cursor:pointer;color:var(--sub);font-family:inherit}
+.check-row{display:flex;align-items:center;gap:9px;margin:13px 0;font-size:13px;cursor:pointer}
+.check-row input{width:19px;height:19px;flex:none}
+.split-preview{background:var(--soft-blue);border-radius:11px;padding:12px 14px;font-size:13px;line-height:1.7;color:var(--text)}
+.split-preview b{color:var(--blue);font-size:16px}
+/* 明細書（画像）プレビュー */
+.receipt-wrap{text-align:center}
+.receipt-wrap img{max-width:100%;border-radius:14px;border:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.10)}
+.receipt-hint{font-size:11px;color:var(--sub);margin-top:11px;line-height:1.6;text-align:center}
 .amz-candidates{margin-top:6px;display:flex;flex-direction:column;gap:4px}
 .amz-candidate-btn{text-align:left;background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text)}
 .amz-candidate-btn:hover{border-color:var(--blue);background:var(--soft-blue)}
@@ -378,9 +395,25 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
   <div class="modal">
     <h3>立て替えに登録</h3>
     <p class="modal-sub" id="loanFromTxSub"></p>
-    <div class="form-row"><label>相手</label><input type="text" id="loanPersonName" list="peopleList" placeholder="名前を入力" oninput="renderPeopleTags('loanPersonTags','loanPersonName')"><div class="person-tags" id="loanPersonTags"></div></div>
-    <div class="form-row"><label>立て替え金額</label><input type="number" id="loanAmount" placeholder="0"><div class="amount-presets" id="loanAmountPresets"></div></div>
-    <div class="form-row"><label>メモ（任意）</label><input type="text" id="loanMemo" placeholder="例: 新幹線2枚、夕食代の半額"></div>
+    <div class="seg">
+      <button id="loanModeSingle" class="active" onclick="setLoanMode('single')">1人に立替</button>
+      <button id="loanModeSplit" onclick="setLoanMode('split')">割り勘で分ける</button>
+    </div>
+    <div id="loanSingleBox">
+      <div class="form-row"><label>相手</label><input type="text" id="loanPersonName" list="peopleList" placeholder="名前を入力" oninput="renderPeopleTags('loanPersonTags','loanPersonName')"><div class="person-tags" id="loanPersonTags"></div></div>
+      <div class="form-row"><label>立て替え金額</label><input type="number" id="loanAmount" placeholder="0"><div class="amount-presets" id="loanAmountPresets"></div></div>
+      <div class="form-row"><label>メモ（任意）</label><input type="text" id="loanMemo" placeholder="例: 新幹線2枚、夕食代の半額"></div>
+    </div>
+    <div id="loanSplitBox" style="display:none">
+      <div class="form-row"><label>割り勘する相手（複数OK）</label>
+        <div class="cat-add-row"><input type="text" id="splitNameInput" list="peopleList" placeholder="名前を入力して追加" onkeydown="if(event.key==='Enter'){event.preventDefault();addSplitName();}"><button class="btn btn-primary" onclick="addSplitName()">追加</button></div>
+        <div class="split-add-tags" id="splitQuickTags"></div>
+        <div class="split-chips" id="splitChips"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" id="splitIncludeSelf" checked onchange="renderSplitPreview()">自分（こうだい）も人数に含めて割る</label>
+      <div class="form-row"><label>メモ（任意）</label><input type="text" id="splitMemo" placeholder="例: 忘年会の会費"></div>
+      <div class="split-preview" id="splitPreview"></div>
+    </div>
     <div class="actions"><button class="btn" onclick="closeLoanFromTxModal()">キャンセル</button><button class="btn btn-primary" onclick="saveLoanFromTx()">登録</button></div>
   </div>
 </div>
@@ -441,6 +474,17 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
   </div>
 </div>
 
+<!-- モーダル: 明細書（画像） -->
+<div class="modal-back" id="receiptModal">
+  <div class="modal">
+    <h3>📄 明細書（画像）</h3>
+    <p class="modal-sub" id="receiptSub"></p>
+    <div class="receipt-wrap"><img id="receiptImg" alt="明細書プレビュー"></div>
+    <div class="receipt-hint">この画像を相手に送れます。「共有 / 保存」から LINE・メール・写真への保存ができます。</div>
+    <div class="actions"><button class="btn" onclick="closeReceiptModal()">閉じる</button><button class="btn btn-primary" onclick="shareReceipt()">共有 / 保存</button></div>
+  </div>
+</div>
+
 <!-- 複数選択アクションバー -->
 <div class="select-bar" id="selectBar">
   <div class="inner">
@@ -496,7 +540,7 @@ const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
 let data={months:{},amazonOrders:[],loans:[],payments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{}};
-let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),selectMode:false,selectedTxIds:new Set()};
+let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),selectMode:false,selectedTxIds:new Set()};
 
 function load(){
   try{
@@ -1325,6 +1369,7 @@ function renderTxRow(t){
         <button class="btn-mini" onclick="event.stopPropagation();openCatModal('${t.id}')">🏷 ${escapeHtml(t.category)}</button>
         <button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>
         ${loans.length>0?`<button class="btn-mini" onclick="event.stopPropagation();switchTab('loans')">台帳で見る</button>`:''}
+        <button class="btn-mini danger" onclick="event.stopPropagation();deleteTx('${t.id}')">🗑 削除</button>
       </div>`;
   const note=(t.note||'').trim();
   const noteTag=note?`<span class="note-mini">📝 ${escapeHtml(note)}</span>`:'';
@@ -1464,6 +1509,21 @@ function toggleTxExpand(id){
   renderTransactions();
 }
 
+// 明細を1件だけ削除（tombstoneで他端末にも反映。紐付く立て替えは台帳に残す）
+function deleteTx(id){
+  const loc=findTxLocation(id);if(!loc)return;
+  const t=loc.tx;
+  const hasLoan=getLoansForTx(id).length>0;
+  openConfirmModal('明細を削除',`「${displayMerchantName(t.description)}」 ¥${t.amount.toLocaleString()} を削除しますか？`+(hasLoan?'\n※この明細から作った立て替えは台帳に残ります。':''),()=>{
+    data.deletedTxIds[id]=Date.now();
+    const arr=(data.months[loc.key].transactions||[]).filter(x=>x.id!==id);
+    if(arr.length){data.months[loc.key].transactions=arr;}
+    else{delete data.months[loc.key];const ks=Object.keys(data.months).sort();state.currentMonth=ks.length?ks[ks.length-1]:null;}
+    state.expandedTxIds.delete(id);
+    save();render();
+  });
+}
+
 // 明細メモの保存。値が変わっていなければ何もしない（無駄なクラウド送信を防ぐ）。
 function saveTxNote(id,val){
   const loc=findTxLocation(id);if(!loc)return;
@@ -1568,13 +1628,14 @@ function renderPersonCard(s){
   const expanded=state.expandedPersonNames.has(s.name);
   const bc=s.balance<=0?'zero':'';
   const loansHtml=s.loans.sort((a,b)=>b.date.localeCompare(a.date)).map(l=>renderLoanItem(l)).join('');
+  const receiptBtn=s.balance>0?`<button class="btn btn-primary btn-block" style="margin-bottom:12px" onclick="openReceiptModal('${escapeJs(s.name)}')">📄 ${escapeHtml(s.name)}さんへの明細書を画像で作る</button>`:'';
   return `<div class="person-card ${expanded?'expanded':''}">
     <div class="person-header" onclick="togglePerson('${escapeJs(s.name)}')">
       <div><div class="name">${escapeHtml(s.name)}</div><div class="stats">貸出 ¥${s.total.toLocaleString()} ／ 回収 ¥${s.paid.toLocaleString()} ／ ${s.loans.length}件</div></div>
       <div><div class="person-balance ${bc}">${s.balance>0?'残 ¥'+s.balance.toLocaleString():'✓ 完済'}</div></div>
       <span class="chev">▶</span>
     </div>
-    <div class="person-body">${loansHtml}</div>
+    <div class="person-body">${receiptBtn}${loansHtml}</div>
   </div>`;
 }
 
@@ -1622,12 +1683,76 @@ function openLoanFromTxModal(txId){
   const presets=[{l:'全額 ¥'+rem.toLocaleString(),v:rem},{l:'半額 ¥'+Math.round(rem/2).toLocaleString(),v:Math.round(rem/2)},{l:'¥1,000',v:1000},{l:'¥3,000',v:3000},{l:'¥5,000',v:5000}];
   document.getElementById('loanAmountPresets').innerHTML=presets.map(p=>`<button class="preset-btn" onclick="document.getElementById('loanAmount').value=${p.v}">${p.l}</button>`).join('');
   peopleTagEditMode=false;renderPeopleTags('loanPersonTags','loanPersonName');
+  state.splitNames=[];document.getElementById('splitMemo').value='';document.getElementById('splitIncludeSelf').checked=true;
+  setLoanMode('single');
   document.getElementById('loanFromTxModal').classList.add('show');
   setTimeout(()=>document.getElementById('loanPersonName').focus(),100);
 }
 function closeLoanFromTxModal(){document.getElementById('loanFromTxModal').classList.remove('show');state.loanFromTxTarget=null;}
+
+// 立替モード切替（1人 / 割り勘）
+function setLoanMode(m){
+  state.loanMode=m;
+  document.getElementById('loanModeSingle').classList.toggle('active',m==='single');
+  document.getElementById('loanModeSplit').classList.toggle('active',m==='split');
+  document.getElementById('loanSingleBox').style.display=m==='single'?'':'none';
+  document.getElementById('loanSplitBox').style.display=m==='split'?'':'none';
+  if(m==='split')renderSplitUI();
+}
+// 割り勘の相手リスト操作
+function addSplitName(){const inp=document.getElementById('splitNameInput');const v=(inp.value||'').trim();if(!v)return;if(!state.splitNames.includes(v))state.splitNames.push(v);inp.value='';renderSplitUI();}
+function addSplitNameDirect(n){if(!state.splitNames.includes(n))state.splitNames.push(n);renderSplitUI();}
+function removeSplitName(n){state.splitNames=state.splitNames.filter(x=>x!==n);renderSplitUI();}
+function renderSplitUI(){
+  const chips=document.getElementById('splitChips');
+  chips.innerHTML=state.splitNames.length
+    ?state.splitNames.map(n=>`<span class="split-chip">${escapeHtml(n)}<span class="x" onclick="removeSplitName('${escapeJs(n)}')">✕</span></span>`).join('')
+    :'<span class="empty-hint">まだ相手がいません。名前を追加してください。</span>';
+  const avail=(data.people||[]).filter(n=>!state.splitNames.includes(n));
+  document.getElementById('splitQuickTags').innerHTML=avail.map(n=>`<button type="button" class="split-add-tag" onclick="addSplitNameDirect('${escapeJs(n)}')">+ ${escapeHtml(n)}</button>`).join('');
+  renderSplitPreview();
+}
+// 端数処理：自分を含めるなら相手は均等(端数は自分が負担)、含めないなら相手で端数を分け合い満額回収
+function splitShares(total,others,includeSelf){
+  const n=others+(includeSelf?1:0);
+  if(n<=0||others<=0)return [];
+  const base=Math.floor(total/n);
+  if(includeSelf)return Array(others).fill(base);
+  const rem=total-base*n;
+  return Array.from({length:others},(_,i)=>base+(i<rem?1:0));
+}
+function renderSplitPreview(){
+  const el=document.getElementById('splitPreview');if(!el)return;
+  const t=findTx(state.loanFromTxTarget);if(!t){el.innerHTML='';return;}
+  const others=state.splitNames.length;
+  const includeSelf=document.getElementById('splitIncludeSelf').checked;
+  const count=others+(includeSelf?1:0);
+  if(others===0){el.innerHTML='相手を追加すると、1人あたりの金額を計算します。';return;}
+  const shares=splitShares(t.amount,others,includeSelf);
+  const allSame=shares.every(s=>s===shares[0]);
+  const yourShare=includeSelf?(t.amount-shares.reduce((a,b)=>a+b,0)):0;
+  let line=allSame?`相手1人あたり <b>¥${(shares[0]||0).toLocaleString()}</b>`:state.splitNames.map((nm,i)=>`${escapeHtml(nm)} ¥${shares[i].toLocaleString()}`).join(' ／ ');
+  el.innerHTML=`¥${t.amount.toLocaleString()} を <b>${count}人</b>で割り勘<br>${line}<br>`+
+    (includeSelf?`あなた（こうだい）の負担：¥${yourShare.toLocaleString()}`:'あなたは全額回収（負担なし）');
+}
+
 function saveLoanFromTx(){
   const t=findTx(state.loanFromTxTarget);if(!t)return;
+  if(state.loanMode==='split'){
+    const others=state.splitNames.slice();
+    if(others.length===0){alert('割り勘する相手を1人以上追加してください');return;}
+    const includeSelf=document.getElementById('splitIncludeSelf').checked;
+    const memo=document.getElementById('splitMemo').value.trim();
+    const shares=splitShares(t.amount,others.length,includeSelf);
+    const count=others.length+(includeSelf?1:0);
+    const gid='sp_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+    others.forEach((name,i)=>{
+      data.loans.push({id:'ln_'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5),txId:t.id,personName:name,amount:shares[i],date:t.date,description:t.description,memo,createdAt:Date.now(),splitTotal:t.amount,splitCount:count,splitMembers:others.slice(),splitIncludesSelf:includeSelf,splitGroupId:gid});
+      addPersonName(name);
+    });
+    save();closeLoanFromTxModal();render();
+    return;
+  }
   const name=document.getElementById('loanPersonName').value.trim();
   const amount=parseInt(document.getElementById('loanAmount').value,10);
   const memo=document.getElementById('loanMemo').value.trim();
@@ -1690,6 +1815,77 @@ function deleteLoan(id){
     data.payments=data.payments.filter(p=>p.loanId!==id);
     save();render();
   });
+}
+
+// ===== 明細書（画像）=====
+// 受取口座（こうだい本人の口座。立て替えた相手に送る画像へ記載）
+const RECEIPT_BANK=['三井住友銀行','オリーブBlue支店（支店番号 783）','普通 0833691','名義 タカハシコウダイ'];
+function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+function ellipsisText(c,str,maxW){str=String(str||'');if(c.measureText(str).width<=maxW)return str;let s=str;while(s.length&&c.measureText(s+'…').width>maxW)s=s.slice(0,-1);return s+'…';}
+function openReceiptModal(name){
+  const stats=getPersonStats().find(s=>s.name===name);if(!stats){alert('対象が見つかりません');return;}
+  const items=stats.loans.map(l=>({description:l.description,date:l.date,amount:getRemaining(l),splitTotal:l.splitTotal,splitCount:l.splitCount,splitMembers:l.splitMembers,splitIncludesSelf:l.splitIncludesSelf}))
+    .filter(it=>it.amount>0).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!items.length){alert('未回収の立て替えがありません');return;}
+  const cv=buildReceiptCanvas(name,items);
+  state.receiptCanvas=cv;
+  document.getElementById('receiptImg').src=cv.toDataURL('image/png');
+  document.getElementById('receiptSub').textContent=`${name} さんへの明細書（未回収 ${items.length}件）`;
+  document.getElementById('receiptModal').classList.add('show');
+}
+function closeReceiptModal(){document.getElementById('receiptModal').classList.remove('show');state.receiptCanvas=null;document.getElementById('receiptImg').src='';}
+function shareReceipt(){
+  const cv=state.receiptCanvas;if(!cv)return;
+  cv.toBlob(async(blob)=>{
+    if(!blob){alert('画像の生成に失敗しました');return;}
+    const file=new File([blob],'meisai.png',{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      try{await navigator.share({files:[file],title:'立替分のご精算'});return;}catch(e){if(e&&e.name==='AbortError')return;}
+    }
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='meisai_'+Date.now()+'.png';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  },'image/png');
+}
+// シンプルで分かりやすい明細書をCanvasに描画（いつつ風の丸ゴ・温かみのある余白）
+function buildReceiptCanvas(name,items){
+  const S=2,W=720,ML=56,MR=56,CW=W-ML-MR;
+  const ACCENT='#626acb',INK='#2a2a28',SUB='#8a857a',LINE='#e3ddcf',PAPER='#f4f1ea',SURF='#faf7f0';
+  const FONT="'Hiragino Maru Gothic ProN','Hiragino Sans','Zen Maru Gothic',sans-serif";
+  const topPad=56,eyebrowH=30,titleH=54,dateH=32,gap1=24,secH=40,rowH=78,afterItems=10,totalH=86,gap2=30,acctH=184,gap3=22,footH=28,botPad=48;
+  const H=topPad+eyebrowH+titleH+dateH+gap1+secH+items.length*rowH+afterItems+totalH+gap2+acctH+gap3+footH+botPad;
+  const cv=document.createElement('canvas');cv.width=W*S;cv.height=H*S;
+  const c=cv.getContext('2d');c.scale(S,S);c.textBaseline='alphabetic';
+  c.fillStyle=PAPER;c.fillRect(0,0,W,H);
+  let y=topPad;
+  c.textAlign='left';c.fillStyle=SUB;c.font=`600 22px ${FONT}`;c.fillText('立替分のご精算',ML,y+20);y+=eyebrowH;
+  c.fillStyle=INK;c.font=`700 38px ${FONT}`;c.fillText(ellipsisText(c,name+' さんへ',CW),ML,y+38);y+=titleH;
+  const today=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10).replace(/-/g,'/');
+  c.fillStyle=SUB;c.font=`400 20px ${FONT}`;c.fillText('発行日 '+today,ML,y+20);y+=dateH+gap1;
+  c.fillStyle=SUB;c.font=`600 22px ${FONT}`;c.fillText('ご請求の内訳',ML,y+20);
+  c.strokeStyle=LINE;c.lineWidth=1;c.beginPath();c.moveTo(ML,y+34.5);c.lineTo(W-MR,y+34.5);c.stroke();y+=secH;
+  const total=items.reduce((s,it)=>s+it.amount,0);
+  items.forEach(it=>{
+    const orig=it.splitTotal||it.amount,cnt=it.splitCount||0;
+    c.textAlign='left';c.fillStyle=INK;c.font=`600 26px ${FONT}`;
+    c.fillText(ellipsisText(c,displayMerchantName(it.description||'(内容なし)'),CW-160),ML,y+28);
+    c.textAlign='right';c.fillStyle=ACCENT;c.font=`700 30px ${FONT}`;c.fillText('¥'+it.amount.toLocaleString(),W-MR,y+29);
+    c.textAlign='left';c.fillStyle=SUB;c.font=`400 19px ${FONT}`;
+    let meta=it.date+' ・ 元 ¥'+orig.toLocaleString();
+    if(cnt>1){meta+=' ・ '+cnt+'人で割り勘';const mem=(it.splitMembers||[]).concat(it.splitIncludesSelf?['あなた']:[]);if(mem.length)meta+='（'+mem.join('・')+'）';}
+    c.fillText(ellipsisText(c,meta,CW),ML,y+54);
+    c.strokeStyle=LINE;c.beginPath();c.moveTo(ML,y+rowH-10.5);c.lineTo(W-MR,y+rowH-10.5);c.stroke();y+=rowH;
+  });
+  y+=afterItems;
+  c.textAlign='left';c.fillStyle=INK;c.font=`700 24px ${FONT}`;c.fillText('お支払い合計',ML,y+38);
+  c.textAlign='right';c.fillStyle=ACCENT;c.font=`800 42px ${FONT}`;c.fillText('¥'+total.toLocaleString(),W-MR,y+44);y+=totalH+gap2;
+  roundRect(c,ML,y,CW,acctH,18);c.fillStyle=SURF;c.fill();c.strokeStyle=LINE;c.lineWidth=1;c.stroke();
+  const bx=ML+26;let by=y+38;
+  c.textAlign='left';c.fillStyle=SUB;c.font=`600 20px ${FONT}`;c.fillText('お振込先',bx,by);by+=34;
+  c.fillStyle=INK;c.font=`700 25px ${FONT}`;c.fillText(RECEIPT_BANK[0],bx,by);by+=33;
+  c.font=`400 22px ${FONT}`;c.fillText(RECEIPT_BANK[1],bx,by);by+=31;
+  c.fillText(RECEIPT_BANK[2],bx,by);by+=31;
+  c.fillText(RECEIPT_BANK[3],bx,by);y+=acctH+gap3;
+  c.textAlign='center';c.fillStyle=SUB;c.font=`400 18px ${FONT}`;c.fillText('クレジット明細マネージャー',W/2,y+18);
+  return cv;
 }
 
 // モーダル: 回収
