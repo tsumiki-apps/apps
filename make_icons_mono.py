@@ -71,6 +71,12 @@ ICONS = {
                  '<path d="M34,48 a16,16 0 0 0 32,0"/>'
                  '<line x1="50" y1="64" x2="50" y2="74"/>'
                  '<line x1="40" y1="74" x2="60" y2="74"/>',
+    # メモ帳＝角を折った紙＋3本線
+    "memo": '<path d="M32,24 H58 L70,36 V76 H32 Z"/>'
+            '<path d="M58,24 V36 H70"/>'
+            '<line x1="40" y1="50" x2="62" y2="50"/>'
+            '<line x1="40" y1="60" x2="62" y2="60"/>'
+            '<line x1="40" y1="70" x2="53" y2="70"/>',
 
     # ===== Private =====
     "rashinban": '<circle cx="50" cy="50" r="26"/>'
@@ -172,6 +178,7 @@ ICONS = {
 WORK_APPS = {
     "search", "nps", "recap", "recognition", "grownote", "team5whys",
     "reflection", "vault", "osusowake", "schedule", "career", "interview",
+    "memo",
 }
 # Appleロゴ(silhouette)。24x24座標→右下にscale配置。塗り白。
 APPLE_PATH = (
