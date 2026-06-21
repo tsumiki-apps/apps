@@ -91,36 +91,28 @@ def build_body(target_date, commits):
 
     if not commits:
         return (
-            f"お疲れさまです！{date_label} の活動まとめです。\n\n"
-            "今日はおやすみでしたね。ゆっくり休んでください😊\n"
+            f"📋 {date_label}の日報\n\n"
+            "今日はおやすみでした。\n"
+            "ゆっくり休んでね😊\n"
         )
 
     n = len(commits)
+    # 見出し（箇条書き）＝やったこと、その下の行＝どのアプリ・何時か、の2行1セット。
+    # 改行を多めにして読みやすく。
     lines = [
-        f"お疲れさまです！{date_label} の活動まとめです。",
+        f"📋 {date_label}の日報",
         "",
-        f"今日は {n} 個のサポートをしました ✨",
+        f"今日は {n} 件のサポートをしました ✨",
         "",
     ]
-
-    # カテゴリごとにまとめる（出てきた順を保つ）
-    groups = {}
-    order = []
     for dt, subject in commits:
         cat, body = split_category(subject)
-        key = cat or "その他"
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append((dt, body))
-
-    for key in order:
-        lines.append(f"【{key}】")
-        for dt, body in groups[key]:
-            lines.append(f"・{body}（{dt.strftime('%H:%M')}）")
+        meta = f"{cat} ｜ {dt.strftime('%H:%M')}" if cat else dt.strftime("%H:%M")
+        lines.append(f"・{body}")
+        lines.append(f"　{meta}")
         lines.append("")
 
-    lines.append("今日もおつかれさまでした😊")
+    lines.append("おつかれさまでした😊")
     return "\n".join(lines).rstrip() + "\n"
 
 
