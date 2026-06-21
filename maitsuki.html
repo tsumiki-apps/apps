@@ -96,6 +96,36 @@
   .hint{text-align:center; color:var(--ghost); font-size:12.5px; letter-spacing:.1em; margin-top:22px;}
   .hint.hide{display:none;}
 
+  /* save tools + records */
+  .tools{display:none; gap:10px; margin-top:14px;}
+  .tools.show{display:flex;}
+  .tool{flex:1; appearance:none; font-family:inherit; cursor:pointer; padding:12px; border-radius:14px;
+    font-size:13.5px; letter-spacing:.1em; background:var(--ink); color:var(--paper); border:1px solid var(--ink);
+    transition:.2s;}
+  .tool:active{opacity:.82;}
+  .tool.ghost{background:none; color:var(--muted); border:1px solid var(--hair);}
+  .tool.ghost:active{background:var(--surface); color:var(--ink); opacity:1;}
+
+  .saved{display:none; margin-top:32px;}
+  .saved.show{display:block;}
+  .saved-h{font-size:11px; letter-spacing:.2em; color:var(--muted); margin:0 4px 4px; display:flex; align-items:center; gap:8px;}
+  .saved-h b{font-weight:400; color:var(--ghost);}
+  .rec{padding:14px 4px; border-bottom:1px solid var(--hair);}
+  .rec:first-of-type{border-top:1px solid var(--hair);}
+  .rec .top{display:flex; align-items:baseline; gap:12px;}
+  .rec .rname{flex:1; min-width:0; font-size:15px; color:var(--ink); letter-spacing:.02em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .rec .rtotal{flex:none; font-size:15px; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums;}
+  .rec .bot{display:flex; align-items:center; justify-content:space-between; margin-top:9px;}
+  .rec .rdate{font-size:11px; color:var(--ghost); letter-spacing:.04em;}
+  .rec .acts{display:flex; align-items:center; gap:8px;}
+  .rec .rback{appearance:none; border:1px solid var(--hair); background:none; font-family:inherit;
+    font-size:12px; color:var(--muted); padding:6px 13px; border-radius:10px; cursor:pointer; letter-spacing:.06em; transition:.2s;}
+  .rec .rback:active{background:var(--surface); color:var(--ink);}
+  .rec .rdel{appearance:none; border:none; background:none; color:var(--ghost); font-size:17px; line-height:1;
+    cursor:pointer; width:24px; height:24px; padding:0;}
+  .rec .rdel:active{color:var(--ink);}
+
   /* toast */
   .toast{position:fixed; left:50%; bottom:calc(26px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(16px);
     background:rgba(36,35,33,.94); color:var(--paper); font-size:13px; padding:10px 18px; border-radius:12px;
@@ -131,6 +161,12 @@
   <div class="list" id="list"></div>
   <button class="add" id="add"><span class="plus">＋</span>こうもくを ついか</button>
   <div class="hint" id="hint">毎月かかるお金を ひとつずつ</div>
+
+  <div class="tools" id="tools">
+    <button class="tool" id="saveBtn" type="button">保存</button>
+    <button class="tool ghost" id="newBtn" type="button">あたらしく</button>
+  </div>
+  <div class="saved" id="saved"></div>
 
   <div class="toast" id="toast"></div>
 
@@ -323,7 +359,13 @@ function refreshAux(){
     else if(rem < 0) document.getElementById("list").appendChild(restRow(true, rem, denom));
   }
 }
-function renderAll(){ renderHeader(); renderChart(); renderList(); window.scrollTo(0,0); }
+function renderAll(){ renderHeader(); renderChart(); renderList(); buildSaved(); window.scrollTo(0,0); }
+
+function toast(msg){
+  var t = document.getElementById("toast"); if(!t) return;
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._t); t._t = setTimeout(function(){ t.classList.remove("show"); }, 1800);
+}
 
 /* ===== actions ===== */
 function add(){
@@ -341,8 +383,80 @@ function remove(itemId){
 function drill(itemId){ path.push(itemId); renderAll(); }
 function back(){ path.pop(); renderAll(); }
 
+/* ===== 保存した記録（きろく） ===== */
+var SAVED_KEY = "fixed-saved-v1";
+var savedList = [];
+function loadSaved(){
+  try{ var r = localStorage.getItem(SAVED_KEY); var a = r ? JSON.parse(r) : []; if(Array.isArray(a)) savedList = a; }catch(e){}
+}
+function persistSaved(){
+  try{ localStorage.setItem(SAVED_KEY, JSON.stringify(savedList)); }catch(e){}
+  if(window.FixedSync) FixedSync.schedule();
+}
+function shortDate(ts){ var d = new Date(ts); return (d.getMonth()+1) + "/" + d.getDate(); }
+
+function saveCurrent(){
+  var tot = sumAmt(state.items);
+  if(tot <= 0){ alert("ほぞんする固定費がありません"); return; }
+  var d = new Date(); var def = (d.getMonth()+1) + "/" + d.getDate();
+  var name = prompt("名前をつけて ほぞん", def);
+  if(name === null) return;
+  name = (name||"").trim() || def;
+  savedList.unshift({
+    id: id(), name: name, savedAt: Date.now(),
+    items: JSON.parse(JSON.stringify(state.items)), total: tot
+  });
+  persistSaved(); buildSaved(); toast("ほぞんしました");
+}
+function restoreRec(rec){
+  if(!confirm("「" + (rec.name||"きろく") + "」に もどしますか？\n（いまの内容は うわがきされます）")) return;
+  var items = Array.isArray(rec.items) ? JSON.parse(JSON.stringify(rec.items)) : [];
+  normalize(items);
+  state.items = items.length ? items : [ mk() ];
+  path = [];
+  save(); renderAll();
+}
+function deleteRec(recId){
+  var rec = savedList.find(function(r){ return r.id === recId; });
+  if(rec && !confirm("「" + (rec.name||"きろく") + "」を けしますか？")) return;
+  savedList = savedList.filter(function(r){ return r.id !== recId; });
+  persistSaved(); buildSaved();
+}
+function clearAll(){
+  if(sumAmt(state.items) <= 0) return;
+  if(!confirm("ぜんぶ消して あたらしく作りますか？\n（ほぞんした きろくは のこります）")) return;
+  state.items = [ mk() ]; path = [];
+  save(); renderAll();
+}
+function buildSaved(){
+  var toolsEl = document.getElementById("tools");
+  var savedEl = document.getElementById("saved");
+  var atRoot = !path.length;
+  toolsEl.classList.toggle("show", atRoot && sumAmt(state.items) > 0);
+  savedEl.classList.toggle("show", atRoot && savedList.length > 0);
+  savedEl.innerHTML = "";
+  if(!(atRoot && savedList.length)) return;
+  var h = document.createElement("div"); h.className = "saved-h";
+  h.innerHTML = "きろく <b>" + savedList.length + "</b>";
+  savedEl.appendChild(h);
+  savedList.forEach(function(rec){
+    var div = document.createElement("div"); div.className = "rec";
+    div.innerHTML =
+      '<div class="top"><span class="rname"></span><span class="rtotal">¥' + fmt(rec.total||0) + '</span></div>' +
+      '<div class="bot"><span class="rdate">' + shortDate(rec.savedAt) + '</span>' +
+        '<span class="acts"><button class="rback" type="button">もどす</button>' +
+        '<button class="rdel" type="button" aria-label="けす">×</button></span></div>';
+    div.querySelector(".rname").textContent = rec.name || "（むめい）";
+    div.querySelector(".rback").addEventListener("click", function(){ restoreRec(rec); });
+    div.querySelector(".rdel").addEventListener("click", function(){ deleteRec(rec.id); });
+    savedEl.appendChild(div);
+  });
+}
+
 document.getElementById("add").addEventListener("click", add);
 document.getElementById("back").addEventListener("click", back);
+document.getElementById("saveBtn").addEventListener("click", saveCurrent);
+document.getElementById("newBtn").addEventListener("click", clearAll);
 document.getElementById("toggle").addEventListener("click", function(e){
   var b = e.target.closest("button"); if(!b) return;
   state.view = b.dataset.v;
@@ -350,6 +464,7 @@ document.getElementById("toggle").addEventListener("click", function(e){
   save(); renderChart();
 });
 
+loadSaved();
 renderAll();
 
 /* ===== cloud sync (money_state を別IDで再利用) ===== */
@@ -360,6 +475,7 @@ renderAll();
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 
   var META = "fixed-sync-meta-v1", TABLE = "money_state", ID = "kodai-fixed";
+  var KEYS = [KEY, SAVED_KEY];           // 固定費本体＋ほぞんした記録
   var online = null, pending = false, timer = null, lastPushed = "";
 
   function meta(){ try{ return JSON.parse(localStorage.getItem(META)) || {}; }catch(e){ return {}; } }
@@ -367,8 +483,10 @@ renderAll();
   function hasLocal(){ return !!localStorage.getItem(KEY); }
   function blob(){
     var b = { updatedAt: meta().updatedAt || 0 };
-    var raw = localStorage.getItem(KEY);
-    if(raw){ try{ b[KEY] = JSON.parse(raw); }catch(e){} }
+    KEYS.forEach(function(k){
+      var raw = localStorage.getItem(k);
+      if(raw){ try{ b[k] = JSON.parse(raw); }catch(e){} }
+    });
     return b;
   }
   function schedule(){
@@ -386,7 +504,9 @@ renderAll();
       .catch(function(){ online=false; pending=true; chip(); });
   }
   function applyRemote(inc, msg){
-    if(inc[KEY] != null){ try{ localStorage.setItem(KEY, JSON.stringify(inc[KEY])); }catch(e){} }
+    KEYS.forEach(function(k){
+      if(inc[k] != null){ try{ localStorage.setItem(k, JSON.stringify(inc[k])); }catch(e){} }
+    });
     setMeta({ updatedAt: inc.updatedAt || Date.now() });
     if(msg){ toast(msg); setTimeout(function(){ location.reload(); }, 900); }
     else location.reload();
