@@ -163,12 +163,9 @@ function save(){
 function fmt(n){ return (n||0).toLocaleString("ja-JP"); }
 function digits(s){ return String(s).replace(/[^0-9]/g,""); }
 
-/* ===== tree helpers ===== */
-function disp(it){
-  return (it.children && it.children.length)
-    ? it.children.reduce(function(s,c){ return s + disp(c); }, 0)
-    : (it.amount || 0);
-}
+/* ===== tree helpers =====
+   方針：各項目の「金額」は固定の枠。子（内訳）はその枠の中身を説明するだけで、
+   親の金額は子の合計で上書きしない（＝データが消えない）。 */
 function nodeAt(p){
   var arr = state.items, node = null;
   for(var i=0;i<p.length;i++){
@@ -183,10 +180,19 @@ function listAt(){
   if(!path.length) return state.items;
   var n = nodeAt(path); return n ? n.children : state.items;
 }
-function levelTotal(){ return listAt().reduce(function(s,it){ return s + disp(it); }, 0); }
-function centerTotal(){
-  if(!path.length) return levelTotal();
-  var n = nodeAt(path); return n ? disp(n) : 0;
+function sumAmt(arr){ return arr.reduce(function(s,it){ return s + (it.amount||0); }, 0); }
+function frameTotal(){                 // 円の分母（枠）
+  if(!path.length) return sumAmt(state.items);
+  var n = nodeAt(path); var amt = n ? (n.amount||0) : 0;
+  return Math.max(amt, sumAmt(listAt()));
+}
+function centerVal(){                   // 中央に出す金額
+  if(!path.length) return sumAmt(state.items);
+  var n = nodeAt(path); return n ? (n.amount||0) : 0;
+}
+function remainder(){                   // のこり（枠 − 内訳合計）。マイナスは使いすぎ
+  if(!path.length) return 0;
+  var n = nodeAt(path); return (n ? (n.amount||0) : 0) - sumAmt(listAt());
 }
 
 /* ===== render ===== */
@@ -202,13 +208,13 @@ function renderHeader(){
 
 function renderChart(){
   var items = listAt();
-  var t = levelTotal();
+  var denom = frameTotal();
   var segs = document.getElementById("segs");
   segs.innerHTML = "";
   var acc = 0;
   items.forEach(function(it,i){
-    var v = disp(it); if(!v) return;
-    var len = (t>0 ? v/t : 0) * C;
+    var v = it.amount||0; if(!v) return;
+    var len = (denom>0 ? v/denom : 0) * C;
     var gap = Math.min(2.2, len*0.4);
     var draw = Math.max(0.5, len - gap);
     var c = document.createElementNS("http://www.w3.org/2000/svg","circle");
@@ -222,21 +228,34 @@ function renderChart(){
     segs.appendChild(c);
     acc += len;
   });
+  // のこり（枠の未使用ぶん）は背景の薄いリングがそのまま見える＝描画不要
   var mult = state.view === "year" ? 12 : 1;
-  var shown = centerTotal() * mult;
+  var shown = centerVal() * mult;
   document.getElementById("totalNum").textContent = fmt(shown);
   document.getElementById("total").classList.toggle("empty", shown === 0);
   document.getElementById("kicker").textContent = state.view === "year" ? "1年で" : "毎月";
 }
 
+function restRow(over, val, denom){
+  var row = document.createElement("div"); row.className = "row rest"; row.id = "restRow";
+  var sw = document.createElement("span"); sw.className = "swatch";
+  sw.style.background = over ? "#C17A52" : "var(--hair)";
+  var name = document.createElement("span"); name.className = "name rest-t"; name.textContent = over ? "つかいすぎ" : "のこり";
+  var amt = document.createElement("span"); amt.className = "amt-text rest-t"; amt.textContent = fmt(Math.abs(val));
+  var pct = document.createElement("span"); pct.className = "pct"; pct.textContent = denom>0 ? Math.round(Math.abs(val)/denom*100)+"%" : "";
+  var sp = document.createElement("span"); sp.className = "chev"; sp.style.visibility = "hidden"; sp.textContent = "›";
+  row.append(sw, name, amt, pct, sp);
+  return row;
+}
+
 function renderList(){
   var list = document.getElementById("list");
   var items = listAt();
-  var t = levelTotal();
+  var denom = frameTotal();
   list.innerHTML = "";
   items.forEach(function(it,i){
-    var v = disp(it);
-    var group = !!(it.children && it.children.length);
+    var v = it.amount||0;
+    var hasKids = !!(it.children && it.children.length);
     var row = document.createElement("div"); row.className = "row";
 
     var sw = document.createElement("span"); sw.className = "swatch";
@@ -247,27 +266,22 @@ function renderList(){
     name.value = it.name; name.maxLength = 18;
     name.addEventListener("input", function(){ it.name = name.value; if(path.length) renderHeader(); save(); });
 
-    var amtEl;
-    if(group){
-      amtEl = document.createElement("span"); amtEl.className = "amt-text"; amtEl.textContent = fmt(v);
-    }else{
-      amtEl = document.createElement("input");
-      amtEl.className = "amt"; amtEl.type = "text"; amtEl.inputMode = "numeric"; amtEl.placeholder = "0";
-      amtEl.value = it.amount ? fmt(it.amount) : "";
-      amtEl.addEventListener("input", function(){
-        var d = digits(amtEl.value);
-        it.amount = d ? parseInt(d,10) : 0;
-        amtEl.value = d ? fmt(it.amount) : "";
-        sw.style.background = it.amount ? colorAt(i) : "var(--ghost)";
-        renderChart(); updatePct(); save();
-      });
-    }
+    var amtEl = document.createElement("input");
+    amtEl.className = "amt"; amtEl.type = "text"; amtEl.inputMode = "numeric"; amtEl.placeholder = "0";
+    amtEl.value = it.amount ? fmt(it.amount) : "";
+    amtEl.addEventListener("input", function(){
+      var d = digits(amtEl.value);
+      it.amount = d ? parseInt(d,10) : 0;
+      amtEl.value = d ? fmt(it.amount) : "";
+      sw.style.background = it.amount ? colorAt(i) : "var(--ghost)";
+      refreshAux(); save();
+    });
 
     var pct = document.createElement("span"); pct.className = "pct";
-    pct.textContent = (t>0 && v) ? Math.round(v/t*100) + "%" : "";
+    pct.textContent = (denom>0 && v) ? Math.round(v/denom*100) + "%" : "";
 
     var chev = document.createElement("button");
-    chev.className = "chev" + (group ? " has" : ""); chev.type = "button"; chev.textContent = "›";
+    chev.className = "chev" + (hasKids ? " has" : ""); chev.type = "button"; chev.textContent = "›";
     chev.setAttribute("aria-label","ひらく");
     chev.addEventListener("click", function(){ drill(it.id); });
 
@@ -279,19 +293,35 @@ function renderList(){
     row.append(sw, name, amtEl, pct, chev, del);
     list.appendChild(row);
   });
+
+  if(path.length){
+    var rem = remainder();
+    if(rem > 0) list.appendChild(restRow(false, rem, denom));
+    else if(rem < 0) list.appendChild(restRow(true, rem, denom));
+  }
+
   var hint = document.getElementById("hint");
   hint.textContent = path.length ? "ここに うちわけを ついか" : "毎月かかるお金を ひとつずつ";
-  hint.classList.toggle("hide", items.length > 1 || levelTotal() > 0);
+  var hide = path.length ? (items.length > 0) : (items.length > 1 || sumAmt(state.items) > 0);
+  hint.classList.toggle("hide", hide);
 }
-function updatePct(){
-  var t = levelTotal();
+
+/* 金額編集中に、フォーカスを保ったまま円・％・のこり行だけ更新 */
+function refreshAux(){
+  renderChart();
+  var denom = frameTotal();
   var items = listAt();
-  var rows = document.getElementById("list").children;
+  var rows = document.getElementById("list").querySelectorAll(".row:not(.rest)");
   items.forEach(function(it,i){
-    var v = disp(it);
     var pctEl = rows[i] && rows[i].querySelector(".pct");
-    if(pctEl) pctEl.textContent = (t>0 && v) ? Math.round(v/t*100) + "%" : "";
+    if(pctEl) pctEl.textContent = (denom>0 && it.amount) ? Math.round(it.amount/denom*100)+"%" : "";
   });
+  var old = document.getElementById("restRow"); if(old) old.remove();
+  if(path.length){
+    var rem = remainder();
+    if(rem > 0) document.getElementById("list").appendChild(restRow(false, rem, denom));
+    else if(rem < 0) document.getElementById("list").appendChild(restRow(true, rem, denom));
+  }
 }
 function renderAll(){ renderHeader(); renderChart(); renderList(); window.scrollTo(0,0); }
 
