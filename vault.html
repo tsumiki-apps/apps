@@ -80,6 +80,11 @@
     border-radius:9px; padding:6px 11px; font-size:13px; font-weight:600; cursor:pointer;
   }
   .copy-btn:active{background:var(--bg);}
+  .copy-all{
+    width:100%; margin-top:4px; padding:11px; border:1px solid var(--accent);
+    background:var(--accent); color:#fff; border-radius:11px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .copy-all:active{opacity:.85;}
 
   /* 空状態 */
   .empty{text-align:center; color:var(--sub); padding:60px 20px; font-size:15px;}
@@ -236,9 +241,9 @@
       <input id="fUser" type="text" placeholder="メールアドレス・ログインIDなど" autocomplete="off">
     </div>
     <div class="form-group">
-      <label for="fPass">パスワード</label>
+      <label for="fPass">パスワード（任意）</label>
       <div class="pw-row">
-        <input id="fPass" type="text" placeholder="パスワードを入力" autocomplete="off">
+        <input id="fPass" type="text" placeholder="なくてもOK（メモだけ保存も可）" autocomplete="off">
         <button type="button" class="mini-btn" id="genBtn">🎲 自動生成</button>
       </div>
     </div>
@@ -547,11 +552,12 @@
             <span class="field-val">${esc(d.username)}</span>
             <button class="copy-btn js-copy" data-val="${esc(d.username)}">コピー</button>
           </div>`:""}
+          ${d.password?`
           <div class="field">
             <span class="field-label">パスワード</span>
             <span class="field-val mask js-pw" data-pw="${esc(d.password||"")}" data-shown="0">${"•".repeat(Math.min((d.password||"").length||6,12))}</span>
             <button class="copy-btn js-copy" data-val="${esc(d.password||"")}">コピー</button>
-          </div>
+          </div>`:""}
           ${(d.fields||[]).map(f=>`
           <div class="field">
             <span class="field-label">${esc(f.label||"メモ")}</span>
@@ -560,6 +566,7 @@
               : `<span class="field-val">${esc(f.value||"")}</span>` }
             <button class="copy-btn js-copy" data-val="${esc(f.value||"")}">コピー</button>
           </div>`).join("")}
+          <button class="copy-all js-copyall">📋 まとめてコピー</button>
         </div>
       </div>`;
     }).join("");
@@ -585,7 +592,21 @@
       item.querySelectorAll(".js-copy").forEach(b=>{
         b.onclick = ()=> copy(b.dataset.val);
       });
+      const cab = item.querySelector(".js-copyall");
+      if(cab) cab.onclick = ()=> copyAll(data.find(x=>x.id===id));
     });
+  }
+
+  // 1項目ぶんを「【タイトル】＋メモ内容」の形でまとめてコピー
+  function copyAll(d){
+    if(!d) return;
+    const lines = [`【${d.title||"(無題)"}】`];
+    if(d.username) lines.push(`ユーザー名：${d.username}`);
+    if(d.password) lines.push(`パスワード：${d.password}`);
+    (d.fields||[]).forEach(f=>{
+      if(f.label||f.value) lines.push(`${f.label||"メモ"}：${f.value||""}`);
+    });
+    copy(lines.join("\n"));
   }
 
   function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
@@ -677,7 +698,6 @@
     const title=fTitle.value.trim();
     const pass=fPass.value;
     if(!title){ toast("タイトルを入力してください"); fTitle.focus(); return; }
-    if(!pass){ toast("パスワードを入力してください"); fPass.focus(); return; }
     const fields=editFields
       .map(f=>({label:(f.label||"").trim(), value:(f.value||"").trim(), secret:!!f.secret}))
       .filter(f=>f.label||f.value);
