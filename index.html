@@ -33,12 +33,12 @@
   h1{font-size:36px; font-weight:700; letter-spacing:.02em; line-height:1.2;}
   .tagline{color:#3a3833; font-size:15px; margin-top:12px; line-height:1.76;}
   .count{color:var(--sub); font-size:12.5px; letter-spacing:.04em; margin-top:18px;}
-  a.checkroom{display:inline-flex; align-items:center; gap:6px; margin-top:14px;
+  .checkroom{display:inline-flex; align-items:center; gap:6px; margin-top:14px;
     text-decoration:none; font-size:13px; font-weight:500; color:var(--sub);
     background:var(--card); border:1px solid var(--line); border-radius:999px;
     padding:8px 16px; transition:transform .15s ease, border-color .15s ease;}
-  a.checkroom:active{transform:scale(.96);}
-  @media(hover:hover){ a.checkroom:hover{color:var(--ink); border-color:var(--ghost);} }
+  .checkroom:active{transform:scale(.96);}
+  @media(hover:hover){ .checkroom:hover{color:var(--ink); border-color:var(--ghost);} }
   .section{margin-top:48px;}
   .section h2{font-size:13px; font-weight:700; letter-spacing:.14em; color:var(--sub);
     padding:0 4px 16px; display:flex; align-items:center; gap:10px; text-transform:uppercase;}
@@ -49,6 +49,7 @@
   .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
   @media(min-width:560px){ .grid{grid-template-columns:repeat(3,1fr);} }
   a.card{
+    position:relative;
     display:flex; flex-direction:column; justify-content:space-between; gap:14px;
     text-decoration:none; aspect-ratio:1/1; overflow:hidden;
     background:var(--card); border:1px solid var(--line); border-radius:22px;
@@ -66,6 +67,23 @@
     overflow:hidden; font-size:15px; font-weight:700; letter-spacing:.01em; line-height:1.34;}
   .desc{display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
     overflow:hidden; font-size:12px; color:var(--sub); line-height:1.5;}
+  /* ヘッダーのアクション（チェックルーム／編集） */
+  .hdr-actions{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:16px;}
+  .hdr-actions .checkroom{margin-top:0;}
+  button.checkroom{-webkit-appearance:none; appearance:none; font-family:inherit; cursor:pointer; line-height:1;}
+  body.editing #editBtn{color:var(--ink); border-color:var(--ghost); background:var(--surface);}
+  /* お気に入りの★トグル（編集モード時のみ表示） */
+  .favmark{position:absolute; top:10px; right:10px; width:26px; height:26px; border-radius:50%;
+    background:var(--card); box-shadow:0 1px 5px rgba(36,35,33,.14);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; transform:scale(.8); transition:opacity .15s ease, transform .15s ease; pointer-events:none;}
+  .favmark svg{width:16px; height:16px;}
+  .favmark .s{fill:none; stroke:var(--ghost); stroke-width:1.7; stroke-linejoin:round;}
+  body.editing .favmark{opacity:1; transform:scale(1);}
+  .card.is-fav .favmark .s{fill:var(--ink); stroke:var(--ink);}
+  body.editing .card{cursor:pointer;}
+  .editing-hint{color:var(--sub); font-size:12px; letter-spacing:.04em; text-align:center; margin-top:12px;}
+  .fav-empty{color:var(--sub); font-size:13px; padding:6px 4px 2px; line-height:1.7;}
   footer{text-align:center; color:var(--sub); font-size:12px; letter-spacing:.06em;
     margin-top:56px; padding-top:30px; border-top:1px solid var(--line); line-height:1.8;}
   /* 今週のWork ダッシュボード（テキストなし） */
@@ -107,14 +125,19 @@
 <div class="wrap">
   <header>
     <p class="kicker">TSUMIKI — こうだいの制作物</p>
-    <div class="logo"><i></i><i></i><i></i><i></i><i></i></div>
     <h1>つみき</h1>
     <p class="tagline">小さなアプリを、ひとつずつ積み上げる。</p>
     <p class="count" id="count"></p>
-    <a class="checkroom" href="check.html">チェックルーム<span style="opacity:.5">（公開前の確認）</span></a>
+    <div class="hdr-actions">
+      <a class="checkroom" href="check.html">チェックルーム<span style="opacity:.5">（公開前の確認）</span></a>
+      <button type="button" class="checkroom" id="editBtn">編集</button>
+    </div>
+    <p class="editing-hint" id="editHint" hidden>カードをタップして「よく使う」に追加／解除</p>
   </header>
 
   <section id="dash" class="dash" hidden></section>
+
+  <section id="favs" class="section" hidden></section>
 
   <main id="app"></main>
 
@@ -167,25 +190,87 @@
     ]},
   ];
   const app = document.getElementById("app");
-  let total = 0;
-  categories.forEach(cat=>{
-    total += cat.apps.length;
-    const sec = document.createElement("section");
-    sec.className = "section";
-    const cards = cat.apps.map(a =>
-      '<a class="card" href="'+a.href+'">'+
-        '<img class="ico" src="icons/icon-'+a.href.replace(/\.html$/i,"")+'.png" alt="" loading="lazy">'+
-        '<span class="txt"><span class="title">'+a.title+'</span>'+
-        '<span class="desc">'+a.desc+'</span></span>'+
-      '</a>'
-    ).join("");
+
+  /* ===== お気に入り（よく使う）：端末ローカル保存・手動登録 ===== */
+  const FAV_KEY = "tsumikiFavs";
+  function readFavs(){ try{ return JSON.parse(localStorage.getItem(FAV_KEY) || "[]"); }catch(e){ return []; } }
+  function writeFavs(a){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(a)); }catch(e){} }
+  let favs = readFavs();
+
+  const stemOf = href => href.replace(/\.html$/i,"");
+  const ALL = {};   // stem -> app
+  categories.forEach(c => c.apps.forEach(a => { ALL[stemOf(a.href)] = a; }));
+  /* 消えたアプリのstemは掃除 */
+  favs = favs.filter(s => ALL[s]);
+
+  const STAR = '<span class="favmark"><svg viewBox="0 0 24 24" aria-hidden="true">'+
+    '<path class="s" d="M12 3.4l2.6 5.6 6.1.6-4.6 4 1.4 6L12 16.8 6.5 19.6l1.4-6-4.6-4 6.1-.6z"/></svg></span>';
+
+  function cardHTML(a){
+    const stem = stemOf(a.href);
+    const fav = favs.includes(stem) ? " is-fav" : "";
+    return '<a class="card'+fav+'" href="'+a.href+'" data-stem="'+stem+'">'+
+      '<img class="ico" src="icons/icon-'+stem+'.png" alt="" loading="lazy">'+
+      '<span class="txt"><span class="title">'+a.title+'</span>'+
+      '<span class="desc">'+a.desc+'</span></span>'+ STAR +
+    '</a>';
+  }
+
+  function buildCategories(){
+    app.innerHTML = "";
+    categories.forEach(cat=>{
+      const sec = document.createElement("section");
+      sec.className = "section";
+      sec.innerHTML =
+        '<h2><span class="cat-emoji">'+cat.emoji+'</span>'+cat.label+
+        '<span class="badge">'+cat.apps.length+'</span></h2>'+
+        '<div class="grid">'+cat.apps.map(cardHTML).join("")+'</div>';
+      app.appendChild(sec);
+    });
+  }
+
+  function renderFavs(){
+    const sec = document.getElementById("favs");
+    const editing = document.body.classList.contains("editing");
+    const items = favs.map(s => ALL[s]).filter(Boolean);
+    if(!items.length && !editing){ sec.hidden = true; sec.innerHTML = ""; return; }
+    sec.hidden = false;
+    const body = items.length
+      ? '<div class="grid">'+items.map(cardHTML).join("")+'</div>'
+      : '<p class="fav-empty">まだありません。下のカードをタップして追加してください。</p>';
     sec.innerHTML =
-      '<h2><span class="cat-emoji">'+cat.emoji+'</span>'+cat.label+
-      '<span class="badge">'+cat.apps.length+'</span></h2>'+
-      '<div class="grid">'+cards+'</div>';
-    app.appendChild(sec);
+      '<h2><span class="cat-emoji">★</span>よく使う'+
+      '<span class="badge">'+items.length+'</span></h2>'+ body;
+  }
+
+  function toggleFav(stem){
+    const i = favs.indexOf(stem);
+    if(i >= 0) favs.splice(i,1); else favs.push(stem);
+    writeFavs(favs);
+    buildCategories();
+    renderFavs();
+  }
+
+  buildCategories();
+  renderFavs();
+  document.getElementById("count").textContent = Object.keys(ALL).length + " 個のアプリ";
+
+  /* 編集モード：カードタップでお気に入り付け外し */
+  const editBtn = document.getElementById("editBtn");
+  const editHint = document.getElementById("editHint");
+  editBtn.addEventListener("click", ()=>{
+    const editing = document.body.classList.toggle("editing");
+    editBtn.textContent = editing ? "完了" : "編集";
+    editHint.hidden = !editing;
+    renderFavs();
   });
-  document.getElementById("count").textContent = total + " 個のアプリ";
+  document.addEventListener("click", e=>{
+    if(!document.body.classList.contains("editing")) return;
+    const card = e.target.closest(".card");
+    if(!card || !card.dataset.stem) return;
+    e.preventDefault();
+    toggleFav(card.dataset.stem);
+  });
 
   /* ===== 今週のWork ダッシュボード ===== */
   const APP_HREF = {
