@@ -65,6 +65,13 @@
   .row{display:flex; align-items:center; gap:10px; padding:13px 4px; border-bottom:1px solid var(--hair); position:relative;}
   .row:first-child{border-top:1px solid var(--hair);}
   .swatch{width:11px; height:11px; border-radius:50%; flex:none; transition:background .3s;}
+  /* 並べ替え用ハンドル（色ドットの右隣・左端の戻るスワイプ帯22pxを避けた位置） */
+  .grip{flex:none; width:20px; height:38px; margin:-6px -2px -6px -4px; display:flex; align-items:center;
+    justify-content:center; color:var(--ghost); font-size:14px; line-height:1; cursor:grab;
+    touch-action:none; -webkit-user-select:none; user-select:none; transition:color .2s;}
+  .grip:hover{color:var(--muted);} .grip:active{cursor:grabbing; color:var(--ink);}
+  .row.dragging{background:var(--paper); box-shadow:0 6px 18px rgba(0,0,0,.14); border-radius:12px;
+    border-bottom-color:transparent; z-index:6; opacity:.97;}
   .name{flex:1; min-width:0; appearance:none; border:none; background:none; font-family:inherit;
     font-size:16px; color:var(--ink); padding:2px 0; letter-spacing:.02em;}
   .name::placeholder{color:var(--ghost);}
@@ -287,6 +294,45 @@ function restRow(over, val, denom){
   return row;
 }
 
+/* ===== ドラッグで並べ替え（指・マウス両対応：Pointer Events） ===== */
+var dragRow = null;
+function attachDrag(grip, row){
+  grip.addEventListener("pointerdown", function(e){
+    if(e.button != null && e.button !== 0) return;   // 右クリック等は無視
+    e.preventDefault();
+    dragRow = row; row.classList.add("dragging");
+    try{ grip.setPointerCapture(e.pointerId); }catch(_){}
+  });
+  grip.addEventListener("pointermove", function(e){
+    if(!dragRow) return;
+    e.preventDefault();
+    var list = document.getElementById("list");
+    var sibs = Array.prototype.slice.call(list.querySelectorAll(".row[data-id]"))
+      .filter(function(r){ return r !== dragRow; });
+    var ref = null;
+    for(var i=0;i<sibs.length;i++){
+      var rc = sibs[i].getBoundingClientRect();
+      if(e.clientY < rc.top + rc.height/2){ ref = sibs[i]; break; }
+    }
+    if(ref){ list.insertBefore(dragRow, ref); }
+    else { var rest = list.querySelector(".row.rest"); if(rest) list.insertBefore(dragRow, rest); else list.appendChild(dragRow); }
+  });
+  function end(){
+    if(!dragRow) return;
+    dragRow.classList.remove("dragging"); dragRow = null;
+    commitReorder();
+  }
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+}
+function commitReorder(){
+  var list = document.getElementById("list");
+  var ids = Array.prototype.map.call(list.querySelectorAll(".row[data-id]"), function(r){ return r.dataset.id; });
+  var arr = listAt();
+  arr.sort(function(a,b){ return ids.indexOf(a.id) - ids.indexOf(b.id); });
+  save(); renderChart(); renderList();   // 色は並び順で決まるので作り直して反映
+}
+
 function renderList(){
   var list = document.getElementById("list");
   var items = listAt();
@@ -295,10 +341,14 @@ function renderList(){
   items.forEach(function(it,i){
     var v = it.amount||0;
     var hasKids = !!(it.children && it.children.length);
-    var row = document.createElement("div"); row.className = "row";
+    var row = document.createElement("div"); row.className = "row"; row.dataset.id = it.id;
 
     var sw = document.createElement("span"); sw.className = "swatch";
     sw.style.background = v ? colorAt(i) : "var(--ghost)";
+
+    var grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⠿";
+    grip.setAttribute("aria-label","ドラッグして並べ替え");
+    attachDrag(grip, row);
 
     var name = document.createElement("input");
     name.className = "name"; name.type = "text"; name.placeholder = "こうもく";
@@ -329,7 +379,7 @@ function renderList(){
     del.setAttribute("aria-label","削除");
     del.addEventListener("click", function(){ remove(it.id); });
 
-    row.append(sw, name, amtEl, pct, chev, del);
+    row.append(sw, grip, name, amtEl, pct, chev, del);
     list.appendChild(row);
   });
 
