@@ -134,9 +134,9 @@
   .amtwrap input{flex:1; appearance:none; border:none; background:none; font-family:inherit; font-size:18px;
     font-weight:500; color:var(--ink); padding:12px 0; text-align:right; font-variant-numeric:tabular-nums;}
   .amtwrap input:focus{outline:none;}
-  .seg{display:grid; grid-template-columns:repeat(4,1fr); gap:5px;}
+  .seg{display:grid; grid-template-columns:repeat(5,1fr); gap:5px;}
   .seg button{appearance:none; border:1px solid var(--hair); background:var(--control); font-family:inherit;
-    font-size:13px; color:var(--muted); padding:11px 0; border-radius:12px; cursor:pointer; transition:.15s; letter-spacing:.02em;}
+    font-size:12px; color:var(--muted); padding:11px 0; border-radius:12px; cursor:pointer; transition:.15s; letter-spacing:0;}
   .seg button.on{background:var(--ink); color:var(--paper); border-color:var(--ink); font-weight:700;}
   .cycfields{margin-top:13px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:14px; color:var(--ink);}
   .cycfields select{appearance:none; -webkit-appearance:none; border:1px solid var(--hair); background:var(--control);
@@ -144,6 +144,9 @@
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%2377736B' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
     background-repeat:no-repeat; background-position:right 11px center;}
   .cycfields select:focus{outline:none; border-color:var(--ghost);}
+  .cycfields input.dateinp{appearance:none; -webkit-appearance:none; border:1px solid var(--hair); background:var(--control);
+    font-family:inherit; font-size:16px; color:var(--ink); padding:9px 12px; border-radius:11px; min-height:40px;}
+  .cycfields input.dateinp:focus{outline:none; border-color:var(--ghost);}
   .wdrow{display:grid; grid-template-columns:repeat(7,1fr); gap:5px; margin-top:13px; width:100%;}
   .wdrow button{appearance:none; border:1px solid var(--hair); background:var(--control); font-family:inherit;
     font-size:14px; color:var(--muted); padding:11px 0; border-radius:11px; cursor:pointer; transition:.15s;}
@@ -225,6 +228,7 @@
         <button data-c="year">毎年</button>
         <button data-c="interval">◯ヶ月</button>
         <button data-c="week">毎週</button>
+        <button data-c="weekn">◯週</button>
       </div>
       <div class="cycfields" id="f-cyc"></div>
     </div>
@@ -267,6 +271,7 @@ function normalize(items){
     if(it.month == null) it.month = 1;
     if(it.weekday == null) it.weekday = 0;
     if(it.interval == null) it.interval = 2;
+    if(it.wInterval == null) it.wInterval = 2;
   });
 }
 function mkId(){ return "h" + Math.floor(performance.now()*1000).toString(36) + Math.floor(performance.now()).toString(36); }
@@ -280,11 +285,20 @@ function fmt(n){ return Math.round(n||0).toLocaleString("ja-JP"); }
 function digits(s){ return String(s).replace(/[^0-9]/g,""); }
 function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
 function clampDay(it,y,m){ var dim=daysInMonth(y,m); return it.day>=32 ? dim : Math.min(it.day, dim); }
+function isoDate(dt){ var z=function(n){return (n<10?"0":"")+n;}; return dt.getFullYear()+"-"+z(dt.getMonth()+1)+"-"+z(dt.getDate()); }
+function parseISO(s){ if(!s) return null; var d=new Date(s+"T00:00:00"); return isNaN(d) ? null : d; }
 
 /* この項目が y年m月d日に発生するか */
 function occursOnDay(it,y,m,d){
-  if(!it.amount) { /* 金額0でも予定としては出す */ }
   if(it.cycle === "week"){ return new Date(y, m-1, d).getDay() === it.weekday; }
+  if(it.cycle === "weekn"){
+    var a = parseISO(it.anchor); if(!a) return false;
+    var cur = new Date(y, m-1, d);
+    if(cur.getDay() !== a.getDay()) return false;
+    var weeks = Math.round((cur - a)/(7*86400000));
+    var n = it.wInterval || 2;
+    return ((((weeks % n) + n) % n) === 0);
+  }
   if(clampDay(it,y,m) !== d) return false;
   if(it.cycle === "month") return true;
   if(it.cycle === "year") return m === it.month;
@@ -302,15 +316,14 @@ function monthOutflow(y,m){
   }
   return sum;
 }
-/* 月あたりの平均（定常コスト） */
-function monthlyEquivalent(it){
-  if(it.cycle === "month") return it.amount||0;
-  if(it.cycle === "year") return (it.amount||0)/12;
-  if(it.cycle === "interval") return (it.amount||0)/it.interval;
-  if(it.cycle === "week") return (it.amount||0)*52/12;
-  return 0;
+/* その月の引き落とし回数（週次・隔週は複数回） */
+function monthOccCount(y,m){
+  var dim = daysInMonth(y,m), n = 0;
+  for(var d=1; d<=dim; d++){
+    state.items.forEach(function(it){ if(occursOnDay(it,y,m,d)) n++; });
+  }
+  return n;
 }
-function monthlyAverage(){ return state.items.reduce(function(s,it){ return s + monthlyEquivalent(it); }, 0); }
 
 function cycleLabel(it){
   var dl = it.day>=32 ? "末日" : it.day+"日";
@@ -318,6 +331,7 @@ function cycleLabel(it){
   if(it.cycle === "year") return "毎年 "+it.month+"月"+dl;
   if(it.cycle === "interval") return it.interval+"ヶ月ごと";
   if(it.cycle === "week") return "毎週 "+WD[it.weekday]+"曜";
+  if(it.cycle === "weekn"){ var a=parseISO(it.anchor); return (it.wInterval||2)+"週おき "+(a?WD[a.getDay()]:"")+"曜"; }
   return "";
 }
 
@@ -342,9 +356,9 @@ function renderHero(){
   document.getElementById("kicker").textContent = disp.m + "月の ひきおとし";
   document.getElementById("totalNum").textContent = fmt(total);
   document.getElementById("total").classList.toggle("empty", total === 0);
-  var avg = monthlyAverage();
+  var occ = monthOccCount(disp.y, disp.m);
   var sub = document.getElementById("sub");
-  sub.textContent = state.items.length ? ("月の平均 ¥" + fmt(avg) + "・" + state.items.length + "件") : "";
+  sub.textContent = state.items.length ? ("固定費 " + state.items.length + "件・今月 " + occ + "回") : "";
 
   var nx = nextPayment(), nextEl = document.getElementById("next");
   if(nx){
@@ -473,7 +487,7 @@ function openEditor(itemId){
     draft = JSON.parse(JSON.stringify(src));
   } else {
     var t = new Date();
-    draft = { id:mkId(), name:"", amount:0, cycle:"month", day:t.getDate(), month:t.getMonth()+1, weekday:t.getDay(), interval:2 };
+    draft = { id:mkId(), name:"", amount:0, cycle:"month", day:t.getDate(), month:t.getMonth()+1, weekday:t.getDay(), interval:2, wInterval:2, anchor:isoDate(t) };
   }
   document.getElementById("f-name").value = draft.name;
   document.getElementById("f-amt").value = draft.amount ? fmt(draft.amount) : "";
@@ -525,6 +539,14 @@ function renderCyc(){
       wrap.appendChild(b);
     });
     box.appendChild(wrap);
+  } else if(draft.cycle === "weekn"){
+    if(!draft.anchor) draft.anchor = isoDate(new Date());
+    if(!draft.wInterval) draft.wInterval = 2;
+    var di = document.createElement("input"); di.type="date"; di.className="dateinp"; di.value = draft.anchor;
+    di.addEventListener("change", function(){ draft.anchor = di.value || isoDate(new Date()); validate(); });
+    box.append(
+      sel2("c-wint", [{v:2,t:"2"},{v:3,t:"3"},{v:4,t:"4"}], draft.wInterval, function(v){ draft.wInterval=+v; validate(); }),
+      txt("週おき ／ 起点"), di);
   }
 }
 function txt(s){ var sp=document.createElement("span"); sp.textContent=s; return sp; }
