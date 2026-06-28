@@ -108,6 +108,13 @@
   .tile .move{position:absolute; top:-12px; left:-12px; width:26px; height:26px; border-radius:50%; background:var(--surface); border:1px solid var(--hair); color:var(--ink); display:none; align-items:center; justify-content:center; cursor:pointer; padding:0;}
   .tile .move svg{width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
   .tile.editing .move{display:flex;}
+  .tile .tx{display:block; white-space:pre-wrap; word-break:break-word;}
+  .tile .ed{display:none; width:100%; border:none; outline:none; background:transparent; font-family:inherit; font-size:16px; line-height:1.5; color:inherit; resize:none; padding:0; margin:0; overflow:hidden; -webkit-user-select:text; user-select:text;}
+  .tile .ed::placeholder{color:var(--ghost);}
+  .tile.editing{width:212px;}
+  .tile.editing .tx{display:none;}
+  .tile.editing .ed{display:block;}
+  .tile .palette .done{width:auto; height:24px; border-radius:999px; padding:0 13px; background:var(--ink); color:var(--paper); font-size:12.5px; font-weight:500; font-family:inherit; border:none; display:flex; align-items:center; cursor:pointer; margin-left:3px;}
 
   .cbox{position:absolute; z-index:1; border-radius:20px; pointer-events:none;}
   .cbox.auto{border:1.7px dashed var(--ghost); background:rgba(190,185,176,.06);}
@@ -336,9 +343,13 @@
   }
   $('sortbtn').onclick=()=>openSort('board');
   function makeTile(t){
-    const el=document.createElement('div'); el.className='tile'; el.dataset.id=t.id; el.dataset.ph='…';
-    setText(el,t.text); applyColor(el,t.color);
-    el.style.left=t.x+'px'; el.style.top=t.y+'px';
+    const el=document.createElement('div'); el.className='tile'; el.dataset.id=t.id;
+    el.style.left=t.x+'px'; el.style.top=t.y+'px'; applyColor(el,t.color);
+    const tx=document.createElement('div'); tx.className='tx'; tx.textContent=t.text||''; el.appendChild(tx);
+    const ed=document.createElement('textarea'); ed.className='ed'; ed.rows=1; ed.setAttribute('placeholder','…');
+    ed.addEventListener('input',()=>autosize(ed));
+    ed.addEventListener('blur',()=>{ if(el.classList.contains('editing')) commitEdit(); });
+    el.appendChild(ed);
     const del=document.createElement('button'); del.className='del'; del.setAttribute('aria-label','削除');
     del.innerHTML='<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     del.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();});
@@ -351,6 +362,10 @@
       b.addEventListener('click',e=>{e.stopPropagation(); t.color=c; applyColor(el,c); save();});
       pal.appendChild(b);
     });
+    const done=document.createElement('button'); done.className='done'; done.textContent='完了';
+    done.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();});
+    done.addEventListener('click',e=>{e.stopPropagation(); ed.blur();});
+    pal.appendChild(done);
     el.appendChild(pal);
     const mv=document.createElement('button'); mv.className='move'; mv.setAttribute('aria-label','プロジェクトを移す');
     mv.innerHTML='<svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
@@ -405,21 +420,25 @@
     save(); drawClusters();
   }
 
+  function autosize(ta){ ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px'; }
   function startEdit(el,t){
     if(editingId&&editingId!==t.id) commitEdit();
-    editingId=t.id; el.classList.add('editing'); el.contentEditable='true'; el.focus();
-    const r=document.createRange(); r.selectNodeContents(el); r.collapse(false);
-    const s=getSelection(); s.removeAllRanges(); s.addRange(r);
+    editingId=t.id; el.classList.add('editing');
+    const ed=el.querySelector('.ed'); ed.value=t.text||'';
+    ed.focus(); autosize(ed);
+    const L=ed.value.length; try{ ed.setSelectionRange(L,L); }catch(e){}
   }
   function commitEdit(){
     const el=nodes.get(editingId); if(!el)return; const id=editingId; editingId=null;
-    el.contentEditable='false'; el.classList.remove('editing');
-    const txt=getText(el); const t=P().tiles.find(x=>x.id===id);
+    el.classList.remove('editing');
+    const ed=el.querySelector('.ed'); const txt=(ed?ed.value:'').trim();
+    const t=(P()&&P().tiles.find(x=>x.id===id));
     if(!t)return;
     if(!txt){ removeTile(id); return; }
-    t.text=txt; setText(el,txt); save(); drawClusters();
+    t.text=txt; el.querySelector('.tx').textContent=txt; save(); drawClusters();
   }
-  document.addEventListener('keydown',e=>{ if(editingId&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();const el=nodes.get(editingId);if(el)el.blur();} });
+  // Enterは改行（日本語入力の変換確定を邪魔しない）。確定は「完了」ボタン/盤面タップ/Escで。
+  document.addEventListener('keydown',e=>{ if(editingId&&e.key==='Escape'){ const el=nodes.get(editingId); if(el){ const ed=el.querySelector('.ed'); if(ed) ed.blur(); } } });
 
   function attachDrag(el,t){
     let sx,sy,ox,oy,moved,active=false;
