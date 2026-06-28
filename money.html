@@ -7,22 +7,30 @@
 <meta name="apple-mobile-web-app-title" content="残高">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f4f5fa">
+<meta name="theme-color" content="#F4F2EE">
 <title>お金の残高</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
+  /* いつつ（Itsutsu）と同じ warm neutral monochrome：温かいベージュ＋墨色、丸ゴシック。
+     アクセントは墨1色（いつつのCTAと同じ）。不足の時だけ、赤ではなく温かいクレイで控えめに示す。 */
   :root {
-    --bg: #f4f5fa;          /* 淡いラベンダーグレー */
-    --card: #ffffff;
-    --text: #45454f;        /* やわらかいチャコール */
-    --sub: #a2a2af;         /* ミュート */
-    --line: #ecedf4;
-    --accent: #8c9ce0;      /* パステル・ペリウィンクル（唯一のアクセント） */
-    --accent-soft: #eef1fb;
-    --neg: #e29393;         /* パステル・コーラル（不足の時だけ） */
+    --bg: #F4F2EE;          /* paper：純白でない紙の背景 */
+    --card: #FBFAF8;        /* 紙からわずかに浮く面（カード） */
+    --field: #F1EEE9;       /* 入力欄のうっすらした面 */
+    --tint: #ECE9E3;        /* surface：注釈・押下時の地色 */
+    --text: #242321;        /* ink：主要な文字 */
+    --sub: #77736B;         /* muted ink：補助の文字 */
+    --line: #D8D4CC;        /* hairline：境界線 */
+    --ghost: #BEB9B0;       /* 無効・空 */
+    --accent: #242321;      /* 唯一のアクセント＝墨（いつつのCTAと同じ） */
+    --accent-soft: #ECE9E3; /* 押下・帯の地色 */
+    --neg: #B0573F;         /* 不足の時だけの温かいクレイ（純赤の代わり） */
   }
   * { box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-family: 'Zen Maru Gothic', -apple-system, BlinkMacSystemFont, "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", sans-serif;
     background: var(--bg);
     color: var(--text);
     margin: 0;
@@ -34,11 +42,11 @@
   h1 { font-size: 21px; font-weight: 600; text-align: center; margin: 0 0 16px; letter-spacing: .01em; }
 
   .syncbar { text-align: center; margin: -6px 0 16px; }
-  .sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);background:rgba(140,156,224,.12);padding:4px 10px;border-radius:999px}
+  .sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);background:rgba(119,115,107,.14);padding:4px 10px;border-radius:999px}
   .sync-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--sub);flex:none}
   .sync-chip.ok .dot{background:var(--accent)}
   .sync-chip.off .dot{background:var(--neg)}
-  .sync-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:rgba(60,60,72,.94);color:#fff;font-size:13px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:9999}
+  .sync-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:rgba(36,35,33,.92);color:#fff;font-size:13px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:9999}
   .sync-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
   /* 移行のお知らせ帯（旧「済み」データがある時だけ初回1回） */
@@ -55,10 +63,11 @@
 
   .card {
     background: var(--card);
-    border-radius: 20px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
     padding: 20px;
     margin-bottom: 14px;
-    box-shadow: 0 1px 2px rgba(80,80,110,.05);
+    box-shadow: 0 1px 2px rgba(36,35,33,.04);
   }
   .card h2 {
     font-size: 15px; font-weight: 600; color: var(--text);
@@ -80,7 +89,7 @@
     gap: 2px 6px; margin-top: 14px; font-size: 13px; color: var(--sub);
   }
   .breakdown span { white-space: nowrap; }
-  .breakdown .op { color: #cfd1de; }
+  .breakdown .op { color: var(--ghost); }
   .breakdown b { color: var(--text); font-weight: 600; }
 
   /* 入力行 */
@@ -88,20 +97,20 @@
   .item:last-of-type { border-bottom: none; }
   .item input.name {
     flex: 1 1 80px; min-width: 0; font-size: 16px; padding: 9px 11px;
-    border: 1px solid var(--line); border-radius: 11px; background: #fafbfd;
+    border: 1px solid var(--line); border-radius: 11px; background: var(--field);
     font-family: inherit; color: var(--text);
   }
   .item .amount-wrap { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
   .item .amount-wrap .yen { color: var(--sub); font-size: 16px; }
   .item input.amount {
     width: 116px; text-align: right; font-size: 17px; padding: 9px 11px;
-    border: 1px solid var(--line); border-radius: 11px; background: #fafbfd;
+    border: 1px solid var(--line); border-radius: 11px; background: var(--field);
     font-family: inherit; color: var(--text);
   }
-  .item input:focus { outline: none; border-color: var(--accent); background: #fff; }
+  .item input:focus { outline: none; border-color: var(--accent); background: var(--card); }
   .item .del {
     width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%;
-    border: 1px solid var(--line); background: #fff; color: var(--sub);
+    border: 1px solid var(--line); background: var(--card); color: var(--sub);
     font-size: 17px; line-height: 1; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
@@ -110,7 +119,7 @@
 
   .btn-add {
     margin-top: 10px; width: 100%; padding: 11px;
-    border: 1px dashed #d8dbe8; border-radius: 12px; background: #fafbfd;
+    border: 1px dashed var(--ghost); border-radius: 12px; background: var(--field);
     color: var(--accent); font-size: 18px; font-family: inherit; cursor: pointer;
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
@@ -123,9 +132,9 @@
     font-family: inherit; cursor: pointer; border: 1px solid var(--line);
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .ca-save { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .ca-save:active { background: #7e8fd6; }
-  .ca-new { background: #fff; color: var(--accent); }
+  .ca-save { background: var(--accent); color: var(--card); border-color: var(--accent); }
+  .ca-save:active { background: #3A3833; }
+  .ca-new { background: var(--card); color: var(--accent); }
   .ca-new:active { background: var(--accent-soft); }
 
   /* 保存した計算 */
@@ -141,12 +150,12 @@
   .si-actions { display: flex; gap: 6px; }
   .si-actions button {
     padding: 6px 13px; border: 1px solid var(--line); border-radius: 9px;
-    background: #fff; color: var(--accent); font-size: 12px; font-family: inherit; cursor: pointer;
+    background: var(--card); color: var(--accent); font-size: 12px; font-family: inherit; cursor: pointer;
     -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
   .si-actions button:active { background: var(--accent-soft); }
   .si-del { color: var(--sub); }
-  .si-del:active { background: #fbeeee; color: var(--neg); }
+  .si-del:active { background: #F4E7E1; color: var(--neg); }
 
   @media (max-width: 400px) {
     .item input.amount { width: 100px; }
@@ -648,11 +657,11 @@
   #tsumikiPeek{
     position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
     width:46px; height:46px; display:flex; align-items:center; justify-content:center;
-    background:rgba(255,255,255,.92);
+    background:rgba(251,250,248,.92);
     -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
-    border:1px solid rgba(0,0,0,.06); border-radius:50%;
-    box-shadow:0 6px 20px rgba(0,0,0,.18);
-    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    border:1px solid rgba(36,35,33,.08); border-radius:50%;
+    box-shadow:0 6px 20px rgba(36,35,33,.18);
+    color:#242321; font-size:24px; font-weight:600; line-height:1;
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
     transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
   }
