@@ -43,11 +43,6 @@
   .total .yen{font-size:20px; font-weight:500; color:var(--muted);}
   .total.empty{color:var(--ghost);}
   .sub{font-size:11.5px; color:var(--muted); letter-spacing:.04em; margin-top:8px;}
-  .next{margin-top:12px; font-size:12px; color:var(--ink); background:var(--surface); border:1px solid var(--hair);
-    border-radius:999px; padding:7px 15px; letter-spacing:.03em; display:none; align-items:center; gap:7px;}
-  .next.show{display:inline-flex;}
-  .next b{font-weight:700;} .next .nyen{color:var(--muted);}
-
   /* view toggle */
   .toggle{display:inline-flex; background:var(--surface); border:1px solid var(--hair);
     border-radius:999px; padding:3px; margin-top:16px; gap:2px;}
@@ -178,7 +173,6 @@
     <span class="kicker" id="kicker">今月の ひきおとし</span>
     <span class="total empty" id="total"><span class="yen">¥</span><span id="totalNum">0</span></span>
     <span class="sub" id="sub"></span>
-    <span class="next" id="next"></span>
   </div>
 
   <div style="text-align:center;">
@@ -335,21 +329,6 @@ function cycleLabel(it){
   return "";
 }
 
-/* 次のひきおとし（今日以降で最初に発生する日） */
-function nextPayment(){
-  if(!state.items.length) return null;
-  var now = new Date(), base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  for(var k=0; k<400; k++){
-    var dd = new Date(base.getTime() + k*86400000);
-    var y=dd.getFullYear(), m=dd.getMonth()+1, d=dd.getDate();
-    var hits = state.items.filter(function(it){ return occursOnDay(it,y,m,d); });
-    if(hits.length){
-      return { date:dd, items:hits, sum:hits.reduce(function(s,it){return s+(it.amount||0);},0), away:k };
-    }
-  }
-  return null;
-}
-
 /* ===== render ===== */
 function renderHero(){
   var total = monthOutflow(disp.y, disp.m);
@@ -359,14 +338,6 @@ function renderHero(){
   var occ = monthOccCount(disp.y, disp.m);
   var sub = document.getElementById("sub");
   sub.textContent = state.items.length ? ("固定費 " + state.items.length + "件・今月 " + occ + "回") : "";
-
-  var nx = nextPayment(), nextEl = document.getElementById("next");
-  if(nx){
-    var when = nx.away===0 ? "きょう" : nx.away===1 ? "あした" : (nx.date.getMonth()+1)+"/"+nx.date.getDate();
-    var nm = nx.items.length===1 ? nx.items[0].name || "（むめい）" : nx.items[0].name+" ほか"+(nx.items.length-1)+"件";
-    nextEl.innerHTML = "つぎは <b>"+when+"</b> "+esc(nm)+" <span class='nyen'>¥"+fmt(nx.sum)+"</span>";
-    nextEl.classList.add("show");
-  } else nextEl.classList.remove("show");
 }
 function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
