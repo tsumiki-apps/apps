@@ -187,8 +187,12 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .cat-caret{flex:0 0 auto;color:var(--sub);font-size:14px;transition:transform var(--dur-state) var(--ease-standard);transform:rotate(0deg)}
 .cat-caret.open{transform:rotate(90deg)}
 .cat-drill{display:flex;flex-direction:column;gap:5px;padding:6px 4px 8px 18px;border-left:2px solid var(--line);margin:4px 0 4px 8px}
-.cat-drill-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start;background:var(--bg);border-radius:8px;padding:8px 10px}
-.cat-drill-row>div:first-child{min-width:0}
+.cat-drill-row{display:flex;flex-direction:column;gap:6px;background:var(--bg);border-radius:8px;padding:8px 10px;cursor:pointer}
+.cat-drill-row.expanded{background:var(--card,#fff);box-shadow:inset 0 0 0 1px var(--line)}
+.cd-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}
+.cd-main{min-width:0}
+.cd-side{display:flex;align-items:center;gap:6px}
+.cd-expand{display:flex;flex-direction:column;gap:6px;padding-top:6px;border-top:1px solid var(--line)}
 .cd-desc{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cd-meta{font-size:10px;color:var(--sub);margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .cd-amt{font-size:14px;font-weight:700;text-align:right;white-space:nowrap}
@@ -540,7 +544,7 @@ const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
 let data={months:{},amazonOrders:[],loans:[],payments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{}};
-let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),selectMode:false,selectedTxIds:new Set()};
+let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set()};
 
 function load(){
   try{
@@ -1280,15 +1284,43 @@ function toggleCat(cat){
   renderCategories();
 }
 function renderCatDrillRow(t){
-  const lt=getLoanTotalForTx(t.id);const self=t.amount-lt;
+  const loans=getLoansForTx(t.id);
+  const lt=loans.reduce((s,l)=>s+l.amount,0);
+  const self=t.amount-lt;
   const loanNote=lt>0?`<span>（決済¥${t.amount.toLocaleString()}）</span>`:'';
-  return `<div class="cat-drill-row">
-    <div>
-      <div class="cd-desc">${escapeHtml(displayMerchantName(t.description))}</div>
-      <div class="cd-meta"><span>${t.date}</span>${loanNote}</div>
-    </div>
-    <div class="cd-amt">¥${self.toLocaleString()}</div>
+  const expanded=state.expandedCatTxIds.has(t.id);
+
+  // 立て替えチップ（展開時のみ。明細タブと同じ見た目）
+  const chips=loans.map(l=>{
+    const paid=getRemaining(l)<=0;
+    return `<span class="loan-chip ${paid?'collected':''}">${paid?'✓':'🤝'} ${escapeHtml(l.personName)} ¥${l.amount.toLocaleString()}</span>`;
+  }).join('');
+  const selfChip=(lt>0&&self>0)?`<span class="self-chip">自分: ¥${self.toLocaleString()}</span>`:'';
+  const strip=loans.length>0?`<div class="loans-strip">${chips}${selfChip}</div>`:'';
+
+  const note=(t.note||'').trim();
+  const noteTag=note?`<span class="note-mini">📝 ${escapeHtml(note)}</span>`:'';
+  const actions=`<div class="tx-actions">
+    <button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>
+    ${loans.length>0?`<button class="btn-mini" onclick="event.stopPropagation();switchTab('loans')">台帳で見る</button>`:''}
   </div>`;
+
+  // 折りたたみ時は「店名 … 自分の額」だけ。展開で立替詳細＋操作（一覧=読む / 展開=処理）
+  return `<div class="cat-drill-row ${expanded?'expanded':''}" onclick="toggleCatTxExpand('${t.id}')">
+    <div class="cd-head">
+      <div class="cd-main">
+        <div class="cd-desc">${escapeHtml(displayMerchantName(t.description))}</div>
+        <div class="cd-meta"><span>${t.date}</span>${loanNote}${noteTag}</div>
+      </div>
+      <div class="cd-side"><div class="cd-amt">¥${self.toLocaleString()}</div><div class="tx-chev ${expanded?'open':''}">›</div></div>
+    </div>
+    ${expanded?`<div class="cd-expand">${strip}${actions}</div>`:''}
+  </div>`;
+}
+function toggleCatTxExpand(id){
+  if(state.expandedCatTxIds.has(id))state.expandedCatTxIds.delete(id);
+  else state.expandedCatTxIds.add(id);
+  renderCategories();
 }
 
 // 現在の期間×現在フィルタ×現在の並び替えで「画面に出ている明細」を返す。
