@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#F4F2EE">
+<link rel="apple-touch-icon" href="icons/icon-hikiotoshi.png">
+<meta name="apple-mobile-web-app-title" content="ひきおとし">
+<title>ひきおとし</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F2EE; --surface:#ECE9E3; --ink:#242321; --muted:#77736B;
+    --hair:#D8D4CC; --ghost:#BEB9B0; --control:#F8F7F4;
+    --over:#C17A52; --sun:#B5806F; --sat:#6F8377;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+    background:var(--paper); color:var(--ink);
+    min-height:100vh; min-height:100dvh;
+    padding:max(18px,env(safe-area-inset-top)) 20px calc(40px + env(safe-area-inset-bottom));
+    max-width:520px; margin:0 auto;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* header */
+  header{display:flex; align-items:center; justify-content:center; gap:9px; padding:6px 0 2px; position:relative; min-height:30px;}
+  .logo{width:13px; height:13px; border-radius:50%; background:var(--ink);}
+  .brand{font-size:15px; font-weight:700; letter-spacing:.16em;}
+  .sync{position:absolute; right:0; top:50%; transform:translateY(-50%);
+    display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:var(--muted);}
+  .sync .dot{width:6px; height:6px; border-radius:50%; background:var(--ghost); flex:none; transition:.3s;}
+  .sync.ok .dot{background:#7E9A8C;} .sync.off .dot{background:#C17A52;}
+
+  /* hero */
+  .hero{display:flex; flex-direction:column; align-items:center; margin:20px 0 4px;}
+  .kicker{font-size:11px; letter-spacing:.22em; color:var(--muted);}
+  .total{font-size:38px; font-weight:700; letter-spacing:.01em; line-height:1.1; display:flex; align-items:baseline; gap:2px; margin-top:4px;}
+  .total .yen{font-size:20px; font-weight:500; color:var(--muted);}
+  .total.empty{color:var(--ghost);}
+  .sub{font-size:11.5px; color:var(--muted); letter-spacing:.04em; margin-top:8px;}
+  .next{margin-top:12px; font-size:12px; color:var(--ink); background:var(--surface); border:1px solid var(--hair);
+    border-radius:999px; padding:7px 15px; letter-spacing:.03em; display:none; align-items:center; gap:7px;}
+  .next.show{display:inline-flex;}
+  .next b{font-weight:700;} .next .nyen{color:var(--muted);}
+
+  /* view toggle */
+  .toggle{display:inline-flex; background:var(--surface); border:1px solid var(--hair);
+    border-radius:999px; padding:3px; margin-top:16px; gap:2px;}
+  .toggle button{appearance:none; border:none; background:none; font-family:inherit;
+    font-size:12.5px; color:var(--muted); padding:6px 20px; border-radius:999px; cursor:pointer; letter-spacing:.1em; transition:.2s;}
+  .toggle button.on{background:var(--paper); color:var(--ink); font-weight:700; box-shadow:0 1px 3px rgba(36,35,33,.08);}
+
+  .view{display:none; margin-top:8px;}
+  .view.on{display:block;}
+
+  /* calendar */
+  .mnav{display:flex; align-items:center; justify-content:center; gap:14px; margin:14px 0 12px;}
+  .mnav button{appearance:none; border:none; background:none; font-family:inherit; font-size:24px;
+    color:var(--muted); cursor:pointer; padding:2px 12px; line-height:1; border-radius:10px;}
+  .mnav button:active{background:var(--surface); color:var(--ink);}
+  .mnav .mlabel{font-size:15px; font-weight:700; letter-spacing:.06em; min-width:128px; text-align:center;}
+  .dows{display:grid; grid-template-columns:repeat(7,1fr); margin-bottom:2px;}
+  .dows span{text-align:center; font-size:10.5px; color:var(--muted); padding:4px 0; letter-spacing:.04em;}
+  .dows span.s0{color:var(--sun);} .dows span.s6{color:var(--sat);}
+  .cal{display:grid; grid-template-columns:repeat(7,1fr); gap:2px;}
+  .cell{position:relative; min-height:48px; border-radius:11px; display:flex; flex-direction:column;
+    align-items:center; padding-top:6px; gap:4px; cursor:pointer; transition:background .15s;}
+  .cell.empty{cursor:default;}
+  .cell .d{font-size:12.5px; color:var(--ink); font-variant-numeric:tabular-nums; line-height:1;
+    width:19px; height:19px; display:flex; align-items:center; justify-content:center; border-radius:50%;}
+  .cell.s0 .d{color:var(--sun);} .cell.s6 .d{color:var(--sat);}
+  .cell.today .d{background:var(--ink); color:var(--paper);}
+  .cell.sel{background:var(--surface);}
+  .cell.sel.today .d{background:var(--ink);}
+  .dots{display:flex; gap:3px; flex-wrap:wrap; justify-content:center; align-content:flex-start; max-width:38px; min-height:6px;}
+  .dots i{width:6px; height:6px; border-radius:50%; flex:none;}
+
+  /* day detail */
+  .detail{margin-top:18px;}
+  .detail-h{display:flex; align-items:baseline; justify-content:space-between; margin:0 4px 6px;}
+  .detail-h .dh-day{font-size:14px; font-weight:700; letter-spacing:.04em;}
+  .detail-h .dh-sum{font-size:14px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .drow{display:flex; align-items:center; gap:11px; padding:12px 4px; border-bottom:1px solid var(--hair);}
+  .drow:first-of-type{border-top:1px solid var(--hair);}
+  .drow .sw{width:11px; height:11px; border-radius:50%; flex:none;}
+  .drow .dn{flex:1; min-width:0; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .drow .dc{font-size:11px; color:var(--muted); flex:none;}
+  .drow .da{font-size:15px; font-weight:500; font-variant-numeric:tabular-nums; flex:none; width:88px; text-align:right;}
+  .empty-day{text-align:center; color:var(--ghost); font-size:12.5px; letter-spacing:.08em; padding:26px 0;}
+
+  /* list view */
+  .list{margin-top:14px;}
+  .irow{display:flex; align-items:center; gap:12px; padding:14px 4px; border-bottom:1px solid var(--hair); cursor:pointer;}
+  .irow:first-of-type{border-top:1px solid var(--hair);}
+  .irow .sw{width:11px; height:11px; border-radius:50%; flex:none;}
+  .irow .body{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;}
+  .irow .nm{font-size:16px; color:var(--ink); letter-spacing:.02em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .irow .cy{font-size:11.5px; color:var(--muted); letter-spacing:.02em;}
+  .irow .amt{font-size:16px; font-weight:500; font-variant-numeric:tabular-nums; flex:none;}
+  .irow .chev{color:var(--ghost); font-size:20px; flex:none; line-height:1;}
+
+  .add{display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+    margin-top:18px; padding:14px; border:1px dashed var(--ghost); border-radius:16px;
+    background:none; font-family:inherit; font-size:14px; color:var(--muted); cursor:pointer;
+    letter-spacing:.08em; transition:.2s;}
+  .add:active{background:var(--surface);}
+  .add .plus{font-size:17px; line-height:1;}
+
+  .hint{text-align:center; color:var(--ghost); font-size:12.5px; letter-spacing:.1em; margin-top:22px;}
+  .hint.hide{display:none;}
+
+  /* editor sheet */
+  .sheetbg{position:fixed; inset:0; background:rgba(36,35,33,.32); opacity:0; pointer-events:none;
+    transition:opacity .25s; z-index:50;}
+  .sheetbg.show{opacity:1; pointer-events:auto;}
+  .sheet{position:fixed; left:0; right:0; bottom:0; z-index:51; max-width:520px; margin:0 auto;
+    background:var(--paper); border-radius:22px 22px 0 0; box-shadow:0 -10px 40px rgba(36,35,33,.18);
+    padding:8px 22px calc(26px + env(safe-area-inset-bottom)); transform:translateY(110%);
+    transition:transform .28s cubic-bezier(.32,.72,.3,1); max-height:92vh; overflow-y:auto;}
+  .sheet.show{transform:translateY(0);}
+  .grab{width:38px; height:4px; border-radius:2px; background:var(--hair); margin:8px auto 14px;}
+  .field{margin-bottom:16px;}
+  .field>label{display:block; font-size:11px; letter-spacing:.16em; color:var(--muted); margin:0 0 7px 2px;}
+  .field input.txt{width:100%; appearance:none; border:1px solid var(--hair); background:var(--control);
+    font-family:inherit; font-size:16px; color:var(--ink); padding:12px 14px; border-radius:13px;}
+  .field input.txt:focus{outline:none; border-color:var(--ghost);}
+  .amtwrap{display:flex; align-items:center; border:1px solid var(--hair); background:var(--control); border-radius:13px; padding:0 14px;}
+  .amtwrap span{font-size:17px; color:var(--muted); margin-right:6px;}
+  .amtwrap input{flex:1; appearance:none; border:none; background:none; font-family:inherit; font-size:18px;
+    font-weight:500; color:var(--ink); padding:12px 0; text-align:right; font-variant-numeric:tabular-nums;}
+  .amtwrap input:focus{outline:none;}
+  .seg{display:grid; grid-template-columns:repeat(4,1fr); gap:5px;}
+  .seg button{appearance:none; border:1px solid var(--hair); background:var(--control); font-family:inherit;
+    font-size:13px; color:var(--muted); padding:11px 0; border-radius:12px; cursor:pointer; transition:.15s; letter-spacing:.02em;}
+  .seg button.on{background:var(--ink); color:var(--paper); border-color:var(--ink); font-weight:700;}
+  .cycfields{margin-top:13px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:14px; color:var(--ink);}
+  .cycfields select{appearance:none; -webkit-appearance:none; border:1px solid var(--hair); background:var(--control);
+    font-family:inherit; font-size:16px; color:var(--ink); padding:9px 30px 9px 12px; border-radius:11px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%2377736B' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 11px center;}
+  .cycfields select:focus{outline:none; border-color:var(--ghost);}
+  .wdrow{display:grid; grid-template-columns:repeat(7,1fr); gap:5px; margin-top:13px; width:100%;}
+  .wdrow button{appearance:none; border:1px solid var(--hair); background:var(--control); font-family:inherit;
+    font-size:14px; color:var(--muted); padding:11px 0; border-radius:11px; cursor:pointer; transition:.15s;}
+  .wdrow button.on{background:var(--ink); color:var(--paper); border-color:var(--ink); font-weight:700;}
+  .sheet-acts{display:flex; gap:10px; margin-top:8px;}
+  .sheet-acts button{flex:1; appearance:none; font-family:inherit; cursor:pointer; padding:14px; border-radius:14px;
+    font-size:14px; letter-spacing:.08em; transition:.15s;}
+  .btn-save{background:var(--ink); color:var(--paper); border:1px solid var(--ink); font-weight:700;}
+  .btn-save:active{opacity:.82;}
+  .btn-save:disabled{opacity:.4; cursor:default;}
+  .btn-del{flex:0 0 auto !important; width:54px; background:none; color:var(--over); border:1px solid var(--hair); font-size:18px;}
+  .btn-del:active{background:var(--surface);}
+
+  /* toast */
+  .toast{position:fixed; left:50%; bottom:calc(26px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(16px);
+    background:rgba(36,35,33,.94); color:var(--paper); font-size:13px; padding:10px 18px; border-radius:12px;
+    opacity:0; pointer-events:none; transition:.25s; z-index:99; letter-spacing:.04em;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+  <header>
+    <span class="logo"></span>
+    <span class="brand">ひきおとし</span>
+    <span class="sync" id="sync"><span class="dot"></span><span id="syncText"></span></span>
+  </header>
+
+  <div class="hero">
+    <span class="kicker" id="kicker">今月の ひきおとし</span>
+    <span class="total empty" id="total"><span class="yen">¥</span><span id="totalNum">0</span></span>
+    <span class="sub" id="sub"></span>
+    <span class="next" id="next"></span>
+  </div>
+
+  <div style="text-align:center;">
+    <div class="toggle" id="toggle">
+      <button data-v="cal" class="on">カレンダー</button>
+      <button data-v="list">いちらん</button>
+    </div>
+  </div>
+
+  <!-- calendar view -->
+  <div class="view on" id="view-cal">
+    <div class="mnav">
+      <button id="prevM" type="button" aria-label="前の月">‹</button>
+      <span class="mlabel" id="mlabel"></span>
+      <button id="nextM" type="button" aria-label="次の月">›</button>
+    </div>
+    <div class="dows">
+      <span class="s0">日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span class="s6">土</span>
+    </div>
+    <div class="cal" id="cal"></div>
+    <div class="detail" id="detail"></div>
+  </div>
+
+  <!-- list view -->
+  <div class="view" id="view-list">
+    <div class="list" id="list"></div>
+    <button class="add" id="addList"><span class="plus">＋</span>ひきおとしを ついか</button>
+    <div class="hint hide" id="hint">毎月かかる お金を ひとつずつ</div>
+  </div>
+
+  <!-- editor -->
+  <div class="sheetbg" id="sheetbg"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true">
+    <div class="grab"></div>
+    <div class="field">
+      <label>なまえ</label>
+      <input class="txt" id="f-name" type="text" maxlength="22" placeholder="Netflix、家賃、電気代…">
+    </div>
+    <div class="field">
+      <label>きんがく</label>
+      <div class="amtwrap"><span>¥</span><input id="f-amt" type="text" inputmode="numeric" placeholder="0"></div>
+    </div>
+    <div class="field">
+      <label>サイクル</label>
+      <div class="seg" id="f-seg">
+        <button data-c="month">毎月</button>
+        <button data-c="year">毎年</button>
+        <button data-c="interval">◯ヶ月</button>
+        <button data-c="week">毎週</button>
+      </div>
+      <div class="cycfields" id="f-cyc"></div>
+    </div>
+    <div class="sheet-acts">
+      <button class="btn-del" id="f-del" type="button" aria-label="けす" style="display:none;">×</button>
+      <button class="btn-save" id="f-save" type="button">保存</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+"use strict";
+
+/* ===== palette (earth) ===== */
+var COLORS = ['#C17A52','#A9A06B','#7E9A8C','#C9A36A','#9E6B57','#9A8FA0','#B5806F','#6F8377'];
+function colorAt(i){ return COLORS[i % COLORS.length]; }
+var WD = ['日','月','火','水','木','金','土'];
+var ANCHOR_YEAR = 2000;   // 「◯ヶ月ごと」の周期計算の固定基準
+
+/* ===== state ===== */
+var KEY = "hikiotoshi-v1";
+var state = load();
+var disp = (function(){ var d = new Date(); return { y:d.getFullYear(), m:d.getMonth()+1 }; })();
+var sel = null;          // 選択中の日（カレンダー）
+var view = "cal";
+var editingId = null;    // 編集中アイテムのid（新規はnull）
+var draft = null;        // 編集中の下書き
+
+function load(){
+  try{ var s = JSON.parse(localStorage.getItem(KEY)); if(s && Array.isArray(s.items)){ normalize(s.items); return s; } }catch(e){}
+  return { items:[] };
+}
+function normalize(items){
+  items.forEach(function(it){
+    if(it.cycle == null) it.cycle = "month";
+    if(it.amount == null) it.amount = 0;
+    if(it.day == null) it.day = 1;
+    if(it.month == null) it.month = 1;
+    if(it.weekday == null) it.weekday = 0;
+    if(it.interval == null) it.interval = 2;
+  });
+}
+function mkId(){ return "h" + Math.floor(performance.now()*1000).toString(36) + Math.floor(performance.now()).toString(36); }
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  if(window.HikiSync) HikiSync.schedule();
+}
+
+/* ===== format ===== */
+function fmt(n){ return Math.round(n||0).toLocaleString("ja-JP"); }
+function digits(s){ return String(s).replace(/[^0-9]/g,""); }
+function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
+function clampDay(it,y,m){ var dim=daysInMonth(y,m); return it.day>=32 ? dim : Math.min(it.day, dim); }
+
+/* この項目が y年m月d日に発生するか */
+function occursOnDay(it,y,m,d){
+  if(!it.amount) { /* 金額0でも予定としては出す */ }
+  if(it.cycle === "week"){ return new Date(y, m-1, d).getDay() === it.weekday; }
+  if(clampDay(it,y,m) !== d) return false;
+  if(it.cycle === "month") return true;
+  if(it.cycle === "year") return m === it.month;
+  if(it.cycle === "interval"){
+    var abs = y*12 + (m-1), anc = ANCHOR_YEAR*12 + (it.month-1);
+    return ((((abs - anc) % it.interval) + it.interval) % it.interval) === 0;
+  }
+  return false;
+}
+/* その月の総額 */
+function monthOutflow(y,m){
+  var dim = daysInMonth(y,m), sum = 0;
+  for(var d=1; d<=dim; d++){
+    state.items.forEach(function(it){ if(occursOnDay(it,y,m,d)) sum += (it.amount||0); });
+  }
+  return sum;
+}
+/* 月あたりの平均（定常コスト） */
+function monthlyEquivalent(it){
+  if(it.cycle === "month") return it.amount||0;
+  if(it.cycle === "year") return (it.amount||0)/12;
+  if(it.cycle === "interval") return (it.amount||0)/it.interval;
+  if(it.cycle === "week") return (it.amount||0)*52/12;
+  return 0;
+}
+function monthlyAverage(){ return state.items.reduce(function(s,it){ return s + monthlyEquivalent(it); }, 0); }
+
+function cycleLabel(it){
+  var dl = it.day>=32 ? "末日" : it.day+"日";
+  if(it.cycle === "month") return "毎月 "+dl;
+  if(it.cycle === "year") return "毎年 "+it.month+"月"+dl;
+  if(it.cycle === "interval") return it.interval+"ヶ月ごと";
+  if(it.cycle === "week") return "毎週 "+WD[it.weekday]+"曜";
+  return "";
+}
+
+/* 次のひきおとし（今日以降で最初に発生する日） */
+function nextPayment(){
+  if(!state.items.length) return null;
+  var now = new Date(), base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for(var k=0; k<400; k++){
+    var dd = new Date(base.getTime() + k*86400000);
+    var y=dd.getFullYear(), m=dd.getMonth()+1, d=dd.getDate();
+    var hits = state.items.filter(function(it){ return occursOnDay(it,y,m,d); });
+    if(hits.length){
+      return { date:dd, items:hits, sum:hits.reduce(function(s,it){return s+(it.amount||0);},0), away:k };
+    }
+  }
+  return null;
+}
+
+/* ===== render ===== */
+function renderHero(){
+  var total = monthOutflow(disp.y, disp.m);
+  document.getElementById("kicker").textContent = disp.m + "月の ひきおとし";
+  document.getElementById("totalNum").textContent = fmt(total);
+  document.getElementById("total").classList.toggle("empty", total === 0);
+  var avg = monthlyAverage();
+  var sub = document.getElementById("sub");
+  sub.textContent = state.items.length ? ("月の平均 ¥" + fmt(avg) + "・" + state.items.length + "件") : "";
+
+  var nx = nextPayment(), nextEl = document.getElementById("next");
+  if(nx){
+    var when = nx.away===0 ? "きょう" : nx.away===1 ? "あした" : (nx.date.getMonth()+1)+"/"+nx.date.getDate();
+    var nm = nx.items.length===1 ? nx.items[0].name || "（むめい）" : nx.items[0].name+" ほか"+(nx.items.length-1)+"件";
+    nextEl.innerHTML = "つぎは <b>"+when+"</b> "+esc(nm)+" <span class='nyen'>¥"+fmt(nx.sum)+"</span>";
+    nextEl.classList.add("show");
+  } else nextEl.classList.remove("show");
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+function renderCal(){
+  document.getElementById("mlabel").textContent = disp.y + "年 " + disp.m + "月";
+  var cal = document.getElementById("cal");
+  cal.innerHTML = "";
+  var dim = daysInMonth(disp.y, disp.m);
+  var first = new Date(disp.y, disp.m-1, 1).getDay();
+  var today = new Date(), isThisMonth = (today.getFullYear()===disp.y && today.getMonth()+1===disp.m);
+
+  for(var b=0; b<first; b++){ var e=document.createElement("div"); e.className="cell empty"; cal.appendChild(e); }
+  for(var d=1; d<=dim; d++){
+    (function(d){
+      var dow = new Date(disp.y, disp.m-1, d).getDay();
+      var cell = document.createElement("div");
+      cell.className = "cell s"+dow;
+      if(isThisMonth && d===today.getDate()) cell.className += " today";
+      if(sel === d) cell.className += " sel";
+      var dn = document.createElement("span"); dn.className="d"; dn.textContent=d;
+      var dots = document.createElement("div"); dots.className="dots";
+      state.items.forEach(function(it,i){
+        if(occursOnDay(it, disp.y, disp.m, d)){
+          var dot = document.createElement("i"); dot.style.background = colorAt(i);
+          if(dots.children.length < 4) dots.appendChild(dot);
+        }
+      });
+      cell.append(dn, dots);
+      cell.addEventListener("click", function(){ sel = (sel===d ? null : d); renderCal(); renderDetail(); });
+      cal.appendChild(cell);
+    })(d);
+  }
+  renderDetail();
+}
+
+function dayPayments(d){
+  var arr = [];
+  state.items.forEach(function(it,i){ if(occursOnDay(it, disp.y, disp.m, d)) arr.push({ it:it, color:colorAt(i) }); });
+  return arr;
+}
+function renderDetail(){
+  var det = document.getElementById("detail");
+  det.innerHTML = "";
+  if(sel == null){
+    if(!state.items.length){
+      det.innerHTML = '<div class="empty-day">「いちらん」から ひきおとしを ついかしてね</div>';
+    }
+    return;
+  }
+  var pays = dayPayments(sel);
+  var dow = new Date(disp.y, disp.m-1, sel).getDay();
+  var sum = pays.reduce(function(s,p){ return s + (p.it.amount||0); }, 0);
+  var h = document.createElement("div"); h.className="detail-h";
+  h.innerHTML = '<span class="dh-day">'+disp.m+'月'+sel+'日（'+WD[dow]+'）</span>' +
+                (pays.length ? '<span class="dh-sum">¥'+fmt(sum)+'</span>' : '');
+  det.appendChild(h);
+  if(!pays.length){ det.innerHTML += '<div class="empty-day">この日の ひきおとしは ありません</div>'; return; }
+  pays.forEach(function(p){
+    var row = document.createElement("div"); row.className="drow";
+    row.innerHTML = '<span class="sw" style="background:'+p.color+'"></span>' +
+      '<span class="dn">'+esc(p.it.name||"（むめい）")+'</span>' +
+      '<span class="dc">'+esc(cycleLabel(p.it))+'</span>' +
+      '<span class="da">¥'+fmt(p.it.amount||0)+'</span>';
+    row.addEventListener("click", function(){ openEditor(p.it.id); });
+    det.appendChild(row);
+  });
+}
+
+function renderList(){
+  var list = document.getElementById("list");
+  list.innerHTML = "";
+  state.items.forEach(function(it,i){
+    var row = document.createElement("div"); row.className="irow";
+    row.innerHTML =
+      '<span class="sw" style="background:'+colorAt(i)+'"></span>' +
+      '<span class="body"><span class="nm">'+esc(it.name||"（むめい）")+'</span>' +
+      '<span class="cy">'+esc(cycleLabel(it))+'</span></span>' +
+      '<span class="amt">¥'+fmt(it.amount||0)+'</span>' +
+      '<span class="chev">›</span>';
+    row.addEventListener("click", function(){ openEditor(it.id); });
+    list.appendChild(row);
+  });
+  document.getElementById("hint").classList.toggle("hide", state.items.length > 0);
+}
+
+function renderAll(){ renderHero(); renderCal(); renderList(); }
+
+function toast(msg){
+  var t = document.getElementById("toast"); if(!t) return;
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._t); t._t = setTimeout(function(){ t.classList.remove("show"); }, 1800);
+}
+
+/* ===== view toggle ===== */
+document.getElementById("toggle").addEventListener("click", function(e){
+  var b = e.target.closest("button"); if(!b) return;
+  view = b.dataset.v;
+  Array.prototype.forEach.call(this.children, function(x){ x.classList.toggle("on", x===b); });
+  document.getElementById("view-cal").classList.toggle("on", view==="cal");
+  document.getElementById("view-list").classList.toggle("on", view==="list");
+});
+
+/* ===== month nav ===== */
+function shiftMonth(delta){
+  var m = disp.m + delta, y = disp.y;
+  if(m < 1){ m = 12; y--; } if(m > 12){ m = 1; y++; }
+  disp.y = y; disp.m = m; sel = null;
+  renderHero(); renderCal();
+}
+document.getElementById("prevM").addEventListener("click", function(){ shiftMonth(-1); });
+document.getElementById("nextM").addEventListener("click", function(){ shiftMonth(1); });
+
+/* ===== editor ===== */
+function openEditor(itemId){
+  editingId = itemId || null;
+  if(editingId){
+    var src = state.items.find(function(x){ return x.id===editingId; });
+    draft = JSON.parse(JSON.stringify(src));
+  } else {
+    var t = new Date();
+    draft = { id:mkId(), name:"", amount:0, cycle:"month", day:t.getDate(), month:t.getMonth()+1, weekday:t.getDay(), interval:2 };
+  }
+  document.getElementById("f-name").value = draft.name;
+  document.getElementById("f-amt").value = draft.amount ? fmt(draft.amount) : "";
+  document.getElementById("f-del").style.display = editingId ? "block" : "none";
+  syncSeg(); renderCyc(); validate();
+  document.getElementById("sheetbg").classList.add("show");
+  document.getElementById("sheet").classList.add("show");
+}
+function closeEditor(){
+  document.getElementById("sheetbg").classList.remove("show");
+  document.getElementById("sheet").classList.remove("show");
+  document.activeElement && document.activeElement.blur();
+}
+function syncSeg(){
+  Array.prototype.forEach.call(document.getElementById("f-seg").children, function(b){
+    b.classList.toggle("on", b.dataset.c === draft.cycle);
+  });
+}
+function sel2(id, opts, val, onChange){
+  var s = document.createElement("select"); s.id = id;
+  opts.forEach(function(o){ var op=document.createElement("option"); op.value=o.v; op.textContent=o.t; if(o.v==val) op.selected=true; s.appendChild(op); });
+  s.addEventListener("change", function(){ onChange(s.value); });
+  return s;
+}
+function dayOpts(){
+  var a = []; for(var d=1; d<=31; d++) a.push({v:d, t:d+"日"}); a.push({v:32, t:"末日"}); return a;
+}
+function monthOpts(){ var a=[]; for(var m=1;m<=12;m++) a.push({v:m, t:m+"月"}); return a; }
+function renderCyc(){
+  var box = document.getElementById("f-cyc"); box.innerHTML = "";
+  if(draft.cycle === "month"){
+    box.append(txt("毎月"), sel2("c-day", dayOpts(), draft.day, function(v){ draft.day=+v; validate(); }));
+  } else if(draft.cycle === "year"){
+    box.append(txt("毎年"),
+      sel2("c-mon", monthOpts(), draft.month, function(v){ draft.month=+v; validate(); }),
+      sel2("c-day", dayOpts(), draft.day, function(v){ draft.day=+v; validate(); }));
+  } else if(draft.cycle === "interval"){
+    box.append(
+      sel2("c-int", [{v:2,t:"2"},{v:3,t:"3"},{v:4,t:"4"},{v:6,t:"6"}], draft.interval, function(v){ draft.interval=+v; validate(); }),
+      txt("ヶ月ごと"), txt("／ 起点"),
+      sel2("c-mon", monthOpts(), draft.month, function(v){ draft.month=+v; validate(); }),
+      sel2("c-day", dayOpts(), draft.day, function(v){ draft.day=+v; validate(); }));
+  } else if(draft.cycle === "week"){
+    var wrap = document.createElement("div"); wrap.className="wdrow";
+    WD.forEach(function(w,i){
+      var b=document.createElement("button"); b.type="button"; b.textContent=w;
+      b.className = (i===draft.weekday ? "on" : "");
+      b.addEventListener("click", function(){ draft.weekday=i; renderCyc(); validate(); });
+      wrap.appendChild(b);
+    });
+    box.appendChild(wrap);
+  }
+}
+function txt(s){ var sp=document.createElement("span"); sp.textContent=s; return sp; }
+function validate(){
+  var ok = draft && (draft.name||"").trim().length>0 && (draft.amount||0) > 0;
+  document.getElementById("f-save").disabled = !ok;
+}
+document.getElementById("f-seg").addEventListener("click", function(e){
+  var b = e.target.closest("button"); if(!b) return;
+  draft.cycle = b.dataset.c; syncSeg(); renderCyc(); validate();
+});
+document.getElementById("f-name").addEventListener("input", function(){ draft.name = this.value; validate(); });
+document.getElementById("f-amt").addEventListener("input", function(){
+  var d = digits(this.value); draft.amount = d ? parseInt(d,10) : 0;
+  this.value = d ? fmt(draft.amount) : ""; validate();
+});
+document.getElementById("f-save").addEventListener("click", function(){
+  if(!draft || !(draft.name||"").trim() || !(draft.amount>0)) return;
+  draft.name = draft.name.trim();
+  if(editingId){
+    var idx = state.items.findIndex(function(x){ return x.id===editingId; });
+    if(idx>=0) state.items[idx] = draft;
+  } else {
+    state.items.push(draft);
+  }
+  save(); closeEditor(); renderAll();
+  toast(editingId ? "保存しました" : "ついかしました");
+});
+document.getElementById("f-del").addEventListener("click", function(){
+  if(!editingId) return;
+  var src = state.items.find(function(x){ return x.id===editingId; });
+  if(!confirm("「" + ((src&&src.name)||"これ") + "」を けしますか？")) return;
+  state.items = state.items.filter(function(x){ return x.id!==editingId; });
+  save(); closeEditor(); renderAll(); toast("けしました");
+});
+document.getElementById("sheetbg").addEventListener("click", closeEditor);
+document.getElementById("addList").addEventListener("click", function(){ openEditor(null); });
+
+/* 初期選択：今月なら今日を選んでおく */
+(function(){
+  var t = new Date();
+  if(t.getFullYear()===disp.y && t.getMonth()+1===disp.m) sel = t.getDate();
+})();
+renderAll();
+
+/* ===== cloud sync (money_state を別IDで再利用) ===== */
+(function(){
+  var SUPABASE_URL = "https://okbjqtdirrathscctyvx.supabase.co";
+  var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y";
+  var sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+
+  var META = "hikiotoshi-sync-meta-v1", TABLE = "money_state", ID = "kodai-hikiotoshi";
+  var KEYS = [KEY];
+  var online = null, pending = false, timer = null, lastPushed = "";
+
+  function meta(){ try{ return JSON.parse(localStorage.getItem(META)) || {}; }catch(e){ return {}; } }
+  function setMeta(m){ try{ localStorage.setItem(META, JSON.stringify(m)); }catch(e){} }
+  function hasLocal(){ return !!localStorage.getItem(KEY); }
+  function blob(){
+    var b = { updatedAt: meta().updatedAt || 0 };
+    KEYS.forEach(function(k){ var raw = localStorage.getItem(k); if(raw){ try{ b[k]=JSON.parse(raw); }catch(e){} } });
+    return b;
+  }
+  function schedule(){
+    setMeta({ updatedAt: Date.now() });
+    if(!sb){ chip(); return; }
+    pending = true; clearTimeout(timer); timer = setTimeout(flush, 400);
+  }
+  function flush(){
+    if(!sb || !pending) return;
+    clearTimeout(timer); pending = false;
+    var b = blob(); b.updatedAt = meta().updatedAt || Date.now();
+    lastPushed = JSON.stringify(b);
+    sb.from(TABLE).upsert({ id:ID, state:b, updated_at:new Date().toISOString() })
+      .then(function(r){ if(r && r.error){ online=false; pending=true; } else online=true; chip(); })
+      .catch(function(){ online=false; pending=true; chip(); });
+  }
+  function applyRemote(inc, msg){
+    KEYS.forEach(function(k){ if(inc[k]!=null){ try{ localStorage.setItem(k, JSON.stringify(inc[k])); }catch(e){} } });
+    setMeta({ updatedAt: inc.updatedAt || Date.now() });
+    if(msg){ toast(msg); setTimeout(function(){ location.reload(); }, 900); }
+    else location.reload();
+  }
+  function editing(){
+    var a = document.activeElement;
+    return !!(a && (a.tagName==="INPUT" || a.tagName==="TEXTAREA" || a.tagName==="SELECT"))
+      || document.getElementById("sheet").classList.contains("show");
+  }
+  function init(){
+    if(!sb){ online=false; chip(); return; }
+    sb.from(TABLE).select("state").eq("id", ID).maybeSingle()
+      .then(function(res){
+        if(res && res.error){ online=false; chip(); return; }
+        online = true;
+        var row = res && res.data, localT = meta().updatedAt || 0;
+        if(row && row.state && typeof row.state === "object"){
+          var remoteT = row.state.updatedAt || 0;
+          if(remoteT > localT){
+            if(!localT && hasLocal()){
+              var useRemote = confirm("クラウドに保存ずみの ひきおとしが 見つかりました。\n\nOK：クラウドのデータをこの端末に反映\nキャンセル：この端末のデータをクラウドへ送る");
+              if(!useRemote){ touch(); subscribe(); chip(); return; }
+            }
+            applyRemote(row.state, null); return;
+          }
+          if(localT > remoteT){ pending=true; flush(); }
+        } else if(hasLocal()){
+          if(!localT) setMeta({ updatedAt: Date.now() });
+          pending=true; flush();
+        }
+        subscribe(); chip();
+      })
+      .catch(function(){ online=false; chip(); });
+  }
+  function touch(){ setMeta({ updatedAt: Date.now() }); pending=true; flush(); }
+  function subscribe(){
+    sb.channel("hiki-rt")
+      .on("postgres_changes", { event:"*", schema:"public", table:TABLE, filter:"id=eq."+ID }, function(p){
+        var inc = p.new && p.new.state; if(!inc) return;
+        if(JSON.stringify(inc) === lastPushed) return;
+        if((inc.updatedAt || 0) <= (meta().updatedAt || 0)) return;
+        if(editing()) return;
+        applyRemote(inc);
+      }).subscribe();
+  }
+  function chip(){
+    var el = document.getElementById("sync"), txt = document.getElementById("syncText");
+    if(!el) return;
+    el.classList.remove("ok","off");
+    if(!sb){ txt.textContent = "この端末"; return; }
+    if(online === true){ el.classList.add("ok"); txt.textContent = "同期"; }
+    else if(online === false){ el.classList.add("off"); txt.textContent = "オフライン"; }
+    else txt.textContent = "接続中";
+  }
+  function toast(msg){
+    var t = document.getElementById("toast"); if(!t) return;
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(t._t); t._t = setTimeout(function(){ t.classList.remove("show"); }, 1800);
+  }
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="hidden") flush(); });
+  window.addEventListener("pagehide", flush);
+  window.HikiSync = { schedule: schedule };
+  init();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
