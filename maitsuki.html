@@ -65,16 +65,11 @@
   .row{display:flex; align-items:center; gap:10px; padding:13px 4px; border-bottom:1px solid var(--hair); position:relative;}
   .row:first-child{border-top:1px solid var(--hair);}
   .swatch{width:11px; height:11px; border-radius:50%; flex:none; transition:background .3s;}
-  /* 並べ替え用ハンドル（色ドットの右隣・左端の戻るスワイプ帯22pxを避けた位置） */
-  .grip{flex:none; width:20px; height:38px; margin:-6px -2px -6px -4px; display:flex; align-items:center;
-    justify-content:center; color:var(--ghost); font-size:14px; line-height:1; cursor:grab;
-    touch-action:none; -webkit-user-select:none; user-select:none;
-    opacity:0; pointer-events:none; transition:opacity .2s, color .2s;}
-  /* 普段は隠し、ホバー(MacBook)・編集中(iPhoneのタップ=focus)・ドラッグ中だけ表示 */
-  .row:hover .grip, .row:focus-within .grip, .row.dragging .grip{opacity:1; pointer-events:auto;}
-  .grip:hover{color:var(--muted);} .grip:active{cursor:grabbing; color:var(--ink);}
-  .row.dragging{background:var(--paper); box-shadow:0 6px 18px rgba(0,0,0,.14); border-radius:12px;
-    border-bottom-color:transparent; z-index:6; opacity:.97;}
+  /* 長押しドラッグで並べ替え：つかんだ行は浮き上がって指/カーソルに追従 */
+  .row.dragging{background:var(--paper); box-shadow:0 8px 22px rgba(0,0,0,.16); border-radius:12px;
+    border-bottom-color:transparent; z-index:10; transition:none;}
+  body.reordering{cursor:grabbing; -webkit-user-select:none; user-select:none;}
+  body.reordering .name, body.reordering .amt{pointer-events:none;}  /* ドラッグ中は入力にフォーカスさせない */
   .name{flex:1; min-width:0; appearance:none; border:none; background:none; font-family:inherit;
     font-size:16px; color:var(--ink); padding:2px 0; letter-spacing:.02em;}
   .name::placeholder{color:var(--ghost);}
@@ -297,37 +292,80 @@ function restRow(over, val, denom){
   return row;
 }
 
-/* ===== ドラッグで並べ替え（指・マウス両対応：Pointer Events） ===== */
-var dragRow = null;
-function attachDrag(grip, row){
-  grip.addEventListener("pointerdown", function(e){
-    if(e.button != null && e.button !== 0) return;   // 右クリック等は無視
-    e.preventDefault();
-    dragRow = row; row.classList.add("dragging");
-    try{ grip.setPointerCapture(e.pointerId); }catch(_){}
-  });
-  grip.addEventListener("pointermove", function(e){
-    if(!dragRow) return;
-    e.preventDefault();
-    var list = document.getElementById("list");
-    var sibs = Array.prototype.slice.call(list.querySelectorAll(".row[data-id]"))
-      .filter(function(r){ return r !== dragRow; });
-    var ref = null;
-    for(var i=0;i<sibs.length;i++){
-      var rc = sibs[i].getBoundingClientRect();
-      if(e.clientY < rc.top + rc.height/2){ ref = sibs[i]; break; }
-    }
-    if(ref){ list.insertBefore(dragRow, ref); }
-    else { var rest = list.querySelector(".row.rest"); if(rest) list.insertBefore(dragRow, rest); else list.appendChild(dragRow); }
-  });
-  function end(){
-    if(!dragRow) return;
-    dragRow.classList.remove("dragging"); dragRow = null;
-    commitReorder();
+/* ===== 長押しドラッグで並べ替え（iPhone PWA・MacBookマウス両対応） =====
+   ・行を約260ms長押し（iOSのテキスト拡大鏡=約500msより早く発火）→ ふわっと浮いてドラッグ開始
+   ・指/カーソルに追従し、中点を越えた行と入れ替え。離した位置で確定＆保存
+   ・短いタップは従来どおり編集にフォーカス。ボタン(› ×)やスクロールは邪魔しない */
+var DnD = (function(){
+  var LONG = 260, CANCEL = 8;
+  var mode = 0;          // 0:なし 1:長押し待ち 2:ドラッグ中
+  var row = null, timer = null, sx = 0, sy = 0;
+
+  function clear(){ if(timer){ clearTimeout(timer); timer = null; } }
+  function reset(){ clear(); if(row) row.style.transform = ""; if(row) row.classList.remove("dragging"); document.body.classList.remove("reordering"); mode = 0; row = null; }
+  function enter(){
+    mode = 2; timer = null;
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    row.classList.add("dragging");
+    document.body.classList.add("reordering");
   }
-  grip.addEventListener("pointerup", end);
-  grip.addEventListener("pointercancel", end);
+  function start(r, x, y, target){
+    if(mode !== 0) return;
+    if(target && target.closest && target.closest("button")) return;   // › × は通常動作
+    row = r; sx = x; sy = y; mode = 1; clear();
+    timer = setTimeout(enter, LONG);
+  }
+  function move(x, y){
+    if(mode === 1){ if(Math.abs(x-sx) > CANCEL || Math.abs(y-sy) > CANCEL){ reset(); } return false; }
+    if(mode !== 2 || !row) return false;
+    var list = document.getElementById("list");
+    var sibs = Array.prototype.slice.call(list.querySelectorAll(".row[data-id]")).filter(function(z){ return z !== row; });
+    var ref = null;
+    for(var i=0;i<sibs.length;i++){ var rc = sibs[i].getBoundingClientRect(); if(y < rc.top + rc.height/2){ ref = sibs[i]; break; } }
+    if(ref){ list.insertBefore(row, ref); }
+    else { var rest = list.querySelector(".row.rest"); if(rest) list.insertBefore(row, rest); else list.appendChild(row); }
+    // つかんだ行を指/カーソルの位置へ追従（中央を合わせる）
+    row.style.transform = "translateY(0px)";
+    var rc2 = row.getBoundingClientRect();
+    row.style.transform = "translateY(" + (y - (rc2.top + rc2.height/2)) + "px)";
+    return true;
+  }
+  function end(){
+    var wasDrag = (mode === 2);
+    reset();
+    if(wasDrag){ commitReorder(); swallowNextClick(); }
+  }
+  function swallowNextClick(){
+    var fn = function(e){ e.preventDefault(); e.stopPropagation(); document.removeEventListener("click", fn, true); };
+    document.addEventListener("click", fn, true);
+    setTimeout(function(){ document.removeEventListener("click", fn, true); }, 400);
+  }
+  return { start:start, move:move, end:end, dragging:function(){ return mode === 2; } };
+})();
+
+/* 行ごとの開始フック（renderListから各行に付与） */
+function attachDrag(row){
+  row.addEventListener("mousedown", function(e){ if(e.button !== 0) return; DnD.start(row, e.clientX, e.clientY, e.target); });
+  row.addEventListener("touchstart", function(e){
+    if(e.touches.length !== 1){ DnD.end(); return; }
+    var t = e.touches[0]; DnD.start(row, t.clientX, t.clientY, e.target);
+  }, {passive:true});
 }
+
+/* ドラッグ中の移動/終了はドキュメント全体で拾う（行外へ出ても追従。1度だけ登録） */
+if(!window.__dndGlobals){
+  window.__dndGlobals = true;
+  document.addEventListener("mousemove", function(e){ DnD.move(e.clientX, e.clientY); });
+  document.addEventListener("mouseup", function(){ DnD.end(); });
+  document.addEventListener("touchmove", function(e){
+    var t = e.touches[0]; if(!t) return;
+    if(DnD.dragging()) e.preventDefault();        // ドラッグ中だけスクロールを止める
+    DnD.move(t.clientX, t.clientY);
+  }, {passive:false});
+  document.addEventListener("touchend", function(){ DnD.end(); }, {passive:true});
+  document.addEventListener("touchcancel", function(){ DnD.end(); }, {passive:true});
+}
+
 function commitReorder(){
   var list = document.getElementById("list");
   var ids = Array.prototype.map.call(list.querySelectorAll(".row[data-id]"), function(r){ return r.dataset.id; });
@@ -349,9 +387,7 @@ function renderList(){
     var sw = document.createElement("span"); sw.className = "swatch";
     sw.style.background = v ? colorAt(i) : "var(--ghost)";
 
-    var grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⠿";
-    grip.setAttribute("aria-label","ドラッグして並べ替え");
-    attachDrag(grip, row);
+    attachDrag(row);
 
     var name = document.createElement("input");
     name.className = "name"; name.type = "text"; name.placeholder = "こうもく";
@@ -382,7 +418,7 @@ function renderList(){
     del.setAttribute("aria-label","削除");
     del.addEventListener("click", function(){ remove(it.id); });
 
-    row.append(sw, grip, name, amtEl, pct, chev, del);
+    row.append(sw, name, amtEl, pct, chev, del);
     list.appendChild(row);
   });
 
