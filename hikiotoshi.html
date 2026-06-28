@@ -47,7 +47,7 @@
   .toggle{display:inline-flex; background:var(--surface); border:1px solid var(--hair);
     border-radius:999px; padding:3px; margin-top:16px; gap:2px;}
   .toggle button{appearance:none; border:none; background:none; font-family:inherit;
-    font-size:12.5px; color:var(--muted); padding:6px 20px; border-radius:999px; cursor:pointer; letter-spacing:.1em; transition:.2s;}
+    font-size:12.5px; color:var(--muted); padding:6px 15px; border-radius:999px; cursor:pointer; letter-spacing:.06em; transition:.2s; white-space:nowrap;}
   .toggle button.on{background:var(--paper); color:var(--ink); font-weight:700; box-shadow:0 1px 3px rgba(36,35,33,.08);}
 
   .view{display:none; margin-top:8px;}
@@ -98,6 +98,20 @@
   .irow .cy{font-size:11.5px; color:var(--muted); letter-spacing:.02em;}
   .irow .amt{font-size:16px; font-weight:500; font-variant-numeric:tabular-nums; flex:none;}
   .irow .chev{color:var(--ghost); font-size:20px; flex:none; line-height:1;}
+
+  /* pie view */
+  .pwrap{display:flex; flex-direction:column; align-items:center; margin-top:20px;}
+  .pwrap svg.donut{width:212px; height:212px; flex:none;}
+  .pwrap .ctot{font-size:25px; font-weight:700; font-variant-numeric:tabular-nums; fill:var(--ink);}
+  .pwrap .clab{font-size:10.5px; letter-spacing:.18em; fill:var(--muted);}
+  .plegend{width:100%; margin-top:18px;}
+  .plrow{display:flex; align-items:center; gap:11px; padding:11px 4px; border-bottom:1px solid var(--hair);}
+  .plrow:first-child{border-top:1px solid var(--hair);}
+  .plrow .sw{width:11px; height:11px; border-radius:50%; flex:none;}
+  .plrow .pn{flex:1; min-width:0; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .plrow .pp{font-size:11.5px; color:var(--muted); flex:none; width:40px; text-align:right; font-variant-numeric:tabular-nums;}
+  .plrow .pv{font-size:15px; font-weight:500; font-variant-numeric:tabular-nums; flex:none; width:90px; text-align:right;}
+  .pie-empty{text-align:center; color:var(--ghost); font-size:12.5px; letter-spacing:.08em; padding:48px 0;}
 
   .add{display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
     margin-top:18px; padding:14px; border:1px dashed var(--ghost); border-radius:16px;
@@ -177,13 +191,21 @@
 
   <div style="text-align:center;">
     <div class="toggle" id="toggle">
-      <button data-v="cal" class="on">カレンダー</button>
-      <button data-v="list">いちらん</button>
+      <button data-v="list" class="on">いちらん</button>
+      <button data-v="cal">カレンダー</button>
+      <button data-v="pie">円グラフ</button>
     </div>
   </div>
 
+  <!-- list view -->
+  <div class="view on" id="view-list">
+    <div class="list" id="list"></div>
+    <button class="add" id="addList"><span class="plus">＋</span>ひきおとしを ついか</button>
+    <div class="hint hide" id="hint">毎月かかる お金を ひとつずつ</div>
+  </div>
+
   <!-- calendar view -->
-  <div class="view on" id="view-cal">
+  <div class="view" id="view-cal">
     <div class="mnav">
       <button id="prevM" type="button" aria-label="前の月">‹</button>
       <span class="mlabel" id="mlabel"></span>
@@ -196,11 +218,9 @@
     <div class="detail" id="detail"></div>
   </div>
 
-  <!-- list view -->
-  <div class="view" id="view-list">
-    <div class="list" id="list"></div>
-    <button class="add" id="addList"><span class="plus">＋</span>ひきおとしを ついか</button>
-    <div class="hint hide" id="hint">毎月かかる お金を ひとつずつ</div>
+  <!-- pie view -->
+  <div class="view" id="view-pie">
+    <div class="pwrap" id="pwrap"></div>
   </div>
 
   <!-- editor -->
@@ -249,7 +269,7 @@ var KEY = "hikiotoshi-v1";
 var state = load();
 var disp = (function(){ var d = new Date(); return { y:d.getFullYear(), m:d.getMonth()+1 }; })();
 var sel = null;          // 選択中の日（カレンダー）
-var view = "cal";
+var view = "list";
 var editingId = null;    // 編集中アイテムのid（新規はnull）
 var draft = null;        // 編集中の下書き
 
@@ -317,6 +337,19 @@ function monthOccCount(y,m){
     state.items.forEach(function(it){ if(occursOnDay(it,y,m,d)) n++; });
   }
   return n;
+}
+
+/* その項目の今月の引き落とし回数 */
+function itemMonthCount(it){
+  var dim = daysInMonth(disp.y, disp.m), n = 0;
+  for(var d=1; d<=dim; d++){ if(occursOnDay(it, disp.y, disp.m, d)) n++; }
+  return n;
+}
+/* その項目が今月さいしょに発生する日（並べ替え用。今月発生しなければ末尾） */
+function firstOccDay(it){
+  var dim = daysInMonth(disp.y, disp.m);
+  for(var d=1; d<=dim; d++){ if(occursOnDay(it, disp.y, disp.m, d)) return d; }
+  return 99;
 }
 
 function cycleLabel(it){
@@ -409,7 +442,11 @@ function renderDetail(){
 function renderList(){
   var list = document.getElementById("list");
   list.innerHTML = "";
-  state.items.forEach(function(it,i){
+  // 色は state.items の並び順で固定（カレンダー・円グラフと一致）。表示だけ日付順に並べ替える。
+  var rows = state.items.map(function(it,i){ return { it:it, i:i, key:firstOccDay(it) }; });
+  rows.sort(function(a,b){ return (a.key - b.key) || (a.i - b.i); });
+  rows.forEach(function(o){
+    var it = o.it, i = o.i;
     var row = document.createElement("div"); row.className="irow";
     row.innerHTML =
       '<span class="sw" style="background:'+colorAt(i)+'"></span>' +
@@ -423,7 +460,51 @@ function renderList(){
   document.getElementById("hint").classList.toggle("hide", state.items.length > 0);
 }
 
-function renderAll(){ renderHero(); renderCal(); renderList(); }
+function renderPie(){
+  var wrap = document.getElementById("pwrap");
+  wrap.innerHTML = "";
+  var rows = [];
+  state.items.forEach(function(it,i){
+    var val = (it.amount||0) * itemMonthCount(it);
+    if(val > 0) rows.push({ name:it.name||"（むめい）", color:colorAt(i), val:val });
+  });
+  var total = rows.reduce(function(s,r){ return s + r.val; }, 0);
+  if(total === 0){
+    wrap.innerHTML = '<div class="pie-empty">今月の ひきおとしは ありません</div>';
+    return;
+  }
+  rows.sort(function(a,b){ return b.val - a.val; });
+
+  var R = 80, C = 2 * Math.PI * R, off = 0, segs = "";
+  rows.forEach(function(r){
+    var len = (r.val / total) * C;
+    // 完全に1色のときは継ぎ目が出ないよう全周描く
+    var dash = (rows.length === 1) ? (C + " 0") : (Math.max(len - 1.2, 0.1) + " " + (C - Math.max(len - 1.2, 0.1)));
+    segs += '<circle cx="106" cy="106" r="'+R+'" fill="none" stroke="'+r.color+'" stroke-width="30"'
+         +  ' stroke-dasharray="'+dash+'" stroke-dashoffset="'+(-off)+'" transform="rotate(-90 106 106)"/>';
+    off += len;
+  });
+  var svg = '<svg class="donut" viewBox="0 0 212 212" xmlns="http://www.w3.org/2000/svg">'
+    + segs
+    + '<text class="ctot" x="106" y="103" text-anchor="middle">¥'+fmt(total)+'</text>'
+    + '<text class="clab" x="106" y="124" text-anchor="middle">'+disp.m+'月の ごうけい</text>'
+    + '</svg>';
+
+  var legend = '<div class="plegend">';
+  rows.forEach(function(r){
+    var pct = Math.round(r.val / total * 100);
+    legend += '<div class="plrow">'
+      + '<span class="sw" style="background:'+r.color+'"></span>'
+      + '<span class="pn">'+esc(r.name)+'</span>'
+      + '<span class="pp">'+pct+'%</span>'
+      + '<span class="pv">¥'+fmt(r.val)+'</span>'
+      + '</div>';
+  });
+  legend += '</div>';
+  wrap.innerHTML = svg + legend;
+}
+
+function renderAll(){ renderHero(); renderList(); renderCal(); renderPie(); }
 
 function toast(msg){
   var t = document.getElementById("toast"); if(!t) return;
@@ -438,6 +519,8 @@ document.getElementById("toggle").addEventListener("click", function(e){
   Array.prototype.forEach.call(this.children, function(x){ x.classList.toggle("on", x===b); });
   document.getElementById("view-cal").classList.toggle("on", view==="cal");
   document.getElementById("view-list").classList.toggle("on", view==="list");
+  document.getElementById("view-pie").classList.toggle("on", view==="pie");
+  if(view==="pie") renderPie();
 });
 
 /* ===== month nav ===== */
@@ -445,7 +528,7 @@ function shiftMonth(delta){
   var m = disp.m + delta, y = disp.y;
   if(m < 1){ m = 12; y--; } if(m > 12){ m = 1; y++; }
   disp.y = y; disp.m = m; sel = null;
-  renderHero(); renderCal();
+  renderAll();
 }
 document.getElementById("prevM").addEventListener("click", function(){ shiftMonth(-1); });
 document.getElementById("nextM").addEventListener("click", function(){ shiftMonth(1); });
