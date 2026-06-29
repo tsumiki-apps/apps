@@ -302,6 +302,13 @@
     </div>
   </div>
 
+  <!-- Summary（このクオーターの確定値。次Qの「前Q」基準になる） -->
+  <div id="summaryCard" class="card" style="display:none">
+    <h2>Summary（このクオーターの確定値）</h2>
+    <p style="font-size:12px;color:var(--sub);margin:-4px 0 14px;">ここに入れた数値が、次のクオーターの「前Q」の基準値になります。空欄なら、最後に入力した週の値が自動で使われます。</p>
+    <div id="summaryList"></div>
+  </div>
+
   <div class="tabbar">
     <button class="tab active" data-page="1" type="button"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Personal</span></button>
     <button class="tab" data-page="2" type="button"><svg class="ico" viewBox="0 0 24 24"><path d="M3 9l1-5h16l1 5"/><path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0"/><path d="M5 9v11h14V9"/><path d="M10 20v-5h4v5"/></svg><span>Store</span></button>
@@ -599,7 +606,7 @@
     kpiList:gid("kpiList"), npsTallies:gid("npsTallies"), goal:gid("goal"),
     npsTotal:gid("npsTotal"), npsCount:gid("npsCount"), npsGoalView:gid("npsGoalView"), npsNeed:gid("npsNeed"),
     metricLabel:gid("metricLabel"), metricDots:gid("metricDots"), liveChart:gid("liveChart"),
-    saveImgBtn:gid("saveImgBtn"), resetWeek:gid("resetWeek"),
+    saveImgBtn:gid("saveImgBtn"), resetWeek:gid("resetWeek"), summaryList:gid("summaryList"),
     // page2
     storeNpsTallies:gid("storeNpsTallies"), storeGoal:gid("storeGoal"),
     storeNpsTotal:gid("storeNpsTotal"), storeNpsCount:gid("storeNpsCount"),
@@ -616,6 +623,7 @@
   function buildWeekOptions(){
     var h="";
     for(var i=1;i<=13;i++) h+='<option value="'+i+'">Week '+i+'</option>';
+    h+='<option value="summary">Summary</option>';
     el.week.innerHTML=h;
   }
   function buildKpi(){
@@ -636,6 +644,52 @@
       renderKpi(); renderChart(); save();
     });
   }
+  // Summary（このクオーターの確定値）の入力欄を組み立てる
+  function buildSummary(){
+    KPIS.forEach(function(m){
+      var row=document.createElement("div");
+      row.className="kpi"; row.dataset.key=m.key;
+      row.innerHTML =
+        '<span class="name">'+m.name+'</span>'+
+        '<div class="io"><label>確定値</label><input type="number" inputmode="decimal" data-k="'+m.key+'" data-f="s"><span class="unit">'+m.unit+'</span></div>';
+      el.summaryList.appendChild(row);
+    });
+    el.summaryList.addEventListener("input", function(e){
+      var inp=e.target.closest("input"); if(!inp) return;
+      ensureSummary()[inp.dataset.k] = inp.value;
+      save();
+    });
+  }
+  // 現クオーターの Summary（確定値）の入れ物。{main,care,acc,cp}
+  function ensureSummary(){
+    var qd=quarter();
+    if(!qd.summary || typeof qd.summary!=="object") qd.summary={};
+    KPIS.forEach(function(m){ if(qd.summary[m.key]==null) qd.summary[m.key]=""; });
+    return qd.summary;
+  }
+  function loadSummaryInputs(){
+    var sm=ensureSummary();
+    KPIS.forEach(function(m){
+      var inp=el.summaryList.querySelector('input[data-k="'+m.key+'"][data-f="s"]');
+      if(inp) inp.value = sm[m.key]||"";
+    });
+  }
+  function isSummaryView(){ return el.week.value==="summary"; }
+  function currentPage(){ var t=document.querySelector(".tab.active"); return t?t.dataset.page:"1"; }
+  // Summary選択中はSummaryカードのみ表示し、通常のページ／タブを隠す
+  function applyViewMode(){
+    var summary=isSummaryView();
+    gid("summaryCard").style.display = summary ? "" : "none";
+    document.querySelector(".tabbar").style.display = summary ? "none" : "";
+    if(summary){
+      gid("page1").style.display="none";
+      gid("page2").style.display="none";
+      gid("page3").style.display="none";
+    }else{
+      switchPage(currentPage());
+    }
+  }
+
   var NPS_ROWS=[
     {key:"promoter", t:"Promoter", s:"5 (+100)", cls:"promoter"},
     {key:"passive",  t:"Passive",  s:"4 (0)",    cls:"passive"},
@@ -735,6 +789,11 @@
   function autoPrevRef(mkey){
     var pk=prevFyqKey(); if(!pk) return null;
     var pd=state.data[pk]; if(!pd) return null;
+    // 優先: 前QのSummary（確定値）に入力があればそれを使う
+    if(pd.summary && pd.summary[mkey]!=null && pd.summary[mkey]!==""){
+      var sv=num(pd.summary[mkey]); if(sv!==null) return sv;
+    }
+    // フォールバック: 前Qの最後に入力済みの週の値
     for(var w=13;w>=1;w--){
       var s=pd[w]; if(!s||!s.kpi||!s.kpi[mkey]) continue;
       var v=num(s.kpi[mkey].v); if(v!==null) return v;
@@ -779,7 +838,11 @@
   }
 
   function renderTitle(){
-    el.titlePreview.textContent = "FY"+(state.fy||"–")+"Q"+(state.q||"–")+"W"+state.w+" Recap";
+    if(isSummaryView()){
+      el.titlePreview.textContent = "FY"+(state.fy||"–")+"Q"+(state.q||"–")+" Summary（確定値）";
+    }else{
+      el.titlePreview.textContent = "FY"+(state.fy||"–")+"Q"+(state.q||"–")+"W"+state.w+" Recap";
+    }
   }
   function renderKpi(){
     var s=cur();
@@ -1168,9 +1231,17 @@
     el.myGoal.addEventListener("input",function(){ state.myGoal=el.myGoal.value; save(); });
     el.savePdfBtn.addEventListener("click",exportPDF);
     el.savePdfBtn2.addEventListener("click",exportPDF);
-    el.fy.addEventListener("input",function(){ state.fy=el.fy.value; loadWeekIntoInputs(); renderTitle(); renderAll(); save(); });
-    el.q.addEventListener("input",function(){ state.q=el.q.value; loadWeekIntoInputs(); renderAll(); save(); });
-    el.week.addEventListener("change",function(){ state.w=parseInt(el.week.value,10)||1; loadWeekIntoInputs(); renderAll(); save(); });
+    el.fy.addEventListener("input",function(){ state.fy=el.fy.value; loadWeekIntoInputs(); loadSummaryInputs(); renderTitle(); renderAll(); save(); });
+    el.q.addEventListener("input",function(){ state.q=el.q.value; loadWeekIntoInputs(); loadSummaryInputs(); renderTitle(); renderAll(); save(); });
+    el.week.addEventListener("change",function(){
+      if(el.week.value==="summary"){
+        // ビュー切替のみ。データは書き込まない（save()しない）
+        loadSummaryInputs(); applyViewMode(); renderTitle();
+        return;
+      }
+      state.w=parseInt(el.week.value,10)||1;
+      applyViewMode(); loadWeekIntoInputs(); renderAll(); save();
+    });
     el.goal.addEventListener("input",function(){ cur().nps.goal=el.goal.value; renderNps(); renderChart(); save(); });
     el.qend.addEventListener("change",function(){ quarter().qend=el.qend.value; renderNps(); renderStoreNps(); updateQDaysLeft(); save(); });
     el.copyPrev.addEventListener("click",copyPrev);
@@ -2137,16 +2208,19 @@
     el.name.value=state.name; el.cm.value=state.cm; el.myGoal.value=state.myGoal; el.fy.value=state.fy; el.q.value=state.q;
     el.week.value=state.w;
     loadWeekIntoInputs();
+    loadSummaryInputs();
     renderAll();
+    applyViewMode();
     if(gid("page2").style.display!=="none") renderPage2();
   }
 
   /* ---------- init ---------- */
   load();
-  buildWeekOptions(); buildKpi(); buildNps(); buildStoreNps(); buildChips();
+  buildWeekOptions(); buildKpi(); buildSummary(); buildNps(); buildStoreNps(); buildChips();
   el.name.value=state.name; el.cm.value=state.cm; el.myGoal.value=state.myGoal; el.fy.value=state.fy; el.q.value=state.q;
   el.week.value=state.w;
   loadWeekIntoInputs();
+  loadSummaryInputs();
   renderAll();
   bind();
 
