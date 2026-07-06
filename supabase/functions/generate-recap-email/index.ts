@@ -39,7 +39,8 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.7,
+        // 役職の取り違えを減らすため低めに設定（創造性より正確さを優先）
+        temperature: 0.45,
         maxOutputTokens: 1024,
         // 2.5系の思考トークンを無効化（本文に予算を回し、高速・低コスト化）
         thinkingConfig: { thinkingBudget: 0 },
@@ -97,7 +98,10 @@ function buildPrompt(d: any, lang: "ja" | "en"): string {
       "- Lead with the initiatives that moved forward. If something is still in progress, note a brief, concrete focus for next week.",
       "- Do NOT report or invent metric numbers (no NPS/KPI figures); keep it about the team's actions and growth.",
       "- Do NOT confuse the roles: the sender's present role is the `Current position`; the `Goal` is a role they are still working toward. Refer to the sender as their current position and never write the goal role as if it were their current title.",
-      "- If a goal is provided, tie the closing to growing toward it (not to a role already held).",
+      "- Never write `as a(n) <goal role>` (e.g. 'as an Expert') to describe the sender — the goal role must never appear as their present title.",
+      "- Example (current=Specialist / goal=Expert): WRONG 'I will keep contributing as an Expert' / RIGHT 'As a Specialist, I want to grow toward becoming an Expert'.",
+      "- If the current position is blank, do not give the sender any role title; just say they want to contribute and grow.",
+      "- If a goal is provided, the closing must frame it as something they are working toward (not a role already held).",
       "- Keep it concise (about 150-220 words). Sign off with the sender's first name.",
       "- Do not use markdown bullets or asterisks.",
       "",
@@ -118,7 +122,10 @@ function buildPrompt(d: any, lang: "ja" | "en"): string {
     "- まず前進した取り組みに触れる。まだ途中のものがあれば、来週の具体的なフォーカスを短く添える。",
     "- NPSやKPIなどの数値は報告しない（創作もしない）。あくまでチームの取り組みと成長の話にする。",
     "- 役職を混同しないこと。送信者の今の役職は『現在のポジション』であり、『目標』はこれから目指す役職。送信者を現在のポジションとして扱い、目標の役職を今の肩書きのように書かない。",
-    "- 目標があれば、締めで『その目標に向けて成長していきたい』という方向で自然に結びつける（すでに就いている役職のようには書かない）。",
+    "- 特に『（目標の役職名）として』という言い回しは絶対に使わない。目標の役職名の直後に『として』を付けて自分を名乗ってはいけない。",
+    "- 具体例（現在=Specialist / 目標=Expert の場合）: × 『今後もExpertとして貢献したい』 / ○ 『Specialistとして、Expertを目指して成長していきたい』 / ○ 『Expertという目標に向けて成長していきたい』。",
+    "- 現在のポジションが空欄のときは、役職名で自分を名乗らず『チームに貢献し、成長していきたい』のように書く（目標の役職名を現職の肩書きに流用しない）。",
+    "- 目標があれば、締めは必ず『（目標）を目指して成長していきたい』という“これから目指す”方向でまとめる（すでにその役職に就いているようには書かない）。",
     "- 180〜320字程度で簡潔に。最後は送信者の名前で締める。",
     "- 箇条書き記号(*や•)やMarkdownは使わない。",
     "",
