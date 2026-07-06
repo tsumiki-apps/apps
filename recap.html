@@ -264,6 +264,14 @@
   .fbreak{display:flex; align-items:center; gap:8px; color:#a49f95; font-size:12px; margin:2px 6px 12px;}
   .fbreak .ico{width:15px; height:15px; flex-shrink:0;}
   .fbreak .fb-line{flex:1; height:1px; background:var(--line);}
+  /* 日別 天気・NPS 入力グリッド */
+  .fm-row{display:flex; align-items:center; gap:8px; margin-bottom:8px;}
+  .fm-row:last-child{margin-bottom:0;}
+  .fm-wd{width:26px; text-align:center; font-weight:700; font-size:15px; color:var(--text); flex-shrink:0;}
+  .fm-wd.fm-sun{color:#b06a52;} .fm-wd.fm-sat{color:#4a6f9c;}
+  .fm-weather{flex:1; min-width:0; font-size:16px; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:#fff; font-family:inherit; color:var(--text);}
+  .fm-nps{width:74px; flex-shrink:0; font-size:16px; padding:9px 8px; border:1px solid var(--line); border-radius:9px; background:#fff; font-family:inherit; color:var(--text); text-align:center;}
+  .fm-weather:focus, .fm-nps:focus{outline:none; border-color:var(--blue);}
 
   /* 取り込みプレビュー（ボトムシート） */
   .ovl{position:fixed; inset:0; background:rgba(20,18,16,.5); z-index:1200; display:flex; align-items:flex-end; justify-content:center;}
@@ -463,6 +471,11 @@
       <span id="floorStatus" class="mail-status"></span>
     </div>
     <input type="file" id="floorFile" accept="image/*" style="display:none">
+    <div class="card" id="floorMetaCard">
+      <h2>日別 天気・Store NPS（日〜土）</h2>
+      <p style="font-size:12px;color:var(--sub);margin:-8px 0 14px;">ここで入れた天気とNPSが、週の出力で各曜日の上に並びます。</p>
+      <div id="floorMetaGrid"></div>
+    </div>
     <div id="floorSessions"></div>
   </div><!-- /page3 -->
 
@@ -594,13 +607,27 @@
     {key:"nps",  label:"NPS総計",     kind:"nps", unit:""}
   ];
 
+  // Floor 出力の曜日ヘッダー用の天気候補（絵文字はキャンバス/画面共用）
+  var WEATHER = [
+    {k:"",       ic:"",   label:"—"},
+    {k:"sunny",  ic:"☀️", label:"晴れ"},
+    {k:"partly", ic:"🌤", label:"晴れ時々くもり"},
+    {k:"cloudy", ic:"☁️", label:"くもり"},
+    {k:"rain",   ic:"🌧", label:"雨"},
+    {k:"storm",  ic:"⛈", label:"雷雨"},
+    {k:"snow",   ic:"❄️", label:"雪"}
+  ];
+  function weatherIc(k){ for(var i=0;i<WEATHER.length;i++){ if(WEATHER[i].k===k) return WEATHER[i].ic; } return ""; }
+  var WEEKDAY_JA = ["日","月","火","水","木","金","土"];
+
   function emptySnapshot(){
     return {
       kpi:{ main:{v:"",b:""}, care:{v:"",b:""}, acc:{v:"",b:""}, cp:{v:"",b:""} },
       nps:{ promoter:0, passive:0, detractor:0, goal:70 },
       storeNps:{ promoter:0, passive:0, detractor:0, goal:70 },
       actions:[],   // {name, collaborators:[], ja, en, photos:[dataURL]}
-      floorDays:{}  // floorDays[YYYY-MM-DD] = { room, shiftHours, items:[{time,hours,zone,role,tag,note} | {break:true,time}] }
+      floorDays:{}, // floorDays[YYYY-MM-DD] = { room, shiftHours, items:[{time,hours,zone,role,tag,note} | {break:true,time}] }
+      floorMeta:[]  // 日〜土(0..6)ごとの { w:天気キー, nps:Store NPS }。出力の曜日ヘッダー用
     };
   }
   function emptyAction(){ return { name:"", collaborators:[], ja:"", en:"", photos:[] }; }
@@ -627,6 +654,7 @@
     if(!s.storeNps) s.storeNps = { promoter:0, passive:0, detractor:0, goal:70 };
     if(!Array.isArray(s.actions)) s.actions = [];
     if(!s.floorDays || typeof s.floorDays!=="object") s.floorDays = {};
+    if(!Array.isArray(s.floorMeta)) s.floorMeta = [];
     return s;
   }
   function cur(){ return snap(state.w); }
@@ -1930,6 +1958,32 @@
     if(!s.floorDays || typeof s.floorDays!=="object") s.floorDays={};
     return s.floorDays;
   }
+  // 日〜土(0..6)ごとの天気・NPS。常に7要素に整える
+  function ensureFloorMeta(){
+    var s=cur();
+    if(!Array.isArray(s.floorMeta)) s.floorMeta=[];
+    for(var i=0;i<7;i++){ if(!s.floorMeta[i] || typeof s.floorMeta[i]!=="object") s.floorMeta[i]={w:"",nps:""}; }
+    return s.floorMeta;
+  }
+  function renderFloorMeta(){
+    var grid=gid("floorMetaGrid"); if(!grid) return;
+    var meta=ensureFloorMeta();
+    var opts=WEATHER.map(function(o){ return '<option value="'+o.k+'">'+(o.ic?o.ic+" ":"")+esc(o.label)+'</option>'; }).join("");
+    var wdCls=["fm-sun","","","","","","fm-sat"];
+    var html="";
+    for(var i=0;i<7;i++){
+      html+='<div class="fm-row">'+
+        '<span class="fm-wd '+wdCls[i]+'">'+WEEKDAY_JA[i]+'</span>'+
+        '<select class="fm-weather" data-fm="'+i+'">'+opts+'</select>'+
+        '<input class="fm-nps" type="number" inputmode="numeric" min="-100" max="100" data-fm="'+i+'" placeholder="NPS">'+
+        '</div>';
+    }
+    grid.innerHTML=html;
+    for(var j=0;j<7;j++){
+      var sel=grid.querySelector('.fm-weather[data-fm="'+j+'"]'); if(sel) sel.value=meta[j].w||"";
+      var np=grid.querySelector('.fm-nps[data-fm="'+j+'"]'); if(np) np.value=(meta[j].nps===0||meta[j].nps)?meta[j].nps:"";
+    }
+  }
   function todayStr(){
     var d=new Date(), z=function(n){ return (n<10?"0":"")+n; };
     return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());
@@ -1949,6 +2003,7 @@
   var COFFEE_SVG='<svg class="ico" viewBox="0 0 24 24"><path d="M18 8h1a3 3 0 0 1 0 6h-1"/><path d="M3 8h15v5a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>';
 
   function renderFloor(){
+    renderFloorMeta();
     var wrap=gid("floorSessions"); if(!wrap) return;
     var days=ensureFloorDays();
     var keys=Object.keys(days).sort();
@@ -2090,6 +2145,16 @@
   function bindFloor(){
     gid("floorImportBtn").addEventListener("click", startFloorImport);
     gid("floorFile").addEventListener("change", onFloorFile);
+    // 日別 天気・NPS 入力
+    var fmHandler=function(e){
+      var t=e.target.closest("[data-fm]"); if(!t) return;
+      var i=parseInt(t.dataset.fm,10); var meta=ensureFloorMeta();
+      if(t.classList.contains("fm-weather")) meta[i].w=t.value;
+      else if(t.classList.contains("fm-nps")) meta[i].nps=t.value;
+      save();
+    };
+    gid("floorMetaGrid").addEventListener("change", fmHandler);
+    gid("floorMetaGrid").addEventListener("input", fmHandler);
     // メモ入力（自動保存）
     gid("floorSessions").addEventListener("input", function(e){
       var ta=e.target.closest("textarea[data-fnote]"); if(!ta) return;
