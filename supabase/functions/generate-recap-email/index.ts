@@ -96,7 +96,8 @@ function buildPrompt(d: any, lang: "ja" | "en"): string {
       "- Center the email on the actions/initiatives: for each, describe what was done, who collaborated, and what progress or impact came of it — in flowing sentences, not a list.",
       "- Lead with the initiatives that moved forward. If something is still in progress, note a brief, concrete focus for next week.",
       "- Do NOT report or invent metric numbers (no NPS/KPI figures); keep it about the team's actions and growth.",
-      "- If a personal goal is provided, tie the closing back to it.",
+      "- Do NOT confuse the roles: the sender's present role is the `Current position`; the `Goal` is a role they are still working toward. Refer to the sender as their current position and never write the goal role as if it were their current title.",
+      "- If a goal is provided, tie the closing to growing toward it (not to a role already held).",
       "- Keep it concise (about 150-220 words). Sign off with the sender's first name.",
       "- Do not use markdown bullets or asterisks.",
       "",
@@ -116,7 +117,8 @@ function buildPrompt(d: any, lang: "ja" | "en"): string {
     "- アクション（取り組み）を中心に書く。各アクションについて『何をしたか・誰と協働したか・どんな進捗や手応えがあったか』を、箇条書きにせず自然な文章でまとめる。",
     "- まず前進した取り組みに触れる。まだ途中のものがあれば、来週の具体的なフォーカスを短く添える。",
     "- NPSやKPIなどの数値は報告しない（創作もしない）。あくまでチームの取り組みと成長の話にする。",
-    "- 自分のゴールがあれば締めでそこに結びつける。",
+    "- 役職を混同しないこと。送信者の今の役職は『現在のポジション』であり、『目標』はこれから目指す役職。送信者を現在のポジションとして扱い、目標の役職を今の肩書きのように書かない。",
+    "- 目標があれば、締めで『その目標に向けて成長していきたい』という方向で自然に結びつける（すでに就いている役職のようには書かない）。",
     "- 180〜320字程度で簡潔に。最後は送信者の名前で締める。",
     "- 箇条書き記号(*や•)やMarkdownは使わない。",
     "",
@@ -132,7 +134,8 @@ function factLines(d: any, lang: "ja" | "en"): string {
   L.push((ja ? "送信者: " : "Sender: ") + (d.name || "-"));
   if (d.cm) L.push((ja ? "宛先(上長): " : "Manager: ") + d.cm);
   L.push((ja ? "期間: " : "Period: ") + period);
-  if (d.myGoal) L.push((ja ? "自分のゴール: " : "Personal goal: ") + d.myGoal);
+  if (d.myPosition) L.push((ja ? "現在のポジション（今の役職）: " : "Current position (present role): ") + d.myPosition);
+  if (d.myGoal) L.push((ja ? "目標（将来目指す役職）: " : "Goal (role aimed for in the future): ") + d.myGoal);
   L.push("");
 
   if (Array.isArray(d.actions) && d.actions.length) {
