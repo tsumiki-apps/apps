@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-floormemo.png">
+<meta name="apple-mobile-web-app-title" content="Floor Memo">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#F4F2EE">
+<title>Floor Memo</title>
+<style>
+  :root{
+    --bg:#F4F2EE; --card:#FBFAF8; --text:#242321; --sub:#77736B; --line:#D8D4CC;
+    --ink:#242321; --faint:#b8b3a8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Hiragino Sans","Yu Gothic",sans-serif;
+    background:var(--bg); color:var(--text); margin:0; padding:22px 16px 90px;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:620px; margin:0 auto;}
+  h1{font-size:24px; font-weight:600; text-align:center; margin:4px 0 2px;}
+  .tagline{text-align:center; color:var(--sub); font-size:12px; margin-bottom:20px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px;}
+
+  /* compose */
+  #compose{
+    width:100%; border:1px solid var(--line); border-radius:12px; background:#fff; font-family:inherit;
+    font-size:16px; color:var(--text); padding:13px 14px; min-height:88px; resize:vertical; line-height:1.55;
+  }
+  #compose:focus{outline:none; border-color:var(--ink);}
+  .compose-bar{display:flex; align-items:center; gap:10px; margin-top:12px;}
+  .time-in{
+    font-size:15px; font-weight:700; color:var(--text); background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:11px 12px; font-family:inherit; -webkit-appearance:none; appearance:none; min-height:44px;
+  }
+  .time-in:focus{outline:none; border-color:var(--ink);}
+  #addBtn{
+    flex:1; background:var(--ink); color:#fff; border:none; border-radius:12px; padding:14px;
+    font-size:16px; font-weight:700; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  #addBtn:active{opacity:.7;}
+  #addBtn:disabled{opacity:.4;}
+
+  /* list */
+  .day-h{font-size:12px; font-weight:700; color:var(--sub); margin:20px 4px 10px; letter-spacing:.02em;}
+  .memo{background:var(--card); border:1px solid var(--line); border-radius:13px; padding:11px 12px; margin-bottom:9px;}
+  .memo-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:7px;}
+  .memo-time{
+    font-size:14px; font-weight:700; color:var(--text); background:transparent; border:1px solid transparent;
+    border-radius:8px; padding:4px 6px; font-family:inherit; -webkit-appearance:none; appearance:none;
+  }
+  .memo-time:focus{outline:none; border-color:var(--line); background:#fff;}
+  .memo-del{
+    background:none; border:none; color:var(--sub); font-size:19px; line-height:1; cursor:pointer; padding:4px 6px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .memo-del:active{opacity:.5;}
+  .memo-text{
+    width:100%; border:none; background:transparent; font-family:inherit; font-size:16px; color:var(--text);
+    padding:0 2px; resize:none; overflow:hidden; line-height:1.5; min-height:24px; display:block;
+  }
+  .memo-text:focus{outline:none;}
+  .empty{text-align:center; color:var(--sub); font-size:14px; padding:30px 12px;}
+  .synced{display:block; text-align:center; font-size:11px; color:var(--sub); margin-top:16px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Floor Memo</h1>
+  <p class="tagline">休憩中にささっと。Recapの Floor に自動で反映されます。</p>
+
+  <div class="card">
+    <textarea id="compose" placeholder="いまフロアで何した？"></textarea>
+    <div class="compose-bar">
+      <input type="time" id="composeTime" class="time-in">
+      <button id="addBtn" type="button">記録する</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+  <span class="synced" id="syncStatus">…</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  "use strict";
+  var STORAGE_KEY = "floormemo-v1";
+  var SUPABASE_URL  = 'https://okbjqtdirrathscctyvx.supabase.co';
+  var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+  var ROW_ID = 'kodai-floormemos';   // Recapと同じ recap_state テーブルの別行に保存（Floorが読む）
+  var sb = null;
+  try{ if(window.supabase) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth:{ persistSession:false } }); }catch(e){}
+
+  var state = { memos:[] };  // memo = { id, date:"YYYY-MM-DD", time:"HH:MM", text, created }
+
+  function gid(id){ return document.getElementById(id); }
+  function z(n){ return (n<10?"0":"")+n; }
+  function nowDate(){ var d=new Date(); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
+  function nowTime(){ var d=new Date(); return z(d.getHours())+":"+z(d.getMinutes()); }
+  function uid(){ return "m"+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+
+  /* ---------- 保存・同期 ---------- */
+  function load(){
+    try{
+      var raw=localStorage.getItem(STORAGE_KEY);
+      if(raw){ var s=JSON.parse(raw); if(s && Array.isArray(s.memos)) state.memos=s.memos; }
+    }catch(e){}
+  }
+  function saveLocal(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
+  var pushT=null, pushing=false, dirty=false;
+  function save(){ saveLocal(); scheduleCloud(); }
+  function scheduleCloud(){
+    dirty=true;
+    if(pushT) clearTimeout(pushT);
+    pushT=setTimeout(function(){ pushCloud(); }, 900);
+  }
+  function setSync(msg){ var e=gid("syncStatus"); if(e) e.textContent=msg||""; }
+  async function pushCloud(){
+    if(!sb){ setSync("オフライン（この端末のみ）"); return; }
+    pushing=true; setSync("保存中…");
+    try{
+      var res=await sb.from("recap_state").upsert({ id:ROW_ID, state:state, updated_at:new Date().toISOString() });
+      if(res.error) setSync("保存エラー"); else { dirty=false; setSync("✓ 同期済み"); }
+    }catch(e){ setSync("保存エラー"); }
+    pushing=false;
+  }
+  async function pullCloud(){
+    if(!sb) return false;
+    var res=null;
+    try{ res=await sb.from("recap_state").select("state").eq("id", ROW_ID).maybeSingle(); }catch(e){ return false; }
+    if(res && res.data && res.data.state && Array.isArray(res.data.state.memos)){
+      state.memos=res.data.state.memos; saveLocal(); return true;
+    }
+    return false;
+  }
+  async function bootstrap(){
+    if(!sb){ setSync("オフライン（この端末のみ）"); return; }
+    setSync("読込中…");
+    var has=await pullCloud();
+    if(has){ render(); setSync("✓ 同期済み"); return; }
+    if(state.memos.length){ setSync("初回アップロード中…"); await pushCloud(); }
+    else setSync("✓ 同期済み");
+  }
+
+  /* ---------- 描画 ---------- */
+  function weekdayJa(ds){
+    var p=ds.split("-"); if(p.length!==3) return "";
+    var dt=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+    if(isNaN(dt.getTime())) return "";
+    return ["日","月","火","水","木","金","土"][dt.getDay()];
+  }
+  function dayLabel(ds){
+    if(ds===nowDate()) return "今日";
+    var p=ds.split("-"); if(p.length!==3) return ds;
+    return parseInt(p[1],10)+"/"+parseInt(p[2],10)+"（"+weekdayJa(ds)+"）";
+  }
+  function sortedMemos(){
+    // 日付降順・時刻降順（新しいものが上）
+    return state.memos.slice().sort(function(a,b){
+      if(a.date!==b.date) return a.date<b.date?1:-1;
+      if((a.time||"")!==(b.time||"")) return (a.time||"")<(b.time||"")?1:-1;
+      return (b.created||0)-(a.created||0);
+    });
+  }
+  function render(){
+    var list=gid("list");
+    var arr=sortedMemos();
+    if(arr.length===0){ list.innerHTML='<div class="empty">まだメモはありません。<br>上の欄から、いまの動きをささっと記録しましょう。</div>'; return; }
+    var html="", curDate=null;
+    arr.forEach(function(m){
+      if(m.date!==curDate){ curDate=m.date; html+='<div class="day-h">'+esc(dayLabel(m.date))+'</div>'; }
+      html+='<div class="memo" data-id="'+esc(m.id)+'">'+
+        '<div class="memo-top">'+
+          '<input type="time" class="memo-time" value="'+esc(m.time||"")+'">'+
+          '<button class="memo-del" type="button" aria-label="削除">✕</button>'+
+        '</div>'+
+        '<textarea class="memo-text" rows="1">'+esc(m.text||"")+'</textarea>'+
+        '</div>';
+    });
+    list.innerHTML=html;
+    // textarea 自動高さ
+    Array.prototype.forEach.call(list.querySelectorAll(".memo-text"), autoGrow);
+  }
+  function autoGrow(ta){ ta.style.height="auto"; ta.style.height=(ta.scrollHeight)+"px"; }
+  function findMemo(id){ for(var i=0;i<state.memos.length;i++){ if(state.memos[i].id===id) return state.memos[i]; } return null; }
+
+  /* ---------- 操作 ---------- */
+  function addMemo(){
+    var t=gid("compose").value.trim();
+    if(!t) return;
+    var time=gid("composeTime").value || nowTime();
+    state.memos.push({ id:uid(), date:nowDate(), time:time, text:t, created:Date.now() });
+    gid("compose").value="";
+    gid("composeTime").value=nowTime();
+    save(); render();
+  }
+  function bind(){
+    gid("addBtn").addEventListener("click", addMemo);
+    // ⌘/Ctrl+Enter でも記録
+    gid("compose").addEventListener("keydown", function(e){
+      if((e.metaKey||e.ctrlKey) && e.key==="Enter"){ e.preventDefault(); addMemo(); }
+    });
+    var list=gid("list");
+    list.addEventListener("input", function(e){
+      var ta=e.target.closest(".memo-text");
+      if(ta){ var m=findMemo(ta.closest(".memo").dataset.id); if(m){ m.text=ta.value; autoGrow(ta); save(); } return; }
+      var ti=e.target.closest(".memo-time");
+      if(ti){ var m2=findMemo(ti.closest(".memo").dataset.id); if(m2){ m2.time=ti.value; save(); } }
+    });
+    list.addEventListener("change", function(e){
+      var ti=e.target.closest(".memo-time");
+      if(ti){ var m=findMemo(ti.closest(".memo").dataset.id); if(m){ m.time=ti.value; save(); } }
+    });
+    list.addEventListener("click", function(e){
+      var del=e.target.closest(".memo-del"); if(!del) return;
+      var id=del.closest(".memo").dataset.id;
+      if(!confirm("このメモを削除しますか？")) return;
+      state.memos=state.memos.filter(function(m){ return m.id!==id; });
+      save(); render();
+    });
+  }
+
+  /* ---------- init ---------- */
+  load();
+  gid("composeTime").value=nowTime();
+  render();
+  bind();
+  bootstrap();
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState==="visible" && !dirty && !pushing){
+      pullCloud().then(function(changed){ if(changed){ render(); setSync("✓ 同期済み"); } });
+    }
+  });
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>

@@ -581,6 +581,7 @@
       ["name","cm","myGoal","myPosition","fy","q","metric"].forEach(function(k){ if(typeof s[k]==="string") state[k]=s[k]; });
       if(typeof s.w==="number") state.w=s.w;
       if(s.data && typeof s.data==="object") state.data=s.data;
+      if(s.floorReflected && typeof s.floorReflected==="object") state.floorReflected=s.floorReflected;
       saveLocal();          // ローカルキャッシュも更新
       return true;
     }
@@ -643,7 +644,8 @@
   var state = {
     name:"Kodai Takahashi", cm:"", myGoal:"", myPosition:"", fy:"", q:"", w:1,
     metric:"main",
-    data:{}   // data[fyqKey][week] = snapshot
+    data:{},  // data[fyqKey][week] = snapshot
+    floorReflected:{}  // Floor Memoから反映済みのメモID（二重反映防止）
   };
 
   function fyqKey(){ return "FY"+(state.fy||"-")+"Q"+(state.q||"-"); }
@@ -675,6 +677,7 @@
         ["name","cm","myGoal","myPosition","fy","q","metric"].forEach(function(k){ if(typeof s[k]==="string") state[k]=s[k]; });
         if(typeof s.w==="number") state.w=s.w;
         if(s.data && typeof s.data==="object") state.data=s.data;
+        if(s.floorReflected && typeof s.floorReflected==="object") state.floorReflected=s.floorReflected;
       }
     }catch(e){}
   }
@@ -1440,7 +1443,7 @@
     gid("page3").style.display = p==="3" ? "" : "none";
     document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("active", t.dataset.page===p); });
     if(p==="2") renderPage2();
-    else if(p==="3") renderFloor();
+    else if(p==="3") syncAndRenderFloor();
     else renderChart();
   }
 
@@ -1953,7 +1956,7 @@
     renderAll();
     applyViewMode();
     if(gid("page2").style.display!=="none") renderPage2();
-    if(gid("page3").style.display!=="none") renderFloor();
+    if(gid("page3").style.display!=="none") syncAndRenderFloor();
   }
 
   /* ---------- Floor（フロア振り返り） ---------- */
@@ -2014,8 +2017,63 @@
   // コーヒーカップ（休憩）アイコン
   var COFFEE_SVG='<svg class="ico" viewBox="0 0 24 24"><path d="M18 8h1a3 3 0 0 1 0 6h-1"/><path d="M3 8h15v5a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>';
 
+  /* ---------- Floor Memo（別アプリ floormemo.html）連携 ---------- */
+  var FLOORMEMO_ROW = 'kodai-floormemos';
+  var floorMemosCloud = [];
+  function localFloorMemos(){
+    try{ var r=localStorage.getItem("floormemo-v1"); if(r){ var s=JSON.parse(r); if(s && Array.isArray(s.memos)) return s.memos; } }catch(e){}
+    return [];
+  }
+  function allFloorMemos(){
+    var map={};
+    localFloorMemos().concat(floorMemosCloud).forEach(function(m){ if(m && m.id) map[m.id]=m; });
+    return Object.keys(map).map(function(k){ return map[k]; });
+  }
+  function pullFloorMemos(){
+    if(!sb) return Promise.resolve(false);
+    return sb.from("recap_state").select("state").eq("id", FLOORMEMO_ROW).maybeSingle()
+      .then(function(res){ if(res && res.data && res.data.state && Array.isArray(res.data.state.memos)){ floorMemosCloud=res.data.state.memos; return true; } return false; })
+      .catch(function(){ return false; });
+  }
+  function timeToMin(hhmm){
+    var p=String(hhmm||"").split(":"); if(p.length<2) return null;
+    var h=parseInt(p[0],10), m=parseInt(p[1],10);
+    if(isNaN(h)||isNaN(m)) return null; return h*60+m;
+  }
+  // 未反映メモを、日付＋時刻で「その時間のセッション（休憩中なら直前）」のまとめ欄に時刻つきで追記
+  function reflectFloorMemos(){
+    var days=ensureFloorDays(), memos=allFloorMemos();
+    if(!state.floorReflected) state.floorReflected={};
+    var changed=0;
+    Object.keys(days).forEach(function(ds){
+      var dayMemos=memos.filter(function(m){ return m && m.date===ds && !state.floorReflected[m.id] && (m.text||"").trim(); });
+      if(!dayMemos.length) return;
+      var items=(days[ds].items)||[], sessions=[];
+      items.forEach(function(it){ if(it && !it.break){ sessions.push({ it:it, start:it.time?timeToMin(String(it.time).split(/[–-]/)[0]):null }); } });
+      if(!sessions.length) return; // セッション未取り込み → 反映は取り込み後に持ち越し
+      sessions.sort(function(a,b){ return (a.start==null?1e9:a.start)-(b.start==null?1e9:b.start); });
+      dayMemos.sort(function(a,b){ return (timeToMin(a.time)||0)-(timeToMin(b.time)||0); });
+      dayMemos.forEach(function(m){
+        var mt=timeToMin(m.time), target=sessions[0];
+        for(var i=0;i<sessions.length;i++){ if(sessions[i].start!=null && mt!=null && sessions[i].start<=mt) target=sessions[i]; }
+        var line=(m.time?m.time+" ":"")+String(m.text).trim();
+        var cur0=(target.it.note||"").replace(/\s+$/,"");
+        target.it.note = cur0 ? (cur0+"\n"+line) : line;
+        state.floorReflected[m.id]=true; changed++;
+      });
+    });
+    if(changed) save();
+    return changed;
+  }
+  // Floorを開くとき：クラウドのメモも取得してから反映・再描画
+  function syncAndRenderFloor(){
+    renderFloor();
+    pullFloorMemos().then(function(ch){ if(ch) renderFloor(); });
+  }
+
   function renderFloor(){
     renderFloorMeta();
+    reflectFloorMemos();
     var wrap=gid("floorSessions"); if(!wrap) return;
     var days=ensureFloorDays();
     var keys=Object.keys(days).sort();
@@ -2372,7 +2430,7 @@
   loadWeekIntoInputs();
   loadSummaryInputs();
   renderAll();
-  renderFloor();
+  syncAndRenderFloor();
   bind();
 
   // クラウド同期：起動時に取り込み、タブ復帰時に取り直す（端末間の上書き事故を軽減）
