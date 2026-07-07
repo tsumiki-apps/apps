@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-gijiroku.png">
+<meta name="apple-mobile-web-app-title" content="議事録">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#F4F2EE">
+<title>議事録</title>
+<style>
+  :root{
+    --bg:#F4F2EE; --card:#FBFAF8; --text:#242321; --sub:#77736B; --line:#D8D4CC;
+    --ink:#242321; --faint:#b8b3a8;
+    --decide:#1f7a4d; --decide-bg:#e7f3ec;
+    --todo:#b26a00;   --todo-bg:#f6ecdb;
+    --point:#7a4bcc;  --point-bg:#efe9f8;
+    --say:#5b7085;    --say-bg:#eef1f4;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Hiragino Sans","Yu Gothic",sans-serif;
+    background:var(--bg); color:var(--text); margin:0; padding:22px 16px 120px;
+    line-height:1.5; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:620px; margin:0 auto;}
+  h1{font-size:24px; font-weight:600; text-align:center; margin:4px 0 2px;}
+  .tagline{text-align:center; color:var(--sub); font-size:12px; margin-bottom:18px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; margin-bottom:14px;}
+
+  /* meta */
+  .meta-row{display:flex; gap:10px; margin-bottom:10px;}
+  .meta-row:last-child{margin-bottom:0;}
+  .fld{flex:1; display:flex; flex-direction:column; gap:5px;}
+  .fld label{font-size:11px; font-weight:700; color:var(--sub); letter-spacing:.02em; padding-left:2px;}
+  .fld input{
+    width:100%; border:1px solid var(--line); border-radius:10px; background:#fff; font-family:inherit;
+    font-size:16px; color:var(--text); padding:11px 12px; min-height:44px;
+  }
+  .fld input:focus{outline:none; border-color:var(--ink);}
+  #mTitle{font-weight:700;}
+
+  /* compose */
+  .type-pick{display:flex; gap:7px; margin-bottom:10px;}
+  .type-btn{
+    flex:1; border:1px solid var(--line); background:#fff; border-radius:10px; padding:9px 4px;
+    font-size:13px; font-weight:700; font-family:inherit; color:var(--sub); cursor:pointer; min-height:42px;
+    -webkit-tap-highlight-color:transparent; transition:transform .1s ease;
+  }
+  .type-btn:active{transform:scale(.95);}
+  .type-btn.on[data-type="say"]   {background:var(--say-bg);    color:var(--say);    border-color:var(--say);}
+  .type-btn.on[data-type="decide"]{background:var(--decide-bg); color:var(--decide); border-color:var(--decide);}
+  .type-btn.on[data-type="todo"]  {background:var(--todo-bg);   color:var(--todo);   border-color:var(--todo);}
+  .type-btn.on[data-type="point"] {background:var(--point-bg);  color:var(--point);  border-color:var(--point);}
+
+  #compose{
+    width:100%; border:1px solid var(--line); border-radius:12px; background:#fff; font-family:inherit;
+    font-size:16px; color:var(--text); padding:13px 14px; min-height:70px; resize:vertical; line-height:1.55;
+  }
+  #compose:focus{outline:none; border-color:var(--ink);}
+  .compose-bar{display:flex; align-items:center; gap:8px; margin-top:10px;}
+  #speaker{
+    width:96px; flex:0 0 auto; border:1px solid var(--line); border-radius:10px; background:#fff; font-family:inherit;
+    font-size:16px; color:var(--text); padding:11px 10px; min-height:44px;
+  }
+  #speaker:focus{outline:none; border-color:var(--ink);}
+  .mic-btn{
+    flex:0 0 auto; width:46px; height:46px; border:1px solid var(--line); background:#fff; border-radius:12px;
+    font-size:19px; cursor:pointer; -webkit-tap-highlight-color:transparent; display:flex; align-items:center; justify-content:center;
+  }
+  .mic-btn:active{opacity:.6;}
+  .mic-btn.rec{background:#fdecec; border-color:#d9534f; animation:pulse 1.1s infinite;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(217,83,79,.4);}50%{box-shadow:0 0 0 6px rgba(217,83,79,0);}}
+  #addBtn{
+    flex:1; background:var(--ink); color:#fff; border:none; border-radius:12px; padding:14px;
+    font-size:16px; font-weight:700; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; min-height:46px;
+  }
+  #addBtn:active{opacity:.7;}
+  .mic-hint{font-size:11px; color:var(--sub); margin-top:8px; text-align:center; line-height:1.6;}
+
+  /* filter */
+  .filters{display:flex; gap:7px; margin:2px 0 12px; flex-wrap:wrap;}
+  .fchip{
+    border:1px solid var(--line); background:var(--card); border-radius:999px; padding:7px 13px;
+    font-size:13px; font-weight:700; color:var(--sub); cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .fchip.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+
+  /* list */
+  .row{
+    background:var(--card); border:1px solid var(--line); border-radius:13px; padding:10px 12px; margin-bottom:9px;
+    border-left:4px solid var(--line);
+  }
+  .row[data-type="say"]   {border-left-color:var(--say);}
+  .row[data-type="decide"]{border-left-color:var(--decide);}
+  .row[data-type="todo"]  {border-left-color:var(--todo);}
+  .row[data-type="point"] {border-left-color:var(--point);}
+  .row-top{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+  .badge{font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; letter-spacing:.02em; flex:0 0 auto;}
+  .badge.say   {background:var(--say-bg);    color:var(--say);}
+  .badge.decide{background:var(--decide-bg); color:var(--decide);}
+  .badge.todo  {background:var(--todo-bg);   color:var(--todo);}
+  .badge.point {background:var(--point-bg);  color:var(--point);}
+  .row-time{
+    font-size:13px; font-weight:700; color:var(--text); background:transparent; border:1px solid transparent;
+    border-radius:8px; padding:3px 5px; font-family:inherit; width:62px; -webkit-appearance:none; appearance:none;
+  }
+  .row-time:focus{outline:none; border-color:var(--line); background:#fff;}
+  .row-spk{font-size:12px; font-weight:700; color:var(--sub);}
+  .row-del{margin-left:auto; background:none; border:none; color:var(--sub); font-size:18px; line-height:1; cursor:pointer; padding:3px 5px; -webkit-tap-highlight-color:transparent;}
+  .row-del:active{opacity:.5;}
+  .row-body{display:flex; align-items:flex-start; gap:8px;}
+  .chk{flex:0 0 auto; width:22px; height:22px; margin-top:2px; accent-color:var(--todo); cursor:pointer;}
+  .row-text{
+    flex:1; width:100%; border:none; background:transparent; font-family:inherit; font-size:16px; color:var(--text);
+    padding:0 2px; resize:none; overflow:hidden; line-height:1.5; min-height:24px; display:block;
+  }
+  .row-text:focus{outline:none;}
+  .row.done .row-text{color:var(--faint); text-decoration:line-through;}
+  .empty{text-align:center; color:var(--sub); font-size:14px; padding:34px 12px; line-height:1.7;}
+
+  /* export */
+  .actions{display:flex; gap:10px; margin-top:18px;}
+  .act-btn{
+    flex:1; display:inline-flex; align-items:center; justify-content:center; gap:7px; background:#fff; border:1px solid var(--line);
+    border-radius:12px; padding:13px; font-size:15px; font-weight:700; color:var(--text); font-family:inherit; cursor:pointer;
+    -webkit-tap-highlight-color:transparent; min-height:48px;
+  }
+  .act-btn:active{opacity:.6;}
+  .act-btn svg{width:16px; height:16px;}
+  .toast{
+    position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:var(--ink); color:#fff; font-size:14px; font-weight:700; padding:11px 20px; border-radius:999px;
+    pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:1200;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .count{text-align:center; font-size:11px; color:var(--sub); margin-top:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>議事録</h1>
+  <p class="tagline">会議しながら要点を。決定・ToDoは自動でまとまり、Markdownで書き出せます。</p>
+
+  <div class="card">
+    <div class="meta-row">
+      <div class="fld" style="flex:2;"><label>会議名</label><input id="mTitle" type="text" placeholder="例：◯◯の打ち合わせ"></div>
+      <div class="fld"><label>日付</label><input id="mDate" type="date"></div>
+    </div>
+    <div class="meta-row">
+      <div class="fld"><label>参加者</label><input id="mMembers" type="text" placeholder="例：自分、たなか"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="type-pick" id="typePick">
+      <button class="type-btn on" data-type="say" type="button">発言</button>
+      <button class="type-btn" data-type="decide" type="button">決定</button>
+      <button class="type-btn" data-type="todo" type="button">ToDo</button>
+      <button class="type-btn" data-type="point" type="button">論点</button>
+    </div>
+    <textarea id="compose" placeholder="いま話していること・決まったこと…"></textarea>
+    <div class="compose-bar">
+      <input id="speaker" type="text" placeholder="話者" list="spkList">
+      <datalist id="spkList"></datalist>
+      <button class="mic-btn" id="micBtn" type="button" title="自分の声を文字にする" aria-label="音声入力">🎤</button>
+      <button id="addBtn" type="button">記録</button>
+    </div>
+    <div class="mic-hint" id="micHint">🎤は自分のマイク音声だけを文字化します（ヘッドホン利用時は相手の声は入りません）</div>
+  </div>
+
+  <div class="filters" id="filters">
+    <button class="fchip on" data-f="all" type="button">すべて</button>
+    <button class="fchip" data-f="decide" type="button">決定</button>
+    <button class="fchip" data-f="todo" type="button">ToDo</button>
+    <button class="fchip" data-f="point" type="button">論点</button>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="actions">
+    <button class="act-btn" id="copyBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>コピー</button>
+    <button class="act-btn" id="dlBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>.md保存</button>
+  </div>
+  <div class="count" id="count"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var STORAGE_KEY = "gijiroku-v1";
+
+  var TYPE_LABEL = { say:"発言", decide:"決定", todo:"ToDo", point:"論点" };
+  var state = {
+    title:"", date:"", members:"",
+    rows:[]   // { id, type, time:"HH:MM", speaker, text, done, created }
+  };
+  var curType = "say", curFilter = "all";
+
+  function gid(id){ return document.getElementById(id); }
+  function z(n){ return (n<10?"0":"")+n; }
+  function nowDate(){ var d=new Date(); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
+  function nowTime(){ var d=new Date(); return z(d.getHours())+":"+z(d.getMinutes()); }
+  function uid(){ return "r"+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+
+  /* ---------- 保存 ---------- */
+  function load(){
+    try{
+      var raw=localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var s=JSON.parse(raw);
+        if(s){
+          state.title=s.title||""; state.date=s.date||""; state.members=s.members||"";
+          if(Array.isArray(s.rows)) state.rows=s.rows;
+        }
+      }
+    }catch(e){}
+  }
+  var saveT=null;
+  function save(){
+    if(saveT) clearTimeout(saveT);
+    saveT=setTimeout(function(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }, 250);
+  }
+
+  /* ---------- 描画 ---------- */
+  function speakers(){
+    var seen={}, out=[];
+    state.rows.forEach(function(r){ var s=(r.speaker||"").trim(); if(s && !seen[s]){ seen[s]=1; out.push(s); } });
+    return out;
+  }
+  function refreshSpeakerList(){
+    var dl=gid("spkList");
+    dl.innerHTML=speakers().map(function(s){ return '<option value="'+esc(s)+'">'; }).join("");
+  }
+  function sortedRows(){
+    return state.rows.slice().sort(function(a,b){
+      if((a.time||"")!==(b.time||"")) return (a.time||"")<(b.time||"")?-1:1;
+      return (a.created||0)-(b.created||0);
+    });
+  }
+  function render(){
+    var list=gid("list");
+    var arr=sortedRows();
+    if(curFilter!=="all") arr=arr.filter(function(r){ return r.type===curFilter; });
+    if(arr.length===0){
+      list.innerHTML='<div class="empty">'+(state.rows.length? "この分類の記録はまだありません。" : "上の欄から、会議の発言・決定・ToDoを記録しましょう。<br>種類を選んで「記録」を押すだけ。")+'</div>';
+      updateCount(); return;
+    }
+    var html="";
+    arr.forEach(function(r){
+      var isTodo = r.type==="todo";
+      html+='<div class="row'+(r.done?" done":"")+'" data-id="'+esc(r.id)+'" data-type="'+esc(r.type)+'">'+
+        '<div class="row-top">'+
+          '<span class="badge '+esc(r.type)+'">'+esc(TYPE_LABEL[r.type]||"")+'</span>'+
+          '<input type="time" class="row-time" value="'+esc(r.time||"")+'">'+
+          (r.speaker? '<span class="row-spk">'+esc(r.speaker)+'</span>' : '')+
+          '<button class="row-del" type="button" aria-label="削除">✕</button>'+
+        '</div>'+
+        '<div class="row-body">'+
+          (isTodo? '<input type="checkbox" class="chk"'+(r.done?" checked":"")+'>' : '')+
+          '<textarea class="row-text" rows="1">'+esc(r.text||"")+'</textarea>'+
+        '</div>'+
+      '</div>';
+    });
+    list.innerHTML=html;
+    Array.prototype.forEach.call(list.querySelectorAll(".row-text"), autoGrow);
+    updateCount();
+  }
+  function autoGrow(ta){ ta.style.height="auto"; ta.style.height=(ta.scrollHeight)+"px"; }
+  function updateCount(){
+    var d=0,t=0;
+    state.rows.forEach(function(r){ if(r.type==="decide")d++; if(r.type==="todo")t++; });
+    gid("count").textContent = state.rows.length? ("全"+state.rows.length+"件　決定 "+d+"・ToDo "+t) : "";
+  }
+  function findRow(id){ for(var i=0;i<state.rows.length;i++){ if(state.rows[i].id===id) return state.rows[i]; } return null; }
+
+  /* ---------- 操作 ---------- */
+  function addRow(){
+    var t=gid("compose").value.trim();
+    if(!t) return;
+    var spk=gid("speaker").value.trim();
+    state.rows.push({ id:uid(), type:curType, time:nowTime(), speaker:spk, text:t, done:false, created:Date.now() });
+    gid("compose").value="";
+    save(); refreshSpeakerList(); render();
+    gid("compose").focus();
+  }
+
+  function bindMeta(){
+    gid("mTitle").value=state.title;
+    gid("mDate").value=state.date || nowDate();
+    state.date=gid("mDate").value;
+    gid("mMembers").value=state.members;
+    gid("mTitle").addEventListener("input", function(){ state.title=this.value; save(); });
+    gid("mDate").addEventListener("change", function(){ state.date=this.value; save(); });
+    gid("mMembers").addEventListener("input", function(){ state.members=this.value; save(); });
+  }
+
+  function bind(){
+    gid("typePick").addEventListener("click", function(e){
+      var b=e.target.closest(".type-btn"); if(!b) return;
+      curType=b.dataset.type;
+      Array.prototype.forEach.call(this.querySelectorAll(".type-btn"), function(x){ x.classList.toggle("on", x===b); });
+    });
+    gid("addBtn").addEventListener("click", addRow);
+    gid("compose").addEventListener("keydown", function(e){
+      if((e.metaKey||e.ctrlKey) && e.key==="Enter"){ e.preventDefault(); addRow(); }
+    });
+    gid("filters").addEventListener("click", function(e){
+      var c=e.target.closest(".fchip"); if(!c) return;
+      curFilter=c.dataset.f;
+      Array.prototype.forEach.call(this.querySelectorAll(".fchip"), function(x){ x.classList.toggle("on", x===c); });
+      render();
+    });
+
+    var list=gid("list");
+    list.addEventListener("input", function(e){
+      var ta=e.target.closest(".row-text");
+      if(ta){ var r=findRow(ta.closest(".row").dataset.id); if(r){ r.text=ta.value; autoGrow(ta); save(); } return; }
+      var ti=e.target.closest(".row-time");
+      if(ti){ var r2=findRow(ti.closest(".row").dataset.id); if(r2){ r2.time=ti.value; save(); } }
+    });
+    list.addEventListener("change", function(e){
+      var ti=e.target.closest(".row-time");
+      if(ti){ var r=findRow(ti.closest(".row").dataset.id); if(r){ r.time=ti.value; save(); render(); } return; }
+      var ck=e.target.closest(".chk");
+      if(ck){ var r2=findRow(ck.closest(".row").dataset.id); if(r2){ r2.done=ck.checked; save(); ck.closest(".row").classList.toggle("done", ck.checked); } }
+    });
+    list.addEventListener("click", function(e){
+      var del=e.target.closest(".row-del"); if(!del) return;
+      var id=del.closest(".row").dataset.id;
+      if(!confirm("この記録を削除しますか？")) return;
+      state.rows=state.rows.filter(function(r){ return r.id!==id; });
+      save(); refreshSpeakerList(); render();
+    });
+
+    gid("copyBtn").addEventListener("click", function(){ copyText(buildMarkdown()); });
+    gid("dlBtn").addEventListener("click", downloadMd);
+    gid("micBtn").addEventListener("click", toggleMic);
+  }
+
+  /* ---------- Markdown 書き出し ---------- */
+  function buildMarkdown(){
+    var L=[];
+    L.push("# "+(state.title||"議事録"));
+    var head=[];
+    if(state.date) head.push(state.date);
+    if(state.members) head.push("参加者："+state.members);
+    if(head.length) L.push(head.join("　／　"));
+    L.push("");
+    var arr=sortedRows();
+    var dec=arr.filter(function(r){return r.type==="decide";});
+    var todo=arr.filter(function(r){return r.type==="todo";});
+    var point=arr.filter(function(r){return r.type==="point";});
+
+    if(dec.length){ L.push("## 決定事項"); dec.forEach(function(r){ L.push("- "+r.text+(r.speaker?"（"+r.speaker+"）":"")); }); L.push(""); }
+    if(todo.length){ L.push("## ToDo"); todo.forEach(function(r){ L.push("- ["+(r.done?"x":" ")+"] "+r.text+(r.speaker?"（担当："+r.speaker+"）":"")); }); L.push(""); }
+    if(point.length){ L.push("## 論点・宿題"); point.forEach(function(r){ L.push("- "+r.text+(r.speaker?"（"+r.speaker+"）":"")); }); L.push(""); }
+
+    L.push("## 議事メモ");
+    if(arr.length){
+      arr.forEach(function(r){
+        var mark = r.type==="decide"?"【決定】":r.type==="todo"?"【ToDo】":r.type==="point"?"【論点】":"";
+        L.push("- "+(r.time?r.time+" ":"")+(r.speaker?r.speaker+"： ":"")+mark+r.text);
+      });
+    }else{
+      L.push("- （記録なし）");
+    }
+    return L.join("\n");
+  }
+  function copyText(txt){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(function(){ toast("コピーしました"); }, function(){ fallbackCopy(txt); });
+    }else{ fallbackCopy(txt); }
+  }
+  function fallbackCopy(txt){
+    var ta=document.createElement("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); toast("コピーしました"); }catch(e){ toast("コピーできませんでした"); }
+    document.body.removeChild(ta);
+  }
+  function downloadMd(){
+    var txt=buildMarkdown();
+    var safe=(state.title||"議事録").replace(/[\\/:*?"<>|]/g,"_");
+    var fn=safe+"_"+(state.date||nowDate())+".md";
+    var blob=new Blob([txt],{type:"text/markdown;charset=utf-8"});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement("a"); a.href=url; a.download=fn; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); setTimeout(function(){ URL.revokeObjectURL(url); },1500);
+    toast("保存しました");
+  }
+
+  /* ---------- 音声入力（自分のマイク） ---------- */
+  var recog=null, listening=false;
+  function toggleMic(){
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ toast("この端末は音声入力に非対応です"); return; }
+    if(listening){ if(recog) recog.stop(); return; }
+    recog = new SR();
+    recog.lang="ja-JP"; recog.continuous=true; recog.interimResults=true;
+    var base = gid("compose").value;
+    var finalAdd = "";
+    recog.onresult=function(e){
+      var interim="";
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        var tr=e.results[i];
+        if(tr.isFinal) finalAdd += tr[0].transcript; else interim += tr[0].transcript;
+      }
+      gid("compose").value = (base + finalAdd + interim);
+    };
+    recog.onerror=function(ev){ toast(ev.error==="not-allowed"?"マイクが許可されていません":"音声認識エラー"); };
+    recog.onend=function(){
+      listening=false; gid("micBtn").classList.remove("rec");
+      base = gid("compose").value; // 確定分を土台に
+    };
+    try{ recog.start(); listening=true; gid("micBtn").classList.add("rec"); toast("聞き取り中…もう一度押すと停止"); }
+    catch(e){ toast("音声入力を開始できませんでした"); }
+  }
+
+  /* ---------- toast ---------- */
+  var toastT=null;
+  function toast(msg){
+    var el=gid("toast"); el.textContent=msg; el.classList.add("show");
+    if(toastT) clearTimeout(toastT);
+    toastT=setTimeout(function(){ el.classList.remove("show"); }, 1600);
+  }
+
+  /* ---------- init ---------- */
+  load();
+  bindMeta();
+  refreshSpeakerList();
+  render();
+  bind();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
