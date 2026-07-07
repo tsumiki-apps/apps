@@ -244,7 +244,23 @@
   .img-acts .ig{background:var(--bg); color:var(--text);} .img-acts .ip{background:var(--blue); color:#fff;}
 
   /* Floor（フロア振り返り） */
-  .floor-import{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .floor-import{display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:18px;}
+  .floor-import-btn{min-width:220px; justify-content:center;}
+  /* 週のまとめ・発行ゾーン */
+  .floor-wrapup{border-top:1px solid var(--line); margin-top:22px; padding-top:16px;}
+  .floor-wrapup-h{font-size:12px; font-weight:700; color:var(--sub); letter-spacing:.03em; text-align:center; margin-bottom:12px;}
+  .np-card{background:var(--card); border:1px solid var(--line); border-radius:14px;}
+  .np-toggle{width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:none; border:none; font-family:inherit; font-size:14px; font-weight:700; color:var(--text);
+    padding:14px 16px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .np-toggle .np-sub{font-size:11px; font-weight:500; color:var(--sub); margin-left:6px;}
+  .np-chev{font-size:13px; color:var(--sub); flex-shrink:0;}
+  .np-body{padding:0 16px 12px;}
+  .np-empty{padding:0 16px 14px; font-size:12px; color:var(--sub);}
+  .np-row{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; border-top:1px solid var(--line);}
+  .np-day{font-size:15px; font-weight:600; color:var(--text);}
+  .np-day.d-sun{color:#b06a52;} .np-day.d-sat{color:#4a6f9c;}
+  .np-in{width:104px; flex-shrink:0; text-align:center;}
   .floor-empty{text-align:center; color:var(--sub); font-size:14px; line-height:1.7; padding:26px 12px;}
   .floor-day{margin-bottom:22px;}
   .floor-day-head{display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin:0 2px 12px;}
@@ -492,15 +508,21 @@
   </div><!-- /page2 -->
 
   <div id="page3">
-    <div class="floor-import" style="margin-bottom:16px;">
-      <button class="btn-save" id="floorImportBtn" type="button"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg><span class="lbl">シフトを取り込む</span></button>
+    <div class="floor-import">
+      <button class="btn-save floor-import-btn" id="floorImportBtn" type="button"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg><span class="lbl">シフトを取り込む</span></button>
       <span id="floorStatus" class="mail-status"></span>
     </div>
     <input type="file" id="floorFile" accept="image/*" style="display:none">
     <div id="floorSessions"></div>
-    <div class="actions" style="margin-top:4px;">
-      <button class="btn-save" id="floorImgBtn" type="button"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>画像で保存</button>
-      <button class="btn-save sec" id="floorPdfBtn" type="button" style="margin-left:8px;"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span class="lbl">PDF</span></button>
+
+    <!-- 週のまとめ・発行（翌週月曜の作業） -->
+    <div class="floor-wrapup">
+      <div class="floor-wrapup-h">週のまとめ・発行（翌週月曜）</div>
+      <div id="floorNpsBatch"></div>
+      <div class="actions" style="margin-top:10px;">
+        <button class="btn-save" id="floorImgBtn" type="button"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>画像で保存</button>
+        <button class="btn-save sec" id="floorPdfBtn" type="button" style="margin-left:8px;"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span class="lbl">PDF</span></button>
+      </div>
     </div>
   </div><!-- /page3 -->
 
@@ -2128,8 +2150,7 @@
     head+='</div>';
     if(!expanded) return '<div class="fday collapsed" data-date="'+esc(ds)+'">'+head+'</div>';
 
-    var body='<div class="fday-body"><div class="fday-wx">'+weatherPickerHtml(wd, m.w)+
-      '<input class="fm-nps" type="number" inputmode="numeric" min="-100" max="100" data-fm="'+wd+'" placeholder="NPS">';
+    var body='<div class="fday-body"><div class="fday-wx">'+weatherPickerHtml(wd, m.w);
     if(isToday) body+='<button class="wx-fetch" type="button" data-wxfetch="1" aria-label="川崎の天気を取得"><svg class="ico" viewBox="0 0 24 24" style="width:17px;height:17px;"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.9" y1="19.1" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.1" y2="4.9"/></svg></button>';
     body+='</div>';
     if(items.length===0){
@@ -2180,21 +2201,50 @@
     fetchKawasakiWeather(function(w){ if(w && !meta[wd].w){ meta[wd].w=w; save(); renderFloor(); } });
   }
 
+  // 週のStore NPS まとめ入力（翌週月曜の作業・既定は畳む）
+  var npsBatchOpen = false;
+  function renderNpsBatch(){
+    var el=gid("floorNpsBatch"); if(!el) return;
+    var days=ensureFloorDays(), meta=ensureFloorMeta();
+    var keys=Object.keys(days).sort();  // 日付昇順（日→土の並び）
+    var filled=keys.filter(function(ds){ var m=meta[dowOf(ds)]; return m && m.nps!=="" && m.nps!=null; }).length;
+    var head='<button class="np-toggle" type="button" data-npstoggle="1"><span>週のStore NPSをまとめて入力'+
+      (keys.length?'<span class="np-sub">'+filled+'/'+keys.length+'日</span>':'')+'</span>'+
+      '<span class="np-chev">'+(npsBatchOpen?'▲':'▼')+'</span></button>';
+    var body="";
+    if(npsBatchOpen){
+      if(keys.length===0){ body='<div class="np-empty">シフトを取り込んだ日がここに並びます。</div>'; }
+      else{
+        body='<div class="np-body">';
+        keys.forEach(function(ds){
+          var wd=dowOf(ds), m=meta[wd]||{}, dcls=wd===0?" d-sun":(wd===6?" d-sat":"");
+          body+='<div class="np-row"><span class="np-day'+dcls+'">'+esc(shortDayLabel(ds))+'</span>'+
+            '<input class="fm-nps np-in" type="number" inputmode="numeric" min="-100" max="100" data-fm="'+wd+'" value="'+esc(m.nps!==""&&m.nps!=null?String(m.nps):"")+'" placeholder="NPS"></div>';
+        });
+        body+='</div>';
+      }
+    }
+    el.innerHTML='<div class="np-card">'+head+body+'</div>';
+  }
+
   function renderFloor(){
     reflectFloorMemos();
-    var wrap=gid("floorSessions"); if(!wrap) return;
+    var wrap=gid("floorSessions");
     var days=ensureFloorDays();
     var keys=Object.keys(days);
     var today=todayStr();
-    if(keys.length===0){
-      wrap.innerHTML='<div class="floor-empty">「シフトを取り込む」で、今日の記録がここに表示されます。</div>';
-      return;
+    if(wrap){
+      if(keys.length===0){
+        wrap.innerHTML='<div class="floor-empty">「シフトを取り込む」で、今日の記録がここに表示されます。</div>';
+      }else{
+        keys.sort(function(a,b){ return a<b?1:(a>b?-1:0); });          // 新しい順
+        if(days[today]) keys=[today].concat(keys.filter(function(k){ return k!==today; }));  // 今日を先頭
+        var html=""; keys.forEach(function(ds){ html+=dayCardHtml(ds); });
+        wrap.innerHTML=html;
+        Array.prototype.forEach.call(wrap.querySelectorAll("textarea[data-fnote]"), function(ta){ ta.style.height="auto"; ta.style.height=ta.scrollHeight+"px"; });
+      }
     }
-    keys.sort(function(a,b){ return a<b?1:(a>b?-1:0); });          // 新しい順
-    if(days[today]) keys=[today].concat(keys.filter(function(k){ return k!==today; }));  // 今日を先頭
-    var html=""; keys.forEach(function(ds){ html+=dayCardHtml(ds); });
-    wrap.innerHTML=html;
-    Array.prototype.forEach.call(wrap.querySelectorAll("textarea[data-fnote]"), function(ta){ ta.style.height="auto"; ta.style.height=ta.scrollHeight+"px"; });
+    renderNpsBatch();
     autoFetchTodayWeather();
   }
 
@@ -2481,8 +2531,15 @@
       var ta=e.target.closest("textarea[data-fnote]");
       if(ta){ var day=ensureFloorDays()[ta.dataset.date], idx=parseInt(ta.dataset.idx,10);
         if(day && day.items && day.items[idx]){ day.items[idx].note=ta.value; ta.style.height="auto"; ta.style.height=ta.scrollHeight+"px"; save(); } return; }
-      var np=e.target.closest(".fm-nps");
-      if(np){ ensureFloorMeta()[parseInt(np.dataset.fm,10)].nps=np.value; save(); return; }
+    });
+    // 週まとめ：NPSパネルの開閉
+    gid("floorNpsBatch").addEventListener("click", function(e){
+      if(e.target.closest("[data-npstoggle]")){ npsBatchOpen=!npsBatchOpen; renderNpsBatch(); }
+    });
+    // 週まとめ：NPS 一括入力
+    gid("floorNpsBatch").addEventListener("input", function(e){
+      var np=e.target.closest(".fm-nps"); if(!np) return;
+      ensureFloorMeta()[parseInt(np.dataset.fm,10)].nps=np.value; save();
     });
     // プレビュー：フィールド編集
     gid("floorPrevBody").addEventListener("input", function(e){
