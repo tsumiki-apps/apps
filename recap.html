@@ -279,6 +279,27 @@
   .fm-nps{width:52px; flex-shrink:0; font-size:16px; padding:9px 4px; border:1px solid var(--line); border-radius:9px; background:#fff; font-family:inherit; color:var(--text); text-align:center;}
   .fm-nps:focus{outline:none; border-color:var(--blue);}
   .fm-nps::placeholder{color:#c3beb4; font-size:11px;}
+  /* 日カード（今日は展開・前の日は折りたたみ） */
+  .fday{background:var(--card); border:1px solid var(--line); border-radius:14px; margin-bottom:10px;}
+  .fday.expanded{padding:14px;}
+  .fday-head{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .fday.collapsed .fday-head{padding:13px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .fday.collapsed:active{background:#f7f5f1;}
+  .fday.expanded .fday-head{margin-bottom:12px;}
+  .fday-h-l{min-width:0;}
+  .fday-date{font-size:16px; font-weight:700; color:var(--text);}
+  .fday-date.d-sun{color:#b06a52;} .fday-date.d-sat{color:#4a6f9c;}
+  .fday-badge{font-size:11px; font-weight:700; color:var(--card); background:var(--text); border-radius:999px; padding:2px 9px; margin-left:8px;}
+  .fday-sub{font-size:12px; color:var(--sub); margin-top:4px;}
+  .fday-summary{display:flex; align-items:center; gap:10px; color:var(--sub); font-size:12px; flex-shrink:0;}
+  .fday-summary .fs-wic{font-size:19px;}
+  .fday-summary .fs-nps{font-weight:700; color:#5f5b53;}
+  .fday-summary .fs-chev{font-size:20px; color:#c3beb4; line-height:1;}
+  .fday-wx{display:flex; align-items:center; gap:8px; margin-bottom:14px;}
+  .wx-fetch{flex-shrink:0; width:40px; height:40px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--sub);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .wx-fetch:active{opacity:.6;}
+  .fday-noshift{font-size:13px; color:var(--sub); padding:4px 2px 2px;}
 
   /* 取り込みプレビュー（ボトムシート） */
   .ovl{position:fixed; inset:0; background:rgba(20,18,16,.5); z-index:1200; display:flex; align-items:flex-end; justify-content:center;}
@@ -476,10 +497,6 @@
       <span id="floorStatus" class="mail-status"></span>
     </div>
     <input type="file" id="floorFile" accept="image/*" style="display:none">
-    <div class="card" id="floorMetaCard">
-      <h2>日別 天気・Store NPS（日〜土）</h2>
-      <div id="floorMetaGrid"></div>
-    </div>
     <div id="floorSessions"></div>
     <div class="actions" style="margin-top:4px;">
       <button class="btn-save" id="floorImgBtn" type="button"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>画像で保存</button>
@@ -2071,40 +2088,114 @@
     pullFloorMemos().then(function(ch){ if(ch) renderFloor(); });
   }
 
+  /* ---- 日カード：今日は展開、前の日は折りたたみ ---- */
+  var floorExpanded = {};       // date -> bool（既定は今日だけ開く）
+  var floorWeatherTried = false; // 川崎の天気の自動取得を一度だけ
+  function isDayExpanded(ds){ return (ds in floorExpanded) ? floorExpanded[ds] : (ds===todayStr()); }
+  function dowOf(ds){ var p=String(ds||"").split("-"); if(p.length!==3) return 0; var dt=new Date(+p[0],+p[1]-1,+p[2]); return isNaN(dt.getTime())?0:dt.getDay(); }
+  function shortDayLabel(ds){
+    var p=String(ds||"").split("-"); if(p.length!==3) return ds;
+    var dt=new Date(+p[0],+p[1]-1,+p[2]);
+    var wd=isNaN(dt.getTime())?"":WEEKDAY_JA[dt.getDay()];
+    return parseInt(p[1],10)+"/"+parseInt(p[2],10)+(wd?"（"+wd+"）":"");
+  }
+  function weatherPickerHtml(wd, weather){
+    var btns=WEATHER.filter(function(o){return o.k;}).map(function(o){
+      return '<button type="button" class="fm-wx-b'+(weather===o.k?" on":"")+'" data-fm="'+wd+'" data-w="'+o.k+'" aria-label="'+esc(o.label)+'">'+o.ic+'</button>';
+    }).join("");
+    return '<div class="fm-wx" data-fm="'+wd+'">'+btns+'</div>';
+  }
+  function dayCardHtml(ds){
+    var days=ensureFloorDays(), meta=ensureFloorMeta();
+    var day=days[ds]||{}, items=day.items||[];
+    var wd=dowOf(ds), m=meta[wd]||{w:"",nps:""};
+    var isToday=(ds===todayStr()), expanded=isDayExpanded(ds);
+    var sessCount=items.filter(function(it){return it && !it.break;}).length;
+    var dcls=wd===0?" d-sun":(wd===6?" d-sat":"");
+    var head='<div class="fday-head" data-toggle="'+esc(ds)+'">'+
+      '<div class="fday-h-l"><span class="fday-date'+dcls+'">'+esc(shortDayLabel(ds))+'</span>'+
+      (isToday?'<span class="fday-badge">今日</span>':'')+
+      (expanded && (day.room||day.shiftHours)?'<div class="fday-sub">'+(day.room?esc(day.room)+' ・ ':'')+'実働 '+(day.shiftHours||0)+'h</div>':'')+
+      '</div>';
+    if(expanded){
+      head+='<button class="floor-del" type="button" data-delday="'+esc(ds)+'">削除</button>';
+    }else{
+      head+='<div class="fday-summary">'+
+        (m.w?'<span class="fs-wic">'+weatherIc(m.w)+'</span>':'')+
+        (m.nps!==""&&m.nps!=null?'<span class="fs-nps">NPS '+esc(String(m.nps))+'</span>':'')+
+        '<span>'+sessCount+'件</span><span class="fs-chev">›</span></div>';
+    }
+    head+='</div>';
+    if(!expanded) return '<div class="fday collapsed" data-date="'+esc(ds)+'">'+head+'</div>';
+
+    var body='<div class="fday-body"><div class="fday-wx">'+weatherPickerHtml(wd, m.w)+
+      '<input class="fm-nps" type="number" inputmode="numeric" min="-100" max="100" data-fm="'+wd+'" placeholder="NPS">';
+    if(isToday) body+='<button class="wx-fetch" type="button" data-wxfetch="1" aria-label="川崎の天気を取得"><svg class="ico" viewBox="0 0 24 24" style="width:17px;height:17px;"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.9" y1="19.1" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.1" y2="4.9"/></svg></button>';
+    body+='</div>';
+    if(items.length===0){
+      body+='<div class="fday-noshift">この日のシフトはまだ取り込まれていません。</div>';
+    }else{
+      items.forEach(function(it,idx){
+        if(it && it.break){ body+='<div class="fbreak">'+COFFEE_SVG+'<span>'+esc(it.time)+'　休憩</span><div class="fb-line"></div></div>'; return; }
+        var tag=it.tag?(' ・ <span class="fs-tag">🏷 '+esc(it.tag)+'</span>'):'';
+        body+='<div class="fsession">'+
+          '<div class="fs-top"><span class="fs-time">'+esc(it.time)+' ・ '+(it.hours||0)+'h</span>'+
+          '<span class="fs-zone">'+esc(it.zone)+'</span></div>'+
+          '<div class="fs-role">'+esc(it.role)+tag+'</div>'+
+          '<textarea data-fnote data-date="'+esc(ds)+'" data-idx="'+idx+'" placeholder="動き ／ 生み出した価値 ／ フロアの状況 ／ 新アクションへの参加 …">'+esc(it.note||"")+'</textarea>'+
+          '</div>';
+      });
+    }
+    body+='</div>';
+    return '<div class="fday expanded" data-date="'+esc(ds)+'">'+head+body+'</div>';
+  }
+
+  // 川崎(神奈川)の現在の天気を取得して6分類にマップ（Open-Meteo・無料/キー不要）
+  function mapWeatherCode(c){
+    if(c==null) return ""; c=Number(c);
+    if(c===0) return "sunny";
+    if(c===1||c===2) return "partly";
+    if(c===3||c===45||c===48) return "cloudy";
+    if((c>=51&&c<=67)||(c>=80&&c<=82)) return "rain";
+    if((c>=71&&c<=77)||c===85||c===86) return "snow";
+    if(c>=95) return "storm";
+    return "cloudy";
+  }
+  function weatherLabel(k){ for(var i=0;i<WEATHER.length;i++){ if(WEATHER[i].k===k) return WEATHER[i].label; } return ""; }
+  function fetchKawasakiWeather(cb){
+    try{
+      fetch("https://api.open-meteo.com/v1/forecast?latitude=35.5308&longitude=139.7029&current_weather=true&timezone=Asia%2FTokyo")
+        .then(function(r){ return r.json(); })
+        .then(function(j){ cb(mapWeatherCode(j && j.current_weather ? j.current_weather.weathercode : null)); })
+        .catch(function(){ cb(null); });
+    }catch(e){ cb(null); }
+  }
+  function autoFetchTodayWeather(){
+    if(floorWeatherTried) return;
+    var days=ensureFloorDays(), today=todayStr();
+    if(!days[today]) return;                 // 今日のシフト取り込み後のみ
+    var wd=new Date().getDay(), meta=ensureFloorMeta();
+    if(meta[wd].w) return;                    // 既に設定済みなら触らない
+    floorWeatherTried=true;
+    fetchKawasakiWeather(function(w){ if(w && !meta[wd].w){ meta[wd].w=w; save(); renderFloor(); } });
+  }
+
   function renderFloor(){
-    renderFloorMeta();
     reflectFloorMemos();
     var wrap=gid("floorSessions"); if(!wrap) return;
     var days=ensureFloorDays();
-    var keys=Object.keys(days).sort();
+    var keys=Object.keys(days);
+    var today=todayStr();
     if(keys.length===0){
-      wrap.innerHTML='<div class="floor-empty">この週のシフトはまだありません。</div>';
+      wrap.innerHTML='<div class="floor-empty">「シフトを取り込む」で、今日の記録がここに表示されます。</div>';
       return;
     }
-    var html="";
-    keys.forEach(function(ds){
-      var day=days[ds]||{}; var items=day.items||[];
-      html+='<div class="floor-day">';
-      html+='<div class="floor-day-head"><div><div class="fd-date">'+esc(fmtDayLabel(ds))+'</div>'+
-            '<div class="fd-meta">'+(day.room?esc(day.room)+' ・ ':'')+'実働 '+(day.shiftHours||0)+'h</div></div>'+
-            '<button class="floor-del" type="button" data-delday="'+esc(ds)+'">削除</button></div>';
-      items.forEach(function(it,idx){
-        if(it && it.break){
-          html+='<div class="fbreak">'+COFFEE_SVG+'<span>'+esc(it.time)+'　休憩</span><div class="fb-line"></div></div>';
-          return;
-        }
-        var tag=it.tag?(' ・ <span class="fs-tag">🏷 '+esc(it.tag)+'</span>'):'';
-        html+='<div class="fsession">'+
-              '<div class="fs-top"><span class="fs-time">'+esc(it.time)+' ・ '+(it.hours||0)+'h</span>'+
-              '<span class="fs-zone">'+esc(it.zone)+'</span></div>'+
-              '<div class="fs-role">'+esc(it.role)+tag+'</div>'+
-              '<textarea data-fnote data-date="'+esc(ds)+'" data-idx="'+idx+'" '+
-              'placeholder="動き ／ 生み出した価値 ／ フロアの状況 ／ 新アクションへの参加 …">'+esc(it.note||"")+'</textarea>'+
-              '</div>';
-      });
-      html+='</div>';
-    });
+    keys.sort(function(a,b){ return a<b?1:(a>b?-1:0); });          // 新しい順
+    if(days[today]) keys=[today].concat(keys.filter(function(k){ return k!==today; }));  // 今日を先頭
+    var html=""; keys.forEach(function(ds){ html+=dayCardHtml(ds); });
     wrap.innerHTML=html;
+    Array.prototype.forEach.call(wrap.querySelectorAll("textarea[data-fnote]"), function(ta){ ta.style.height="auto"; ta.style.height=ta.scrollHeight+"px"; });
+    autoFetchTodayWeather();
   }
 
   // ---- 取り込み（画像→AI） ----
@@ -2157,7 +2248,6 @@
   function renderFloorPreview(){
     if(!floorPreview) return;
     var p=floorPreview, html="";
-    html+='<div class="field" style="margin-bottom:12px;"><label>日付</label><input type="date" id="floorPrevDate" value="'+esc(p.date)+'"></div>';
     p.items.forEach(function(it,idx){
       if(it && it.break){
         html+='<div class="prev-row br"><div class="pr-fields">'+
@@ -2370,37 +2460,29 @@
   function bindFloor(){
     gid("floorImportBtn").addEventListener("click", startFloorImport);
     gid("floorFile").addEventListener("change", onFloorFile);
-    // 日別 天気・NPS 入力
-    // 天気：アイコンをタップして選択（同じものを再タップで解除）
-    gid("floorMetaGrid").addEventListener("click", function(e){
-      var b=e.target.closest(".fm-wx-b"); if(!b) return;
-      var i=parseInt(b.dataset.fm,10), meta=ensureFloorMeta();
-      var nw=(meta[i].w===b.dataset.w)?"":b.dataset.w;
-      meta[i].w=nw;
-      b.parentNode.querySelectorAll(".fm-wx-b").forEach(function(x){ x.classList.toggle("on", nw!=="" && x.dataset.w===nw); });
-      save();
-    });
-    // NPS：数値入力
-    gid("floorMetaGrid").addEventListener("input", function(e){
-      var t=e.target.closest(".fm-nps"); if(!t) return;
-      ensureFloorMeta()[parseInt(t.dataset.fm,10)].nps=t.value; save();
-    });
     gid("floorImgBtn").addEventListener("click", exportFloorImage);
     gid("floorPdfBtn").addEventListener("click", exportFloorPDF);
-    // メモ入力（自動保存）
-    gid("floorSessions").addEventListener("input", function(e){
-      var ta=e.target.closest("textarea[data-fnote]"); if(!ta) return;
-      var ds=ta.dataset.date, idx=parseInt(ta.dataset.idx,10);
-      var days=ensureFloorDays(), day=days[ds];
-      if(!day || !day.items || !day.items[idx]) return;
-      day.items[idx].note=ta.value; save();
-    });
-    // 日ごと削除
+    // 日カード：クリック（削除 / 天気選択 / 川崎の天気取得 / 開閉）
     gid("floorSessions").addEventListener("click", function(e){
-      var db=e.target.closest("[data-delday]"); if(!db) return;
-      var ds=db.dataset.delday;
-      if(!confirm(ds+" のシフトを削除します。よろしいですか？")) return;
-      var days=ensureFloorDays(); delete days[ds]; save(); renderFloor();
+      var db=e.target.closest("[data-delday]");
+      if(db){ var ds=db.dataset.delday; if(!confirm(shortDayLabel(ds)+" のシフトを削除します。よろしいですか？")) return; delete ensureFloorDays()[ds]; save(); renderFloor(); return; }
+      var wb=e.target.closest(".fm-wx-b");
+      if(wb){ var i=parseInt(wb.dataset.fm,10), meta=ensureFloorMeta(); var nw=(meta[i].w===wb.dataset.w)?"":wb.dataset.w; meta[i].w=nw;
+        wb.parentNode.querySelectorAll(".fm-wx-b").forEach(function(x){ x.classList.toggle("on", nw!=="" && x.dataset.w===nw); }); save(); return; }
+      var wf=e.target.closest("[data-wxfetch]");
+      if(wf){ setFloorStatus("川崎の天気を取得中…"); fetchKawasakiWeather(function(w){
+        if(w){ ensureFloorMeta()[new Date().getDay()].w=w; save(); renderFloor(); setFloorStatus("川崎の天気: "+weatherLabel(w),"ok"); }
+        else setFloorStatus("天気の取得に失敗しました。","err"); }); return; }
+      var tg=e.target.closest("[data-toggle]");
+      if(tg){ var d2=tg.dataset.toggle; floorExpanded[d2]=!isDayExpanded(d2); renderFloor(); return; }
+    });
+    // 日カード：入力（メモ自動保存 / NPS）
+    gid("floorSessions").addEventListener("input", function(e){
+      var ta=e.target.closest("textarea[data-fnote]");
+      if(ta){ var day=ensureFloorDays()[ta.dataset.date], idx=parseInt(ta.dataset.idx,10);
+        if(day && day.items && day.items[idx]){ day.items[idx].note=ta.value; ta.style.height="auto"; ta.style.height=ta.scrollHeight+"px"; save(); } return; }
+      var np=e.target.closest(".fm-nps");
+      if(np){ ensureFloorMeta()[parseInt(np.dataset.fm,10)].nps=np.value; save(); return; }
     });
     // プレビュー：フィールド編集
     gid("floorPrevBody").addEventListener("input", function(e){
