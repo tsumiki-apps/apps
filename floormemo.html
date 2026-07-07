@@ -63,7 +63,12 @@
   }
   .memo-text:focus{outline:none;}
   .empty{text-align:center; color:var(--sub); font-size:14px; padding:30px 12px;}
-  .synced{display:block; text-align:center; font-size:11px; color:var(--sub); margin-top:16px;}
+  .sync-bar{display:flex; justify-content:center; margin-top:22px;}
+  .sync-btn{display:inline-flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:11px 22px; font-size:15px; font-weight:700; color:var(--text); font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .sync-btn:active{opacity:.6;} .sync-btn:disabled{opacity:.45;}
+  .sync-btn svg{width:16px; height:16px;}
+  .synced{display:block; text-align:center; font-size:11px; color:var(--sub); margin-top:10px;}
 </style>
 </head>
 <body>
@@ -80,6 +85,9 @@
   </div>
 
   <div id="list"></div>
+  <div class="sync-bar">
+    <button id="syncBtn" type="button" class="sync-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>同期する</button>
+  </div>
   <span class="synced" id="syncStatus">…</span>
 </div>
 
@@ -198,8 +206,22 @@
     gid("composeTime").value=nowTime();
     save(); render();
   }
+  // 「同期する」：保留中の自動保存を待たず、今すぐアップ→最新も取得
+  function syncNow(){
+    var btn=gid("syncBtn");
+    if(!sb){ setSync("オフライン（この端末のみ）"); return; }
+    if(pushT){ clearTimeout(pushT); pushT=null; }
+    btn.disabled=true; setSync("同期中…");
+    Promise.resolve(pushCloud())
+      .then(function(){ return pullCloud(); })
+      .then(function(changed){ if(changed) render(); setSync("✓ 同期しました"); })
+      .catch(function(){ setSync("同期に失敗しました"); })
+      .then(function(){ btn.disabled=false; });
+  }
+
   function bind(){
     gid("addBtn").addEventListener("click", addMemo);
+    gid("syncBtn").addEventListener("click", syncNow);
     // ⌘/Ctrl+Enter でも記録
     gid("compose").addEventListener("keydown", function(e){
       if((e.metaKey||e.ctrlKey) && e.key==="Enter"){ e.preventDefault(); addMemo(); }
