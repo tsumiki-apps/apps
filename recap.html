@@ -305,6 +305,12 @@
   .fday-h-l{min-width:0;}
   .fday-date{font-size:16px; font-weight:700; color:var(--text);}
   .fday-date.d-sun{color:#b06a52;} .fday-date.d-sat{color:#4a6f9c;}
+  .fday-datein{font-size:16px; font-weight:700; color:var(--text); background:transparent; border:1px solid transparent;
+    border-radius:8px; padding:2px 4px; font-family:inherit; -webkit-appearance:none; appearance:none; min-height:0;}
+  .fday-datein:focus{outline:none; border-color:var(--line); background:#fff;}
+  .fday-datein.d-sun{color:#b06a52;} .fday-datein.d-sat{color:#4a6f9c;}
+  .fday-dow{font-size:15px; font-weight:700; color:var(--text); margin-left:2px;}
+  .fday-dow.d-sun{color:#b06a52;} .fday-dow.d-sat{color:#4a6f9c;}
   .fday-badge{font-size:11px; font-weight:700; color:var(--card); background:var(--text); border-radius:999px; padding:2px 9px; margin-left:8px;}
   .fday-sub{font-size:12px; color:var(--sub); margin-top:4px;}
   .fday-summary{display:flex; align-items:center; gap:10px; color:var(--sub); font-size:12px; flex-shrink:0;}
@@ -622,6 +628,7 @@
       if(s.data && typeof s.data==="object") state.data=s.data;
       if(s.floorReflected && typeof s.floorReflected==="object") state.floorReflected=s.floorReflected;
       if(typeof s.floorMemoV2==="boolean") state.floorMemoV2=s.floorMemoV2;
+      if(typeof s.floorMemoV3==="boolean") state.floorMemoV3=s.floorMemoV3;
       saveLocal();          // ローカルキャッシュも更新
       return true;
     }
@@ -686,7 +693,8 @@
     metric:"main",
     data:{},  // data[fyqKey][week] = snapshot
     floorReflected:{}, // 旧: 反映済みメモID（現在は未使用・移行で空に）
-    floorMemoV2:false  // メモ反映を「毎回再構成」方式へ移行済みか
+    floorMemoV2:false, // 旧移行フラグ
+    floorMemoV3:false  // メモ反映を「毎回再構成・不可視区切り」へ移行済みか
   };
 
   function fyqKey(){ return "FY"+(state.fy||"-")+"Q"+(state.q||"-"); }
@@ -720,6 +728,7 @@
         if(s.data && typeof s.data==="object") state.data=s.data;
         if(s.floorReflected && typeof s.floorReflected==="object") state.floorReflected=s.floorReflected;
         if(typeof s.floorMemoV2==="boolean") state.floorMemoV2=s.floorMemoV2;
+        if(typeof s.floorMemoV3==="boolean") state.floorMemoV3=s.floorMemoV3;
       }
     }catch(e){}
   }
@@ -2083,10 +2092,11 @@
     if(isNaN(h)||isNaN(m)) return null; return h*60+m;
   }
   // 未反映メモを、日付＋時刻で「その時間のセッション（休憩中なら直前）」のまとめ欄に時刻つきで追記
-  var MEMO_MARK = "— メモ —";
-  // 旧「まとめ欄に1回だけ追記」→「毎回メモから再構成」への一度きりの移行
+  var MEMO_MARK = String.fromCharCode(0x200B);  // 画面に出さない不可視の区切り（U+200B・メモをそのまま挿入）
+  var OLD_MEMO_MARK = "— メモ —";                 // 旧・可視マーカー（移行で除去）
+  // 旧形式（1回追記／可視マーカー）→「毎回メモから再構成・不可視区切り」への一度きりの移行
   function migrateFloorMemosOnce(){
-    if(state.floorMemoV2) return;
+    if(state.floorMemoV3) return;
     try{
       var d=state.data||{};
       Object.keys(d).forEach(function(qk){ var q=d[qk]||{};
@@ -2094,9 +2104,10 @@
           Object.keys(ws.floorDays).forEach(function(ds){ var day=ws.floorDays[ds]; if(!day || !day.items) return;
             day.items.forEach(function(it){
               if(it && !it.break && it.note){
-                // 旧マーカー以降と、旧形式で追記された「HH:MM …」の行を除去（手動テキストだけ残す）
-                var mi=it.note.indexOf(MEMO_MARK); var base=(mi>=0)?it.note.slice(0,mi):it.note;
-                var kept=base.split("\n").filter(function(ln){ return !/^\s*\d{1,2}:\d{2}\s/.test(ln); });
+                var n=it.note;
+                var mi=n.indexOf(OLD_MEMO_MARK); if(mi>=0) n=n.slice(0,mi);   // 旧「— メモ —」以降を除去
+                n=n.split(MEMO_MARK).join("");                                 // 念のため不可視マーカーも除去
+                var kept=n.split("\n").filter(function(ln){ return !/^\s*\d{1,2}:\d{2}\s/.test(ln); }); // 旧baked行を除去
                 it.note=kept.join("\n").replace(/^\s+|\s+$/g,"");
               }
             });
@@ -2105,7 +2116,7 @@
       });
     }catch(e){}
     state.floorReflected={};   // 旧・反映済みフラグは不要に
-    state.floorMemoV2=true;
+    state.floorMemoV2=true; state.floorMemoV3=true;
   }
   // まとめ欄を「手動テキスト ＋ メモ（Floor Memoから毎回再構成）」に組み立て直す（取り込み直しにも追従・冪等）
   function reflectFloorMemos(){
@@ -2129,7 +2140,7 @@
         var note=s.it.note||"";
         var mi=note.indexOf(MEMO_MARK);
         var manual=((mi>=0)?note.slice(0,mi):note).replace(/\s+$/,"");
-        var next = byS[i] ? ((manual?manual+"\n\n":"")+MEMO_MARK+"\n"+byS[i].join("\n")) : manual;
+        var next = byS[i] ? ((manual?manual+"\n\n":"")+MEMO_MARK+byS[i].join("\n")) : manual;
         if(next!==s.it.note){ s.it.note=next; changed=true; }
       });
     });
@@ -2153,6 +2164,17 @@
     var wd=isNaN(dt.getTime())?"":WEEKDAY_JA[dt.getDay()];
     return parseInt(p[1],10)+"/"+parseInt(p[2],10)+(wd?"（"+wd+"）":"");
   }
+  function dowLabel(ds){ return "（"+WEEKDAY_JA[dowOf(ds)]+"）"; }
+  // 取り込んだシフトの日付を変更（その日のデータを別日付キーへ移動）
+  function moveFloorDay(oldDate, newDate){
+    if(!newDate || newDate===oldDate){ renderFloor(); return; }
+    var days=ensureFloorDays();
+    if(!days[oldDate]) return;
+    if(days[newDate] && !confirm(shortDayLabel(newDate)+" には既にシフトがあります。置き換えますか？")){ renderFloor(); return; }
+    days[newDate]=days[oldDate]; delete days[oldDate];
+    if(oldDate in floorExpanded){ floorExpanded[newDate]=floorExpanded[oldDate]; delete floorExpanded[oldDate]; }
+    save(); renderFloor();
+  }
   function weatherPickerHtml(wd, weather){
     var btns=WEATHER.filter(function(o){return o.k;}).map(function(o){
       return '<button type="button" class="fm-wx-b'+(weather===o.k?" on":"")+'" data-fm="'+wd+'" data-w="'+o.k+'" aria-label="'+esc(o.label)+'">'+o.ic+'</button>';
@@ -2166,8 +2188,11 @@
     var isToday=(ds===todayStr()), expanded=isDayExpanded(ds);
     var sessCount=items.filter(function(it){return it && !it.break;}).length;
     var dcls=wd===0?" d-sun":(wd===6?" d-sat":"");
+    var dateHtml = expanded
+      ? '<input type="date" class="fday-datein'+dcls+'" data-editdate="'+esc(ds)+'" value="'+esc(ds)+'"><span class="fday-dow'+dcls+'">'+esc(dowLabel(ds))+'</span>'
+      : '<span class="fday-date'+dcls+'">'+esc(shortDayLabel(ds))+'</span>';
     var head='<div class="fday-head" data-toggle="'+esc(ds)+'">'+
-      '<div class="fday-h-l"><span class="fday-date'+dcls+'">'+esc(shortDayLabel(ds))+'</span>'+
+      '<div class="fday-h-l">'+dateHtml+
       (isToday?'<span class="fday-badge">今日</span>':'')+
       (expanded && (day.room||day.shiftHours)?'<div class="fday-sub">'+(day.room?esc(day.room)+' ・ ':'')+'実働 '+(day.shiftHours||0)+'h</div>':'')+
       '</div>';
@@ -2555,10 +2580,16 @@
       if(wf){ setFloorStatus("川崎の天気を取得中…"); fetchKawasakiWeather(function(w){
         if(w){ ensureFloorMeta()[new Date().getDay()].w=w; save(); renderFloor(); setFloorStatus("川崎の天気: "+weatherLabel(w),"ok"); }
         else setFloorStatus("天気の取得に失敗しました。","err"); }); return; }
+      if(e.target.closest("[data-editdate]")) return;   // 日付入力タップは開閉させない（ピッカーを開く）
       var tg=e.target.closest("[data-toggle]");
       if(tg){ var d2=tg.dataset.toggle; floorExpanded[d2]=!isDayExpanded(d2); renderFloor(); return; }
     });
-    // 日カード：入力（メモ自動保存 / NPS）
+    // 日カード：日付変更（取り込んだシフトの日付を編集）
+    gid("floorSessions").addEventListener("change", function(e){
+      var di=e.target.closest("[data-editdate]"); if(!di) return;
+      moveFloorDay(di.dataset.editdate, di.value);
+    });
+    // 日カード：入力（メモ自動保存）
     gid("floorSessions").addEventListener("input", function(e){
       var ta=e.target.closest("textarea[data-fnote]");
       if(ta){ var day=ensureFloorDays()[ta.dataset.date], idx=parseInt(ta.dataset.idx,10);
