@@ -2574,11 +2574,22 @@
 
   // クラウド同期：起動時に取り込み、タブ復帰時に取り直す（端末間の上書き事故を軽減）
   bootstrapCloud();
-  document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState==="visible" && !dirty && !pushing){
-      pullCloud().then(function(changed){ if(changed){ refreshUI(); setSync("✓ 同期済み"); } });
+  // アプリに戻ってきたら（前面化/フォーカス）クラウドを取り込み、Floor Memoの最新も反映する
+  var _fgThrottle=0;
+  function refreshFromCloud(){
+    var now=Date.now(); if(now-_fgThrottle<1000) return; _fgThrottle=now;
+    var floorVisible = gid("page3") && gid("page3").style.display!=="none";
+    if(!dirty && !pushing){
+      pullCloud().then(function(changed){
+        if(changed){ refreshUI(); setSync("✓ 同期済み"); }        // refreshUIがFloor表示中はsyncAndRenderFloorを呼ぶ
+        else if(floorVisible){ syncAndRenderFloor(); }            // Recap側に変更が無くてもメモは取り込む
+      });
+    }else if(floorVisible){
+      syncAndRenderFloor();                                       // 未保存があってもメモの取り込み・反映は行う
     }
-  });
+  }
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible") refreshFromCloud(); });
+  window.addEventListener("focus", refreshFromCloud);
 })();
 </script>
 <!-- tsumiki-back-button -->
