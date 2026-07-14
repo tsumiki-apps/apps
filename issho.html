@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-issho.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="いっしょ">
+<meta name="theme-color" content="#f5f5f7">
+<title>いっしょ — ふたりの共有リスト</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#ffffff; --ink:#1d1d1f; --sub:#6e6e73;
+    --line:#e5e5ea; --accent:#0071e3; --accent-soft:#e8f1fd;
+    --green:#34c759; --orange:#ff9500; --red:#ff3b30; --gray:#c7c7cc;
+    --radius:18px; --radius-sm:12px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{overflow-x:hidden;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 14px calc(110px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:680px; margin:0 auto;}
+
+  /* ===== ヘッダー ===== */
+  header{padding:26px 4px 10px; text-align:center; position:relative;}
+  .logo{font-size:38px; line-height:1;}
+  h1{font-size:24px; font-weight:800; letter-spacing:-.02em; margin-top:6px;}
+  .tagline{color:var(--sub); font-size:12.5px; margin-top:4px;}
+  .status-row{display:flex; align-items:center; justify-content:center; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .sync{display:inline-flex; align-items:center; gap:6px;
+    font-size:11.5px; font-weight:600; color:var(--sub);
+    background:var(--card); border:1px solid var(--line); border-radius:999px; padding:4px 11px;}
+  .sync .dot{width:7px; height:7px; border-radius:50%; background:var(--gray);}
+  .sync.ok .dot{background:var(--green);} .sync.off .dot{background:var(--orange);}
+  .who{display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    font-size:11.5px; font-weight:700; color:var(--accent);
+    background:var(--accent-soft); border:1px solid transparent; border-radius:999px; padding:4px 12px;}
+
+  /* ===== カテゴリ ===== */
+  .cat{margin-top:22px;}
+  .cat-head{display:flex; align-items:center; gap:8px; padding:0 4px 8px;}
+  .cat-title{font-size:15px; font-weight:800; letter-spacing:-.01em; display:flex; align-items:center; gap:7px; flex:1; min-width:0;}
+  .cat-title .emoji{font-size:18px;}
+  .cat-title .name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .icon-btn{border:none; background:transparent; color:var(--sub); font-size:16px; padding:5px 7px; border-radius:10px; cursor:pointer; line-height:1; flex:none;}
+  .icon-btn:active{background:var(--line);}
+
+  .lists{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .list-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:15px 14px; cursor:pointer; position:relative; transition:transform .08s; min-height:88px;
+    display:flex; flex-direction:column; justify-content:space-between;}
+  .list-card:active{transform:scale(.975);}
+  .list-card .lc-emoji{font-size:26px; line-height:1;}
+  .list-card .lc-name{font-size:14.5px; font-weight:700; margin-top:8px; letter-spacing:-.01em;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
+  .list-card .lc-meta{font-size:11.5px; color:var(--sub); margin-top:4px; font-weight:600;}
+  .list-card .lc-badge{position:absolute; top:11px; right:12px; min-width:20px; height:20px; padding:0 6px;
+    border-radius:999px; background:var(--accent); color:#fff; font-size:11px; font-weight:800;
+    display:flex; align-items:center; justify-content:center;}
+  .add-tile{background:transparent; border:1.5px dashed var(--gray); color:var(--sub);
+    border-radius:var(--radius); font-size:13px; font-weight:700; cursor:pointer; min-height:88px;
+    display:flex; align-items:center; justify-content:center; gap:6px;}
+  .add-tile:active{background:var(--card);}
+
+  .add-cat-btn{width:100%; margin-top:24px; padding:14px; background:transparent;
+    border:1.5px dashed var(--gray); border-radius:var(--radius); color:var(--sub);
+    font-size:14px; font-weight:700; cursor:pointer;}
+  .add-cat-btn:active{background:var(--card);}
+
+  .empty{text-align:center; color:var(--sub); padding:60px 20px; font-size:14px;}
+
+  /* ===== リスト詳細 ===== */
+  .detail-head{display:flex; align-items:center; gap:8px; padding:18px 2px 12px;}
+  .back-btn{border:none; background:transparent; color:var(--accent); font-size:16px; font-weight:700;
+    padding:6px 8px 6px 0; cursor:pointer; display:flex; align-items:center; gap:2px;}
+  .detail-title{font-size:20px; font-weight:800; letter-spacing:-.02em; flex:1; min-width:0;
+    display:flex; align-items:center; gap:8px;}
+  .detail-title .emoji{font-size:22px;}
+  .detail-title .name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  .add-item{display:flex; gap:8px; align-items:center; background:var(--card);
+    border:1px solid var(--line); border-radius:var(--radius); padding:8px 8px 8px 14px; margin-bottom:14px;
+    position:sticky; top:6px; z-index:5; box-shadow:0 2px 10px rgba(0,0,0,.03);}
+  .add-item input{flex:1; border:none; outline:none; font-size:16px; background:transparent; color:var(--ink); min-width:0;}
+  .add-item input::placeholder{color:var(--gray);}
+  .add-item button{flex:none; width:36px; height:36px; border-radius:50%; border:none; background:var(--accent);
+    color:#fff; font-size:22px; font-weight:600; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center;}
+  .add-item button:disabled{background:var(--gray);}
+
+  .items{display:flex; flex-direction:column; gap:8px;}
+  .item{background:var(--card); border:1px solid var(--line); border-radius:var(--radius-sm);
+    padding:12px 14px; display:flex; gap:12px; align-items:flex-start;}
+  .item.done{opacity:.55;}
+  .check{flex:none; width:24px; height:24px; border-radius:50%; border:2px solid var(--gray);
+    cursor:pointer; margin-top:1px; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:14px; transition:all .12s;}
+  .check.on{background:var(--green); border-color:var(--green);}
+  .item-body{flex:1; min-width:0;}
+  .item-text{font-size:15px; font-weight:600; word-break:break-word;}
+  .item.done .item-text{text-decoration:line-through;}
+  .item-note{font-size:12.5px; color:var(--sub); margin-top:3px; word-break:break-word; white-space:pre-wrap;}
+  .item-link{font-size:12.5px; color:var(--accent); margin-top:3px; display:inline-block; text-decoration:none; word-break:break-all;}
+  .item-meta{font-size:11px; color:var(--gray); margin-top:5px; font-weight:600;}
+  .item-edit{flex:none; border:none; background:transparent; color:var(--gray); font-size:15px; padding:4px 2px; cursor:pointer;}
+
+  .clear-done{display:block; margin:16px auto 0; background:transparent; border:none; color:var(--sub);
+    font-size:12.5px; font-weight:600; cursor:pointer; padding:8px 14px; border-radius:999px;}
+  .clear-done:active{background:var(--line);}
+
+  /* ===== モーダル ===== */
+  .overlay{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; z-index:100;
+    align-items:flex-end; justify-content:center; -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);}
+  .overlay.on{display:flex;}
+  .sheet{background:var(--card); width:100%; max-width:520px; border-radius:22px 22px 0 0;
+    padding:22px 20px calc(24px + env(safe-area-inset-bottom)); animation:slideup .22s ease;}
+  @keyframes slideup{from{transform:translateY(30px); opacity:.6;} to{transform:translateY(0); opacity:1;}}
+  .sheet h3{font-size:17px; font-weight:800; margin-bottom:16px; text-align:center;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12px; font-weight:700; color:var(--sub); margin-bottom:6px;}
+  .field input, .field textarea{width:100%; border:1px solid var(--line); border-radius:12px; padding:11px 13px;
+    font-size:16px; font-family:inherit; color:var(--ink); background:var(--bg); outline:none;}
+  .field textarea{resize:vertical; min-height:64px; line-height:1.5;}
+  .field input:focus, .field textarea:focus{border-color:var(--accent); background:var(--card);}
+  .emoji-pick{display:flex; gap:6px; flex-wrap:wrap;}
+  .emoji-pick button{width:42px; height:42px; border-radius:12px; border:1.5px solid var(--line);
+    background:var(--bg); font-size:22px; cursor:pointer; line-height:1;}
+  .emoji-pick button.sel{border-color:var(--accent); background:var(--accent-soft);}
+  .sheet-actions{display:flex; gap:10px; margin-top:8px;}
+  .btn{flex:1; padding:13px; border-radius:13px; border:none; font-size:15px; font-weight:700; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff;}
+  .btn-ghost{background:var(--bg); color:var(--ink); border:1px solid var(--line);}
+  .btn-danger{background:transparent; color:var(--red); font-weight:600; font-size:13.5px; margin-top:14px; width:100%; padding:10px; border:none; cursor:pointer;}
+  .move-row{display:flex; gap:10px; margin-bottom:14px;}
+  .move-row button{flex:1; padding:10px; border-radius:11px; border:1px solid var(--line); background:var(--bg);
+    font-size:13px; font-weight:700; color:var(--ink); cursor:pointer;}
+  .move-row button:disabled{opacity:.4;}
+  .who-opts{display:flex; gap:10px;}
+  .who-opts button{flex:1; padding:14px; border-radius:14px; border:1.5px solid var(--line); background:var(--bg);
+    font-size:16px; font-weight:800; cursor:pointer;}
+  .who-opts button.sel{border-color:var(--accent); background:var(--accent-soft); color:var(--accent);}
+
+  /* ===== トースト ===== */
+  .toast{position:fixed; left:50%; bottom:calc(30px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(20px);
+    background:rgba(30,30,32,.94); color:#fff; padding:10px 18px; border-radius:999px; font-size:13px; font-weight:600;
+    opacity:0; pointer-events:none; transition:all .25s; z-index:200; white-space:nowrap;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="app"></div>
+</div>
+
+<!-- カテゴリ編集モーダル -->
+<div class="overlay" id="catOverlay">
+  <div class="sheet">
+    <h3 id="catSheetTitle">カテゴリ</h3>
+    <div class="field">
+      <label>アイコン</label>
+      <div class="emoji-pick" id="catEmojiPick"></div>
+    </div>
+    <div class="field">
+      <label>カテゴリ名</label>
+      <input type="text" id="catName" placeholder="例：買い物 / おでかけ" maxlength="24">
+    </div>
+    <div class="move-row" id="catMoveRow">
+      <button id="catMoveUp" type="button">▲ 上へ</button>
+      <button id="catMoveDown" type="button">▼ 下へ</button>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="catCancel">キャンセル</button>
+      <button class="btn btn-primary" id="catSave">保存</button>
+    </div>
+    <button class="btn-danger" id="catDelete">このカテゴリを削除</button>
+  </div>
+</div>
+
+<!-- リスト編集モーダル -->
+<div class="overlay" id="listOverlay">
+  <div class="sheet">
+    <h3 id="listSheetTitle">リスト</h3>
+    <div class="field">
+      <label>アイコン</label>
+      <div class="emoji-pick" id="listEmojiPick"></div>
+    </div>
+    <div class="field">
+      <label>リスト名</label>
+      <input type="text" id="listName" placeholder="例：買い物リスト / 行きたい場所" maxlength="24">
+    </div>
+    <div class="field" id="listCatField">
+      <label>カテゴリ</label>
+      <select id="listCatSel" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:11px 13px; font-size:16px; background:var(--bg); color:var(--ink);"></select>
+    </div>
+    <div class="move-row" id="listMoveRow">
+      <button id="listMoveUp" type="button">▲ 上へ</button>
+      <button id="listMoveDown" type="button">▼ 下へ</button>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="listCancel">キャンセル</button>
+      <button class="btn btn-primary" id="listSave">保存</button>
+    </div>
+    <button class="btn-danger" id="listDelete">このリストを削除</button>
+  </div>
+</div>
+
+<!-- アイテム編集モーダル -->
+<div class="overlay" id="itemOverlay">
+  <div class="sheet">
+    <h3 id="itemSheetTitle">アイテム</h3>
+    <div class="field">
+      <label>名前</label>
+      <input type="text" id="itemText" placeholder="例：牛乳 / 鎌倉の海カフェ" maxlength="80">
+    </div>
+    <div class="field">
+      <label>メモ（任意）</label>
+      <textarea id="itemNote" placeholder="数量・お店・ひとことなど"></textarea>
+    </div>
+    <div class="field">
+      <label>リンク（任意）</label>
+      <input type="text" id="itemUrl" placeholder="https://…" inputmode="url">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="itemCancel">キャンセル</button>
+      <button class="btn btn-primary" id="itemSave">保存</button>
+    </div>
+    <button class="btn-danger" id="itemDelete">このアイテムを削除</button>
+  </div>
+</div>
+
+<!-- だれ？モーダル -->
+<div class="overlay" id="whoOverlay">
+  <div class="sheet">
+    <h3>あなたはどっち？</h3>
+    <p style="text-align:center; color:var(--sub); font-size:12.5px; margin-bottom:16px;">追加した人の名前として記録されます。あとから変えられます。</p>
+    <div class="who-opts" id="whoOpts"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============ Supabase（つみき共通プロジェクト） ============ */
+const SUPABASE_URL  = 'https://okbjqtdirrathscctyvx.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+const sb = (window.supabase && window.supabase.createClient) ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+const STATE_TABLE = 'issho_state';
+const STATE_ID = 'shared';          // ふたり共有の1行
+const LS_KEY = 'issho_db_v1';
+const WHO_KEY = 'issho_who';
+
+/* ============ ユーティリティ ============ */
+const $ = s=>document.querySelector(s);
+const uid = ()=> Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1700);}
+function fmtWhen(ts){
+  if(!ts) return '';
+  const d=new Date(ts), now=new Date();
+  const same = d.toDateString()===now.toDateString();
+  if(same) return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+  return (d.getMonth()+1)+'/'+d.getDate();
+}
+function safeUrl(u){
+  u=String(u||'').trim(); if(!u) return '';
+  if(/^https?:\/\//i.test(u)) return u;
+  if(/^[\w.-]+\.[a-z]{2,}/i.test(u)) return 'https://'+u;
+  return '';
+}
+
+/* 絵文字候補 */
+const CAT_EMOJIS = ['🛒','🗺️','🏠','🎁','🍽️','📚','🎬','💡','🧳','🌿','💰','🐾'];
+const LIST_EMOJIS = ['🛒','🤔','📍','🍽️','🎁','🏠','📚','🎬','✈️','☕','🍰','🎮','🛍️','🌸','⭐','📝'];
+
+/* ============ 状態 ============ */
+let db = { v:1, updatedAt:0, cats:[], lists:[] };
+let who = localStorage.getItem(WHO_KEY) || '';
+const NAMES = ['こうだい','ゆずは'];
+let online = null;
+let route = { name:'home', listId:null };
+let lastPushed = '';
+let editing = false;     // モーダルを開いている間はリアルタイム上書きを止める
+
+/* ============ 初期データ ============ */
+function seedDb(){
+  const cShop = uid(), cOut = uid();
+  return {
+    v:1, updatedAt:Date.now(),
+    cats:[ {id:cShop, emoji:'🛒', name:'買い物'}, {id:cOut, emoji:'🗺️', name:'おでかけ'} ],
+    lists:[
+      {id:uid(), catId:cShop, emoji:'🛒', name:'買い物リスト', items:[]},
+      {id:uid(), catId:cShop, emoji:'🤔', name:'検討中', items:[]},
+      {id:uid(), catId:cOut,  emoji:'📍', name:'行きたい場所', items:[]},
+    ]
+  };
+}
+
+/* ============ 永続化（たびのき方式：ローカル即時＋クラウド同期） ============ */
+function loadLocal(){ try{ const s=localStorage.getItem(LS_KEY); if(s) db=JSON.parse(s); }catch(e){} normalize(); }
+function normalize(){
+  if(!db || typeof db!=='object') db={v:1,updatedAt:0,cats:[],lists:[]};
+  if(!Array.isArray(db.cats)) db.cats=[];
+  if(!Array.isArray(db.lists)) db.lists=[];
+  db.lists.forEach(l=>{ if(!Array.isArray(l.items)) l.items=[]; });
+}
+let saveTimer=null, pendingSync=false;
+function save(){
+  db.updatedAt = Date.now();
+  localStorage.setItem(LS_KEY, JSON.stringify(db));
+  if(!sb) return;
+  pendingSync = true;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 350);
+}
+async function flushSave(){
+  if(!sb || !pendingSync) return;
+  clearTimeout(saveTimer);
+  const payload = JSON.stringify(db);
+  lastPushed = payload;
+  pendingSync = false;
+  try{
+    const { error } = await sb.from(STATE_TABLE)
+      .upsert({ id:STATE_ID, state: db, updated_at:new Date().toISOString() });
+    if(error){ online=false; pendingSync=true; renderStatus(); }
+    else if(online!==true){ online=true; renderStatus(); }
+  }catch(e){ online=false; pendingSync=true; renderStatus(); }
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flushSave(); });
+window.addEventListener('pagehide', ()=>{ flushSave(); });
+
+async function loadRemote(){
+  if(!sb){ online=false; return false; }
+  try{
+    const { data, error } = await sb.from(STATE_TABLE).select('state').eq('id', STATE_ID).maybeSingle();
+    if(error){ online=false; return false; }
+    online = true;
+    if(data && data.state && typeof data.state==='object'){
+      const remote = data.state;
+      const localT = db.updatedAt||0, remoteT = remote.updatedAt||0;
+      if(remoteT >= localT){ db = remote; normalize(); localStorage.setItem(LS_KEY, JSON.stringify(db)); }
+      else { save(); }
+    } else if(!db.lists.length && !db.cats.length){
+      // クラウドもローカルも空 → 初期データを作成して共有
+      db = seedDb(); normalize(); save();
+    }
+    return true;
+  }catch(e){ online=false; return false; }
+}
+function subscribeRealtime(){
+  if(!sb) return;
+  sb.channel('issho-rt')
+    .on('postgres_changes', { event:'*', schema:'public', table:STATE_TABLE, filter:'id=eq.'+STATE_ID },
+      (payload)=>{
+        const incoming = payload.new && payload.new.state;
+        if(!incoming) return;
+        if(JSON.stringify(incoming) === lastPushed) return;   // 自分の書き込みのエコー（文字列一致の速攻判定）
+        if(editing) return;                                    // 編集中は上書きしない
+        // jsonb はキー順を保持しないため上の文字列一致が外れることがある。
+        // updatedAt が自分の最新以下なら自分のエコー/古い更新とみなして無視（相手の更新は必ず新しい時刻になる）。
+        if((incoming.updatedAt||0) <= (db.updatedAt||0)) return;
+        db = incoming; normalize();
+        localStorage.setItem(LS_KEY, JSON.stringify(db));
+        render();
+        toast('🔄 更新されました');
+      })
+    .subscribe();
+}
+
+/* ============ 取得ヘルパ ============ */
+const getList = id => db.lists.find(l=>l.id===id);
+const getCat = id => db.cats.find(c=>c.id===id);
+const listsOf = catId => db.lists.filter(l=>l.catId===catId);
+function unchecked(l){ return l.items.filter(i=>!i.checked).length; }
+
+/* ============ ルーティング ============ */
+function go(name, listId){
+  route = { name, listId:listId||null };
+  window.scrollTo(0,0);
+  render();
+}
+
+/* ============ 描画 ============ */
+function render(){
+  if(route.name==='list' && getList(route.listId)) renderDetail();
+  else { route.name='home'; renderHome(); }
+  renderStatus();
+}
+
+function renderStatus(){
+  const el = $('#syncPill'); if(!el) return;
+  el.className = 'sync ' + (online===true?'ok':online===false?'off':'');
+  el.querySelector('.txt').textContent = online===true?'同期中':online===false?'この端末のみ':'接続中…';
+}
+
+function renderHome(){
+  let html = `
+  <header>
+    <div class="logo">🧺</div>
+    <h1>いっしょ</h1>
+    <div class="tagline">ふたりで作る共有リスト</div>
+    <div class="status-row">
+      <span class="sync" id="syncPill"><span class="dot"></span><span class="txt">接続中…</span></span>
+      <span class="who" id="whoChip">👤 ${who?esc(who):'名前を選ぶ'}</span>
+    </div>
+  </header>`;
+
+  if(!db.cats.length){
+    html += `<div class="empty">まだリストがありません。<br>下の「＋ カテゴリを追加」から始めましょう。</div>`;
+  }
+
+  db.cats.forEach(cat=>{
+    const ls = listsOf(cat.id);
+    html += `<section class="cat">
+      <div class="cat-head">
+        <div class="cat-title"><span class="emoji">${esc(cat.emoji)}</span><span class="name">${esc(cat.name)}</span></div>
+        <button class="icon-btn" data-editcat="${cat.id}" aria-label="カテゴリを編集">✎</button>
+      </div>
+      <div class="lists">`;
+    ls.forEach(l=>{
+      const n = unchecked(l);
+      html += `<div class="list-card" data-openlist="${l.id}">
+        ${n?`<span class="lc-badge">${n}</span>`:''}
+        <div class="lc-emoji">${esc(l.emoji)}</div>
+        <div>
+          <div class="lc-name">${esc(l.name)}</div>
+          <div class="lc-meta">${l.items.length?`${n} 件${n<l.items.length?` / 全${l.items.length}`:''}`:'からっぽ'}</div>
+        </div>
+      </div>`;
+    });
+    html += `<button class="add-tile" data-addlist="${cat.id}">＋ リスト</button>`;
+    html += `</div></section>`;
+  });
+
+  html += `<button class="add-cat-btn" id="addCatBtn">＋ カテゴリを追加</button>`;
+  $('#app').innerHTML = html;
+}
+
+function renderDetail(){
+  const l = getList(route.listId);
+  const cat = getCat(l.catId);
+  const items = l.items.slice().sort((a,b)=>{
+    if(!!a.checked !== !!b.checked) return a.checked?1:-1;   // 未チェックが上
+    return (a.checked? (b.ts||0)-(a.ts||0) : (a.ts||0)-(b.ts||0)); // 未:古い順 / 済:新しい順
+  });
+  const doneCount = l.items.filter(i=>i.checked).length;
+
+  let html = `
+  <div class="detail-head">
+    <button class="back-btn" id="backBtn">‹ 戻る</button>
+  </div>
+  <div class="detail-head" style="padding-top:0;">
+    <div class="detail-title"><span class="emoji">${esc(l.emoji)}</span><span class="name">${esc(l.name)}</span></div>
+    <button class="icon-btn" id="editListBtn" aria-label="リストを編集">✎</button>
+  </div>
+  <div style="font-size:12px; color:var(--sub); padding:0 4px 10px; margin-top:-8px;">${cat?esc(cat.emoji)+' '+esc(cat.name):''}</div>
+
+  <div class="add-item">
+    <input type="text" id="quickAdd" placeholder="追加する…" autocomplete="off" enterkeyhint="done">
+    <button id="quickAddBtn" aria-label="追加">＋</button>
+  </div>
+
+  <div class="items" id="itemList">`;
+
+  if(!items.length){
+    html += `<div class="empty" style="padding:40px 20px;">まだ何もありません。<br>上の欄から追加してね。</div>`;
+  }
+  items.forEach(it=>{
+    const url = safeUrl(it.url);
+    html += `<div class="item ${it.checked?'done':''}">
+      <div class="check ${it.checked?'on':''}" data-check="${it.id}">${it.checked?'✓':''}</div>
+      <div class="item-body" data-edititem="${it.id}">
+        <div class="item-text">${esc(it.text)}</div>
+        ${it.note?`<div class="item-note">${esc(it.note)}</div>`:''}
+        ${url?`<a class="item-link" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 リンクを開く</a>`:''}
+        <div class="item-meta">${it.who?esc(it.who):''}${it.who&&it.ts?' · ':''}${fmtWhen(it.ts)}</div>
+      </div>
+      <button class="item-edit" data-edititem="${it.id}" aria-label="編集">✎</button>
+    </div>`;
+  });
+  html += `</div>`;
+  if(doneCount) html += `<button class="clear-done" id="clearDone">✓ 完了した ${doneCount} 件を消す</button>`;
+
+  $('#app').innerHTML = html;
+  const qa = $('#quickAdd');
+  if(qa) setTimeout(()=>{ /* iOSで勝手にズーム/フォーカスしないよう自動フォーカスはしない */ },0);
+}
+
+/* ============ イベント（委譲） ============ */
+$('#app').addEventListener('click', e=>{
+  const t = e.target;
+  const openList = t.closest('[data-openlist]');
+  if(openList){ go('list', openList.dataset.openlist); return; }
+  const addList = t.closest('[data-addlist]');
+  if(addList){ openListSheet(null, addList.dataset.addlist); return; }
+  const editCat = t.closest('[data-editcat]');
+  if(editCat){ openCatSheet(editCat.dataset.editcat); return; }
+  if(t.closest('#addCatBtn')){ openCatSheet(null); return; }
+  if(t.closest('#whoChip')){ openWhoSheet(); return; }
+
+  if(t.closest('#backBtn')){ go('home'); return; }
+  if(t.closest('#editListBtn')){ openListSheet(route.listId); return; }
+  if(t.closest('#quickAddBtn')){ quickAdd(); return; }
+  const chk = t.closest('[data-check]');
+  if(chk){ toggleCheck(chk.dataset.check); return; }
+  const editItem = t.closest('[data-edititem]');
+  if(editItem){ openItemSheet(editItem.dataset.edititem); return; }
+  if(t.closest('#clearDone')){ clearDone(); return; }
+});
+$('#app').addEventListener('keydown', e=>{
+  if(e.target.id==='quickAdd' && e.key==='Enter'){ e.preventDefault(); quickAdd(); }
+});
+
+/* ============ アイテム操作 ============ */
+function quickAdd(){
+  const inp = $('#quickAdd'); if(!inp) return;
+  const text = inp.value.trim(); if(!text) return;
+  const l = getList(route.listId); if(!l) return;
+  l.items.push({ id:uid(), text, note:'', url:'', checked:false, who, ts:Date.now() });
+  inp.value=''; save(); renderDetail(); renderStatus();
+  $('#quickAdd').focus();
+}
+function toggleCheck(id){
+  const l = getList(route.listId); if(!l) return;
+  const it = l.items.find(i=>i.id===id); if(!it) return;
+  it.checked = !it.checked; it.checkedTs = it.checked?Date.now():0;
+  save(); renderDetail(); renderStatus();
+}
+function clearDone(){
+  const l = getList(route.listId); if(!l) return;
+  const n = l.items.filter(i=>i.checked).length; if(!n) return;
+  if(!confirm(`完了した ${n} 件を消しますか？`)) return;
+  l.items = l.items.filter(i=>!i.checked);
+  save(); renderDetail(); renderStatus(); toast('完了分を消しました');
+}
+
+/* ============ モーダル共通 ============ */
+function openOverlay(id){ editing=true; $(id).classList.add('on'); }
+function closeOverlay(id){ editing=false; $(id).classList.remove('on'); }
+document.querySelectorAll('.overlay').forEach(ov=>{
+  ov.addEventListener('click', e=>{ if(e.target===ov){ closeOverlay('#'+ov.id); } });
+});
+
+function buildEmojiPick(container, list, current){
+  container.innerHTML = list.map(e=>`<button type="button" data-emoji="${e}" class="${e===current?'sel':''}">${e}</button>`).join('');
+  container.onclick = ev=>{
+    const b = ev.target.closest('[data-emoji]'); if(!b) return;
+    container.querySelectorAll('button').forEach(x=>x.classList.remove('sel'));
+    b.classList.add('sel'); container.dataset.val = b.dataset.emoji;
+  };
+  container.dataset.val = current;
+}
+
+/* ============ カテゴリ編集 ============ */
+let catEditId = null;
+function openCatSheet(id){
+  catEditId = id;
+  const cat = id?getCat(id):null;
+  $('#catSheetTitle').textContent = id?'カテゴリを編集':'カテゴリを追加';
+  buildEmojiPick($('#catEmojiPick'), CAT_EMOJIS, cat?cat.emoji:CAT_EMOJIS[0]);
+  $('#catName').value = cat?cat.name:'';
+  $('#catDelete').style.display = id?'block':'none';
+  const idx = id?db.cats.findIndex(c=>c.id===id):-1;
+  $('#catMoveRow').style.display = id?'flex':'none';
+  $('#catMoveUp').disabled = idx<=0;
+  $('#catMoveDown').disabled = idx<0 || idx>=db.cats.length-1;
+  openOverlay('#catOverlay');
+}
+$('#catCancel').onclick = ()=>closeOverlay('#catOverlay');
+$('#catSave').onclick = ()=>{
+  const name = $('#catName').value.trim(); if(!name){ toast('名前を入れてね'); return; }
+  const emoji = $('#catEmojiPick').dataset.val || '🛒';
+  if(catEditId){ const c=getCat(catEditId); c.name=name; c.emoji=emoji; }
+  else { db.cats.push({id:uid(), emoji, name}); }
+  save(); closeOverlay('#catOverlay'); render();
+};
+$('#catDelete').onclick = ()=>{
+  const ls = listsOf(catEditId);
+  if(!confirm(ls.length?`カテゴリと中のリスト ${ls.length} 個をすべて削除しますか？`:'このカテゴリを削除しますか？')) return;
+  db.lists = db.lists.filter(l=>l.catId!==catEditId);
+  db.cats = db.cats.filter(c=>c.id!==catEditId);
+  save(); closeOverlay('#catOverlay'); render(); toast('削除しました');
+};
+$('#catMoveUp').onclick = ()=>moveCat(-1);
+$('#catMoveDown').onclick = ()=>moveCat(1);
+function moveCat(dir){
+  const i = db.cats.findIndex(c=>c.id===catEditId); const j=i+dir;
+  if(i<0||j<0||j>=db.cats.length) return;
+  [db.cats[i], db.cats[j]] = [db.cats[j], db.cats[i]];
+  save(); closeOverlay('#catOverlay'); render();
+}
+
+/* ============ リスト編集 ============ */
+let listEditId = null;
+function openListSheet(id, presetCat){
+  listEditId = id;
+  const l = id?getList(id):null;
+  $('#listSheetTitle').textContent = id?'リストを編集':'リストを追加';
+  buildEmojiPick($('#listEmojiPick'), LIST_EMOJIS, l?l.emoji:LIST_EMOJIS[0]);
+  $('#listName').value = l?l.name:'';
+  const sel = $('#listCatSel');
+  sel.innerHTML = db.cats.map(c=>`<option value="${c.id}">${esc(c.emoji)} ${esc(c.name)}</option>`).join('');
+  sel.value = l?l.catId:(presetCat||(db.cats[0]&&db.cats[0].id)||'');
+  $('#listCatField').style.display = db.cats.length>1?'block':'none';
+  $('#listDelete').style.display = id?'block':'none';
+  const siblings = id?listsOf(l.catId):[];
+  const idx = id?siblings.findIndex(x=>x.id===id):-1;
+  $('#listMoveRow').style.display = (id && siblings.length>1)?'flex':'none';
+  $('#listMoveUp').disabled = idx<=0;
+  $('#listMoveDown').disabled = idx<0 || idx>=siblings.length-1;
+  openOverlay('#listOverlay');
+}
+$('#listCancel').onclick = ()=>closeOverlay('#listOverlay');
+$('#listSave').onclick = ()=>{
+  const name = $('#listName').value.trim(); if(!name){ toast('名前を入れてね'); return; }
+  const emoji = $('#listEmojiPick').dataset.val || '📝';
+  const catId = $('#listCatSel').value || (db.cats[0]&&db.cats[0].id);
+  if(!catId){ toast('先にカテゴリを作ってね'); return; }
+  if(listEditId){ const l=getList(listEditId); l.name=name; l.emoji=emoji; l.catId=catId; }
+  else { db.lists.push({id:uid(), catId, emoji, name, items:[]}); }
+  save(); closeOverlay('#listOverlay'); render();
+};
+$('#listDelete').onclick = ()=>{
+  const l = getList(listEditId);
+  if(!confirm(l.items.length?`リストと中の ${l.items.length} 件を削除しますか？`:'このリストを削除しますか？')) return;
+  db.lists = db.lists.filter(x=>x.id!==listEditId);
+  save(); closeOverlay('#listOverlay');
+  if(route.name==='list' && route.listId===listEditId) go('home'); else render();
+  toast('削除しました');
+};
+$('#listMoveUp').onclick = ()=>moveList(-1);
+$('#listMoveDown').onclick = ()=>moveList(1);
+function moveList(dir){
+  const l = getList(listEditId); if(!l) return;
+  const siblings = listsOf(l.catId);
+  const si = siblings.findIndex(x=>x.id===listEditId); const sj=si+dir;
+  if(si<0||sj<0||sj>=siblings.length) return;
+  // db.lists 全体の中でのインデックスを交換
+  const ai = db.lists.findIndex(x=>x.id===siblings[si].id);
+  const bi = db.lists.findIndex(x=>x.id===siblings[sj].id);
+  [db.lists[ai], db.lists[bi]] = [db.lists[bi], db.lists[ai]];
+  save(); closeOverlay('#listOverlay'); render();
+}
+
+/* ============ アイテム編集 ============ */
+let itemEditId = null;
+function openItemSheet(id){
+  const l = getList(route.listId); if(!l) return;
+  const it = l.items.find(i=>i.id===id); if(!it) return;
+  itemEditId = id;
+  $('#itemText').value = it.text||'';
+  $('#itemNote').value = it.note||'';
+  $('#itemUrl').value = it.url||'';
+  openOverlay('#itemOverlay');
+}
+$('#itemCancel').onclick = ()=>closeOverlay('#itemOverlay');
+$('#itemSave').onclick = ()=>{
+  const l = getList(route.listId); if(!l) return;
+  const it = l.items.find(i=>i.id===itemEditId); if(!it) return;
+  const text = $('#itemText').value.trim(); if(!text){ toast('名前を入れてね'); return; }
+  it.text=text; it.note=$('#itemNote').value.trim(); it.url=$('#itemUrl').value.trim();
+  save(); closeOverlay('#itemOverlay'); renderDetail(); renderStatus();
+};
+$('#itemDelete').onclick = ()=>{
+  const l = getList(route.listId); if(!l) return;
+  l.items = l.items.filter(i=>i.id!==itemEditId);
+  save(); closeOverlay('#itemOverlay'); renderDetail(); renderStatus(); toast('削除しました');
+};
+
+/* ============ だれ？ ============ */
+function openWhoSheet(){
+  $('#whoOpts').innerHTML = NAMES.map(n=>`<button data-who="${n}" class="${n===who?'sel':''}">${n}</button>`).join('');
+  openOverlay('#whoOverlay');
+}
+$('#whoOpts').addEventListener('click', e=>{
+  const b = e.target.closest('[data-who]'); if(!b) return;
+  who = b.dataset.who; localStorage.setItem(WHO_KEY, who);
+  closeOverlay('#whoOverlay'); render();
+});
+
+/* ============ 起動 ============ */
+(async function init(){
+  loadLocal();
+  render();
+  await loadRemote();
+  normalize();
+  if(!db.cats.length && !db.lists.length){ db=seedDb(); save(); }
+  render();
+  subscribeRealtime();
+  if(!who) setTimeout(openWhoSheet, 400);
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
