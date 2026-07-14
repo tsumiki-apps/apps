@@ -37,7 +37,7 @@
   //   wash:     この画面に入るとき残留墨を拭き取るか
   const MODES = {
     intro: { velDiss: 0.25, dyeDiss: 0.90, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
-    brand: { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.060, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: false },
+    brand: { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.022, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: false },  // letterK 以前の値: 0.060（大きいほど早く暗転）
     menu:  { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.060, cursorR: 0.34, cursorF: 5500, cursorI: 0.55, dtScale: 1.0, wall: false, wash: false },
     sheet: { velDiss: 0.30, dyeDiss: 1.00, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
   };
@@ -620,7 +620,9 @@
   }
 
   // -------------------- cascade（intro 初回タッチの墨カスケード） --------------------
-  // 触れた場所を起点に約1.7秒、ランダムな滴を連鎖させる（swipe-to-enter 演出）
+  // 触れた場所を起点にランダムな滴を連鎖させる（swipe-to-enter 演出）。
+  // CASCADE_MS = 滴が舞い続ける時間（以前の値: 1700）
+  const CASCADE_MS = 3800;
   const cascade = { active: false, startT: 0, ox: 0.5, oy: 0.5, nextT: 0 };
   function cascadeAt(clientX, clientY) {
     const x = clientX / window.innerWidth;
@@ -634,9 +636,9 @@
   function updateCascade(now) {
     if (!cascade.active) return;
     const elapsed = now - cascade.startT;
-    if (elapsed > 1700) { cascade.active = false; return; }
+    if (elapsed > CASCADE_MS) { cascade.active = false; return; }
     if (now < cascade.nextT) return;
-    cascade.nextT = now + 150 + (elapsed / 1700) * 220;   // だんだん間遠に
+    cascade.nextT = now + 150 + (elapsed / CASCADE_MS) * 220;   // だんだん間遠に
     let tx, ty;
     if (Math.random() < 0.5) {   // 半分は中央寄り（画面2の文字の地肌を確保）
       tx = 0.3 + Math.random() * 0.4; ty = 0.3 + Math.random() * 0.4;
