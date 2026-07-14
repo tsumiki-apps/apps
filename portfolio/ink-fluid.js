@@ -38,7 +38,7 @@
   const MODES = {
     intro: { velDiss: 0.25, dyeDiss: 0.90, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
     brand: { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.060, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: false },
-    menu:  { velDiss: 0.35, dyeDiss: 0.75, letterK: 0.0,   cursorR: 0.34, cursorF: 5500, cursorI: 0.55, dtScale: 1.0, wall: true,  wash: true  },
+    menu:  { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.060, cursorR: 0.34, cursorF: 5500, cursorI: 0.55, dtScale: 1.0, wall: false, wash: false },
     sheet: { velDiss: 0.30, dyeDiss: 1.00, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
   };
   let mode = MODES.intro;
@@ -397,13 +397,12 @@
     pressure = createDoubleFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
   }
 
-  // -------------------- 文字テクスチャ（letterform / wall） --------------------
-  // 隠し 2D canvas に現在の画面の見出しを DOM の実測位置で描き、texture 化する。
-  // letter = 墨の湧き出し口（文字が墨になる）／ wall = 紙の切り抜き（墨が避ける）
+  // -------------------- 墨の源テクスチャ（letterform） --------------------
+  // 隠し 2D canvas に「墨の湧き出し口」を描き、texture 化して毎フレーム注入する。
+  // 現在は brand/menu の全画面グラデーション塗り。wall（紙の切り抜き）機構は
+  // シェーダー側に温存してあるが未使用（hasWall は常に false）。
   const letterCanvas = document.createElement('canvas');
   const letterCtx = letterCanvas.getContext('2d');
-  const wallCanvas = document.createElement('canvas');
-  const wallCtx = wallCanvas.getContext('2d');
   const letterTex = createBlankTexture();
   const wallTex = createBlankTexture();
   let hasLetter = false, hasWall = false;
@@ -427,64 +426,23 @@
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   }
 
-  function setFontFrom(ctx, el) {
-    const cs = getComputedStyle(el);
-    ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
-    return parseFloat(cs.letterSpacing) || 0;
-  }
-  // letter-spacing 込みで文字を描く（Canvas が letterSpacing 未対応なら1文字ずつ）
-  function drawSpacedText(ctx, text, x, y, spacing, align, stroke) {
-    if ('letterSpacing' in ctx) {
-      ctx.letterSpacing = spacing + 'px';
-      ctx.textAlign = align;
-      if (stroke) ctx.strokeText(text, x, y);
-      ctx.fillText(text, x, y);
-      ctx.letterSpacing = '0px';
-      return;
-    }
-    const chars = Array.from(text);
-    const widths = chars.map(ch => ctx.measureText(ch).width);
-    const total = widths.reduce((a, b) => a + b, 0) + spacing * Math.max(0, chars.length - 1);
-    let cx = (align === 'center') ? x - total / 2 : x;
-    ctx.textAlign = 'left';
-    chars.forEach((ch, i) => {
-      if (stroke) ctx.strokeText(ch, cx, y);
-      ctx.fillText(ch, cx, y);
-      cx += widths[i] + spacing;
-    });
-  }
-
   function renderScreenTextures() {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
     letterCanvas.width = w; letterCanvas.height = h;
-    wallCanvas.width = w; wallCanvas.height = h;
-    hasLetter = false; hasWall = false;
+    hasLetter = false;
 
-    if (currentScreen === 'brand') {
+    if (currentScreen === 'brand' || currentScreen === 'menu') {
       // 画面全体を墨で覆う源（中心ほど濃く、縁はわずかに薄く＝呼吸を残す）。
-      // 白文字はこの墨の上に DOM で浮かぶ。
+      // 白文字はこの墨の上に DOM で浮かぶ。brand→menu は暗転したまま。
       const g = letterCtx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.hypot(w, h) / 2);
       g.addColorStop(0, 'rgba(0,0,0,1)');
       g.addColorStop(1, 'rgba(0,0,0,0.55)');
       letterCtx.fillStyle = g;
       letterCtx.fillRect(0, 0, w, h);
       hasLetter = true;
-    } else if (currentScreen === 'menu') {
-      // メニュー項目名を「紙の切り抜き」に（墨が文字を避けて流れる）
-      wallCtx.fillStyle = '#000'; wallCtx.strokeStyle = '#000';
-      wallCtx.lineJoin = 'round'; wallCtx.lineWidth = 8;
-      wallCtx.textBaseline = 'middle';
-      document.querySelectorAll('#s-menu .mi-jp, #s-menu .mi-en').forEach(sp => {
-        const r = sp.getBoundingClientRect();
-        if (!r.width) return;
-        const spacing = setFontFrom(wallCtx, sp);
-        drawSpacedText(wallCtx, sp.textContent, r.left, r.top + r.height / 2, spacing, 'left', true);
-        hasWall = true;
-      });
     }
     if (hasLetter) uploadCanvas(letterTex, letterCanvas);
-    if (hasWall) uploadCanvas(wallTex, wallCanvas);
   }
 
   // -------------------- シミュレーション --------------------
