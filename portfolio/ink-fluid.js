@@ -36,8 +36,8 @@
   //   wall:     紙の切り抜き（墨が文字を避けて流れる）を使うか
   //   wash:     この画面に入るとき残留墨を拭き取るか
   const MODES = {
-    intro: { velDiss: 0.25, dyeDiss: 0.90, letterK: 0.080, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
-    brand: { velDiss: 0.14, dyeDiss: 0.30, letterK: 0.050, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
+    intro: { velDiss: 0.25, dyeDiss: 0.90, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
+    brand: { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.060, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: false },
     menu:  { velDiss: 0.35, dyeDiss: 0.75, letterK: 0.0,   cursorR: 0.34, cursorF: 5500, cursorI: 0.55, dtScale: 1.0, wall: true,  wash: true  },
     sheet: { velDiss: 0.30, dyeDiss: 1.00, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
   };
@@ -407,7 +407,6 @@
   const letterTex = createBlankTexture();
   const wallTex = createBlankTexture();
   let hasLetter = false, hasWall = false;
-  let introLetterRect = null;   // intro の見出し位置（離脱時に墨を溶かすため）
 
   function createBlankTexture() {
     const tex = gl.createTexture();
@@ -462,41 +461,15 @@
     wallCanvas.width = w; wallCanvas.height = h;
     hasLetter = false; hasWall = false;
 
-    if (currentScreen === 'intro') {
-      // 見出しの文字形そのものを墨の湧き出し口に（芯は DOM 文字、縁から滲む）
-      const el = document.querySelector('#s-intro .wordmark');
-      if (el) {
-        const r = el.getBoundingClientRect();
-        const sp = setFontFrom(letterCtx, el);
-        letterCtx.fillStyle = '#000';
-        letterCtx.textBaseline = 'middle';
-        drawSpacedText(letterCtx, el.textContent, r.left + r.width / 2, r.top + r.height / 2, sp, 'center', false);
-        introLetterRect = r;
-        hasLetter = true;
-      }
-    } else if (currentScreen === 'brand') {
-      // 白文字とロゴの後ろに、にじんだ墨だまりを作る（コントラスト確保）
-      const wm = document.querySelector('#s-brand .wordmark');
-      const logo = document.querySelector('#s-brand .stack-logo');
-      if (wm) {
-        const r = wm.getBoundingClientRect();
-        const sp = setFontFrom(letterCtx, wm);
-        letterCtx.fillStyle = 'rgba(0,0,0,0.9)';
-        letterCtx.textBaseline = 'middle';
-        letterCtx.shadowColor = 'rgba(0,0,0,1)';
-        letterCtx.shadowBlur = 30;
-        for (let i = 0; i < 3; i++) {
-          drawSpacedText(letterCtx, wm.textContent, r.left + r.width / 2, r.top + r.height / 2, sp, 'center', false);
-        }
-        if (logo) {
-          const lr = logo.getBoundingClientRect();
-          letterCtx.beginPath();
-          letterCtx.ellipse(lr.left + lr.width / 2, lr.top + lr.height / 2, lr.width * 0.7, lr.height * 0.7, 0, 0, Math.PI * 2);
-          letterCtx.fill();
-        }
-        letterCtx.shadowBlur = 0;
-        hasLetter = true;
-      }
+    if (currentScreen === 'brand') {
+      // 画面全体を墨で覆う源（中心ほど濃く、縁はわずかに薄く＝呼吸を残す）。
+      // 白文字はこの墨の上に DOM で浮かぶ。
+      const g = letterCtx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.hypot(w, h) / 2);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(1, 'rgba(0,0,0,0.55)');
+      letterCtx.fillStyle = g;
+      letterCtx.fillRect(0, 0, w, h);
+      hasLetter = true;
     } else if (currentScreen === 'menu') {
       // メニュー項目名を「紙の切り抜き」に（墨が文字を避けて流れる）
       wallCtx.fillStyle = '#000'; wallCtx.strokeStyle = '#000';
@@ -763,16 +736,6 @@
     if (mode.wash && key !== prev) {
       washUntil = performance.now() + WASH_MS;
       fadeDye(0.25);   // まず一段薄めてから wash で拭き切る
-    }
-    // intro を離れる時：見出しに溜まった墨を左右へ割って「溶かして」流す
-    // （重なる逆向きの力は相殺するので、外向き2発のコヒーレントな流れにする）
-    if (prev === 'intro' && key !== 'intro' && introLetterRect) {
-      const r = introLetterRect;
-      const vy = 1.0 - (r.top + r.height / 2) / window.innerHeight;
-      const uL = (r.left + r.width * 0.30) / window.innerWidth;
-      const uR = (r.left + r.width * 0.70) / window.innerWidth;
-      splat(uL, vy, -600, -350, 0.12, 2.2);   // ほぼ速度だけ（墨は足さない）
-      splat(uR, vy,  600, -350, 0.12, 2.2);
     }
     // レイアウト確定後に見出しを描き直す（フェード中でも rect は取れる）
     requestAnimationFrame(renderScreenTextures);
