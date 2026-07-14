@@ -42,7 +42,7 @@ APPS = {
     "rashinban":   ("🧭", "#7b86ff", "#4f57c7"),
     "minori":      ("🌾", "#e6b34d", "#c8860d"),
     "komame":      ("🧹", "#5fd0bd", "#15a584"),
-    "issho":       ("🧺", "#C9C3B8", "#8E877D"),
+    # issho（ぴずかご）は専用の線画アイコン → make_issho_icon.py で生成する
 }
 
 
