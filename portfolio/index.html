@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -21,6 +21,7 @@
 
 <!-- 常時のトップバー（入口では隠す） -->
 <header class="topbar" id="topbar">
+  <button class="tb-back" type="button" data-back aria-label="戻る">‹</button>
   <a class="tb-brand" data-go="intro" href="#" aria-label="Tsumiki Inc. ホーム">
     <span>Tsumiki&nbsp;Inc.</span>
   </a>
@@ -291,6 +292,12 @@
     const LINE = ['intro', 'brand', 'menu'];   // スワイプで順送りする画面
     let current = 'intro';
     let animating = false;
+    let popNav = false;   // 履歴の戻る操作中は pushState しない
+    const childToGroup = {   // 子シート → 属する親カテゴリー
+      value:'service', issues:'service', process:'service', pricing:'service',
+      flagship:'works', collection:'works', voice:'works',
+      profile:'contact', hearing:'contact', privacy:'contact'
+    };
 
     function isSheet(id){ return screens[id].classList.contains('sheet'); }
 
@@ -299,6 +306,7 @@
       b.toggle('at-intro', id === 'intro');
       b.toggle('chrome-hidden', id === 'intro' || id === 'brand'); // トップバーを隠す
       b.toggle('on-dark', id === 'menu');                          // 墨背景ではトップバーを白に
+      b.toggle('on-sheet', isSheet(id));                           // 子シートでは戻るボタンを出す
     }
 
     function go(id, dir){
@@ -317,6 +325,8 @@
       if (id === 'menu' && window.__closeGroups) window.__closeGroups();  // 戻ってきたら分岐は畳む
       setTimeout(()=>{ animating = false; }, 820);
       current = id;
+      // 履歴に積む（端スワイプ／ブラウザの戻るで1画面戻れるように）。戻る操作中は積まない
+      if (!popNav){ try{ history.pushState({screen:id}, ''); }catch(_){} }
     }
     window.__go = go;
     applyChrome('intro');
@@ -343,6 +353,31 @@
         closeAllGroups();
         if (willOpen){ group.classList.add('open'); btn.setAttribute('aria-expanded','true'); }
       });
+    });
+
+    // 指定した親カテゴリーを開いた状態にする
+    function openGroup(key){
+      const grp = document.querySelector('.menu-group[data-group="'+key+'"]');
+      if (!grp) return;
+      grp.classList.add('open');
+      const b = grp.querySelector('[data-acc]');
+      if (b) b.setAttribute('aria-expanded','true');
+    }
+
+    // 戻るボタン：履歴を1つ戻る（＝端スワイプと同じ挙動に統一）
+    document.querySelectorAll('[data-back]').forEach(el=>{
+      el.addEventListener('click', e=>{ e.preventDefault(); history.back(); });
+    });
+
+    // 端スワイプ／ブラウザの戻る／戻るボタン → 前画面へ。メニューに戻る時は親を開く
+    window.addEventListener('popstate', e=>{
+      const target = (e.state && e.state.screen) ? e.state.screen : 'intro';
+      const leaving = current;
+      if (target === current) return;
+      popNav = true;
+      go(target);
+      popNav = false;
+      if (target === 'menu'){ const g = childToGroup[leaving]; if (g) openGroup(g); }
     });
 
     // スワイプ／ホイールで順送り（intro→brand→menu）。セクション内は内部スクロール優先
