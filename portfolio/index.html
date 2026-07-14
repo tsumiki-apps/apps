@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
 
@@ -239,7 +239,7 @@
       b.toggle('chrome-hidden', id === 'intro' || id === 'brand'); // トップバーを隠す
     }
 
-    function go(id){
+    function go(id, dir){
       if (id === current || animating || !screens[id]) return;
       animating = true;
       const from = screens[current], to = screens[id];
@@ -247,8 +247,9 @@
       requestAnimationFrame(()=>{ from.classList.remove('is-active'); });
       applyChrome(id);
       if (window.InkFluid){
-        if (id === 'brand'){ window.InkFluid.bloom(); window.InkFluid.hold(true); } // 指の軌跡から墨が咲いて定着
-        else window.InkFluid.hold(false);
+        window.InkFluid.setScreen(id);                    // モード切替＋wash＋文字テクスチャ更新
+        if (id === 'brand') window.InkFluid.bloom();      // 指の軌跡から墨が咲いて定着
+        else window.InkFluid.sweep(dir === undefined ? 1 : dir);  // 遷移の帯ストローク1本
       }
       if (isSheet(id)) to.scrollTop = 0;
       setTimeout(()=>{ animating = false; }, 820);
@@ -267,8 +268,18 @@
       const i = LINE.indexOf(current);
       if (i < 0) return;                 // セクション表示中は順送りしない
       const j = i + dir;
-      if (j >= 0 && j < LINE.length) go(LINE[j]);
+      if (j >= 0 && j < LINE.length) go(LINE[j], dir);
     }
+
+    // swipe-to-enter：intro 画面の初回タッチで墨カスケード＋振動→画面2へ
+    let entered = false;
+    window.addEventListener('pointerdown', e=>{
+      if (current !== 'intro' || entered) return;
+      entered = true;
+      if (window.InkFluid && window.InkFluid.cascadeAt) window.InkFluid.cascadeAt(e.clientX, e.clientY);
+      if (navigator.vibrate) { try { navigator.vibrate(12); } catch(_){} }
+      setTimeout(()=>{ if (current === 'intro') go('brand'); }, 1400);
+    });
 
     let wheelLock = 0;
     window.addEventListener('wheel', e=>{
@@ -294,6 +305,6 @@
     });
   })();
 </script>
-<script src="ink-fluid.js?v=29"></script>
+<script src="ink-fluid.js?v=30"></script>
 </body>
 </html>

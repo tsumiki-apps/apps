@@ -1,10 +1,12 @@
 /* ============================================================
    墨の流体シミュレーション（GPU / WebGL）
-   紙×墨ポートフォリオのヒーロー背景。スクロール量と指/マウスの
-   動きで、透明な紙の上に墨が立ち上り、渦を巻いて拡散する。
+   紙×墨ポートフォリオのヒーロー背景。指/マウスの動きと画面遷移で、
+   透明な紙の上に墨が立ち上り、渦を巻いて拡散する。
 
    物理コアは Pavel Dobryakov の WebGL-Fluid-Simulation（MIT）の
-   手法を土台に、単色・墨・透明合成・スクロール入力へ最小化して再構成。
+   手法を土台に、単色・墨・透明合成へ最小化して再構成。
+   さらに kazera.jp の演出構造（letterform splat / paper-cutout wall /
+   virtual sweep / wash transition / MODES / dynamic dtScale）を移植。
    ============================================================ */
 (function () {
   'use strict';
@@ -12,20 +14,40 @@
   if (!canvas) return;
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-  // ---- 調整パラメータ（濃さ・広がり・流れの強さ） ----
+  // ---- 共通パラメータ（モードに依らない固定値） ----
   const config = {
     SIM_RESOLUTION: 128,       // 速度場の解像度
     DYE_RESOLUTION: 640,       // 墨（染料）の解像度
-    DENSITY_DISSIPATION: 1.0,  // 墨の消え方（小さいほど長く残る）
-    VELOCITY_DISSIPATION: 0.4, // 流れの減衰（少し落ち着かせる）
     PRESSURE: 0.8,
     PRESSURE_ITERATIONS: 20,
     CURL: 4,                   // 渦の強さ（低く＝モヤモヤせず滑らかな塊に）
-    SPLAT_RADIUS: 0.30,        // 一滴の広がり（大きめ＝丸い塊）
-    SPLAT_FORCE: 5200,         // 指の押し出す力
-    INK_STRENGTH: 0.34,        // 一滴で足す墨の濃さ
   };
-  const INK = [0.02, 0.02, 0.02];    // 墨色（より黒く・ほぼ漆黒）
+  const INK = [0.02, 0.02, 0.02];  // 墨色（ほぼ漆黒）
+  const DYE_CAP = 1.2;             // letterform 注入の自己制限（過飽和を防ぎ、washで消えやすく）
+
+  // ---- 画面ごとのモード（散逸・注入量・半径・力・時間倍率） ----
+  //   velDiss:  流れの減衰（大きいほど早く止まる）
+  //   dyeDiss:  墨の消え方（大きいほど早く消える）
+  //   letterK:  letterform（文字形）から毎フレーム注入する墨の量
+  //   cursorR:  指/マウスの一滴の広がり
+  //   cursorF:  指の押し出す力
+  //   cursorI:  一滴で足す墨の濃さ
+  //   dtScale:  シミュレーション時間の倍率
+  //   wall:     紙の切り抜き（墨が文字を避けて流れる）を使うか
+  //   wash:     この画面に入るとき残留墨を拭き取るか
+  const MODES = {
+    intro: { velDiss: 0.25, dyeDiss: 0.90, letterK: 0.080, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
+    brand: { velDiss: 0.14, dyeDiss: 0.30, letterK: 0.050, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
+    menu:  { velDiss: 0.35, dyeDiss: 0.75, letterK: 0.0,   cursorR: 0.34, cursorF: 5500, cursorI: 0.55, dtScale: 1.0, wall: true,  wash: true  },
+    sheet: { velDiss: 0.30, dyeDiss: 1.00, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
+  };
+  let mode = MODES.intro;
+  let currentScreen = 'intro';
+
+  // wash transition：washUntil までの間、散逸を強めて残留墨を拭き取る
+  let washUntil = 0;
+  const WASH_MS = 800, WASH_DYE_MUL = 5.0, WASH_VEL_MUL = 3.0;
+  const WASH_DYE_MIN = 4.0, WASH_VEL_MIN = 1.2;   // 散逸が低いモードでも確実に拭き取る下限
 
   const { gl, ext } = getWebGLContext(canvas);
   if (!gl) return;
@@ -143,15 +165,33 @@
     varying highp vec2 vUv; uniform sampler2D uTexture; uniform float value;
     void main () { gl_FragColor = value * texture2D(uTexture, vUv); }`;
 
+  // clampMax：染料に書く時だけ上限（過飽和で黒が何秒も残るのを防ぐ）。
+  // 速度に書く時は大きな値を渡して実質無効化。
   const splatFrag = `
     precision highp float; precision highp sampler2D;
     varying vec2 vUv; uniform sampler2D uTarget; uniform float aspectRatio;
-    uniform vec3 color; uniform vec2 point; uniform float radius;
+    uniform vec3 color; uniform vec2 point; uniform float radius; uniform float clampMax;
     void main () {
       vec2 p = vUv - point.xy; p.x *= aspectRatio;
       vec3 splat = exp(-dot(p, p) / radius) * color;
       vec3 base = texture2D(uTarget, vUv).xyz;
-      gl_FragColor = vec4(base + splat, 1.0);
+      gl_FragColor = vec4(min(base + splat, vec3(clampMax)), 1.0);
+    }`;
+
+  // letterform splat：文字テクスチャの alpha 部分に毎フレーム墨を注入
+  // （文字そのものが墨になり、縁から滲む）。
+  // 上限は「その画素の alpha × uCap」＝透明度に比例。薄い縁は薄いまま飽和し、
+  // ぼかしの裾まで真っ黒に潰れない。
+  const letterSplatFrag = `
+    precision highp float; precision highp sampler2D;
+    varying vec2 vUv;
+    uniform sampler2D uTarget; uniform sampler2D uLetter;
+    uniform float uStrength; uniform float uCap;
+    void main () {
+      vec4 base = texture2D(uTarget, vUv);
+      float a = texture2D(uLetter, vUv).a;
+      float add = min(uStrength * a, max(a * uCap - base.r, 0.0));
+      gl_FragColor = vec4(base.rgb + vec3(add), 1.0);
     }`;
 
   const advectionFrag = `
@@ -258,12 +298,18 @@
       gl_FragColor = vec4(velocity, 0.0, 1.0);
     }`;
 
+  // display：uWall の alpha がある画素は墨を 0 に戻す（paper-cutout reveal）
+  // ＝墨が文字を避けて流れ、墨だまりの中で文字が紙色に浮かぶ
   const displayFrag = `
     precision highp float; precision highp sampler2D;
-    varying vec2 vUv; uniform sampler2D uTexture; uniform vec3 uInk;
+    varying vec2 vUv;
+    uniform sampler2D uTexture; uniform sampler2D uWall;
+    uniform vec3 uInk; uniform float uWallEnabled;
     void main () {
       float d = texture2D(uTexture, vUv).r;
       float a = 1.0 - exp(-max(d, 0.0) * 3.4);   // 濃度→不透明度（黒く・不透明に）
+      float wallA = texture2D(uWall, vUv).a * uWallEnabled;
+      a *= 1.0 - wallA;
       gl_FragColor = vec4(uInk * a, a);          // プリマルチプライ（紙に正しく合成）
     }`;
 
@@ -271,6 +317,7 @@
   const copyProg = createProgram(baseVS, compileShader(gl.FRAGMENT_SHADER, copyFrag));
   const clearProg = createProgram(baseVS, compileShader(gl.FRAGMENT_SHADER, clearFrag));
   const splatProg = createProgram(baseVS, compileShader(gl.FRAGMENT_SHADER, splatFrag));
+  const letterProg = createProgram(baseVS, compileShader(gl.FRAGMENT_SHADER, letterSplatFrag));
   const advectionProg = createProgram(baseVS, compileShader(gl.FRAGMENT_SHADER, advectionFrag, ext.supportLinearFiltering ? null : ['MANUAL_FILTERING']));
   const divergenceProg = createProgram(baseVS, compileShader(gl.FRAGMENT_SHADER, divergenceFrag));
   const curlProg = createProgram(baseVS, compileShader(gl.FRAGMENT_SHADER, curlFrag));
@@ -350,9 +397,138 @@
     pressure = createDoubleFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
   }
 
+  // -------------------- 文字テクスチャ（letterform / wall） --------------------
+  // 隠し 2D canvas に現在の画面の見出しを DOM の実測位置で描き、texture 化する。
+  // letter = 墨の湧き出し口（文字が墨になる）／ wall = 紙の切り抜き（墨が避ける）
+  const letterCanvas = document.createElement('canvas');
+  const letterCtx = letterCanvas.getContext('2d');
+  const wallCanvas = document.createElement('canvas');
+  const wallCtx = wallCanvas.getContext('2d');
+  const letterTex = createBlankTexture();
+  const wallTex = createBlankTexture();
+  let hasLetter = false, hasWall = false;
+  let introLetterRect = null;   // intro の見出し位置（離脱時に墨を溶かすため）
+
+  function createBlankTexture() {
+    const tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+    return tex;
+  }
+  function uploadCanvas(tex, cnv) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cnv);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  }
+
+  function setFontFrom(ctx, el) {
+    const cs = getComputedStyle(el);
+    ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    return parseFloat(cs.letterSpacing) || 0;
+  }
+  // letter-spacing 込みで文字を描く（Canvas が letterSpacing 未対応なら1文字ずつ）
+  function drawSpacedText(ctx, text, x, y, spacing, align, stroke) {
+    if ('letterSpacing' in ctx) {
+      ctx.letterSpacing = spacing + 'px';
+      ctx.textAlign = align;
+      if (stroke) ctx.strokeText(text, x, y);
+      ctx.fillText(text, x, y);
+      ctx.letterSpacing = '0px';
+      return;
+    }
+    const chars = Array.from(text);
+    const widths = chars.map(ch => ctx.measureText(ch).width);
+    const total = widths.reduce((a, b) => a + b, 0) + spacing * Math.max(0, chars.length - 1);
+    let cx = (align === 'center') ? x - total / 2 : x;
+    ctx.textAlign = 'left';
+    chars.forEach((ch, i) => {
+      if (stroke) ctx.strokeText(ch, cx, y);
+      ctx.fillText(ch, cx, y);
+      cx += widths[i] + spacing;
+    });
+  }
+
+  function renderScreenTextures() {
+    const w = Math.max(1, window.innerWidth);
+    const h = Math.max(1, window.innerHeight);
+    letterCanvas.width = w; letterCanvas.height = h;
+    wallCanvas.width = w; wallCanvas.height = h;
+    hasLetter = false; hasWall = false;
+
+    if (currentScreen === 'intro') {
+      // 見出しの文字形そのものを墨の湧き出し口に（芯は DOM 文字、縁から滲む）
+      const el = document.querySelector('#s-intro .wordmark');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const sp = setFontFrom(letterCtx, el);
+        letterCtx.fillStyle = '#000';
+        letterCtx.textBaseline = 'middle';
+        drawSpacedText(letterCtx, el.textContent, r.left + r.width / 2, r.top + r.height / 2, sp, 'center', false);
+        introLetterRect = r;
+        hasLetter = true;
+      }
+    } else if (currentScreen === 'brand') {
+      // 白文字とロゴの後ろに、にじんだ墨だまりを作る（コントラスト確保）
+      const wm = document.querySelector('#s-brand .wordmark');
+      const logo = document.querySelector('#s-brand .stack-logo');
+      if (wm) {
+        const r = wm.getBoundingClientRect();
+        const sp = setFontFrom(letterCtx, wm);
+        letterCtx.fillStyle = 'rgba(0,0,0,0.9)';
+        letterCtx.textBaseline = 'middle';
+        letterCtx.shadowColor = 'rgba(0,0,0,1)';
+        letterCtx.shadowBlur = 30;
+        for (let i = 0; i < 3; i++) {
+          drawSpacedText(letterCtx, wm.textContent, r.left + r.width / 2, r.top + r.height / 2, sp, 'center', false);
+        }
+        if (logo) {
+          const lr = logo.getBoundingClientRect();
+          letterCtx.beginPath();
+          letterCtx.ellipse(lr.left + lr.width / 2, lr.top + lr.height / 2, lr.width * 0.7, lr.height * 0.7, 0, 0, Math.PI * 2);
+          letterCtx.fill();
+        }
+        letterCtx.shadowBlur = 0;
+        hasLetter = true;
+      }
+    } else if (currentScreen === 'menu') {
+      // メニュー項目名を「紙の切り抜き」に（墨が文字を避けて流れる）
+      wallCtx.fillStyle = '#000'; wallCtx.strokeStyle = '#000';
+      wallCtx.lineJoin = 'round'; wallCtx.lineWidth = 8;
+      wallCtx.textBaseline = 'middle';
+      document.querySelectorAll('#s-menu .mi-jp, #s-menu .mi-en').forEach(sp => {
+        const r = sp.getBoundingClientRect();
+        if (!r.width) return;
+        const spacing = setFontFrom(wallCtx, sp);
+        drawSpacedText(wallCtx, sp.textContent, r.left, r.top + r.height / 2, spacing, 'left', true);
+        hasWall = true;
+      });
+    }
+    if (hasLetter) uploadCanvas(letterTex, letterCanvas);
+    if (hasWall) uploadCanvas(wallTex, wallCanvas);
+  }
+
   // -------------------- シミュレーション --------------------
-  function step(dt) {
+  function step(dt, now) {
     gl.disable(gl.BLEND);
+
+    // letterform：文字形から墨を注入（このモードで有効な時だけ）
+    if (hasLetter && mode.letterK > 0.0) {
+      gl.useProgram(letterProg.program);
+      gl.uniform1i(letterProg.uniforms.uTarget, dye.read.attach(0));
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, letterTex);
+      gl.uniform1i(letterProg.uniforms.uLetter, 1);
+      gl.uniform1f(letterProg.uniforms.uStrength, mode.letterK);
+      gl.uniform1f(letterProg.uniforms.uCap, DYE_CAP);
+      blit(dye.write); dye.swap();
+    }
 
     gl.useProgram(curlProg.program);
     gl.uniform2f(curlProg.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
@@ -391,19 +567,24 @@
     gl.uniform1i(gradientProg.uniforms.uVelocity, velocity.read.attach(1));
     blit(velocity.write); velocity.swap();
 
+    // wash transition 中は散逸を強めて残留墨を拭き取る
+    const inWash = now < washUntil;
+    const velDiss = inWash ? Math.max(mode.velDiss * WASH_VEL_MUL, WASH_VEL_MIN) : mode.velDiss;
+    const dyeDiss = inWash ? Math.max(mode.dyeDiss * WASH_DYE_MUL, WASH_DYE_MIN) : mode.dyeDiss;
+
     gl.useProgram(advectionProg.program);
     gl.uniform2f(advectionProg.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     if (!ext.supportLinearFiltering) gl.uniform2f(advectionProg.uniforms.dyeTexelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(advectionProg.uniforms.uVelocity, velocity.read.attach(0));
     gl.uniform1i(advectionProg.uniforms.uSource, velocity.read.attach(0));
     gl.uniform1f(advectionProg.uniforms.dt, dt);
-    gl.uniform1f(advectionProg.uniforms.dissipation, config.VELOCITY_DISSIPATION);
+    gl.uniform1f(advectionProg.uniforms.dissipation, velDiss);
     blit(velocity.write); velocity.swap();
 
     gl.uniform1i(advectionProg.uniforms.uVelocity, velocity.read.attach(0));
     gl.uniform1i(advectionProg.uniforms.uSource, dye.read.attach(1));
     if (!ext.supportLinearFiltering) gl.uniform2f(advectionProg.uniforms.dyeTexelSize, dye.texelSizeX, dye.texelSizeY);
-    gl.uniform1f(advectionProg.uniforms.dissipation, config.DENSITY_DISSIPATION);
+    gl.uniform1f(advectionProg.uniforms.dissipation, dyeDiss);
     blit(dye.write); dye.swap();
   }
 
@@ -412,23 +593,29 @@
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);   // ストレートアルファで紙に合成
     gl.useProgram(displayProg.program);
     gl.uniform1i(displayProg.uniforms.uTexture, dye.read.attach(0));
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, wallTex);
+    gl.uniform1i(displayProg.uniforms.uWall, 1);
+    gl.uniform1f(displayProg.uniforms.uWallEnabled, (mode.wall && hasWall) ? 1.0 : 0.0);
     gl.uniform3f(displayProg.uniforms.uInk, INK[0], INK[1], INK[2]);
     blit(null);
   }
 
-  function splat(x, y, dx, dy, amount) {
+  function splat(x, y, dx, dy, amount, radiusMul) {
     gl.disable(gl.BLEND);
     gl.useProgram(splatProg.program);
     gl.uniform1i(splatProg.uniforms.uTarget, velocity.read.attach(0));
     gl.uniform1f(splatProg.uniforms.aspectRatio, canvas.width / canvas.height);
     gl.uniform2f(splatProg.uniforms.point, x, y);
     gl.uniform3f(splatProg.uniforms.color, dx, dy, 0.0);
-    gl.uniform1f(splatProg.uniforms.radius, correctRadius(config.SPLAT_RADIUS / 100.0));
+    gl.uniform1f(splatProg.uniforms.radius, correctRadius(mode.cursorR * (radiusMul || 1.0) / 100.0));
+    gl.uniform1f(splatProg.uniforms.clampMax, 1000000.0);   // 速度は制限しない
     blit(velocity.write); velocity.swap();
 
     gl.uniform1i(splatProg.uniforms.uTarget, dye.read.attach(0));
-    const s = amount * config.INK_STRENGTH;
+    const s = amount * mode.cursorI;
     gl.uniform3f(splatProg.uniforms.color, s, s, s);
+    gl.uniform1f(splatProg.uniforms.clampMax, DYE_CAP);     // 染料は上限あり
     blit(dye.write); dye.swap();
   }
   function correctRadius(radius) {
@@ -448,38 +635,96 @@
     return false;
   }
 
-  // -------------------- 入力（指/マウス＋ジェスチャー） --------------------
+  // -------------------- 入力（指/マウス） --------------------
   // ポインタ：画面をなぞると墨が生まれ、動きの方向に流れる
   let lastPX = null, lastPY = null;
-  const trail = [];   // 直近の軌跡（bloom用）
+  let lastMoveT = 0;                 // dynamic dtScale 用（入力停止で早回し）
+  const trail = [];                  // 直近の軌跡（bloom用）
   function pointerMove(clientX, clientY) {
     const x = clientX / window.innerWidth;
     const y = 1.0 - clientY / window.innerHeight;
-    trail.push({ x: x, y: y, t: performance.now() });
+    lastMoveT = performance.now();
+    trail.push({ x: x, y: y, t: lastMoveT });
     if (trail.length > 32) trail.shift();
     if (lastPX !== null) {
-      const dx = (x - lastPX) * config.SPLAT_FORCE;
-      const dy = (y - lastPY) * config.SPLAT_FORCE;
+      const dx = (x - lastPX) * mode.cursorF;
+      const dy = (y - lastPY) * mode.cursorF;
       const moved = Math.hypot(dx, dy);
-      if (moved > 0.5) splat(x, y, dx, dy, Math.min(1.0, 0.4 + moved / config.SPLAT_FORCE * 6.0));
+      if (moved > 0.5) splat(x, y, dx, dy, Math.min(1.0, 0.4 + moved / mode.cursorF * 6.0));
     }
     lastPX = x; lastPY = y;
   }
   window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY), { passive: true });
+  window.addEventListener('touchstart', e => {
+    const t = e.touches[0]; if (!t) return;
+    lastPX = t.clientX / window.innerWidth;          // 前回の指位置からの飛び線を防ぐ
+    lastPY = 1.0 - t.clientY / window.innerHeight;
+  }, { passive: true });
   window.addEventListener('touchmove', e => {
     for (let i = 0; i < e.touches.length; i++) pointerMove(e.touches[i].clientX, e.touches[i].clientY);
   }, { passive: true });
   window.addEventListener('mouseleave', () => { lastPX = lastPY = null; });
 
-  // ※ 通常は墨は指/マウスの動きからだけ生まれる（最初の立ち上がり無し）。
+  // -------------------- virtual sweep（画面遷移の帯ストローク） --------------------
+  // 遷移1回＝画面外左→右へ 700ms の太い帯ストローク1本。線形補間で太さ均一。
+  const sweep = { active: false, startT: 0, dur: 700, y: 0.06, px: -0.05 };
+  let lastSweepT = 0;
+  function startSweep(dir) {
+    const now = performance.now();
+    if (now - lastSweepT < 1200) return;   // 連射禁止スロットル
+    lastSweepT = now;
+    sweep.active = true;
+    sweep.startT = now;
+    sweep.y = (dir >= 0) ? 0.44 : 0.62;    // 画面中央帯（cutout 文字を横切って浮かび上がらせる）
+    sweep.px = -0.05;
+  }
+  function updateSweep(now) {
+    if (!sweep.active) return;
+    const t = (now - sweep.startT) / sweep.dur;
+    if (t >= 1) { sweep.active = false; return; }
+    const x = -0.05 + 1.10 * t;
+    const dx = x - sweep.px; sweep.px = x;
+    if (Math.abs(dx) < 0.00005) return;
+    splat(x, sweep.y, dx * mode.cursorF * 0.35, 0, 0.08, 3.0);   // 薄い刷毛跡（流れも弱め＝墨の吹き寄せ防止）
+  }
 
-  // 画面2へ移る時：直近の指/マウスの軌跡に沿ってだけ、墨が大きく咲く
-  // （触っていない場所からは出さない。軌跡が無ければ画面下中央から静かに立ち上る）
+  // -------------------- cascade（intro 初回タッチの墨カスケード） --------------------
+  // 触れた場所を起点に約1.7秒、ランダムな滴を連鎖させる（swipe-to-enter 演出）
+  const cascade = { active: false, startT: 0, ox: 0.5, oy: 0.5, nextT: 0 };
+  function cascadeAt(clientX, clientY) {
+    const x = clientX / window.innerWidth;
+    const y = 1.0 - clientY / window.innerHeight;
+    const now = performance.now();
+    cascade.active = true; cascade.startT = now; cascade.nextT = 0;
+    cascade.ox = x; cascade.oy = y;
+    trail.push({ x, y, t: now });
+    splat(x, y, 0, 120, 1.0, 0.9);   // まず触れた場所にひと滴
+  }
+  function updateCascade(now) {
+    if (!cascade.active) return;
+    const elapsed = now - cascade.startT;
+    if (elapsed > 1700) { cascade.active = false; return; }
+    if (now < cascade.nextT) return;
+    cascade.nextT = now + 150 + (elapsed / 1700) * 220;   // だんだん間遠に
+    let tx, ty;
+    if (Math.random() < 0.5) {   // 半分は中央寄り（画面2の文字の地肌を確保）
+      tx = 0.3 + Math.random() * 0.4; ty = 0.3 + Math.random() * 0.4;
+    } else {                     // 半分はタッチ起点の周り
+      tx = Math.min(0.9, Math.max(0.1, cascade.ox + (Math.random() - 0.5) * 0.5));
+      ty = Math.min(0.9, Math.max(0.1, cascade.oy + (Math.random() - 0.5) * 0.5));
+    }
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 300 + Math.random() * 500;   // 強すぎると画面端で乱れるため控えめに
+    trail.push({ x: tx, y: ty, t: now });
+    if (trail.length > 32) trail.shift();
+    splat(tx, ty, Math.cos(ang) * spd, Math.sin(ang) * spd, 0.7, 0.8);
+  }
+
+  // -------------------- bloom（画面2へ移る時：軌跡に沿って墨が咲く） --------------------
   function bloom() {
     const now = performance.now();
     let pts = trail.filter(p => now - p.t < 1400);
     if (pts.length < 2) pts = [{x:0.5, y:0.10}, {x:0.5, y:0.26}, {x:0.5, y:0.42}];
-    // 軌跡から均等に最大8点を用意
     const N = Math.min(8, pts.length);
     const items = [];
     for (let i = 0; i < N; i++) {
@@ -493,35 +738,75 @@
     function pump() {
       for (let k = 0; k < 2 && i < items.length; k++, i++) {
         const it = items[i];
-        const r0 = config.SPLAT_RADIUS;
-        config.SPLAT_RADIUS = 0.5;                 // 咲く時だけ大きな滴に
-        splat(it.x, it.y, it.dx, it.dy, 2.0);
-        config.SPLAT_RADIUS = r0;
+        splat(it.x, it.y, it.dx, it.dy, 1.4, 1.7);   // 咲く時だけ大きな滴に
       }
       if (i < items.length) requestAnimationFrame(pump);
     }
     requestAnimationFrame(pump);
   }
-  // 画面2に居る間は墨を消えにくくして“定着”させる（動きは自然に収まり静止する）
-  // 離れたら通常の消え方に戻し、ゆっくり薄れて消える
-  const NORMAL_DISSIPATION = config.DENSITY_DISSIPATION;
-  function hold(on) {
-    config.DENSITY_DISSIPATION = on ? 0.04 : NORMAL_DISSIPATION;
+
+  // 染料全体を一括で薄める（遷移の瞬間の「拭き取り」）
+  function fadeDye(f) {
+    gl.disable(gl.BLEND);
+    gl.useProgram(clearProg.program);
+    gl.uniform1i(clearProg.uniforms.uTexture, dye.read.attach(0));
+    gl.uniform1f(clearProg.uniforms.value, f);
+    blit(dye.write); dye.swap();
   }
-  window.InkFluid = { bloom: bloom, hold: hold };
+
+  // -------------------- 画面切替（モード差し替え＋wash＋文字テクスチャ更新） --------------------
+  function setScreen(id) {
+    const key = MODES[id] ? id : 'sheet';
+    const prev = currentScreen;
+    currentScreen = key;
+    mode = MODES[key];
+    if (mode.wash && key !== prev) {
+      washUntil = performance.now() + WASH_MS;
+      fadeDye(0.25);   // まず一段薄めてから wash で拭き切る
+    }
+    // intro を離れる時：見出しに溜まった墨を左右へ割って「溶かして」流す
+    // （重なる逆向きの力は相殺するので、外向き2発のコヒーレントな流れにする）
+    if (prev === 'intro' && key !== 'intro' && introLetterRect) {
+      const r = introLetterRect;
+      const vy = 1.0 - (r.top + r.height / 2) / window.innerHeight;
+      const uL = (r.left + r.width * 0.30) / window.innerWidth;
+      const uR = (r.left + r.width * 0.70) / window.innerWidth;
+      splat(uL, vy, -600, -350, 0.12, 2.2);   // ほぼ速度だけ（墨は足さない）
+      splat(uR, vy,  600, -350, 0.12, 2.2);
+    }
+    // レイアウト確定後に見出しを描き直す（フェード中でも rect は取れる）
+    requestAnimationFrame(renderScreenTextures);
+  }
+
+  window.InkFluid = { bloom: bloom, setScreen: setScreen, sweep: startSweep, cascadeAt: cascadeAt };
 
   // -------------------- ループ --------------------
+  const DT_BOOST = 2.0, DT_LERP = 0.3;
+  let dynDtScale = 1.0;
   let lastTime = performance.now();
   function update() {
     const now = performance.now();
-    let dt = (now - lastTime) / 1000; dt = Math.min(dt, 0.0166); lastTime = now;
-    if (resizeCanvas()) initFramebuffers();
-    if (!document.hidden) { step(dt); render(); }
+    let dt = (now - lastTime) / 1000; dt = Math.min(dt, 0.033); lastTime = now;
+    if (resizeCanvas()) { initFramebuffers(); renderScreenTextures(); }
+    if (!document.hidden) {
+      updateCascade(now);
+      updateSweep(now);
+      // dynamic dtScale：入力が止まっている間はシムを2倍速にして余韻を早く落ち着かせる
+      const active = (now - lastMoveT < 130) || sweep.active || cascade.active;
+      const target = mode.dtScale * (active ? 1.0 : DT_BOOST);
+      dynDtScale += (target - dynDtScale) * DT_LERP;
+      step(dt * dynDtScale, now);
+      render();
+    }
     requestAnimationFrame(update);
   }
 
   resizeCanvas();
   initFramebuffers();
-  window.addEventListener('resize', () => { if (resizeCanvas()) initFramebuffers(); });
+  renderScreenTextures();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => renderScreenTextures());   // フォント確定後に描き直し
+  }
+  window.addEventListener('resize', () => { if (resizeCanvas()) initFramebuffers(); renderScreenTextures(); });
   requestAnimationFrame(update);
 })();
