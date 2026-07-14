@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-seikatsu.png">
+<meta name="apple-mobile-web-app-title" content="せいかつの木">
+<title>せいかつの木 — ふたりの生活費わけ</title>
+<style>
+  :root{
+    --bg:#f4f7f0; --card:#ffffff; --ink:#26301f; --sub:#7e8a73;
+    --line:#e4ecdb; --accent:#5aa84a; --accent2:#8cc97a;
+    --me:#3b93ff; --yuzu:#f5a623; --ok:#34c759; --danger:#e2543c; --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
+  html,body{overscroll-behavior-y:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 40px);
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:0 16px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  input,select,textarea{font-family:inherit; font-size:16px;}
+
+  /* ===== ヘッダー ===== */
+  header{padding:26px 4px 10px; display:flex; align-items:center; gap:10px;}
+  header .logo{font-size:30px; line-height:1;}
+  header h1{font-size:22px; font-weight:800; letter-spacing:-.02em;}
+  header .gear{margin-left:auto; font-size:20px; color:var(--sub); padding:6px;
+    background:var(--card); border:1px solid var(--line); border-radius:999px; width:38px; height:38px;
+    display:flex; align-items:center; justify-content:center;}
+  header .gear:active{transform:scale(.94);}
+
+  /* ===== 月タブ ===== */
+  .months{display:flex; gap:8px; overflow-x:auto; padding:6px 4px 10px; -webkit-overflow-scrolling:touch;}
+  .months::-webkit-scrollbar{display:none;}
+  .mtab{flex:0 0 auto; min-width:84px; text-align:center; background:var(--card);
+    border:1px solid var(--line); border-radius:14px; padding:9px 12px; transition:.15s;}
+  .mtab.active{background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 6px 16px rgba(90,168,74,.28);}
+  .mtab .mm{font-size:14px; font-weight:800; letter-spacing:-.01em;}
+  .mtab .ma{font-size:11px; font-weight:600; opacity:.8; margin-top:2px;}
+  .mtab.active .ma{opacity:.95;}
+
+  /* ===== ヒーロー（精算バナー） ===== */
+  .hero{background:linear-gradient(135deg,#eef7e6,#dff0cf); border:1px solid #d3e7bf;
+    border-radius:var(--radius); padding:20px 18px; margin-top:4px; text-align:center;}
+  .hero .lab{font-size:12px; color:#5a7a3e; font-weight:800; letter-spacing:.04em;}
+  .hero .total{font-size:38px; font-weight:800; letter-spacing:-.02em; margin-top:4px; line-height:1.1;}
+  .hero .total small{font-size:20px; font-weight:700;}
+  .hero .wdate{font-size:12px; color:#6b8a4e; margin-top:6px; font-weight:600;}
+  .split{display:grid; grid-template-columns:1fr 1fr; gap:11px; margin-top:14px;}
+  .sc{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 12px; text-align:center;}
+  .sc .who{display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:800; padding:3px 11px; border-radius:999px;}
+  .sc.me .who{background:rgba(59,147,255,.12); color:#1f6fd6;}
+  .sc.yuzu .who{background:rgba(245,166,35,.15); color:#c47e0a;}
+  .sc .amt{font-size:26px; font-weight:800; letter-spacing:-.02em; margin-top:9px; line-height:1;}
+  .sc .amt small{font-size:15px; font-weight:700;}
+  .sc .pct{font-size:11px; color:var(--sub); margin-top:5px; font-weight:600;}
+  .recv{margin-top:13px; background:rgba(245,166,35,.10); border:1px dashed #f0c877;
+    border-radius:14px; padding:11px 14px; display:flex; align-items:center; gap:8px; justify-content:center; flex-wrap:wrap;}
+  .recv .rl{font-size:12.5px; font-weight:700; color:#a9741a;}
+  .recv .rv{font-size:20px; font-weight:800; color:#c47e0a; letter-spacing:-.02em;}
+
+  /* ===== セクション見出し ===== */
+  .sectitle{font-size:13px; font-weight:800; color:var(--sub); margin:24px 4px 10px;
+    display:flex; align-items:center; gap:8px;}
+  .sectitle .cnt{margin-left:auto; font-weight:700; font-size:12px;}
+
+  /* ===== 取り込みボタン ===== */
+  .actions{display:flex; gap:10px; margin-top:4px;}
+  .actions .ab{flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:14px 8px; background:var(--card); border:1.5px solid var(--line); border-radius:16px;
+    font-size:13px; font-weight:700; color:var(--ink); transition:.15s;}
+  .actions .ab:active{transform:scale(.97);}
+  .actions .ab .ic{font-size:22px;}
+  .actions .ab.accent{border-color:var(--accent2); color:var(--accent);}
+  .actions .ab .sub{font-size:10.5px; color:var(--sub); font-weight:600;}
+
+  /* ===== 明細リスト ===== */
+  .tx{display:flex; align-items:center; gap:11px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:12px 14px; margin-bottom:8px;}
+  .tx .d{flex:0 0 auto; width:42px; text-align:center;}
+  .tx .d .dd{font-size:17px; font-weight:800; line-height:1;}
+  .tx .d .dm{font-size:10px; color:var(--sub); font-weight:600;}
+  .tx .mid{flex:1 1 auto; min-width:0;}
+  .tx .nm{font-size:14.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .tx .meta{font-size:11px; color:var(--sub); margin-top:2px; display:flex; align-items:center; gap:6px;}
+  .tx .tag{font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px;}
+  .tx .tag.csv{background:rgba(90,168,74,.13); color:#4a8b3c;}
+  .tx .tag.manual{background:rgba(59,147,255,.12); color:#1f6fd6;}
+  .tx .amt{flex:0 0 auto; font-size:16px; font-weight:800; letter-spacing:-.01em;}
+  .tx .amt small{font-size:12px; font-weight:700;}
+  .tx .del{flex:0 0 auto; color:#c9cfc0; font-size:18px; padding:4px; margin-right:-4px;}
+  .tx .del:active{color:var(--danger);}
+
+  .empty{text-align:center; color:var(--sub); padding:40px 20px;}
+  .empty .big{font-size:44px;} .empty p{margin-top:10px; font-size:14px; line-height:1.7;}
+
+  .clearmonth{width:100%; text-align:center; color:var(--sub); font-size:12.5px; font-weight:600;
+    padding:12px; margin-top:4px;}
+  .clearmonth:active{color:var(--danger);}
+
+  /* ===== モーダル ===== */
+  .sheet-bg{position:fixed; inset:0; background:rgba(20,30,15,.42); z-index:100; display:flex;
+    align-items:flex-end; justify-content:center; opacity:0; pointer-events:none; transition:opacity .2s;}
+  .sheet-bg.on{opacity:1; pointer-events:auto;}
+  .sheet{width:100%; max-width:560px; background:var(--bg); border-radius:22px 22px 0 0;
+    padding:8px 18px calc(env(safe-area-inset-bottom) + 22px); transform:translateY(100%); transition:transform .24s cubic-bezier(.3,.9,.35,1); max-height:92vh; overflow-y:auto;}
+  .sheet-bg.on .sheet{transform:translateY(0);}
+  .grab{width:38px; height:4px; background:#d5ddc8; border-radius:999px; margin:8px auto 14px;}
+  .sheet h3{font-size:18px; font-weight:800; margin-bottom:14px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; font-weight:700; color:var(--sub); margin-bottom:6px;}
+  .field input, .field textarea{width:100%; background:var(--card); border:1.5px solid var(--line);
+    border-radius:12px; padding:12px 13px; color:var(--ink); outline:none; transition:border-color .15s;}
+  .field input:focus, .field textarea:focus{border-color:var(--accent2);}
+  .field .hint{font-size:11px; color:var(--sub); margin-top:5px;}
+  .row2{display:flex; gap:10px;} .row2 .field{flex:1;}
+  .primary{width:100%; background:var(--accent); color:#fff; font-size:16px; font-weight:800;
+    padding:15px; border-radius:14px; margin-top:6px;}
+  .primary:active{transform:scale(.985);}
+  .ghost{width:100%; color:var(--sub); font-size:14px; font-weight:600; padding:13px; margin-top:4px;}
+
+  /* 割合スライダー */
+  .ratiobox{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px;}
+  .ratiobar{display:flex; height:40px; border-radius:12px; overflow:hidden; margin:12px 0 6px; font-weight:800; color:#fff; font-size:13px;}
+  .ratiobar .rme{background:var(--me); display:flex; align-items:center; justify-content:center; transition:flex-basis .2s;}
+  .ratiobar .ryu{background:var(--yuzu); display:flex; align-items:center; justify-content:center; transition:flex-basis .2s;}
+  .ratiobox input[type=range]{width:100%; accent-color:var(--accent);}
+  .presets{display:flex; gap:8px; margin-top:10px;}
+  .presets button{flex:1; background:var(--bg); border:1px solid var(--line); border-radius:10px;
+    padding:8px; font-size:13px; font-weight:700; color:var(--sub);}
+  .presets button.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🌳</div>
+    <h1>せいかつの木</h1>
+    <button class="gear" onclick="openSettings()" aria-label="設定">⚙️</button>
+  </header>
+
+  <div class="months" id="months"></div>
+
+  <div id="main"></div>
+</div>
+
+<input type="file" id="csvInput" accept=".csv,text/csv" hidden>
+
+<!-- 手動追加シート -->
+<div class="sheet-bg" id="addSheet">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>明細を手動で追加</h3>
+    <div class="field">
+      <label>日付</label>
+      <input type="date" id="mDate">
+    </div>
+    <div class="field">
+      <label>内容（店名・使い道）</label>
+      <input type="text" id="mName" placeholder="例：スーパー / 電気代 / 外食">
+    </div>
+    <div class="field">
+      <label>金額（円）</label>
+      <input type="number" id="mAmt" inputmode="numeric" placeholder="0">
+    </div>
+    <div class="field">
+      <label>メモ（任意）</label>
+      <input type="text" id="mMemo" placeholder="例：日用品まとめ買い">
+    </div>
+    <button class="primary" onclick="saveManual()">追加する</button>
+    <button class="ghost" onclick="closeSheet('addSheet')">キャンセル</button>
+  </div>
+</div>
+
+<!-- 設定シート -->
+<div class="sheet-bg" id="setSheet">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>設定</h3>
+
+    <div class="sectitle" style="margin-top:0">支払いの割合</div>
+    <div class="ratiobox">
+      <div class="ratiobar">
+        <div class="rme" id="barMe">自分 60%</div>
+        <div class="ryu" id="barYu">40%</div>
+      </div>
+      <input type="range" id="ratioRange" min="0" max="100" step="5" value="60"
+        oninput="onRatio(this.value)">
+      <div class="presets" id="presets">
+        <button data-me="60">6 : 4</button>
+        <button data-me="50">5 : 5</button>
+        <button data-me="70">7 : 3</button>
+      </div>
+    </div>
+
+    <div class="sectitle">表示名</div>
+    <div class="row2">
+      <div class="field"><label>あなた</label><input type="text" id="nMe" placeholder="自分"></div>
+      <div class="field"><label>あいて</label><input type="text" id="nYu" placeholder="ゆずちゃん"></div>
+    </div>
+
+    <button class="primary" onclick="saveSettings()">保存する</button>
+    <button class="ghost" onclick="closeSheet('setSheet')">閉じる</button>
+  </div>
+</div>
+
+<script>
+const LS_KEY='seikatsunoki_v1';
+let db={ratio:{me:60,partner:40}, names:{me:'自分',partner:'ゆずちゃん'}, tx:[]};
+let cur=null;              // 選択中の月 'YYYY-MM'
+let tmpRatioMe=60;         // 設定シート内の一時値
+
+/* ---------- 保存・読み込み ---------- */
+function load(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(raw){ const d=JSON.parse(raw);
+      db.ratio = d.ratio || db.ratio;
+      db.names = d.names || db.names;
+      db.tx    = Array.isArray(d.tx) ? d.tx : [];
+    }
+  }catch(e){ console.warn('load失敗',e); }
+}
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(db)); }
+
+/* ---------- ユーティリティ ---------- */
+const yen=n=> '¥'+Math.round(n).toLocaleString('ja-JP');
+function pkey(date){ return date.slice(0,7); }            // 'YYYY-MM'
+function uid(){ return 't'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// 月末締め → 翌月26日引き落とし
+function withdrawLabel(pk){
+  const [y,m]=pk.split('-').map(Number);
+  const ny = m===12 ? y+1 : y;
+  const nm = m===12 ? 1 : m+1;
+  return `${ny}年${nm}月26日 引き落とし`;
+}
+function monthLabel(pk){ const [,m]=pk.split('-'); return parseInt(m,10)+'月'; }
+function monthLabelFull(pk){ const [y,m]=pk.split('-'); return `${y}年${parseInt(m,10)}月`; }
+
+function months(){
+  const s=new Set(db.tx.map(t=>pkey(t.date)));
+  return [...s].sort().reverse();
+}
+function monthTx(pk){
+  return db.tx.filter(t=>pkey(t.date)===pk)
+              .sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+}
+function monthTotal(pk){ return monthTx(pk).reduce((s,t)=>s+t.amount,0); }
+
+function splitOf(total){
+  const yu = Math.round(total * db.ratio.partner/100);
+  const me = total - yu;
+  return {me, yu};
+}
+
+/* ---------- 描画 ---------- */
+function render(){
+  const ms=months();
+  if(!cur || !ms.includes(cur)) cur = ms[0] || null;
+
+  // 月タブ
+  const mv=document.getElementById('months');
+  if(ms.length){
+    mv.innerHTML = ms.map(pk=>`
+      <button class="mtab ${pk===cur?'active':''}" onclick="selMonth('${pk}')">
+        <div class="mm">${monthLabel(pk)}</div>
+        <div class="ma">${yen(monthTotal(pk))}</div>
+      </button>`).join('');
+  }else{ mv.innerHTML=''; }
+
+  const main=document.getElementById('main');
+  if(!cur){
+    main.innerHTML = `
+      <div class="hero"><div class="lab">ふたりの生活費</div>
+        <div class="total">¥0</div>
+        <div class="wdate">まずはCSVを読み込むか、手動で追加してください</div></div>
+      <div class="sectitle" style="margin-top:20px">明細を追加</div>
+      ${actionsHTML()}
+      <div class="empty"><div class="big">🌱</div>
+        <p>三井住友カード（Vpass）でダウンロードした<br>CSVをそのまま読み込めます。</p></div>`;
+    return;
+  }
+
+  const total=monthTotal(cur);
+  const sp=splitOf(total);
+  const list=monthTx(cur);
+  const nMe=esc(db.names.me), nYu=esc(db.names.partner);
+
+  main.innerHTML = `
+    <div class="hero">
+      <div class="lab">${monthLabelFull(cur)}のふたりの生活費</div>
+      <div class="total">${yen(total)}</div>
+      <div class="wdate">🗓 ${withdrawLabel(cur)}</div>
+      <div class="split">
+        <div class="sc me"><span class="who">🙋 ${nMe}</span>
+          <div class="amt">${yen(sp.me)}</div>
+          <div class="pct">${db.ratio.me}%</div></div>
+        <div class="sc yuzu"><span class="who">🍊 ${nYu}</span>
+          <div class="amt">${yen(sp.yu)}</div>
+          <div class="pct">${db.ratio.partner}%</div></div>
+      </div>
+      <div class="recv">
+        <span class="rl">${nYu}からの受取額</span>
+        <span class="rv">${yen(sp.yu)}</span>
+      </div>
+    </div>
+
+    <div class="sectitle" style="margin-top:20px">明細を追加</div>
+    ${actionsHTML()}
+
+    <div class="sectitle">明細 <span class="cnt">${list.length}件</span></div>
+    ${ list.length ? list.map(txHTML).join('') :
+       `<div class="empty"><div class="big">🌱</div><p>この月の明細はまだありません。</p></div>` }
+    ${ list.length ? `<button class="clearmonth" onclick="clearMonth()">🗑 ${monthLabelFull(cur)}の明細をすべて削除</button>` : '' }
+  `;
+}
+
+function actionsHTML(){
+  return `<div class="actions">
+    <button class="ab accent" onclick="document.getElementById('csvInput').click()">
+      <span class="ic">📄</span>CSVを読み込む<span class="sub">Vpassの明細</span></button>
+    <button class="ab" onclick="openAdd()">
+      <span class="ic">✏️</span>手動で追加<span class="sub">他の決済など</span></button>
+  </div>`;
+}
+
+function txHTML(t){
+  const [,mm,dd]=t.date.split('-');
+  const tag = t.source==='csv'
+    ? '<span class="tag csv">CSV</span>'
+    : '<span class="tag manual">手動</span>';
+  const memo = t.memo ? `・${esc(t.memo)}` : '';
+  return `<div class="tx">
+    <div class="d"><div class="dd">${parseInt(dd,10)}</div><div class="dm">${parseInt(mm,10)}月</div></div>
+    <div class="mid">
+      <div class="nm">${esc(t.name)}</div>
+      <div class="meta">${tag}${memo}</div>
+    </div>
+    <div class="amt">${yen(t.amount)}</div>
+    <button class="del" onclick="delTx('${t.id}')" aria-label="削除">✕</button>
+  </div>`;
+}
+
+/* ---------- 操作 ---------- */
+function selMonth(pk){ cur=pk; render(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+function delTx(id){
+  const t=db.tx.find(x=>x.id===id); if(!t) return;
+  if(!confirm(`「${t.name}」（${yen(t.amount)}）を削除しますか？`)) return;
+  db.tx=db.tx.filter(x=>x.id!==id); save(); render();
+}
+function clearMonth(){
+  if(!cur) return;
+  const n=monthTx(cur).length;
+  if(!confirm(`${monthLabelFull(cur)}の明細 ${n}件をすべて削除しますか？`)) return;
+  db.tx=db.tx.filter(t=>pkey(t.date)!==cur); save(); render();
+}
+
+/* 手動追加シート */
+function openAdd(){
+  const today=new Date();
+  const iso = cur ? cur+'-01' : `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  // 選択中の月があればその月の1日を初期値に（なければ今日）
+  document.getElementById('mDate').value = cur ? cur+'-15' : iso;
+  document.getElementById('mName').value='';
+  document.getElementById('mAmt').value='';
+  document.getElementById('mMemo').value='';
+  openSheet('addSheet');
+  setTimeout(()=>document.getElementById('mName').focus(),260);
+}
+function saveManual(){
+  const date=document.getElementById('mDate').value;
+  const name=document.getElementById('mName').value.trim();
+  const amt=parseInt(document.getElementById('mAmt').value,10);
+  const memo=document.getElementById('mMemo').value.trim();
+  if(!date){ alert('日付を入れてください'); return; }
+  if(!name){ alert('内容を入れてください'); return; }
+  if(!isFinite(amt) || amt===0){ alert('金額を入れてください'); return; }
+  db.tx.push({id:uid(), date, name, amount:amt, source:'manual', memo});
+  save(); cur=pkey(date); closeSheet('addSheet'); render();
+}
+
+/* CSV取り込み */
+// 1行を引用符対応で列に分解（"..."内のカンマは区切りにしない）
+function splitCsvLine(line){
+  const f=[]; let cur='', q=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(q){
+      if(ch==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else q=false; }
+      else cur+=ch;
+    }else{
+      if(ch==='"') q=true;
+      else if(ch===','){ f.push(cur); cur=''; }
+      else cur+=ch;
+    }
+  }
+  f.push(cur);
+  return f;
+}
+function parseCSV(text){
+  const out=[];
+  for(const line of text.split(/\r\n|\n|\r/)){
+    if(!line.trim()) continue;
+    const c=splitCsvLine(line);
+    const m=(c[0]||'').trim().match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    if(!m) continue;                                   // ヘッダー行・合計行はスキップ
+    const name=(c[1]||'').trim();
+    // お支払い金額(6列目)優先、無ければご利用金額(3列目)。全角数字も許容。
+    const pick=(c[5]!==undefined && String(c[5]).trim()!=='') ? c[5] : (c[2]||'');
+    const raw=String(pick).replace(/[¥,\s]/g,'').replace(/[０-９]/g,d=>'０１２３４５６７８９'.indexOf(d));
+    const amt=parseInt(raw,10);
+    if(!name || !isFinite(amt) || amt===0) continue;
+    const date=`${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+    out.push({date, name, amount:amt});
+  }
+  return out;
+}
+function importCSV(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    let text;
+    try{ text=new TextDecoder('shift-jis').decode(e.target.result); }
+    catch(err){ text=new TextDecoder('utf-8').decode(e.target.result); }
+    // 文字化け保険：シフトJISで読めていなさそうならUTF-8で再試行
+    if(/�/.test(text)){
+      try{ const t2=new TextDecoder('utf-8').decode(e.target.result);
+        if(!/�/.test(t2)) text=t2; }catch(_){}
+    }
+    const rows=parseCSV(text);
+    if(!rows.length){ alert('明細が見つかりませんでした。三井住友カード（Vpass）のCSVか確認してください。'); return; }
+    // 既存CSV明細との重複を除外（日付＋店名＋金額）
+    const seen=new Set(db.tx.filter(t=>t.source==='csv').map(t=>t.date+'|'+t.name+'|'+t.amount));
+    let added=0, skip=0;
+    for(const r of rows){
+      const k=r.date+'|'+r.name+'|'+r.amount;
+      if(seen.has(k)){ skip++; continue; }
+      seen.add(k);
+      db.tx.push({id:uid(), date:r.date, name:r.name, amount:r.amount, source:'csv', memo:''});
+      added++;
+    }
+    save();
+    // 取り込んだ月へ移動
+    const last=rows[rows.length-1];
+    if(last) cur=pkey(last.date);
+    render();
+    alert(`${added}件を追加しました。` + (skip? `（重複 ${skip}件はスキップ）`:''));
+  };
+  reader.readAsArrayBuffer(file);
+}
+document.getElementById('csvInput').addEventListener('change',function(){
+  if(this.files && this.files[0]) importCSV(this.files[0]);
+  this.value='';
+});
+
+/* シート開閉 */
+function openSheet(id){ document.getElementById(id).classList.add('on'); }
+function closeSheet(id){ document.getElementById(id).classList.remove('on'); }
+document.querySelectorAll('.sheet-bg').forEach(bg=>{
+  bg.addEventListener('click',e=>{ if(e.target===bg) bg.classList.remove('on'); });
+});
+
+/* 設定 */
+function openSettings(){
+  tmpRatioMe=db.ratio.me;
+  document.getElementById('ratioRange').value=tmpRatioMe;
+  document.getElementById('nMe').value=db.names.me;
+  document.getElementById('nYu').value=db.names.partner;
+  paintRatio();
+  openSheet('setSheet');
+}
+function onRatio(v){ tmpRatioMe=parseInt(v,10); paintRatio(); }
+function paintRatio(){
+  const me=tmpRatioMe, yu=100-me;
+  document.getElementById('barMe').style.flexBasis=me+'%';
+  document.getElementById('barYu').style.flexBasis=yu+'%';
+  document.getElementById('barMe').textContent=`自分 ${me}%`;
+  document.getElementById('barYu').textContent=`${yu}%`;
+  document.querySelectorAll('#presets button').forEach(b=>{
+    b.classList.toggle('on', parseInt(b.dataset.me,10)===me);
+  });
+}
+document.querySelectorAll('#presets button').forEach(b=>{
+  b.addEventListener('click',()=>{ tmpRatioMe=parseInt(b.dataset.me,10);
+    document.getElementById('ratioRange').value=tmpRatioMe; paintRatio(); });
+});
+function saveSettings(){
+  db.ratio={me:tmpRatioMe, partner:100-tmpRatioMe};
+  db.names={me:document.getElementById('nMe').value.trim()||'自分',
+            partner:document.getElementById('nYu').value.trim()||'ゆずちゃん'};
+  save(); closeSheet('setSheet'); render();
+}
+
+/* 起動 */
+load(); render();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
