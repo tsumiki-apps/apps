@@ -42,7 +42,7 @@ APPS = {
     "rashinban":   ("🧭", "#7b86ff", "#4f57c7"),
     "minori":      ("🌾", "#e6b34d", "#c8860d"),
     "komame":      ("🧹", "#5fd0bd", "#15a584"),
-    "issho":       ("🧺", "#7fb3ff", "#3d7ff0"),
+    "issho":       ("🧺", "#C9C3B8", "#8E877D"),
 }
 
 
