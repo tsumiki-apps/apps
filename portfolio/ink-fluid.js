@@ -36,10 +36,11 @@
   //   wall:     紙の切り抜き（墨が文字を避けて流れる）を使うか
   //   wash:     この画面に入るとき残留墨を拭き取るか
   const MODES = {
-    intro: { velDiss: 0.25, dyeDiss: 0.90, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
-    brand: { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.022, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: false },  // letterK 以前の値: 0.060（大きいほど早く暗転）
-    menu:  { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.060, cursorR: 0.34, cursorF: 5500, cursorI: 0.55, dtScale: 1.0, wall: false, wash: false },
-    sheet: { velDiss: 0.30, dyeDiss: 1.00, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true  },
+    intro: { velDiss: 0.25, dyeDiss: 0.90, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true,  hoverInk: true  },
+    brand: { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.022, cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: false, hoverInk: true  },  // letterK 以前の値: 0.060（大きいほど早く暗転）
+    menu:  { velDiss: 0.14, dyeDiss: 0.25, letterK: 0.060, cursorR: 0.34, cursorF: 5500, cursorI: 0.55, dtScale: 1.0, wall: false, wash: false, hoverInk: true  },
+    // sheet は読み物。マウスは「押している間だけ」描く＝スマホ（touchmove）と同じ挙動に揃える
+    sheet: { velDiss: 0.30, dyeDiss: 1.00, letterK: 0.0,   cursorR: 0.30, cursorF: 5200, cursorI: 0.34, dtScale: 1.0, wall: false, wash: true,  hoverInk: false },
   };
   let mode = MODES.intro;
   let currentScreen = 'intro';
@@ -585,7 +586,18 @@
     }
     lastPX = x; lastPY = y;
   }
-  window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY), { passive: true });
+  window.addEventListener('mousemove', e => {
+    // hoverInk:false の画面（sheet＝読み物）では、ボタンを押している間だけ描く。
+    // スマホの touchmove は「指が触れている間」しか発火しないため、これで挙動が揃う。
+    // （PCだけ、読むためにマウスを動かすだけで文字の裏に墨が湧いていた）
+    if (!mode.hoverInk && !(e.buttons & 1)) {
+      // 描かない間も位置だけ追う。押した瞬間に前回位置からの飛び線が出るのを防ぐ。
+      lastPX = e.clientX / window.innerWidth;
+      lastPY = 1.0 - e.clientY / window.innerHeight;
+      return;
+    }
+    pointerMove(e.clientX, e.clientY);
+  }, { passive: true });
   window.addEventListener('touchstart', e => {
     const t = e.touches[0]; if (!t) return;
     lastPX = t.clientX / window.innerWidth;          // 前回の指位置からの飛び線を防ぐ
