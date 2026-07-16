@@ -109,6 +109,7 @@
     background: var(--accent); color:#fff; font-size: 30px; line-height: 1;
     box-shadow: 0 6px 18px rgba(232,145,91,.45); cursor:pointer;
     display:flex; align-items:center; justify-content:center;
+    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;  /* 長押し＝アルバムなので選択メニューを出さない */
   }
   .fab:active { transform: scale(.93); }
 
@@ -177,6 +178,20 @@
   .photo-strip .pi .x { position:absolute; top:3px; right:3px; background:rgba(0,0,0,.6); color:#fff; width:20px;height:20px;border-radius:50%; font-size:12px; display:flex;align-items:center;justify-content:center; cursor:pointer;}
   .addphoto { width:80px;height:80px;border-radius:12px; border:2px dashed var(--line); display:flex;flex-direction:column;align-items:center;justify-content:center; font-size:24px; color:var(--sub); cursor:pointer; background:#fff;}
   .addphoto small{font-size:10px;}
+  #shotPhotoBtn { border-style:solid; border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+
+  /* くわしく書く（日付・感想・タグ）＝ふだんは畳んでおく */
+  .more-toggle {
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    width:100%; margin-top:18px; padding:12px 14px;
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    font-family:inherit; font-size:14px; font-weight:600; color:var(--sub);
+    cursor:pointer;
+  }
+  .more-toggle .chev { transition: transform .2s ease; font-size:12px; }
+  .more-toggle[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  .more-fields { display:none; }
+  .more-fields.open { display:block; }
 
   /* タグ入力 */
   .tag-input-row { display:flex; gap:8px; }
@@ -367,7 +382,9 @@
   <div class="tagview" id="tagview" style="display:none"></div>
 </main>
 
-<button class="fab" id="fab" aria-label="記録を追加">＋</button>
+<button class="fab" id="fab" aria-label="ごはんを撮って記録する">📷</button>
+<!-- ＋タップ＝その場でカメラ起動（撮った瞬間に投稿シートが開く） -->
+<input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
 
 <!-- ===== 記録モーダル ===== -->
 <div class="modal-bg" id="recordModal">
@@ -380,26 +397,33 @@
 
     <label class="fld">写真</label>
     <div class="photo-strip" id="photoStrip">
+      <div class="addphoto" id="shotPhotoBtn">📷<small>撮る</small></div>
       <div class="addphoto" id="addPhotoBtn">＋<small>写真</small></div>
     </div>
     <input type="file" id="photoInput" accept="image/*" multiple class="hidden">
 
     <label class="fld">料理名</label>
-    <input type="text" id="rName" placeholder="例：肉じゃが、ナポリタン">
+    <input type="text" id="rName" placeholder="例：肉じゃが、ナポリタン" enterkeyhint="done">
 
-    <label class="fld">作ってもらった日</label>
-    <input type="date" id="rDate">
+    <button type="button" class="more-toggle" id="moreToggle" aria-expanded="false" aria-controls="moreFields">
+      <span>くわしく書く（日付・感想・タグ）</span><span class="chev">▾</span>
+    </button>
 
-    <label class="fld">感想・ありがとうメモ</label>
-    <textarea id="rNote" placeholder="味の感想や、ゆずちゃんへのありがとうを残そう"></textarea>
+    <div class="more-fields" id="moreFields">
+      <label class="fld">作ってもらった日</label>
+      <input type="date" id="rDate">
 
-    <label class="fld">タグ</label>
-    <div class="tag-input-row">
-      <input type="text" id="tagInput" placeholder="自由に追加（例：あったかい）" autocomplete="off">
-      <button class="btn" id="tagAddBtn">＋</button>
+      <label class="fld">感想・ありがとうメモ</label>
+      <textarea id="rNote" placeholder="味の感想や、ゆずちゃんへのありがとうを残そう"></textarea>
+
+      <label class="fld">タグ</label>
+      <div class="tag-input-row">
+        <input type="text" id="tagInput" placeholder="自由に追加（例：あったかい）" autocomplete="off">
+        <button class="btn" id="tagAddBtn">＋</button>
+      </div>
+      <div class="chosen-tags" id="chosenTags"></div>
+      <div class="tag-suggest" id="tagSuggest"></div>
     </div>
-    <div class="chosen-tags" id="chosenTags"></div>
-    <div class="tag-suggest" id="tagSuggest"></div>
 
     <div style="height:22px"></div>
     <button class="btn" id="saveRecordBtn">保存する</button>
@@ -933,6 +957,11 @@ function compressImage(file, maxDim=1400, quality=0.82){
 
 /* ============ 記録モーダル ============ */
 let editingId=null, formPhotos=[], formTags=[];
+const todayStr = ()=> new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+function setMoreOpen(open){
+  $('#moreFields').classList.toggle('open', open);
+  $('#moreToggle').setAttribute('aria-expanded', open? 'true':'false');
+}
 function openRecord(rec){
   if(FAMILY) return;   // 家族モードでは投稿・編集を開かせない
   editingId = rec? rec.id : null;
@@ -940,17 +969,22 @@ function openRecord(rec){
   formTags = rec? [...(rec.tags||[])] : [];
   $('#recordTitle').textContent = rec? '記録を編集' : 'ごはんを記録する';
   $('#rName').value = rec? rec.name : '';
-  $('#rDate').value = rec? rec.date : new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  $('#rDate').value = rec? rec.date : todayStr();
   $('#rNote').value = rec? (rec.note||'') : '';
   $('#deleteRecordBtn').classList.toggle('hidden', !rec);
   $('#tagInput').value='';
+  $('#saveRecordBtn').textContent = rec? '保存する' : 'これで残す 🍋';
+  // 新規はいちばん軽い状態（写真＋料理名だけ）で開く。
+  // 編集は、すでに書いてある内容が隠れないように開いておく。
+  setMoreOpen(!!rec && !!(rec.note || (rec.tags||[]).length || rec.date !== todayStr()));
   renderPhotoStrip(); renderChosenTags(); renderTagSuggest();
   showModal('recordModal');
 }
+$('#moreToggle').onclick=()=>setMoreOpen(!$('#moreFields').classList.contains('open'));
 function renderPhotoStrip(){
   const strip=$('#photoStrip');
   strip.querySelectorAll('.pi').forEach(e=>e.remove());
-  const add=$('#addPhotoBtn');
+  const add=$('#shotPhotoBtn');
   formPhotos.forEach((src,i)=>{
     const d=document.createElement('div'); d.className='pi';
     d.innerHTML=`<img src="${src}"><div class="x" data-pi="${i}">✕</div>`;
@@ -959,11 +993,23 @@ function renderPhotoStrip(){
   strip.querySelectorAll('.x').forEach(el=>el.onclick=()=>{formPhotos.splice(+el.dataset.pi,1);renderPhotoStrip();});
 }
 $('#addPhotoBtn').onclick=()=>$('#photoInput').click();
+$('#shotPhotoBtn').onclick=()=>$('#cameraInput').click();
 $('#photoInput').addEventListener('change', async e=>{
   const files=[...e.target.files];
   if(files.length) toast('写真を読み込み中…');
   for(const f of files){ const d=await compressImage(f); formPhotos.push(d); }
   renderPhotoStrip(); e.target.value='';
+});
+
+/* カメラ：撮った瞬間に投稿シートを開く（＋ボタン起点／シート内の📷撮る 両方ここへ来る） */
+$('#cameraInput').addEventListener('change', async e=>{
+  const files=[...e.target.files]; e.target.value='';
+  if(!files.length) return;                 // 撮影キャンセル＝何も起きない
+  if(!$('#recordModal').classList.contains('show')) openRecord(null);  // ＋起点なら新規シートを開く
+  toast('写真を読み込み中…');
+  for(const f of files){ const d=await compressImage(f); formPhotos.push(d); }
+  renderPhotoStrip();
+  if(!$('#rName').value) $('#rName').focus();
 });
 
 /* タグ */
@@ -988,6 +1034,10 @@ function addTag(){
 $('#tagAddBtn').onclick=addTag;
 $('#tagInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addTag();}});
 
+// 料理名でEnter＝そのまま保存（撮る→名前→完了、をキーボードから離れずに）
+$('#rName').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ e.preventDefault(); $('#rName').blur(); $('#saveRecordBtn').click(); }
+});
 $('#saveRecordBtn').onclick=async()=>{
   const name=$('#rName').value.trim();
   if(!name){ toast('料理名を入れてね'); return; }
@@ -1024,7 +1074,20 @@ $('#deleteRecordBtn').onclick=async()=>{
     hideModal('recordModal'); toast('削除しました');
   }catch(e){ console.error(e); toast('削除に失敗しました'); }
 };
-$('#fab').onclick=()=>ensureWho(()=>openRecord(null));
+/* ＋（📷）＝タップでその場のカメラ。長押しはアルバムから選ぶ従来の入力シート */
+let fabHoldTimer=null, fabHeld=false;
+$('#fab').addEventListener('touchstart',()=>{
+  fabHeld=false;
+  fabHoldTimer=setTimeout(()=>{ fabHeld=true; haptic(); ensureWho(()=>openRecord(null)); }, 500);
+},{passive:true});
+['touchend','touchcancel','touchmove'].forEach(ev=>
+  $('#fab').addEventListener(ev,()=>clearTimeout(fabHoldTimer),{passive:true}));
+$('#fab').onclick=()=>{
+  if(fabHeld){ fabHeld=false; return; }        // 長押しでシートを開いた直後のクリックは無視
+  // who が未設定（初回）のときだけ名前を聞く。以降はタップ＝即カメラ。
+  if(!who){ ensureWho(()=>openRecord(null)); return; }
+  $('#cameraInput').click();                   // タップの流れのまま呼ぶ＝iOSでカメラが直に開く
+};
 
 /* ============ 詳細モーダル ============ */
 function openDetail(id){
