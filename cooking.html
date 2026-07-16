@@ -340,6 +340,42 @@
   .st-reply input::placeholder { color:rgba(255,255,255,.5); }
   .st-reply input:focus { outline:none; border-color:var(--accent); }
   .st-empty { color:rgba(255,255,255,.85); text-align:center; margin:auto; padding:40px; font-size:15px; }
+  /* ===== アプリ内カメラ（正方形プレビュー＋グリッド＋フラッシュ） ===== */
+  .cam { position:fixed; inset:0; background:#000; z-index:500; display:none; flex-direction:column; }
+  .cam.show { display:flex; }
+  .cam-top { display:flex; align-items:center; justify-content:space-between;
+    padding:calc(10px + env(safe-area-inset-top)) 16px 8px; color:#fff; }
+  .cam-x { font-size:24px; cursor:pointer; padding:4px 10px; opacity:.95; }
+  .cam-flash { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,.14);
+    border:none; color:#fff; font-family:inherit; font-size:14px; font-weight:700;
+    padding:8px 15px; border-radius:999px; cursor:pointer; }
+  .cam-flash.on { background:#f5c14b; color:#3a2a10; }
+  .cam-stage { flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .cam-frame { position:relative; width:100%; max-width:520px; aspect-ratio:1/1; overflow:hidden;
+    background:#111; }
+  .cam-frame video { width:100%; height:100%; object-fit:cover; display:block; background:#111; }
+  /* 三分割グリッド（撮られる正方形の中だけに引く） */
+  .cam-grid { position:absolute; inset:0; pointer-events:none; }
+  .cam-grid span { position:absolute; background:rgba(255,255,255,.32); }
+  .cam-grid .v { top:0; bottom:0; width:1px; }
+  .cam-grid .v1 { left:33.333%; } .cam-grid .v2 { left:66.666%; }
+  .cam-grid .h { left:0; right:0; height:1px; }
+  .cam-grid .h1 { top:33.333%; } .cam-grid .h2 { top:66.666%; }
+  /* 四隅のブラケット＝ここが正方形の切り取り範囲 */
+  .cam-corner { position:absolute; width:22px; height:22px; border:2px solid rgba(255,255,255,.9); }
+  .cam-corner.tl { top:8px; left:8px; border-right:none; border-bottom:none; border-radius:6px 0 0 0; }
+  .cam-corner.tr { top:8px; right:8px; border-left:none; border-bottom:none; border-radius:0 6px 0 0; }
+  .cam-corner.bl { bottom:8px; left:8px; border-right:none; border-top:none; border-radius:0 0 0 6px; }
+  .cam-corner.br { bottom:8px; right:8px; border-left:none; border-top:none; border-radius:0 0 6px 0; }
+  .cam-bottom { display:grid; grid-template-columns:1fr auto 1fr; align-items:center;
+    padding:16px 24px calc(20px + env(safe-area-inset-bottom)); }
+  .cam-album { grid-column:1; justify-self:start; width:48px; height:48px; border-radius:12px;
+    border:none; background:rgba(255,255,255,.16); color:#fff; font-size:21px; cursor:pointer; }
+  .cam-shot { grid-column:2; justify-self:center; width:74px; height:74px; border-radius:50%;
+    border:5px solid #fff; background:rgba(255,255,255,.28); cursor:pointer; }
+  .cam-shot:active { transform:scale(.92); }
+  .cam-hint { grid-column:3; justify-self:end; color:rgba(255,255,255,.72); font-size:11px; text-align:right; line-height:1.35; }
+
   /* iOS触覚フィードバック用の隠しスイッチ（画面外。display:noneにしないこと） */
   .haptic-switch { position:fixed; left:-9999px; top:0; width:1px; height:1px; opacity:0; }
 
@@ -383,8 +419,32 @@
 </main>
 
 <button class="fab" id="fab" aria-label="ごはんを撮って記録する">📷</button>
-<!-- ＋タップ＝その場でカメラ起動（撮った瞬間に投稿シートが開く） -->
+<!-- ＋タップ＝アプリ内カメラ起動。getUserMediaが使えない時だけ下の純正カメラにフォールバック -->
 <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+
+<!-- ===== アプリ内カメラ（正方形固定＋グリッド＋フラッシュ） ===== -->
+<div class="cam" id="cam">
+  <div class="cam-top">
+    <span class="cam-x" id="camClose" aria-label="閉じる">✕</span>
+    <button class="cam-flash" id="camFlash" hidden>⚡<span id="camFlashLabel">オフ</span></button>
+  </div>
+  <div class="cam-stage">
+    <div class="cam-frame">
+      <video id="camVideo" playsinline muted></video>
+      <div class="cam-grid">
+        <span class="v v1"></span><span class="v v2"></span>
+        <span class="h h1"></span><span class="h h2"></span>
+      </div>
+      <span class="cam-corner tl"></span><span class="cam-corner tr"></span>
+      <span class="cam-corner bl"></span><span class="cam-corner br"></span>
+    </div>
+  </div>
+  <div class="cam-bottom">
+    <button class="cam-album" id="camAlbumBtn" aria-label="アルバムから選ぶ">🖼️</button>
+    <button class="cam-shot" id="camShotBtn" aria-label="撮影"></button>
+    <span class="cam-hint">枠の中が<br>正方形で残ります</span>
+  </div>
+</div>
 
 <!-- ===== 記録モーダル ===== -->
 <div class="modal-bg" id="recordModal">
@@ -1003,7 +1063,7 @@ function renderPhotoStrip(){
   strip.querySelectorAll('.x').forEach(el=>el.onclick=()=>{formPhotos.splice(+el.dataset.pi,1);renderPhotoStrip();});
 }
 $('#addPhotoBtn').onclick=()=>$('#photoInput').click();
-$('#shotPhotoBtn').onclick=()=>$('#cameraInput').click();
+$('#shotPhotoBtn').onclick=()=>openCamera();
 $('#photoInput').addEventListener('change', async e=>{
   const files=[...e.target.files];
   if(files.length) toast('写真を読み込み中…');
@@ -1011,13 +1071,85 @@ $('#photoInput').addEventListener('change', async e=>{
   renderPhotoStrip(); e.target.value='';
 });
 
-/* カメラ：撮った瞬間に投稿シートを開く（＋ボタン起点／シート内の📷撮る 両方ここへ来る） */
+/* ===== アプリ内カメラ（正方形固定＋グリッド＋フラッシュ） ===== */
+let camStream=null, camTrack=null, torchOn=false, torchSupported=false;
+
+async function openCamera(){
+  // getUserMedia が無い環境（古い端末等）は純正カメラにフォールバック
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ $('#cameraInput').click(); return; }
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1920} },
+      audio:false
+    });
+  }catch(err){
+    console.warn('getUserMedia失敗→純正カメラへ', err);
+    $('#cameraInput').click();     // 権限拒否や未対応時は従来方式で撮る
+    return;
+  }
+  const v=$('#camVideo'); v.srcObject=camStream; try{ await v.play(); }catch(e){}
+  camTrack = camStream.getVideoTracks()[0];
+  // フラッシュ（torch）対応の端末だけボタンを出す
+  torchOn=false; torchSupported=false;
+  try{ const caps = camTrack.getCapabilities ? camTrack.getCapabilities() : {}; torchSupported = !!caps.torch; }catch(e){}
+  $('#camFlash').hidden = !torchSupported;
+  $('#camFlash').classList.remove('on'); $('#camFlashLabel').textContent='オフ';
+  $('#cam').classList.add('show'); document.body.style.overflow='hidden';
+}
+function closeCamera(){
+  if(torchOn){ try{ camTrack.applyConstraints({advanced:[{torch:false}]}); }catch(e){} }
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); }
+  camStream=null; camTrack=null; torchOn=false;
+  $('#camVideo').srcObject=null;
+  $('#cam').classList.remove('show'); document.body.style.overflow='';
+}
+async function toggleTorch(){
+  if(!camTrack) return;
+  const next=!torchOn;
+  try{
+    await camTrack.applyConstraints({advanced:[{torch:next}]});
+    torchOn=next;
+    $('#camFlash').classList.toggle('on', torchOn);
+    $('#camFlashLabel').textContent = torchOn?'オン':'オフ';
+  }catch(e){ toast('この端末ではフラッシュを使えません'); $('#camFlash').hidden=true; }
+}
+function captureSquareFromVideo(){
+  const v=$('#camVideo');
+  const vw=v.videoWidth||v.clientWidth, vh=v.videoHeight||v.clientHeight;
+  const side=Math.min(vw,vh);
+  const sx=(vw-side)/2, sy=(vh-side)/2;
+  const out=Math.min(side,1400)||1080;
+  const c=document.createElement('canvas'); c.width=out; c.height=out;
+  c.getContext('2d').drawImage(v, sx, sy, side, side, 0, 0, out, out);   // 枠と同じ中央正方形を切り出す
+  return c.toDataURL('image/jpeg',0.82);
+}
+$('#camFlash').onclick=toggleTorch;
+$('#camClose').onclick=closeCamera;
+$('#camShotBtn').onclick=()=>{
+  haptic(true);
+  const d=captureSquareFromVideo();
+  const sheetOpen=$('#recordModal').classList.contains('show');
+  closeCamera();
+  if(!sheetOpen) openRecord(null);      // ＋起点なら新規シートを用意（formPhotosがリセットされる）
+  formPhotos.push(d); renderPhotoStrip();
+  showModal('recordModal');
+  if(!$('#rName').value) $('#rName').focus();
+};
+$('#camAlbumBtn').onclick=()=>{           // カメラ画面からアルバムへ切替
+  const sheetOpen=$('#recordModal').classList.contains('show');
+  closeCamera();
+  if(!sheetOpen) openRecord(null);
+  showModal('recordModal');
+  $('#photoInput').click();
+};
+
+/* 純正カメラ（フォールバック時のみ）：撮った瞬間に投稿シートを開く */
 $('#cameraInput').addEventListener('change', async e=>{
   const files=[...e.target.files]; e.target.value='';
   if(!files.length) return;                 // 撮影キャンセル＝何も起きない
-  if(!$('#recordModal').classList.contains('show')) openRecord(null);  // ＋起点なら新規シートを開く
+  if(!$('#recordModal').classList.contains('show')) openRecord(null);
   toast('写真を読み込み中…');
-  for(const f of files){ const d=await compressImage(f,{square:true}); formPhotos.push(d); }  // カメラは必ず正方形
+  for(const f of files){ const d=await compressImage(f,{square:true}); formPhotos.push(d); }  // 純正でも正方形に切り抜く
   renderPhotoStrip();
   if(!$('#rName').value) $('#rName').focus();
 });
@@ -1094,9 +1226,9 @@ $('#fab').addEventListener('touchstart',()=>{
   $('#fab').addEventListener(ev,()=>clearTimeout(fabHoldTimer),{passive:true}));
 $('#fab').onclick=()=>{
   if(fabHeld){ fabHeld=false; return; }        // 長押しでシートを開いた直後のクリックは無視
-  // who が未設定（初回）のときだけ名前を聞く。以降はタップ＝即カメラ。
-  if(!who){ ensureWho(()=>openRecord(null)); return; }
-  $('#cameraInput').click();                   // タップの流れのまま呼ぶ＝iOSでカメラが直に開く
+  // who が未設定（初回）のときだけ名前を聞く。以降はタップ＝アプリ内カメラ。
+  if(!who){ ensureWho(()=>openCamera()); return; }
+  openCamera();
 };
 
 /* ============ 詳細モーダル ============ */
