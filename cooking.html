@@ -936,17 +936,27 @@ async function loadRecords(){
 }
 
 /* ============ 写真圧縮 ============ */
-function compressImage(file, maxDim=1400, quality=0.82){
+function compressImage(file, {maxDim=1400, quality=0.82, square=false}={}){
   return new Promise(resolve=>{
     const reader=new FileReader();
     reader.onload=ev=>{
       const img=new Image();
       img.onload=()=>{
-        let w=img.width,h=img.height;
-        if(w>h){ if(w>maxDim){h=Math.round(h*maxDim/w);w=maxDim;} }
-        else { if(h>maxDim){w=Math.round(w*maxDim/h);h=maxDim;} }
-        const c=document.createElement('canvas');c.width=w;c.height=h;
-        c.getContext('2d').drawImage(img,0,0,w,h);
+        const c=document.createElement('canvas');
+        if(square){
+          // カメラ撮影は必ず正方形に：短辺で中央を切り抜く
+          const side=Math.min(img.width,img.height);
+          const sx=(img.width-side)/2, sy=(img.height-side)/2;
+          const out=Math.min(side,maxDim);
+          c.width=out; c.height=out;
+          c.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, out, out);
+        }else{
+          let w=img.width,h=img.height;
+          if(w>h){ if(w>maxDim){h=Math.round(h*maxDim/w);w=maxDim;} }
+          else { if(h>maxDim){w=Math.round(w*maxDim/h);h=maxDim;} }
+          c.width=w; c.height=h;
+          c.getContext('2d').drawImage(img,0,0,w,h);
+        }
         resolve(c.toDataURL('image/jpeg',quality));
       };
       img.src=ev.target.result;
@@ -1007,7 +1017,7 @@ $('#cameraInput').addEventListener('change', async e=>{
   if(!files.length) return;                 // 撮影キャンセル＝何も起きない
   if(!$('#recordModal').classList.contains('show')) openRecord(null);  // ＋起点なら新規シートを開く
   toast('写真を読み込み中…');
-  for(const f of files){ const d=await compressImage(f); formPhotos.push(d); }
+  for(const f of files){ const d=await compressImage(f,{square:true}); formPhotos.push(d); }  // カメラは必ず正方形
   renderPhotoStrip();
   if(!$('#rName').value) $('#rName').focus();
 });
