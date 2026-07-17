@@ -145,6 +145,8 @@
   .card .c-title.done{color:var(--faint); text-decoration:line-through;}
   .card .c-meta{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:9px;}
   .card .c-meta:empty{display:none;}
+  .card.from-claude{border-left:3px solid var(--accent);}
+  .src-dot{display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); margin-right:6px; vertical-align:middle;}
   .col-add-inline{display:flex; align-items:center; gap:7px; padding:9px 10px; border-radius:var(--radius); color:var(--faint);
     font-size:13px; margin-top:2px;}
   .col-add-inline svg{width:15px; height:15px;}
@@ -417,14 +419,18 @@ const svg = (p,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 function defaultDB(){
   return {
     columns:[
-      {id:'todo',  name:'未着手', color:'gray',  done:false},
-      {id:'doing', name:'進行中', color:'blue',  done:false},
-      {id:'done',  name:'完了',   color:'green', done:true},
+      {id:'waiting', name:'あなた待ち', color:'red',    done:false},
+      {id:'todo',    name:'やること',   color:'orange', done:false},
+      {id:'doing',   name:'進行中',     color:'blue',   done:false},
+      {id:'done',    name:'完了',       color:'green',  done:true},
     ],
     tags:[
-      {id:'tg1', name:'仕事', color:'blue'},
-      {id:'tg2', name:'プライベート', color:'green'},
-      {id:'tg3', name:'買い物', color:'orange'},
+      {id:'app_tasknote', name:'たすくノート',   color:'blue'},
+      {id:'app_ball',     name:'ボール',         color:'green'},
+      {id:'app_yuzuwari', name:'ゆずわり',       color:'yellow'},
+      {id:'app_cooking',  name:'ゆずごはん日記', color:'orange'},
+      {id:'hold',         name:'保留',           color:'gray'},
+      {id:'personal',     name:'個人',           color:'purple'},
     ],
     tasks:[],
     ui:{view:'board', theme:'auto'}
@@ -434,19 +440,17 @@ function seedTasks(){
   const now=Date.now();
   const d=(off)=>{ const x=new Date(); x.setDate(x.getDate()+off); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; };
   return [
-    {id:uid(),title:'たすくノートへようこそ 👋',status:'todo',priority:'mid',due:d(0),tags:['tg2'],created:now,updated:now,
+    {id:uid(),title:'たすくノート＝あなたのやることハブ 👋',status:'waiting',priority:'mid',due:null,tags:['app_tasknote'],source:'claude',created:now,updated:now,
       body:[
-        {id:uid(),type:'text',text:'これは Notion のように「ひとつのデータを ボード／リスト／カレンダー で見る」タスク管理アプリです。'},
-        {id:uid(),type:'text',text:'本文の空行で「/」と打つとブロックを追加できます（見出し・箇条書き・ToDoなど）。'},
-        {id:uid(),type:'todo',text:'カードをタップして詳細を開く',checked:true},
-        {id:uid(),type:'todo',text:'カードを長押しして別の列へドラッグ',checked:false},
-        {id:uid(),type:'todo',text:'右下の＋から新しいタスクを作る',checked:false},
+        {id:uid(),type:'text',text:'Claude Codeと並行して作っている各アプリで「Kodaiがやること・確認すること」が決まると、ここに自動でカードが起票されます。'},
+        {id:uid(),type:'text',text:'左端の「あなた待ち」＝ボールがあなたにある＝作業が止まっているサイン。片づいたらチェックで完了に。'},
+        {id:uid(),type:'todo',text:'各カードは「絞り込み」でアプリ別に見られます',checked:false},
+        {id:uid(),type:'todo',text:'長押しドラッグで列を移動できます',checked:false},
       ]},
-    {id:uid(),title:'買い物リストをまとめる',status:'todo',priority:'low',due:d(2),tags:['tg3'],created:now,updated:now,
-      body:[{id:uid(),type:'todo',text:'牛乳',checked:false},{id:uid(),type:'todo',text:'卵',checked:false},{id:uid(),type:'todo',text:'コーヒー豆',checked:false}]},
-    {id:uid(),title:'プレゼン資料の下書き',status:'doing',priority:'high',due:d(1),tags:['tg1'],created:now,updated:now,body:[]},
-    {id:uid(),title:'週次の振り返りを書く',status:'doing',priority:'mid',due:null,tags:['tg1'],created:now,updated:now,body:[]},
-    {id:uid(),title:'アプリのアイデアを整理',status:'done',priority:null,due:d(-1),tags:['tg2'],created:now,updated:now,body:[]},
+    {id:uid(),title:'例）ボール：作り直しの方針を確認して再開したい',status:'waiting',priority:'high',due:null,tags:['app_ball'],source:'claude',created:now,updated:now,
+      body:[{id:uid(),type:'text',text:'（これはサンプルカードです）Claudeが「あなたの確認が要る」と判断すると、こんな風に何を確認してほしいかを書いて起票します。'}]},
+    {id:uid(),title:'例）ゆずわり：精算の丸め方をどうするか決める',status:'todo',priority:'mid',due:null,tags:['app_yuzuwari'],source:'claude',created:now,updated:now,body:[]},
+    {id:uid(),title:'例）たすくノート：連携アップデートを実装中（Claude作業中）',status:'doing',priority:null,due:null,tags:['app_tasknote'],source:'claude',created:now,updated:now,body:[]},
   ];
 }
 
@@ -557,6 +561,8 @@ function tagById(id){ return db.tags.find(t=>t.id===id); }
 function isDoneStatus(sid){ const c=colById(sid); return c && c.done; }
 function firstDoneCol(){ return (db.columns.find(c=>c.done)||db.columns[db.columns.length-1]).id; }
 function firstOpenCol(){ return (db.columns.find(c=>!c.done)||db.columns[0]).id; }
+// 手動で作る新規タスクの既定列（「あなた待ち」ではなく「やること」寄せ。無ければ最初の未完了列）
+function defaultOpenCol(){ return db.columns.some(c=>c.id==='todo') ? 'todo' : firstOpenCol(); }
 
 function fmtDue(iso){
   if(!iso) return '';
@@ -656,9 +662,9 @@ function renderBoard(root){
   root.innerHTML=''; root.appendChild(board);
 }
 function cardEl(t){
-  const el=document.createElement('div'); el.className='card'; el.dataset.id=t.id;
+  const el=document.createElement('div'); el.className='card'+(t.source==='claude'?' from-claude':''); el.dataset.id=t.id;
   const done=isDoneStatus(t.status);
-  el.innerHTML=`<div class="c-title ${done?'done':''}">${esc(t.title)||'<span style="color:var(--faint)">無題</span>'}</div>
+  el.innerHTML=`<div class="c-title ${done?'done':''}">${t.source==='claude'?'<span class="src-dot" title="Claude起票"></span>':''}${esc(t.title)||'<span style="color:var(--faint)">無題</span>'}</div>
     <div class="c-meta">${metaChips(t)}</div>`;
   attachCardDrag(el, t.id);
   return el;
@@ -723,7 +729,7 @@ function lrowEl(t){
   const el=document.createElement('div'); el.className='lrow'; el.dataset.id=t.id;
   const done=isDoneStatus(t.status);
   el.innerHTML=`<div class="check ${done?'done':''}">${svg(IC.check,3)}</div>
-    <div class="l-title ${done?'done':''}">${esc(t.title)||'<span style="color:var(--faint)">無題</span>'}</div>
+    <div class="l-title ${done?'done':''}">${t.source==='claude'?'<span class="src-dot" title="Claude起票"></span>':''}${esc(t.title)||'<span style="color:var(--faint)">無題</span>'}</div>
     <div class="l-meta">${metaChips(t)}</div>`;
   el.querySelector('.check').onclick=(e)=>{ e.stopPropagation(); toggleDone(t); };
   el.onclick=()=>openTask(t.id);
@@ -745,7 +751,7 @@ function listQuickAdd(rows, colId, addBtn){
   ta.addEventListener('blur',()=>{ if(!committed) commit(false); });
 }
 function toggleDone(t){
-  if(isDoneStatus(t.status)) t.status=firstOpenCol();
+  if(isDoneStatus(t.status)) t.status=defaultOpenCol();
   else t.status=firstDoneCol();
   t.updated=Date.now(); save(); renderView();
 }
@@ -942,7 +948,7 @@ function openTask(id){
   if(id){ curTask=db.tasks.find(t=>t.id===id); if(!curTask) return; }
   else{
     const now=Date.now();
-    curTask={id:uid(),title:'',status:firstOpenCol(),priority:null,due:null,tags:db.ui.filterTag?[db.ui.filterTag]:[],body:[],created:now,updated:now,_new:true};
+    curTask={id:uid(),title:'',status:defaultOpenCol(),priority:null,due:null,tags:db.ui.filterTag?[db.ui.filterTag]:[],body:[],created:now,updated:now,_new:true};
   }
   sheetOpen=true;
   renderPage();
