@@ -11,6 +11,7 @@ TITLES = {
     "credit":      "クレジット明細",
     "forecast":    "資産予測",
     "grownote":    "GROWノート",
+    "kouban":      "香盤メーカー",
     "nps":         "NPS計算",
     "money":       "残高計算",
     "recap":       "Recap",
