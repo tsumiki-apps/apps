@@ -60,6 +60,8 @@ body{
    墨#242321 が紙#F4F2EE に 0.4 で乗ると実効≒RGB160 → 本文とのコントラスト比 約5.7:1（WCAG AA=4.5:1 をクリア）。
    0.5 まで上げると約4.4:1 で AA を割るため、ここは上げないこと。 */
 body.on-sheet .ink-fluid{opacity:.4;}
+/* アプリ詳細（看板の各ページ）は動く墨を止め、落ち着いた紙色に（チカチカ防止） */
+body.calm .ink-fluid{opacity:0;}
 @media(prefers-reduced-motion:reduce){ .ink-fluid{display:none;} }
 
 /* ---------- トップバー（入口では隠す） ---------- */
@@ -492,23 +494,137 @@ body.on-dark .tb-brand{color:#F4F2EE;
   display:flex; align-items:baseline; gap:10px;}
 .as-h-en{font-size:10px; letter-spacing:.22em; color:var(--sub); font-weight:500;}
 
-/* プレビュー帯（仮枠・9:16のスマホ枠を横スクロール） */
+/* プレビュー帯（実画面の再現モックを横スクロール） */
 .as-shots{
-  display:flex; gap:14px; margin-top:14px; padding-bottom:4px;
+  display:flex; gap:16px; margin-top:14px; padding-bottom:4px;
   overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
   scroll-snap-type:x mandatory;
 }
 .as-shots::-webkit-scrollbar{display:none;}
 .as-shot{
-  flex:0 0 auto; width:152px; height:330px; scroll-snap-align:start;
-  border:1px solid var(--line); border-radius:26px; background:var(--card);
-  box-shadow:inset 0 0 0 8px var(--paper), 0 8px 22px rgba(36,35,33,.08);
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
-  position:relative;
+  flex:0 0 auto; width:156px; scroll-snap-align:start;
+  display:flex; flex-direction:column; gap:10px; align-items:center;
 }
-.as-shot-soon{font-size:11px; letter-spacing:.16em; color:var(--ghost);
-  border:1px dashed var(--line); border-radius:999px; padding:4px 12px;}
-.as-shot-cap{font-size:12px; color:var(--sub); letter-spacing:.02em;}
+.as-shot figcaption{font-size:12px; color:var(--sub); letter-spacing:.02em; text-align:center;}
+
+/* スマホ枠（画面はこの中に敷く） */
+.pv{
+  position:relative; width:156px; height:330px; border-radius:26px; overflow:hidden;
+  background:var(--paper); border:1px solid var(--line);
+  box-shadow:0 10px 26px rgba(36,35,33,.12); isolation:isolate;
+}
+.pv svg{width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round; display:block;}
+/* 画面上部のインジケータ（ダイナミックアイランド風の黒点） */
+.pv::before{content:""; position:absolute; top:9px; left:50%; transform:translateX(-50%);
+  width:34px; height:6px; border-radius:999px; background:rgba(36,35,33,.22); z-index:6;}
+
+/* --- 共通グリフボタン（丸に線画） --- */
+.pv-glyph{position:absolute; width:26px; height:26px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; color:var(--ink);
+  background:var(--control); box-shadow:0 1px 3px rgba(36,35,33,.14);}
+.pv-glyph svg{width:15px; height:15px;}
+
+/* ===== いつつ：カメラ画面 ===== */
+.pv-cam{
+  background:
+    radial-gradient(120% 90% at 68% 0%, rgba(244,242,238,.14), rgba(244,242,238,0) 58%),
+    linear-gradient(180deg,#BDB6AC,#AAA399 48%,#8E877D);
+}
+.pv-cam .pv-grid{position:absolute; inset:0; pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.14) 1px, transparent 1px);
+  background-size:33.33% 33.33%;}
+.pv-cam .pv-level{position:absolute; top:50%; left:50%; width:34px; height:1.5px;
+  border-radius:1px; background:rgba(255,255,255,.6); transform:translate(-50%,-50%);}
+.pv-top{position:absolute; top:24px; left:16px; right:16px;
+  display:flex; align-items:center; justify-content:space-between;}
+.pv-slots{display:flex; gap:7px;}
+.pv-slots i{width:7px; height:7px; border-radius:50%; background:rgba(248,247,244,.34);}
+.pv-slots i.on{background:rgba(248,247,244,.95); box-shadow:0 1px 2px rgba(36,35,33,.2);}
+.pv-cam .pv-flip{position:static; color:rgba(248,247,244,.95);
+  background:rgba(36,35,33,.24); box-shadow:none;}
+.pv-rec{position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
+  width:46px; height:46px; border-radius:50%; background:var(--control);
+  box-shadow:0 3px 10px rgba(36,35,33,.22);}
+.pv-rec.is-rec::after{content:""; position:absolute; inset:-6px; border-radius:50%;
+  background:conic-gradient(var(--ink) 0 62%, rgba(36,35,33,0) 62%);
+  -webkit-mask:radial-gradient(closest-side, transparent 72%, #000 74%);
+          mask:radial-gradient(closest-side, transparent 72%, #000 74%);}
+.pv-see{position:absolute; bottom:33px; left:22px; width:17px; height:26px; border-radius:4px;
+  background:rgba(248,247,244,.9); display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 6px rgba(36,35,33,.16);}
+.pv-see b{width:0; height:0; margin-left:2px;
+  border-left:6px solid rgba(36,35,33,.78); border-top:4px solid transparent; border-bottom:4px solid transparent;}
+
+/* ===== いつつ：今日プレビュー ===== */
+.pv-day{background:var(--paper);}
+.pv-daytop{position:absolute; top:22px; left:16px; right:16px; z-index:5;
+  display:flex; align-items:center; justify-content:space-between;}
+.pv-daytop .pv-glyph{position:static;}
+.pv-film{position:absolute; inset:34px 16px; border-radius:12px;
+  background:linear-gradient(160deg,#3a3833,#242321); overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 8px 20px rgba(36,35,33,.22);}
+.pv-time{font-size:22px; font-weight:500; letter-spacing:.06em; color:rgba(244,242,238,.92);}
+.pv-check{position:absolute; bottom:20px; right:18px; width:38px; height:38px; z-index:5;}
+.pv-check svg{width:20px; height:20px;}
+.pv-saved .pv-film{inset:26px 16px;}
+.pv-savebadge{position:absolute; left:50%; bottom:22px; transform:translateX(-50%); z-index:5;
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+  background:var(--ink); color:var(--paper); border-radius:999px; padding:7px 13px;
+  font-size:10.5px; font-weight:700; letter-spacing:.02em;
+  box-shadow:0 4px 12px rgba(36,35,33,.28);}
+.pv-savebadge svg{width:13px; height:13px; flex:0 0 auto;}
+
+/* ===== こえがき：キーボード画面 ===== */
+.pv-kb{--pv-paper:var(--paper); --pv-surface:var(--surface); --pv-ink:var(--ink);
+  --pv-sub:var(--sub); --pv-line:var(--line); --pv-ctrl:var(--card);
+  background:var(--pv-paper);}
+.pv-kb.pv-dark{--pv-paper:#1C1B19; --pv-surface:#27251F; --pv-ink:#EDEAE4;
+  --pv-sub:#9A958C; --pv-line:#3B3833; --pv-ctrl:#2E2C26;
+  background:var(--pv-paper);}
+.pv-note{position:absolute; top:0; left:0; right:0; height:53%; padding:34px 18px 0;
+  background:var(--pv-paper);}
+.pv-note .ln{display:block; height:7px; border-radius:4px; background:var(--pv-surface); margin-bottom:11px;}
+.pv-note .ln.w60{width:60%;}
+.pv-note .typed{font-size:11px; line-height:1.7; color:var(--pv-ink); letter-spacing:.01em; margin-top:4px;}
+.pv-note .typed.is-live{color:var(--pv-sub);}
+.pv-note .typed i{display:inline-block; width:1.5px; height:12px; background:var(--pv-ink);
+  vertical-align:-2px; margin-left:1px; border-radius:1px;}
+.pv-kbd{position:absolute; left:0; right:0; bottom:0; height:47%;
+  background:var(--pv-surface); border-top:1px solid var(--pv-line);
+  border-radius:20px 20px 0 0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:0;}
+.pv-mic{width:52px; height:52px; border-radius:50%; background:var(--pv-ink);
+  color:var(--pv-paper); display:flex; align-items:center; justify-content:center;
+  margin-bottom:22px;}
+.pv-mic svg{width:22px; height:22px; stroke-width:2;}
+.pv-mic.is-rec{box-shadow:0 0 0 4px var(--pv-surface), 0 0 0 6px rgba(36,35,33,.18);}
+.pv-kb.pv-dark .pv-mic.is-rec{box-shadow:0 0 0 4px var(--pv-surface), 0 0 0 6px rgba(237,234,228,.25);}
+.pv-partial{position:absolute; top:14px; left:14px; right:14px; text-align:center;
+  font-size:9px; letter-spacing:.02em; color:var(--pv-sub);}
+.pv-bar{display:flex; align-items:center; gap:7px; width:80%;}
+.pv-bar .k{width:26px; height:26px; flex:0 0 auto; color:var(--pv-ink);
+  display:flex; align-items:center; justify-content:center;}
+.pv-bar .k svg{width:15px; height:15px;}
+.pv-bar .space{flex:1; height:26px; border:1px solid var(--pv-line); border-radius:8px;
+  background:var(--pv-ctrl); display:flex; align-items:center; justify-content:center;
+  color:var(--pv-sub); font-size:9px; letter-spacing:.08em;}
+
+/* ===== こえがき：辞書画面 ===== */
+.pv-dict{background:var(--paper); padding:32px 12px 0;}
+.pv-dhead{font-size:14px; font-weight:700; letter-spacing:.04em; padding:0 4px 12px;}
+.pv-drow{display:flex; align-items:center; gap:5px; padding:9px 4px;
+  border-top:1px solid var(--line); font-size:10.5px;}
+.pv-drow .kw{font-weight:700; color:var(--ink);}
+.pv-drow .ar{color:var(--ghost);}
+.pv-drow .rom{color:var(--sub);}
+.pv-drow .tag{margin-left:auto; font-size:8.5px; font-weight:700; letter-spacing:.04em;
+  color:var(--sub); background:var(--surface); border-radius:999px; padding:2px 7px;}
+.pv-dadd{margin-top:12px; text-align:center; font-size:11px; font-weight:700; color:var(--sub);
+  border:1px dashed var(--line); border-radius:10px; padding:9px; letter-spacing:.04em;}
 
 /* 紹介文 */
 .as-about{font-size:14px; line-height:1.95; color:#3a3833; margin-top:14px;}
