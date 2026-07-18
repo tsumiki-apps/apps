@@ -197,10 +197,17 @@
   .card:active{background:var(--bg-soft);}
   @media(hover:hover){ .card:hover{border-color:var(--line-strong); box-shadow:0 3px 10px rgba(15,15,15,.07);} }
   .card.dragging{opacity:.35;}
-  .card .c-title{font-size:14px; font-weight:500; line-height:1.42; word-break:break-word;
+  .card .c-head{display:flex; align-items:flex-start; gap:9px;}
+  .card .c-title{flex:1; min-width:0; font-size:14px; font-weight:500; line-height:1.42; word-break:break-word;
     display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden;}
   .card .c-title.done{color:var(--faint); text-decoration:line-through;}
-  .card .c-meta{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:9px;}
+  .card-check{width:20px; height:20px; border-radius:50%; border:1.6px solid var(--line-strong); flex:0 0 auto; margin-top:1px;
+    display:flex; align-items:center; justify-content:center; transition:background .14s, border-color .14s, transform .1s;}
+  .card-check svg{width:12px; height:12px; color:#fff; opacity:0; transition:opacity .14s;}
+  .card-check.done{background:#3fa34d; border-color:#3fa34d;}
+  .card-check.done svg{opacity:1;}
+  .card-check:active{transform:scale(.86);}
+  .card .c-meta{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:9px; padding-left:29px;}
   .card .c-meta:empty{display:none;}
   .card.from-claude{border-left:3px solid var(--accent);}
   .src-dot{display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); margin-right:6px; vertical-align:middle;}
@@ -790,8 +797,24 @@ function renderBoard(root){
 function cardEl(t){
   const el=document.createElement('div'); el.className='card'+(t.source==='claude'?' from-claude':''); el.dataset.id=t.id;
   const done=isDoneStatus(t.status);
-  el.innerHTML=`<div class="c-title ${done?'done':''}">${t.source==='claude'?'<span class="src-dot" title="Claude起票"></span>':''}${esc(t.title)||'<span style="color:var(--faint)">無題</span>'}</div>
+  el.innerHTML=`<div class="c-head">
+      <div class="card-check ${done?'done':''}">${svg(IC.check,3)}</div>
+      <div class="c-title ${done?'done':''}">${t.source==='claude'?'<span class="src-dot" title="Claude起票"></span>':''}${esc(t.title)||'<span style="color:var(--faint)">無題</span>'}</div>
+    </div>
     <div class="c-meta">${metaChips(t)}</div>`;
+  const check=el.querySelector('.card-check');
+  // チェックはカードのドラッグ／タップ（詳細を開く）より先に横取りする
+  check.addEventListener('pointerdown', e=>e.stopPropagation());
+  check.addEventListener('click', e=>{
+    e.stopPropagation();
+    if(!isDoneStatus(t.status)){
+      check.classList.add('done');                     // 先に見た目だけ完了に（気持ちよさ用）
+      if(navigator.vibrate) navigator.vibrate(8);
+      setTimeout(()=>toggleDone(t), 170);              // 少し置いて実際に完了列へ移動
+    }else{
+      toggleDone(t);
+    }
+  });
   attachCardDrag(el, t.id);
   return el;
 }
@@ -924,10 +947,33 @@ function listQuickAdd(rows, colId, addBtn){
   ta.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();commit(true);} if(e.key==='Escape'){committed=true;row.remove();} });
   ta.addEventListener('blur',()=>{ if(!committed) commit(false); });
 }
+// 完了/未完了を切り替える。完了＝完了列へ移動＋（Claude起票で未返信なら）自動で「承認」返信を付ける
+function setDone(t, done){
+  const prevStatus=t.status;
+  const prevReply=t.reply?JSON.parse(JSON.stringify(t.reply)):null;
+  let linked=false;
+  if(done){
+    t.status=firstDoneCol();
+    if(t.source==='claude' && !(t.reply && t.reply.decision)){
+      t.reply={decision:'approve', at:Date.now(), handled:false, auto:true};
+      linked=true;
+    }
+  }else{
+    t.status=defaultOpenCol();
+    if(t.reply && t.reply.auto) t.reply=null;   // 完了で自動付与した返信は、戻すと一緒に取り消す
+  }
+  t.updated=Date.now();
+  return {prevStatus, prevReply, linked};
+}
 function toggleDone(t){
-  if(isDoneStatus(t.status)) t.status=defaultOpenCol();
-  else t.status=firstDoneCol();
-  t.updated=Date.now(); save(); renderView();
+  const wasDone=isDoneStatus(t.status);
+  const {prevStatus, prevReply, linked}=setDone(t, !wasDone);
+  save(); renderView();
+  if(!wasDone && linked){
+    showUndo('完了 → Claudeに「承認」で返信', ()=>{
+      t.status=prevStatus; t.reply=prevReply; t.updated=Date.now(); save(); renderView();
+    });
+  }
 }
 
 /* ---------- カレンダー ---------- */
@@ -1194,11 +1240,11 @@ function replySection(t){
       ${r.handled?'<div class="rs-done">✓ 私が確認済み</div>':''}`;
     wrap.querySelectorAll('.rs-btn').forEach(b=>b.onclick=()=>{
       t.reply=t.reply||{}; t.reply.decision = t.reply.decision===b.dataset.d ? null : b.dataset.d;
-      t.reply.at=Date.now(); t.reply.handled=false; cleanReply(t); touch(); draw();
+      t.reply.at=Date.now(); t.reply.handled=false; t.reply.auto=false; cleanReply(t); touch(); draw();
     });
     const ta=wrap.querySelector('.rs-input');
     const grow=()=>{ ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px'; };
-    ta.addEventListener('input',()=>{ t.reply=t.reply||{}; t.reply.text=ta.value; t.reply.at=Date.now(); t.reply.handled=false; cleanReply(t); touch(); grow(); });
+    ta.addEventListener('input',()=>{ t.reply=t.reply||{}; t.reply.text=ta.value; t.reply.at=Date.now(); t.reply.handled=false; t.reply.auto=false; cleanReply(t); touch(); grow(); });
     setTimeout(grow,0);
   };
   draw();
