@@ -20,6 +20,7 @@ TITLES = {
     "reflection":  "振り返り",
     "team5whys":   "5Whys",
     "tsunagu":     "ツナグ",
+    "hitokoma":    "ひとこま",
 }
 
 VIEWPORT_RE = re.compile(r'(<meta\s+name="viewport"[^>]*>)', re.IGNORECASE)
