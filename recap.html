@@ -142,6 +142,16 @@
   .img-acts button{flex:1; border:none; border-radius:12px; padding:13px; font-size:15px; font-weight:600; cursor:pointer; font-family:inherit;}
   .img-acts .ig{background:#f0f0f3; color:var(--text);} .img-acts .ip{background:var(--blue); color:#fff;}
 
+  /* PDFに含めるページの選択 */
+  .pdf-pick{display:flex; flex-direction:column; gap:8px; overflow:auto;}
+  .pdf-pick label{display:flex; align-items:center; gap:12px; border:1px solid var(--line); border-radius:14px; padding:13px 14px; cursor:pointer; background:var(--bg);}
+  .pdf-pick label.off{opacity:.45; cursor:default;}
+  .pdf-pick input{width:20px; height:20px; margin:0; flex:none; accent-color:var(--blue);}
+  .pdf-pick .pk-b{display:flex; flex-direction:column; min-width:0;}
+  .pdf-pick .pk-t{font-size:15px; font-weight:600; line-height:1.3;}
+  .pdf-pick .pk-s{font-size:12px; color:var(--sub); margin-top:3px; line-height:1.4;}
+  .img-acts .ip[disabled]{opacity:.4;}
+
   /* tabs */
   .tabbar{display:flex; gap:8px; margin-bottom:18px;}
   .tab{flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; padding:11px 6px;
@@ -1376,8 +1386,8 @@
     el.cm.addEventListener("input",function(){ state.cm=el.cm.value; save(); });
     el.myGoal.addEventListener("input",function(){ state.myGoal=el.myGoal.value; save(); });
     el.myPosition.addEventListener("input",function(){ state.myPosition=el.myPosition.value; save(); });
-    el.savePdfBtn.addEventListener("click",exportPDF);
-    el.savePdfBtn2.addEventListener("click",exportPDF);
+    el.savePdfBtn.addEventListener("click",openPdfPicker);
+    el.savePdfBtn2.addEventListener("click",openPdfPicker);
     el.fy.addEventListener("input",function(){ state.fy=el.fy.value; loadWeekIntoInputs(); loadSummaryInputs(); renderTitle(); renderAll(); save(); });
     el.q.addEventListener("change",function(){ state.q=el.q.value; loadWeekIntoInputs(); loadSummaryInputs(); renderTitle(); renderAll(); save(); });
     el.week.addEventListener("change",function(){
@@ -1925,14 +1935,48 @@
   }
 
   /* ---------- 全ページを1つのPDFで書き出し ---------- */
-  function exportPDF(){
+  // PDFボタン → まず「どのページを含めるか」を選ぶシートを出す
+  function openPdfPicker(){
+    var arr=cur().actions;
+    var storeN=planP2Pages(arr).length;
+    var hasFloor=Object.keys(ensureFloorDays()).length>0;
+    var rows=[
+      {k:"personal", t:"Personal", s:"目標・ペース・NPSのサマリー（1枚）", n:1, on:true},
+      {k:"store",    t:"Store",    s:"アクションの記録（"+storeN+"枚）", n:storeN, on:true},
+      {k:"floor",    t:"Floor",    s:hasFloor?"日〜土の香盤（週次シフト）":"シフトの取り込みがないため出力できません", n:hasFloor?1:0, on:hasFloor}
+    ];
+    var ov=document.createElement("div"); ov.className="img-overlay";
+    var html='<div class="img-sheet"><div class="img-title">PDFに含めるページ</div>'+
+      '<div class="img-note">必要なページだけを選んで書き出せます。初期状態はすべて含みます。</div><div class="pdf-pick">';
+    rows.forEach(function(r){
+      html+='<label class="'+(r.n?"":"off")+'"><input type="checkbox" data-k="'+r.k+'"'+(r.on?" checked":"")+(r.n?"":" disabled")+'>'+
+        '<span class="pk-b"><span class="pk-t">'+r.t+'</span><span class="pk-s">'+r.s+'</span></span></label>';
+    });
+    html+='</div><div class="img-acts"><button class="ig">閉じる</button><button class="ip">PDFを作成</button></div></div>';
+    ov.innerHTML=html;
+    document.body.appendChild(ov);
+    var boxes=[].slice.call(ov.querySelectorAll('input[type=checkbox]'));
+    var okBtn=ov.querySelector(".ip");
+    function sync(){ okBtn.disabled=!boxes.some(function(b){ return b.checked && !b.disabled; }); }
+    boxes.forEach(function(b){ b.addEventListener("change", sync); });
+    sync();
+    function close(){ ov.remove(); }
+    ov.addEventListener("click",function(e){ if(e.target===ov) close(); });
+    ov.querySelector(".ig").onclick=close;
+    okBtn.onclick=function(){
+      var sel={}; boxes.forEach(function(b){ sel[b.dataset.k]=b.checked && !b.disabled; });
+      close(); exportPDF(sel);
+    };
+  }
+  function exportPDF(sel){
+    sel=sel||{personal:true, store:true, floor:true};
     if(window.Career)Career.log({action:"recap",summary:"週次Recapを作成・出力",dedupeMs:300000});
     var arr=cur().actions;
     var imgMap={};
     setPdfBtnBusy(true);
     preloadPhotos(arr)
       .then(function(m){ imgMap=m; return loadJsPDF(); })
-      .then(function(){ buildPDF(arr, imgMap); })
+      .then(function(){ buildPDF(arr, imgMap, sel); })
       .catch(function(){ alert("PDF生成に必要なライブラリの読み込みに失敗しました。ネットワーク接続をご確認のうえ再度お試しください。"); })
       .then(function(){ setPdfBtnBusy(false); });
   }
@@ -1944,19 +1988,22 @@
       else if(lb.dataset.label){ lb.textContent=lb.dataset.label; b.disabled=false; }
     });
   }
-  function buildPDF(arr, imgMap){
+  function buildPDF(arr, imgMap, sel){
+    sel=sel||{personal:true, store:true, floor:true};
     var dt=new Date(); var dtxt=dt.getFullYear()+"/"+(dt.getMonth()+1)+"/"+dt.getDate();
     var p2pages=planP2Pages(arr), totalP2=p2pages.length;
     var W=1920, H=1080;
-    // Personal（1枚）＋ Store（分割分）＋ Floor（シフト取込がある週のみ）を1つのPDFに
-    var canvases=[renderP1Canvas()];
-    p2pages.forEach(function(pg, idx){ canvases.push(renderP2Canvas(pg, idx, totalP2, dtxt, imgMap)); });
+    // 選択されたセクションだけを1つのPDFに（Personal / Store / Floor）
+    var canvases=[];
+    if(sel.personal) canvases.push(renderP1Canvas());
+    if(sel.store) p2pages.forEach(function(pg, idx){ canvases.push(renderP2Canvas(pg, idx, totalP2, dtxt, imgMap)); });
     try{
-      if(Object.keys(ensureFloorDays()).length>0){
+      if(sel.floor && Object.keys(ensureFloorDays()).length>0){
         var fplan=planFloorLayout();
         fplan.sheets.forEach(function(sh, i){ canvases.push(drawFloorSheet(fplan.cols, sh, i+1, fplan.sheets.length)); });
       }
     }catch(e){ console.error("floor sheet skipped", e); }
+    if(!canvases.length){ alert("出力するページが選ばれていません。"); return; }
     var doc=new jspdf.jsPDF({orientation:"landscape", unit:"px", format:[W,H], compress:true});
     canvases.forEach(function(cv, i){
       if(i>0) doc.addPage([W,H], "landscape");
@@ -2608,7 +2655,7 @@
     gid("floorImportBtn").addEventListener("click", startFloorImport);
     gid("floorFile").addEventListener("change", onFloorFile);
     gid("floorImgBtn").addEventListener("click", exportFloorImage);
-    gid("floorPdfBtn").addEventListener("click", exportPDF);  // Floorも含めて全ページを1つのPDFに
+    gid("floorPdfBtn").addEventListener("click", openPdfPicker);  // Floorも含めて全ページを1つのPDFに
     // 日カード：クリック（削除 / 天気選択 / 現在地の天気取得 / 開閉）
     gid("floorSessions").addEventListener("click", function(e){
       var db=e.target.closest("[data-delday]");
