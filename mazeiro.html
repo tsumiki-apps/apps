@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-mazeiro.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="まぜいろ">
+<title>まぜいろ — カラー剤の配合計算</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#ffffff; --ink:#1d1d1f; --sub:#6e6e73;
+    --line:#e5e5ea; --accent:#c04bd6; --accent-soft:#f8ebfb; --accent-line:#ecc8f2;
+    --dev:#5a8df0; --dev-soft:#ecf2fe; --dev-line:#c9d9fb;
+    --green:#34c759; --gray:#c7c7cc; --radius:18px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 14px calc(60px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:680px; margin:0 auto;}
+  header{padding:30px 4px 14px; text-align:center;}
+  .logo{font-size:40px; line-height:1;}
+  h1{font-size:26px; font-weight:800; letter-spacing:-.02em; margin-top:8px;}
+  .tagline{color:var(--sub); font-size:13px; margin-top:5px;}
+
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px 14px; margin-top:16px;}
+  .panel h2{font-size:13px; font-weight:700; color:var(--sub); display:flex; align-items:center;
+    gap:6px; margin-bottom:12px;}
+  .panel h2 .badge{margin-left:auto; font-size:11px; font-weight:700; border-radius:999px;
+    padding:2px 10px; background:var(--accent-soft); color:var(--accent);}
+  .panel h2 .badge.dev{background:var(--dev-soft); color:var(--dev);}
+
+  /* 合計量入力 */
+  .total-row{display:flex; align-items:center; gap:10px;}
+  .total-row input{flex:1; min-width:0; border:1px solid var(--line); border-radius:14px;
+    padding:14px; font-size:24px; font-weight:800; text-align:center;
+    background:var(--bg); color:var(--ink);}
+  .total-row input:focus{outline:none; border-color:var(--accent); background:#fff;}
+  .total-row .unit{font-size:17px; font-weight:700; color:var(--sub); flex:0 0 auto;}
+
+  /* 比率行 */
+  .ratio-list{display:flex; flex-direction:column; gap:10px;}
+  .ratio-row{display:flex; align-items:center; gap:8px;}
+  .ratio-row .cname{flex:1 1 0; min-width:0; border:1px solid var(--line); border-radius:12px;
+    padding:11px 12px; font-size:16px; background:var(--bg); color:var(--ink);}
+  .ratio-row .rnum{flex:0 0 64px; width:64px; min-width:0; border:1px solid var(--line); border-radius:12px;
+    padding:11px 6px; font-size:16px; font-weight:700; text-align:center;
+    background:var(--bg); color:var(--ink);}
+  .ratio-row input:focus{outline:none; border-color:var(--accent); background:#fff;}
+  .ratio-row .grams{flex:0 0 auto; min-width:58px; text-align:right; font-size:15px; font-weight:800;
+    color:var(--accent); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .ratio-row .del{flex:0 0 32px; height:32px; border:none; border-radius:50%;
+    background:var(--bg); color:var(--sub); font-size:16px; line-height:1; cursor:pointer;}
+  .ratio-row .del:disabled{opacity:.3;}
+  .ratio-sep{text-align:center; color:var(--gray); font-size:13px; font-weight:700; flex:0 0 auto;}
+
+  .add-btn{margin-top:12px; width:100%; border:1.5px dashed var(--accent-line);
+    background:var(--accent-soft); color:var(--accent); border-radius:12px;
+    padding:11px; font-size:14px; font-weight:700; cursor:pointer;
+    transition:transform .12s ease;}
+  .add-btn:active{transform:scale(.97);}
+  .ratio-hint{font-size:11.5px; color:var(--sub); margin-top:10px; line-height:1.5;}
+  .ratio-display{margin-top:12px; text-align:center; font-size:14px; font-weight:700;
+    color:var(--sub); letter-spacing:.02em;}
+  .ratio-display b{color:var(--accent);}
+
+  /* 2剤 */
+  .dev-row{display:flex; align-items:center; gap:10px;}
+  .dev-row input{flex:1; min-width:0; border:1px solid var(--line); border-radius:14px;
+    padding:13px; font-size:20px; font-weight:800; text-align:center;
+    background:var(--bg); color:var(--ink);}
+  .dev-row input:focus{outline:none; border-color:var(--dev); background:#fff;}
+  .dev-row .unit{font-size:15px; font-weight:700; color:var(--sub); flex:0 0 auto;}
+  .quick{display:flex; gap:8px; margin-top:10px;}
+  .quick button{flex:1; border:1px solid var(--line); background:var(--bg); color:var(--sub);
+    border-radius:999px; padding:8px 0; font-size:13.5px; font-weight:700; cursor:pointer;}
+  .quick button.on{background:var(--dev-soft); border-color:var(--dev-line); color:var(--dev);}
+
+  /* 結果 */
+  .result{background:linear-gradient(150deg,#faf0fc,#eef3fe); border:1px solid var(--accent-line);
+    border-radius:var(--radius); padding:18px 16px; margin-top:16px;}
+  .result h2{font-size:13px; font-weight:700; color:var(--sub); margin-bottom:12px;}
+  .r-line{display:flex; align-items:baseline; justify-content:space-between;
+    padding:9px 2px; border-bottom:1px dashed rgba(0,0,0,.08);}
+  .r-line:last-of-type{border-bottom:none;}
+  .r-line .nm{font-size:15px; font-weight:700; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; padding-right:10px;}
+  .r-line .nm .sm{font-size:11.5px; font-weight:600; color:var(--sub); margin-left:6px;}
+  .r-line .val{font-size:22px; font-weight:800; font-variant-numeric:tabular-nums;
+    color:var(--accent); flex:0 0 auto;}
+  .r-line .val .u{font-size:13px; font-weight:700; color:var(--sub); margin-left:2px;}
+  .r-line.dev .val{color:var(--dev);}
+  .r-total{margin-top:12px; padding-top:12px; border-top:1.5px solid rgba(0,0,0,.1);
+    display:flex; align-items:baseline; justify-content:space-between;}
+  .r-total .nm{font-size:14px; font-weight:800;}
+  .r-total .val{font-size:26px; font-weight:800; font-variant-numeric:tabular-nums;}
+  .r-total .val .u{font-size:14px; font-weight:700; color:var(--sub); margin-left:2px;}
+  .r-empty{text-align:center; color:var(--sub); font-size:13.5px; padding:8px 0;}
+
+  .reset{margin:20px auto 0; display:block; border:none; background:none;
+    color:var(--sub); font-size:13px; font-weight:600; cursor:pointer;
+    text-decoration:underline; text-underline-offset:3px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🎨</div>
+    <h1>まぜいろ</h1>
+    <div class="tagline">カラー剤の配合を、比率からグラムへ</div>
+  </header>
+
+  <!-- 1剤の合計量 -->
+  <section class="panel">
+    <h2>⚖️ 作りたい量（1剤の合計）<span class="badge">1剤</span></h2>
+    <div class="total-row">
+      <input id="totalG" type="number" inputmode="decimal" min="0" step="1" placeholder="例: 80">
+      <span class="unit">g</span>
+    </div>
+  </section>
+
+  <!-- 比率 -->
+  <section class="panel">
+    <h2>🎨 色の比率<span class="badge">1剤</span></h2>
+    <div class="ratio-list" id="ratioList"></div>
+    <button class="add-btn" id="addBtn">＋ 色を追加</button>
+    <div class="ratio-display" id="ratioDisp"></div>
+    <div class="ratio-hint">比率は小数もOK（例: 1 : 0.5）。色名は空欄でも計算できます。</div>
+  </section>
+
+  <!-- 2剤 -->
+  <section class="panel">
+    <h2>💧 2剤（オキシ）<span class="badge dev">2剤</span></h2>
+    <div class="dev-row">
+      <span class="unit">1剤の</span>
+      <input id="devMult" type="number" inputmode="decimal" min="0" step="0.1" placeholder="例: 1">
+      <span class="unit">倍</span>
+    </div>
+    <div class="quick" id="quickMult">
+      <button data-v="1">1倍</button>
+      <button data-v="1.5">1.5倍</button>
+      <button data-v="2">2倍</button>
+      <button data-v="3">3倍</button>
+    </div>
+  </section>
+
+  <!-- 結果 -->
+  <section class="result">
+    <h2>🧾 レシピ</h2>
+    <div id="resultBody"><div class="r-empty">量と比率を入れると、ここに計算結果が出ます</div></div>
+  </section>
+
+  <button class="reset" id="resetBtn">入力をリセット</button>
+</div>
+
+<script>
+(function(){
+  const KEY = "mazeiro_v1";
+  const $ = id => document.getElementById(id);
+  const listEl = $("ratioList");
+
+  // ---- 状態 ----
+  let state = { total:"", parts:[{name:"",ratio:""},{name:"",ratio:""}], mult:"" };
+  try{
+    const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if(saved && Array.isArray(saved.parts) && saved.parts.length >= 2) state = saved;
+  }catch(e){}
+
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+
+  // ---- 数値整形（0.1g単位） ----
+  function fmt(n){
+    if(!isFinite(n)) return "0";
+    const r = Math.round(n*10)/10;
+    return (Math.abs(r - Math.round(r)) < 1e-9) ? String(Math.round(r)) : r.toFixed(1);
+  }
+  function fmtRatio(n){
+    const r = Math.round(n*100)/100;
+    return String(parseFloat(r.toFixed(2)));
+  }
+
+  // ---- 比率行の描画 ----
+  function renderRows(){
+    listEl.innerHTML = "";
+    state.parts.forEach((p, i) => {
+      const row = document.createElement("div");
+      row.className = "ratio-row";
+      row.innerHTML =
+        '<input class="cname" type="text" placeholder="色名（例: 8GB）">' +
+        '<span class="ratio-sep">:</span>' +
+        '<input class="rnum" type="number" inputmode="decimal" min="0" step="0.1" placeholder="比率">' +
+        '<span class="grams">— g</span>' +
+        '<button class="del" title="この色を削除">✕</button>';
+      const [nameIn, numIn] = row.querySelectorAll("input");
+      nameIn.value = p.name;
+      numIn.value  = p.ratio;
+      nameIn.addEventListener("input", () => { p.name = nameIn.value; save(); calc(); });
+      numIn.addEventListener("input",  () => { p.ratio = numIn.value; save(); calc(); });
+      const del = row.querySelector(".del");
+      del.disabled = state.parts.length <= 2;
+      del.addEventListener("click", () => {
+        state.parts.splice(i,1); save(); renderRows(); calc();
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  // ---- 計算 ----
+  function calc(){
+    const total = parseFloat(state.total);
+    const ratios = state.parts.map(p => parseFloat(p.ratio));
+    const sum = ratios.reduce((a,b) => a + (isFinite(b) && b > 0 ? b : 0), 0);
+    const mult = parseFloat(state.mult);
+
+    // 行ごとのグラム表示
+    const gramEls = listEl.querySelectorAll(".grams");
+    state.parts.forEach((p, i) => {
+      const r = ratios[i];
+      const ok = isFinite(total) && total > 0 && isFinite(r) && r > 0 && sum > 0;
+      gramEls[i].textContent = ok ? fmt(total * r / sum) + " g" : "— g";
+    });
+
+    // 比率の見える化（1 : 2 : 0.5 のように）
+    const valid = ratios.filter(r => isFinite(r) && r > 0);
+    $("ratioDisp").innerHTML = (valid.length >= 2)
+      ? "比率 <b>" + valid.map(fmtRatio).join(" : ") + "</b>"
+      : "";
+
+    // 2剤クイックボタンのハイライト
+    document.querySelectorAll("#quickMult button").forEach(b => {
+      b.classList.toggle("on", isFinite(mult) && parseFloat(b.dataset.v) === mult);
+    });
+
+    // レシピ欄
+    const body = $("resultBody");
+    if(!(isFinite(total) && total > 0 && sum > 0)){
+      body.innerHTML = '<div class="r-empty">量と比率を入れると、ここに計算結果が出ます</div>';
+      return;
+    }
+    let html = "";
+    state.parts.forEach((p, i) => {
+      const r = ratios[i];
+      if(!(isFinite(r) && r > 0)) return;
+      const nm = p.name.trim() || ("色 " + (i+1));
+      html += '<div class="r-line"><span class="nm">' + esc(nm) +
+              '<span class="sm">比率 ' + fmtRatio(r) + '</span></span>' +
+              '<span class="val">' + fmt(total * r / sum) + '<span class="u">g</span></span></div>';
+    });
+    let grand = total;
+    if(isFinite(mult) && mult > 0){
+      const devG = total * mult;
+      grand += devG;
+      html += '<div class="r-line dev"><span class="nm">2剤（オキシ）' +
+              '<span class="sm">1剤 × ' + fmtRatio(mult) + '</span></span>' +
+              '<span class="val">' + fmt(devG) + '<span class="u">g</span></span></div>';
+    }
+    html += '<div class="r-total"><span class="nm">' +
+            (isFinite(mult) && mult > 0 ? "ぜんぶ混ぜた総量" : "1剤の合計") +
+            '</span><span class="val">' + fmt(grand) + '<span class="u">g</span></span></div>';
+    body.innerHTML = html;
+  }
+
+  function esc(s){
+    return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  // ---- イベント ----
+  $("totalG").value = state.total;
+  $("totalG").addEventListener("input", e => { state.total = e.target.value; save(); calc(); });
+
+  $("devMult").value = state.mult;
+  $("devMult").addEventListener("input", e => { state.mult = e.target.value; save(); calc(); });
+
+  document.querySelectorAll("#quickMult button").forEach(b => {
+    b.addEventListener("click", () => {
+      state.mult = b.dataset.v;
+      $("devMult").value = state.mult;
+      save(); calc();
+    });
+  });
+
+  $("addBtn").addEventListener("click", () => {
+    if(state.parts.length >= 8) return;
+    state.parts.push({name:"", ratio:""});
+    save(); renderRows(); calc();
+  });
+
+  $("resetBtn").addEventListener("click", () => {
+    if(!confirm("入力をぜんぶ消してリセットしますか？")) return;
+    state = { total:"", parts:[{name:"",ratio:""},{name:"",ratio:""}], mult:"" };
+    save();
+    $("totalG").value = ""; $("devMult").value = "";
+    renderRows(); calc();
+  });
+
+  renderRows();
+  calc();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
