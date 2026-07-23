@@ -26,7 +26,9 @@
    更新は2通り：ビルドあり＝`python3 deploy_tools.py <name>`／**ビルド不要の単一HTML＝
    `~/tsumiki-tools` を直接編集して push**（制作物側に開発ソースを持たない）。
    引っ越したら TOOLS からの撤去までワンセット（残すと本体を案内ページで上書きする事故）。
-   → 詳細 `Decisions/2026-07-23-tools-distribution-repo.md`
+   有料で渡すアプリは**プロダクトキーゲートを注入**（`inject_license.py <HTML> <app名>` または
+   TOOLS エントリに `license:`）。キー発行は Supabase の `license_issue()`（Claudeに頼めばよい）。
+   → 詳細 `Decisions/2026-07-23-tools-distribution-repo.md`, `Decisions/2026-07-23-license-key-system.md`
 
 3. **新規アプリには `~/制作物/inject_backbtn.py` を実行**して戻るボタンを注入する。
    **HTMLにベタ書きしない**（常時表示の `<a href="index.html">`・フッターリンク等は禁止）。

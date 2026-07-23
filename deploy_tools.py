@@ -10,7 +10,10 @@
   python3 deploy_tools.py          # 登録済み全ツールをデプロイ
 
 新しい配布ツールを増やすときは TOOLS に1エントリ足すだけ。
-※ 配布リポには個人データ・Supabaseキー入りのものを置かないこと。
+※ 配布リポには個人データ・個人プロジェクトのデータに届くSupabase接続を置かないこと。
+   （例外＝プロダクトキーゲート: 非公開台帳へのRPC照合のみで個人データに届かないため可。
+    有料ツールは TOOLS エントリに license='<app名>' を足すと inject_license.py のゲートを
+    毎デプロイで注入する。詳細 Decisions/2026-07-23-license-key-system.md）
 ※ つみきの戻るボタン（inject_backbtn.py）は配布版には注入しない（外部の人に
    個人メニューへの導線を持たせないため）。apple-touch-icon はここで注入する。
 """
@@ -23,7 +26,8 @@ from pathlib import Path
 SEISAKU = Path(__file__).resolve().parent
 TOOLS = {
     # name: build=ビルドコマンド（不要なら省略） / artifact=配布する成果物HTML /
-    #       out=配布ファイル名 / icon=apple-touch-icon / title=ホーム画面名
+    #       out=配布ファイル名 / icon=apple-touch-icon / title=ホーム画面名 /
+    #       license=プロダクトキーゲートのapp名（有料ツールのみ・不要なら省略）
     'kouban': {
         'build': ['npm', '--prefix', str(SEISAKU / 'Kouban'), 'run', 'build'],
         'artifact': SEISAKU / 'Kouban' / 'dist' / 'index.html',
@@ -65,6 +69,11 @@ def deploy(name: str) -> None:
             f'<meta name="apple-mobile-web-app-title" content="{t["title"]}">\n'
         )
         html = html.replace('<title>', tag + '<title>', 1)
+    # 有料ツール: プロダクトキーゲートを注入（再ビルドでゲートを失わないよう毎回）
+    if 'license' in t:
+        import inject_license
+        html = inject_license.BLOCK_RE.sub('', html)
+        html = html.replace('</body>', inject_license.build_snippet(t['license']) + '\n</body>', 1)
     (DEST / t['out']).write_text(html)
     (DEST / icon_name).write_bytes(t['icon'].read_bytes())
     print(f'== {name}: copied to {DEST / t["out"]}')
