@@ -52,6 +52,12 @@ def deploy(name: str) -> None:
         print(f'== {name}: build')
         subprocess.run(t['build'], check=True)
     html = t['artifact'].read_text()
+    # apps側を案内ページに差し替えた後、TOOLSのartifactを直し忘れると
+    # 公開中の本体を案内ページで上書きしてしまう。ここで止める。
+    assert '引っ越しました' not in html, (
+        f'{name}: artifact が「引っ越しました」案内ページになっている。'
+        '本体の場所を TOOLS に登録し直すこと（デプロイ中止）'
+    )
     icon_name = t['icon'].name
     # つみきへ戻る導線は配布版に持ち込まない
     html = BACK_BTN_RE.sub('', html)
