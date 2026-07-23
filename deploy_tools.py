@@ -31,13 +31,8 @@ TOOLS = {
         'icon': SEISAKU / 'icons' / 'icon-kouban.png',
         'title': '香盤メーカー',
     },
-    'mazeiro': {
-        # 単一HTML（ビルドなし）。制作物の本体からコピーして配布用に整形する
-        'artifact': SEISAKU / 'mazeiro.html',
-        'out': 'mazeiro.html',
-        'icon': SEISAKU / 'icons' / 'icon-mazeiro.png',
-        'title': 'まぜいろ',
-    },
+    # mazeiro はここに載せない：本体は ~/tsumiki-tools/mazeiro.html を直接編集して
+    # git push する運用（2026-07-23決定）。制作物側に開発ソースを持たない。
 }
 DEST = Path.home() / 'tsumiki-tools'
 
