@@ -22,6 +22,11 @@
    動作確認 → 戻るボタン/アイコン注入 → `index.html` 追加 → commit & push まで完結し、
    **最後にまとめて報告＋公開URLを必ず貼る**。例外はユーザーが「まだ公開しないで」と明示した時のみ。
    → 詳細 `Preferences/deploy-workflow.md`
+   **⚠️ 他人に渡すアプリはここ（apps）に置かない**。配布用は `~/tsumiki-tools`（戻るボタン非注入）。
+   更新は2通り：ビルドあり＝`python3 deploy_tools.py <name>`／**ビルド不要の単一HTML＝
+   `~/tsumiki-tools` を直接編集して push**（制作物側に開発ソースを持たない）。
+   引っ越したら TOOLS からの撤去までワンセット（残すと本体を案内ページで上書きする事故）。
+   → 詳細 `Decisions/2026-07-23-tools-distribution-repo.md`
 
 3. **新規アプリには `~/制作物/inject_backbtn.py` を実行**して戻るボタンを注入する。
    **HTMLにベタ書きしない**（常時表示の `<a href="index.html">`・フッターリンク等は禁止）。
@@ -31,6 +36,12 @@
 4. **モバイル幅375pxで動作確認**（ユーザーは主にiPhone）。横はみ出し・ラベル縦折れ・
    タップ領域、数値入力は font-size 16px 以上（iOS自動ズーム防止）、新要素のサイズ/余白/
    角丸が既存と統一されているか。→ 詳細 `Preferences/app-verification.md`
+
+5. **tsumiki-apps.com の墨の流体シミュレーションには、指示がない限り触らない**。
+   対象＝`~/tsumiki-portfolio/ink-fluid.js` と `style.css` の `.ink-fluid` 周り。
+   他の改修のついでに数値・挙動を変えない。必要と思っても**まず提案して指示を仰ぐ**。
+   理由＝体感頼りで詰めた領域なうえ、**ブラウザペインはrAFが止まり検証できない**（壊しても気づけない）。
+   → 詳細 `Knowledge/mistakes.md`（P0・2026-07-21）
 
 ## Codex連携（agmsg / レビュー）— 現場ガード
 - **Codex は `~/制作物` 専用**で使う（別dirから使うと team config に登録が増殖するバグ）。
