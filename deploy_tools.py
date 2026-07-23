@@ -15,13 +15,15 @@
    個人メニューへの導線を持たせないため）。apple-touch-icon はここで注入する。
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 SEISAKU = Path(__file__).resolve().parent
 TOOLS = {
-    # name: (ビルドコマンド, ビルド成果物, 配布ファイル名, アイコン, 表示名)
+    # name: build=ビルドコマンド（不要なら省略） / artifact=配布する成果物HTML /
+    #       out=配布ファイル名 / icon=apple-touch-icon / title=ホーム画面名
     'kouban': {
         'build': ['npm', '--prefix', str(SEISAKU / 'Kouban'), 'run', 'build'],
         'artifact': SEISAKU / 'Kouban' / 'dist' / 'index.html',
@@ -29,22 +31,39 @@ TOOLS = {
         'icon': SEISAKU / 'icons' / 'icon-kouban.png',
         'title': '香盤メーカー',
     },
+    'mazeiro': {
+        # 単一HTML（ビルドなし）。制作物の本体からコピーして配布用に整形する
+        'artifact': SEISAKU / 'mazeiro.html',
+        'out': 'mazeiro.html',
+        'icon': SEISAKU / 'icons' / 'icon-mazeiro.png',
+        'title': 'まぜいろ',
+    },
 }
 DEST = Path.home() / 'tsumiki-tools'
+
+BACK_BTN_RE = re.compile(
+    r'\s*<!-- tsumiki-back-button -->.*?<!-- /tsumiki-back-button -->', re.S
+)
 
 
 def deploy(name: str) -> None:
     t = TOOLS[name]
-    print(f'== {name}: build')
-    subprocess.run(t['build'], check=True)
+    if 'build' in t:
+        print(f'== {name}: build')
+        subprocess.run(t['build'], check=True)
     html = t['artifact'].read_text()
-    assert 'tsumiki-back-button' not in html, '配布版に戻るボタンが混入している'
     icon_name = t['icon'].name
-    tag = (
-        f'<link rel="apple-touch-icon" href="{icon_name}">\n'
-        f'<meta name="apple-mobile-web-app-title" content="{t["title"]}">\n'
-    )
-    html = html.replace('<title>', tag + '<title>', 1)
+    # つみきへ戻る導線は配布版に持ち込まない
+    html = BACK_BTN_RE.sub('', html)
+    assert 'tsumiki-back-button' not in html, '戻るボタンを剥がしきれていない'
+    # アイコン参照を tools 直下に付け替え／未注入なら注入する
+    html = html.replace(f'icons/{icon_name}', icon_name)
+    if 'apple-touch-icon' not in html:
+        tag = (
+            f'<link rel="apple-touch-icon" href="{icon_name}">\n'
+            f'<meta name="apple-mobile-web-app-title" content="{t["title"]}">\n'
+        )
+        html = html.replace('<title>', tag + '<title>', 1)
     (DEST / t['out']).write_text(html)
     (DEST / icon_name).write_bytes(t['icon'].read_bytes())
     print(f'== {name}: copied to {DEST / t["out"]}')
