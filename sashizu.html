@@ -139,50 +139,34 @@
   }
   .c-meta .mdone { color: var(--green); font-weight: 600; }
   .c-meta .mnone { color: var(--ghost); }
-  .c-meta .mchev { margin-left: auto; color: var(--ghost); display: flex; }
+  .c-meta .mchev { margin-left: auto; color: var(--ghost); display: flex; transition: transform .18s; }
+  .c-meta.open .mchev { transform: rotate(90deg); }
   .card.is-done .c-meta .mnum { background: transparent; color: var(--ghost); }
 
-  /* ===== 詳細ページ ===== */
-  .page {
-    position: fixed; inset: 0; background: var(--bg); z-index: 1000;
-    overflow-y: auto; -webkit-overflow-scrolling: touch;
-    transform: translateX(100%); transition: transform .24s ease;
-    visibility: hidden;
-    padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  /* ===== カード内に開くメモ（アコーディオン） ===== */
+  .n-list {
+    margin: 10px -4px 0; padding: 11px 0 2px 11px;
+    border-top: 1px dashed var(--line); border-left: 2px solid var(--line);
+    margin-left: 3px;
   }
-  .page.show { transform: translateX(0); visibility: visible; }
-  .p-head {
-    position: sticky; top: 0; z-index: 2;
-    display: flex; align-items: center; gap: 4px;
-    padding: calc(8px + env(safe-area-inset-top)) 8px 8px;
-    background: rgba(244,242,238,.92);
-    -webkit-backdrop-filter: saturate(180%) blur(12px); backdrop-filter: saturate(180%) blur(12px);
-    border-bottom: 1px solid var(--line);
+  .note {
+    background: var(--surface); border-radius: 13px; padding: 10px 11px; margin-bottom: 8px;
   }
-  .p-back {
-    border: none; background: none; cursor: pointer; font: inherit;
-    color: var(--text); font-size: 15px; font-weight: 600;
-    display: flex; align-items: center; gap: 2px;
-    padding: 8px 8px 8px 4px; min-height: 44px;
-  }
-  .p-title {
-    flex: 1; font-size: 15px; font-weight: 700; text-align: center;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px;
-  }
-  .p-sub { color: var(--sub); font-size: 12.5px; padding: 12px 4px 2px; }
-
-  /* メモカード（詳細ページ内） */
+  .note .n-top { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
   .note .n-idx { font-size: 11px; color: var(--ghost); font-weight: 600; }
-  .note .n-head { font-size: 14.5px; font-weight: 700; word-break: break-word; margin-bottom: 2px; }
+  .note .n-act { margin-left: auto; display: flex; gap: 2px; }
+  .note .icon-btn:active { background: var(--card); }
+  .note .pill { font-size: 11.5px; padding: 4px 10px; }
+  .note .n-head { font-size: 14px; font-weight: 700; word-break: break-word; margin-bottom: 2px; }
   .note .n-body {
-    font-size: 14px; color: var(--text); white-space: pre-wrap; word-break: break-word; line-height: 1.65;
+    font-size: 13.5px; color: var(--text); white-space: pre-wrap; word-break: break-word; line-height: 1.65;
   }
-  .note .n-empty { font-size: 13px; color: var(--ghost); }
+  .note .n-empty { font-size: 12.5px; color: var(--ghost); }
   .note.is-done .n-head, .note.is-done .n-body { color: var(--ghost); }
   .add-note {
-    width: 100%; border: 1px dashed var(--line); background: var(--card); cursor: pointer;
-    font: inherit; font-size: 14px; font-weight: 700; color: var(--sub);
-    border-radius: var(--radius); padding: 15px; margin-top: 2px;
+    width: 100%; border: 1px dashed var(--line); background: transparent; cursor: pointer;
+    font: inherit; font-size: 13.5px; font-weight: 700; color: var(--sub);
+    border-radius: 13px; padding: 12px; margin-bottom: 2px;
   }
   .add-note:active { background: var(--surface); }
 
@@ -333,20 +317,6 @@
   </div>
 </div>
 
-<!-- 詳細ページ -->
-<div class="page" id="detail">
-  <div class="p-head">
-    <button class="p-back" id="dtBack">‹ 一覧</button>
-    <div class="p-title" id="dtTitle"></div>
-    <button class="icon-btn" id="dtEdit" title="タイトルを編集"></button>
-  </div>
-  <div class="wrap">
-    <div class="p-sub" id="dtMeta"></div>
-    <div id="dtNotes"></div>
-    <button class="add-note" id="dtAdd">＋ メモを追加</button>
-  </div>
-</div>
-
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -422,7 +392,7 @@ let sheetItemId = null;      // ステータス/編集シートの対象さし�
 let sheetNoteId = null;      // ステータス/編集シートの対象メモ（null＝さしず自体）
 let sheetOpen = false;       // シート表示中はリアルタイム上書き描画を遅延
 let pendingRender = false;
-let detailId = null;         // 詳細ページで開いているさしず
+let openIds = new Set();     // カードを開いてメモを表示中のさしず
 
 /* ===================== 永続化・同期 ===================== */
 function blankNote(body, head){
@@ -550,7 +520,6 @@ function render(){
   renderChips();
   renderList();
   renderDone();
-  if(detailId) renderDetail();
 }
 function renderChips(){
   const el = document.getElementById('chips');
@@ -576,8 +545,9 @@ function cardHTML(x){
   html += '<div class="c-actions">';
   html += '<button class="icon-btn" data-edit="'+x.id+'" title="タイトルを編集">'+svg('edit')+'</button>';
   html += '</div></div>';
+  const open = openIds.has(x.id);
   html += '<div class="c-title" data-open="'+x.id+'">'+esc(x.title)+'</div>';
-  html += '<div class="c-meta" data-open="'+x.id+'">';
+  html += '<div class="c-meta'+(open?' open':'')+'" data-open="'+x.id+'">';
   if(notes.length){
     html += '<span class="mnum">'+svg('note',13)+' メモ '+notes.length+'</span>';
     if(done) html += '<span class="mdone">✅ '+done+' 完了</span>';
@@ -586,6 +556,12 @@ function cardHTML(x){
   }
   html += '<span class="mchev">'+svg('chev',16)+'</span>';
   html += '</div>';
+  if(open){
+    html += '<div class="n-list">';
+    html += notes.map((n,i)=>noteHTML(x,n,i)).join('');
+    html += '<button class="add-note" data-addnote="'+x.id+'">＋ メモを追加</button>';
+    html += '</div>';
+  }
   html += '</div>';
   return html;
 }
@@ -617,83 +593,50 @@ function bindCardEvents(root){
     b.onclick = ()=>{
       const x = findItem(b.dataset.st); if(!x) return;
       const notes = x.notes || [];
-      /* メモが0〜1件なら一覧から直接ステータスを変えられる。2件以上は詳細ページで個別に */
+      /* メモが0〜1件なら一覧から直接ステータスを変えられる。2件以上はメモごとに（開いて選ぶ） */
       if(notes.length <= 1) openStatusSheet(x.id, notes.length ? notes[0].id : null);
-      else openDetail(x.id);
+      else toggleOpen(x.id);
     };
   });
   root.querySelectorAll('[data-edit]').forEach(b=>{ b.onclick = ()=> openEditSheet(b.dataset.edit); });
-  root.querySelectorAll('[data-open]').forEach(b=>{ b.onclick = ()=> openDetail(b.dataset.open); });
+  root.querySelectorAll('[data-open]').forEach(b=>{ b.onclick = ()=> toggleOpen(b.dataset.open); });
+  root.querySelectorAll('[data-addnote]').forEach(b=>{ b.onclick = ()=> openNoteSheet(b.dataset.addnote, null); });
+  root.querySelectorAll('[data-nst]').forEach(b=>{
+    b.onclick = ()=> openStatusSheet(b.dataset.item, b.dataset.nst);
+  });
+  root.querySelectorAll('[data-nedit]').forEach(b=>{
+    b.onclick = ()=> openNoteSheet(b.dataset.item, b.dataset.nedit);
+  });
+  root.querySelectorAll('[data-ncopy]').forEach(b=>{
+    b.onclick = async ()=>{
+      const x = findItem(b.dataset.item); if(!x) return;
+      const n = findNote(x, b.dataset.ncopy); if(!n) return;
+      const ok = await copyText(noteText(x, n));
+      toast(ok ? 'コピーしました' : 'コピーできませんでした');
+    };
+  });
 }
-
-/* ===================== 詳細ページ ===================== */
-const detailEl = document.getElementById('detail');
-const dtNotes = document.getElementById('dtNotes');
-document.getElementById('dtEdit').innerHTML = svg('edit');
-function openDetail(id){
-  const x = findItem(id); if(!x) return;
-  detailId = id;
-  renderDetail();
-  detailEl.classList.add('show');
-  document.body.style.overflow = 'hidden';
-  try{ history.pushState({ sashizuDetail:1 }, ''); }catch(e){}
-}
-function closeDetail(fromPop){
-  detailId = null;
-  detailEl.classList.remove('show');
-  document.body.style.overflow = '';
+function toggleOpen(id){
+  if(openIds.has(id)) openIds.delete(id); else openIds.add(id);
   render();
-  /* 自分で積んだ履歴を戻しておく（端末の戻るで空振りしないように） */
-  if(!fromPop && history.state && history.state.sashizuDetail){ try{ history.back(); }catch(e){} }
 }
-document.getElementById('dtBack').onclick = ()=> closeDetail();
-window.addEventListener('popstate', ()=>{ if(detailId) closeDetail(true); });
-document.getElementById('dtEdit').onclick = ()=>{ if(detailId) openEditSheet(detailId); };
-document.getElementById('dtAdd').onclick = ()=>{ if(detailId) openNoteSheet(detailId, null); };
 
+/* カードを開いた時に中に並ぶメモ */
 function noteHTML(x, n, i){
   const s = ST[n.status];
-  const isDone = n.status==='done';
-  let html = '<div class="card note'+(isDone?' is-done':'')+'">';
-  html += '<div class="c-top">';
-  html += '<button class="pill st-'+n.status+'" data-nst="'+n.id+'">'+s.emoji+' '+s.label+'</button>';
+  let html = '<div class="note'+(n.status==='done'?' is-done':'')+'">';
+  html += '<div class="n-top">';
+  html += '<button class="pill st-'+n.status+'" data-nst="'+n.id+'" data-item="'+x.id+'">'+s.emoji+' '+s.label+'</button>';
   html += '<span class="n-idx">'+(i+1)+'</span>';
-  html += '<div class="c-actions">';
-  html += '<button class="icon-btn" data-ncopy="'+n.id+'" title="コピー">'+svg('copy')+'</button>';
-  html += '<button class="icon-btn" data-nedit="'+n.id+'" title="編集">'+svg('edit')+'</button>';
+  html += '<div class="n-act">';
+  html += '<button class="icon-btn" data-ncopy="'+n.id+'" data-item="'+x.id+'" title="コピー">'+svg('copy',18)+'</button>';
+  html += '<button class="icon-btn" data-nedit="'+n.id+'" data-item="'+x.id+'" title="編集">'+svg('edit',18)+'</button>';
   html += '</div></div>';
   if(n.head) html += '<div class="n-head">'+esc(n.head)+'</div>';
   html += n.body ? '<div class="n-body">'+esc(n.body)+'</div>'
                  : '<div class="n-empty">（本文なし）</div>';
   html += '</div>';
   return html;
-}
-function renderDetail(){
-  const x = findItem(detailId);
-  if(!x){ closeDetail(); return; }
-  document.getElementById('dtTitle').textContent = x.title;
-  const notes = x.notes || [];
-  const done = notes.filter(n=>n.status==='done').length;
-  const s = ST[x.status];
-  document.getElementById('dtMeta').textContent =
-    notes.length ? (s.emoji+' '+s.label+'　メモ '+notes.length+'件（完了 '+done+'）')
-                 : (s.emoji+' '+s.label+'　メモはまだありません');
-  dtNotes.innerHTML = notes.length
-    ? notes.map((n,i)=>noteHTML(x,n,i)).join('')
-    : '<div class="empty"><span class="e-ico">📝</span>下の「＋ メモを追加」から<br>1つ目の指示を書こう</div>';
-  dtNotes.querySelectorAll('[data-nst]').forEach(b=>{
-    b.onclick = ()=> openStatusSheet(x.id, b.dataset.nst);
-  });
-  dtNotes.querySelectorAll('[data-nedit]').forEach(b=>{
-    b.onclick = ()=> openNoteSheet(x.id, b.dataset.nedit);
-  });
-  dtNotes.querySelectorAll('[data-ncopy]').forEach(b=>{
-    b.onclick = async ()=>{
-      const n = findNote(x, b.dataset.ncopy); if(!n) return;
-      const ok = await copyText(noteText(x, n));
-      toast(ok ? 'コピーしました' : 'コピーできませんでした');
-    };
-  });
 }
 
 /* ===================== 追加 ===================== */
@@ -774,7 +717,7 @@ document.getElementById('edDelete').onclick = ()=>{
   const x = findItem(sheetItemId);
   closeSheets();
   if(!x) return;
-  if(detailId === x.id) closeDetail();
+  openIds.delete(x.id);
   const idx = db.items.indexOf(x);
   db.items.splice(idx,1); save(); render();
   undoToast('さしずを削除しました', ()=>{ db.items.splice(Math.min(idx,db.items.length),0,x); save(); render(); });
