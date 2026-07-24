@@ -134,6 +134,30 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .loan-chip{padding:2px 8px;border-radius:999px;font-size:11px;background:var(--pink);color:#fff}
 .loan-chip.collected{background:var(--green)}
 .self-chip{padding:2px 8px;border-radius:999px;font-size:11px;background:#fff;border:1px solid var(--line);color:var(--text)}
+/* 分割払い（あと分割）。立替と同じ文法＝行背景は塗らず、チップ＋取り消し線で状態を示す */
+.inst-tag{padding:1px 6px;border-radius:6px;background:var(--soft-blue);color:var(--blue);font-size:10px;font-weight:600}
+.inst-chip{padding:2px 8px;border-radius:999px;font-size:11px;background:var(--blue);color:#fff}
+.inst-chip.done{background:var(--green)}
+.inst-info{margin-top:6px;padding:8px 10px;background:var(--soft-blue);border-radius:8px;font-size:11px;color:var(--text);line-height:1.6}
+.inst-info .label{color:var(--sub);margin-bottom:3px;font-size:10px}
+.inst-info .row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.inst-info .row>span:first-child{flex:none;white-space:nowrap;color:var(--sub)}
+.inst-info .row b{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.inst-bar{height:6px;border-radius:6px;background:#fff;overflow:hidden;margin:6px 0 4px}
+.inst-bar>span{display:block;height:100%;background:var(--blue)}
+/* 分割の残債サマリー */
+.inst-sum-list{display:flex;flex-direction:column;gap:8px}
+.inst-sum-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:10px 12px;background:var(--surf);border:1px solid var(--line);border-radius:12px;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);width:100%}
+.inst-sum-row .isr-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inst-sum-row .isr-meta{font-size:10px;color:var(--sub);margin-top:2px}
+.inst-sum-row .isr-amt{font-size:14px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.inst-total{display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px;background:var(--soft-blue);border-radius:12px;margin-bottom:10px}
+.inst-total .it-label{font-size:11px;color:var(--sub)}
+.inst-total .it-amt{font-size:19px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums}
+.inst-preview{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.7;margin-bottom:12px}
+.inst-preview .ip-head{font-size:10px;color:var(--sub);margin-bottom:4px}
+.inst-preview .ip-row{display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums}
+.inst-preview .ip-row.past{color:var(--sub)}
 .amz-link-info{margin-top:6px;padding:7px 10px;background:var(--soft-blue);border-radius:8px;font-size:11px;color:var(--text)}
 .amz-link-info .label{color:var(--sub);margin-bottom:2px;font-size:10px}
 /* メモ（明細の使い道） */
@@ -219,7 +243,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 .form-row{margin-bottom:12px}
 .form-row label{display:block;font-size:11px;color:var(--sub);margin-bottom:4px}
-.form-row input,.form-row textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:16px;font-family:inherit}
+.form-row input,.form-row textarea,.form-row select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:16px;font-family:inherit;background:#fff;color:var(--text)}
 .form-row textarea{resize:vertical;min-height:50px}
 .amount-presets{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .preset-btn{padding:4px 10px;font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--text);font-family:inherit}
@@ -311,6 +335,10 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
         <div class="upload-icon">💳</div>
         <div class="up-compact">＋ 新しいCSVを読み込む</div>
       </label>
+    </div>
+    <div class="card" id="instSummaryCard" style="display:none">
+      <h2><span>📆 分割払いの残債</span><button class="btn" onclick="openInstModal(null)">+ 分割を追加</button></h2>
+      <div id="instSummaryBody"></div>
     </div>
     <div class="card" id="categoryCard" style="display:none">
       <h2>カテゴリ内訳（自分の実質支出）</h2>
@@ -469,6 +497,28 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
   </div>
 </div>
 
+<!-- モーダル: 分割払い（あと分割）の登録 -->
+<div class="modal-back" id="instModal">
+  <div class="modal">
+    <h3 id="instModalTitle">📆 分割払いに登録</h3>
+    <p class="modal-sub" id="instModalSub"></p>
+    <div class="form-row"><label>お店・内容</label><input type="text" id="instDesc" placeholder="例: アップルストア オンライン"></div>
+    <div class="form-row"><label>ご利用金額（元本）</label><input type="number" id="instPrincipal" placeholder="0" oninput="renderInstPreview()"></div>
+    <div class="form-row"><label>手数料</label><input type="number" id="instFee" placeholder="0" oninput="renderInstPreview()">
+      <div class="muted" style="font-size:11px;margin-top:4px">カードの「お支払い総額 − ご利用金額」の差額。分からなければ0のままでOK。</div>
+    </div>
+    <div class="form-row"><label>回数</label><input type="number" id="instCount" placeholder="3" min="1" max="36" oninput="renderInstPreview()"></div>
+    <div class="form-row"><label>初回の請求期間</label><select id="instStart" onchange="renderInstPreview()"></select></div>
+    <div class="form-row"><label>月々のお支払い金額（空なら自動計算）</label><input type="number" id="instMonthly" placeholder="自動" oninput="renderInstPreview()"></div>
+    <div class="inst-preview" id="instPreview"></div>
+    <div class="actions">
+      <button class="btn btn-danger" id="instDeleteBtn" onclick="deleteInst()" style="margin-right:auto;display:none">削除</button>
+      <button class="btn" onclick="closeInstModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveInst()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- モーダル: 確認 -->
 <div class="modal-back" id="confirmModal">
   <div class="modal">
@@ -543,8 +593,8 @@ const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
-let data={months:{},amazonOrders:[],loans:[],payments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{}};
-let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set()};
+let data={months:{},amazonOrders:[],loans:[],payments:[],installments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{},deletedInstallmentIds:{}};
+let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,instEditingId:null,instTargetTxId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set()};
 
 function load(){
   try{
@@ -555,6 +605,9 @@ function load(){
     if(!data.amazonOrders)data.amazonOrders=[];
     if(!data.loans)data.loans=[];
     if(!data.payments)data.payments=[];
+    if(!data.installments)data.installments=[];
+    if(!data.pendingInst)data.pendingInst=[];
+    if(!data.deletedInstallmentIds)data.deletedInstallmentIds={};
     if(!data.people)data.people=[];
     if(!data.categoryRules)data.categoryRules={};
     if(!data.customCategories)data.customCategories=[];
@@ -563,6 +616,7 @@ function load(){
     if(!data.deletedPaymentIds)data.deletedPaymentIds={};
     if(!data.deletedAmazonIds)data.deletedAmazonIds={};
     migrateToCycles();
+    purgeInstallmentLedgerTx();
   }catch(e){console.error(e);}
 }
 // 旧「カレンダー月（YYYY-MM）」キーの明細を、Amex締め日サイクル（YYYY-MM-07）へ再振り分け
@@ -591,11 +645,12 @@ function mergeTomb(a,b){const m={...(a||{})};for(const k in (b||{}))m[k]=Math.ma
 function allTxArr(d){const out=[];Object.values((d&&d.months)||{}).forEach(m=>(m.transactions||[]).forEach(t=>out.push(t)));return out;}
 function mergeState(a,b){
   a=a||{};b=b||{};
-  const out={months:{},amazonOrders:[],loans:[],payments:[],people:[]};
+  const out={months:{},amazonOrders:[],loans:[],payments:[],installments:[],people:[]};
   out.deletedTxIds=mergeTomb(a.deletedTxIds,b.deletedTxIds);
   out.deletedLoanIds=mergeTomb(a.deletedLoanIds,b.deletedLoanIds);
   out.deletedPaymentIds=mergeTomb(a.deletedPaymentIds,b.deletedPaymentIds);
   out.deletedAmazonIds=mergeTomb(a.deletedAmazonIds,b.deletedAmazonIds);
+  out.deletedInstallmentIds=mergeTomb(a.deletedInstallmentIds,b.deletedInstallmentIds);
   const aPref=(a.updatedAt||0)>=(b.updatedAt||0);
   const pref=aPref?a:b, non=aPref?b:a;                 // 新しい方のフィールドを優先採用
   const txMap=new Map();
@@ -630,7 +685,15 @@ function mergeState(a,b){
   (pref.payments||[]).forEach(p=>{if(p&&p.id)payMap.set(p.id,p);});
   for(const id in out.deletedPaymentIds)payMap.delete(id);
   out.payments=[...payMap.values()].filter(p=>liveLoans.has(p.loanId));
+  // 分割払い：idで和集合→tombstone除外。元明細が消えていたら紐付けだけ外す（分割自体は残す＝支払い義務は消えない）
+  const instMap=new Map();
+  (non.installments||[]).forEach(p=>{if(p&&p.id)instMap.set(p.id,p);});
+  (pref.installments||[]).forEach(p=>{if(p&&p.id)instMap.set(p.id,p);});
+  for(const id in out.deletedInstallmentIds)instMap.delete(id);
+  out.installments=[...instMap.values()].map(p=>(p.txId&&!txMap.has(p.txId))?{...p,txId:null}:p);
   out.people=((pref.people||non.people||[])).slice();   // 人名は新しい方を採用（削除を許す）
+  // 分割の設定待ち：新しい方を採用し、登録済み（元本一致）は落とす
+  out.pendingInst=((pref.pendingInst||non.pendingInst||[])).filter(s=>!out.installments.some(p=>+p.principal===s.amount));
   // カテゴリ記憶：店名→カテゴリのルールは和集合（新しい方を優先）、カスタムカテゴリ名も和集合
   out.categoryRules={...(non.categoryRules||{}),...(pref.categoryRules||{})};
   out.customCategories=[...new Set([...(non.customCategories||[]),...(pref.customCategories||[])])];
@@ -644,11 +707,13 @@ function stateSig(d){
   const ln=(d.loans||[]).map(l=>l.id+':'+l.amount+':'+(l.personName||'')).sort();
   const pm=(d.payments||[]).map(p=>p.id+':'+p.amount).sort();
   const az=(d.amazonOrders||[]).map(o=>o.id).sort();
-  const tb=[...Object.keys(d.deletedTxIds||{}),...Object.keys(d.deletedLoanIds||{}),...Object.keys(d.deletedPaymentIds||{}),...Object.keys(d.deletedAmazonIds||{})].sort();
+  const ip=(d.installments||[]).map(p=>[p.id,p.txId||'',p.principal,p.fee,p.count,p.startCycle,p.monthly||''].join(':')).sort();
+  const tb=[...Object.keys(d.deletedTxIds||{}),...Object.keys(d.deletedLoanIds||{}),...Object.keys(d.deletedPaymentIds||{}),...Object.keys(d.deletedAmazonIds||{}),...Object.keys(d.deletedInstallmentIds||{})].sort();
   const pe=(d.people||[]).slice().sort();
   const cr=Object.entries(d.categoryRules||{}).map(([k,v])=>k+''+v).sort();
   const cc=(d.customCategories||[]).slice().sort();
-  return JSON.stringify([tx,ln,pm,az,tb,pe,cr,cc]);
+  const pi=(d.pendingInst||[]).map(s=>String(s.amount)).sort();
+  return JSON.stringify([tx,ln,pm,az,tb,pe,cr,cc,ip,pi]);
 }
 function save(){
   data.updatedAt=Date.now();                       // 古いクラウドデータでの上書きを防ぐ
@@ -846,7 +911,7 @@ async function parseCreditCSV(file){
   }
   if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']);
   if(dIdx<0||descIdx<0||amtIdx<0){alert('CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / ')+'\n\n必要列: ご利用日 / ご利用内容(店名) / 金額\nこのヘッダをClaudeに伝えてもらえれば対応を追加します。');return null;}
-  const txs=[];const counter={};
+  const txs=[];const counter={};const signals=[];const suspects=[];
   for(let i=1;i<lines.length;i++){
     const cols=parseCsvLine(lines[i]);
     if(cols.length<3)continue;
@@ -854,7 +919,14 @@ async function parseCreditCSV(file){
     const desc=cols[descIdx]?.trim();
     const amount=parseInt((cols[amtIdx]||'').replace(/[,"¥]/g,'').trim(),10);
     if(!date||!desc||isNaN(amount))continue;
+    // 分割への振替行（買い物ではない）。明細にせず「分割の設定が要る」合図としてだけ拾う＝二重計上を防ぐ
+    if(isInstLedgerDesc(desc)){
+      if(Math.abs(amount)>0)signals.push({amount:Math.abs(amount),date,desc:desc.replace(/\s+/g,' ')});
+      continue;
+    }
     if(amount<0)continue;
+    // 上のパターンに当てはまらない「分割/リボ」を含む行＝カードが書き方を変えた可能性。取込後に知らせる
+    if(INST_SUSPECT_RE.test(desc))suspects.push({desc:desc.replace(/\s+/g,' '),amount,date});
     const postDate=postIdx>=0?(cols[postIdx]||'').trim():'';
     const baseKey=date+'|'+desc+'|'+amount;           // idは利用日基準のまま（既存idを壊さない）
     counter[baseKey]=(counter[baseKey]||0)+1;
@@ -863,7 +935,7 @@ async function parseCreditCSV(file){
     if(postDate)tx.postDate=postDate;                 // 請求サイクル判定に使う（表示は利用日のまま）
     txs.push(tx);
   }
-  return txs;
+  return {txs,signals,suspects};
 }
 // 締め日固定ルール：毎月7日〜翌月6日を1サイクルとする（Amex）
 // キーはサイクル開始日のISO文字列 "YYYY-MM-07"（辞書順=時系列順でソート可）
@@ -889,8 +961,10 @@ function cycleLabel(key,withYear){
 }
 
 async function handleCreditCSV(file){
-  const txs=await parseCreditCSV(file);
-  if(!txs||txs.length===0)return;
+  const parsed=await parseCreditCSV(file);
+  if(!parsed)return;
+  const {txs,signals,suspects}=parsed;
+  if(txs.length===0&&signals.length===0)return;
   // 追記マージ方式：同じ明細(id一致=日付/内容/金額が同一)は既存をそのまま保持し、
   // Amazon紐付け・期間移動・立替などのユーザー情報を一切消さない。
   // CSVに無い過去の明細も削除しない。新規明細だけを追加。既存には確定日(postDate)だけ補完して請求期間を正す。
@@ -915,7 +989,16 @@ async function handleCreditCSV(file){
     newIds.add(t.id);
     added++;touched.add(k);
   });
-  if(added===0&&dup===0){alert('日付が認識できる明細がありません');return;}
+  if(added===0&&dup===0&&signals.length===0){alert('日付が認識できる明細がありません');return;}
+  // 分割の合図：同じ金額は1件にまとめ、すでに登録済みの分割（元本一致）は除く
+  const seenSig=new Set();
+  const newSignals=[];
+  signals.forEach(s=>{
+    if(seenSig.has(s.amount))return;seenSig.add(s.amount);
+    if(instList().some(p=>+p.principal===s.amount))return;
+    newSignals.push({amount:s.amount,date:s.date});
+  });
+  data.pendingInst=newSignals;
   normalizeBuckets();                                  // 確定日で請求期間を正規化（手動移動=cycleOverrideは尊重）
   autoLinkAmazon(newIds);save();flushSave();           // 自動リンクは“新規だけ”／取込は即クラウド反映（350ms待ちの欠落窓を無くす）
   if(touched.size)state.currentMonth=[...touched].sort().pop();
@@ -925,7 +1008,9 @@ async function handleCreditCSV(file){
   const range=ds.length?`\n対象期間: ${ds[0]}〜${ds[ds.length-1]}`:'';
   showSyncToast(`💳 新規${added}件を追加しました`);
   const fixedLine=fixed>0?`\n請求期間を補正: ${fixed}件（確定日でカード請求どおりの期へ）`:'';
-  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${fixedLine}${range}\n\n※明細・立替・Amazon紐付け・手動移動は保持され、消えません。`),50);
+  const instLine=newSignals.length?`\n\n📆 分割払いへの切り替えが ${newSignals.length}件 見つかりました（${newSignals.map(s=>'¥'+s.amount.toLocaleString()).join(' / ')}）。\n振替の行は明細に入れていません（二重計上を防ぐため）。\n上の「分割の設定待ち」から回数と手数料を登録してください。`:'';
+  const suspectLine=suspects.length?`\n\n⚠️ 分割/リボらしき見慣れない明細が ${suspects.length}件 あります。二重計上していないか確認してください:\n`+suspects.slice(0,5).map(s=>`・${s.date} ${s.desc} ¥${s.amount.toLocaleString()}`).join('\n'):'';
+  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${fixedLine}${range}${instLine}${suspectLine}\n\n※明細・立替・Amazon紐付け・手動移動は保持され、消えません。`),50);
 }
 
 // Amazon注文の取り込みはブックマークレット(amazon-import-bookmarklet.js)経由でSupabaseへ直接追記。
@@ -987,6 +1072,98 @@ function findTxLinkedToAmazon(orderId){
 }
 
 // 立て替えロジック
+/* ===== 分割払い（あと分割）=====
+   Amexは「あと分割」を “振替の2行ペア” でCSVに書いてくる。買い物そのものではない：
+     一括払いからの変更（あと分割利用） -130,560   ← 元の一括請求の取り消し
+     分割払い利用分                     +130,560   ← 分割残高への付け替え
+   これを普通の明細として取り込むと、元の買い物と合わせて二重計上になる（実際に26万使ったことになる）。
+   なので取込では“明細にしない”で捨て、代わりに「分割の登録が要る」合図として使う。
+   実際に毎月引かれる額（回数・手数料）はCSVに出てこないので、そこだけ手入力で補う。 */
+const INST_LEDGER_RE=/分割払い利用分|一括払いからの変更|あと分割|リボ払い利用分|ボーナス払い利用分/;
+// 上記以外で「分割/リボ」を含む未知の行＝将来カードが出し方を変えた時の検知用（取込後に警告する）
+const INST_SUSPECT_RE=/分割|リボ/;
+function isInstLedgerDesc(d){return INST_LEDGER_RE.test(String(d||''));}
+// 旧バージョンで明細として取り込んでしまった振替行を消す（＝二重計上の後始末）。tombstoneで他端末にも伝える
+function purgeInstallmentLedgerTx(){
+  let n=0;const now=Date.now();
+  Object.keys(data.months).forEach(k=>{
+    const arr=data.months[k].transactions||[];
+    const keep=arr.filter(t=>{
+      if(!isInstLedgerDesc(t.description))return true;
+      data.deletedTxIds[t.id]=now;n++;return false;
+    });
+    if(keep.length!==arr.length){
+      if(keep.length)data.months[k].transactions=keep; else delete data.months[k];
+    }
+  });
+  if(n>0)save();
+  return n;
+}
+// サイクルキー "YYYY-MM-07" をnヶ月ずらす
+function cycleAdd(key,n){
+  const m=String(key).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m)return key;
+  let y=+m[1],mo=+m[2]+n;
+  y+=Math.floor((mo-1)/12);mo=((mo-1)%12+12)%12+1;
+  return y+'-'+String(mo).padStart(2,'0')+'-'+m[3];
+}
+function todayStr(){const d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0');}
+function currentCycleKey(){return cycleStartFromDate(todayStr());}
+function instList(){return data.installments||[];}
+function instForTx(txId){return instList().find(p=>p.txId===txId)||null;}
+function findInst(id){return instList().find(p=>p.id===id)||null;}
+// 各回の請求額。総額=元本+手数料。月々額(monthly)の指定があればそれを優先し、端数は最終回で吸収する
+function instSchedule(p){
+  const total=Math.max(0,(+p.principal||0)+(+p.fee||0));
+  const n=Math.max(1,Math.min(60,+p.count||1));
+  const per=(+p.monthly>0)?+p.monthly:Math.ceil(total/n);
+  const out=[];let rest=total;
+  for(let i=0;i<n;i++){
+    const amt=(i===n-1)?rest:Math.max(0,Math.min(per,rest));
+    out.push({idx:i,no:i+1,cycle:cycleAdd(p.startCycle,i),amount:amt});
+    rest-=amt;
+  }
+  return out;
+}
+function instTotal(p){return instSchedule(p).reduce((s,x)=>s+x.amount,0);}
+// 「請求済み」＝今いるサイクルより前のサイクル分。今月分はこれから引かれるので残債に数える
+function instPaidCount(p){const cur=currentCycleKey();return instSchedule(p).filter(x=>x.cycle<cur).length;}
+function instRemaining(p){const cur=currentCycleKey();return instSchedule(p).filter(x=>x.cycle>=cur).reduce((s,x)=>s+x.amount,0);}
+function instIsDone(p){return instPaidCount(p)>=instSchedule(p).length;}
+function instTotalRemaining(){return instList().reduce((s,p)=>s+instRemaining(p),0);}
+function instName(p){return (p.description||'分割払い').trim()||'分割払い';}
+// 分割の各回を「そのサイクルの明細」として合成する（data.monthsには入れない＝CSV取込のマージを汚さない）
+function instVirtualTxs(cycleKey){
+  const out=[];
+  instList().forEach(p=>{
+    instSchedule(p).forEach(x=>{
+      if(x.cycle!==cycleKey)return;
+      out.push({
+        id:p.id+'#'+x.no,date:instDateForCycle(x.cycle),
+        description:instName(p),amount:x.amount,
+        category:p.category||'その他',note:p.memo||'',
+        _inst:p,_instNo:x.no,_instCount:instSchedule(p).length,_virtual:true
+      });
+    });
+  });
+  return out;
+}
+// 仮想明細の表示日付：そのサイクルの開始日（並び順が壊れない範囲で意味のある日付）
+function instDateForCycle(k){const m=String(k).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?(m[1]+'/'+m[2]+'/'+m[3]):k;}
+// そのサイクルの明細一式＝実明細＋分割の回（合成）。
+// 分割に変換された元明細は“一覧には残すが金額は0”として扱う（billedAmt）。消すと何を買ったか分からなくなるため。
+function cycleTxs(key){
+  if(!key)return [];
+  return (((data.months[key]||{}).transactions)||[]).concat(instVirtualTxs(key));
+}
+// その明細がそのサイクルで実際に請求される額。分割に変換済みなら0（請求は各回の合成行が持つ）
+function billedAmt(t){return instForTx(t.id)?0:t.amount;}
+// 期間タブに出すサイクル：実明細のある期間＋分割の請求が乗る期間（未来の予定も出す）
+function allCycleKeys(){
+  const s=new Set(Object.keys(data.months));
+  instList().forEach(p=>instSchedule(p).forEach(x=>s.add(x.cycle)));
+  return [...s].sort();
+}
 function getLoansForTx(txId){return data.loans.filter(l=>l.txId===txId);}
 function getLoanTotalForTx(txId){return getLoansForTx(txId).reduce((s,l)=>s+l.amount,0);}
 function getPaymentsForLoan(loanId){return data.payments.filter(p=>p.loanId===loanId);}
@@ -1153,8 +1330,9 @@ function renderCreditTab(){
   renderMonthTabs();
   renderUploadCollapse();
   renderQueueBanner();
-  const show=state.currentMonth&&data.months[state.currentMonth];
+  const show=state.currentMonth&&allCycleKeys().includes(state.currentMonth);
   ['summaryCard','categoryCard','txCard'].forEach(id=>document.getElementById(id).style.display=show?'':'none');
+  renderInstSummary();
   if(show){renderSummary();renderCategories();renderTransactions();}
 }
 // データ取込後はアップロードカードを小さな「再取込」バーに畳む
@@ -1167,6 +1345,8 @@ function renderQueueBanner(){
   const el=document.getElementById('queueBanner');if(!el)return;
   let out=0,oc=0;data.loans.forEach(l=>{const r=getRemaining(l);if(r>0){out+=r;oc++;}});
   const items=[];
+  const pend=(data.pendingInst||[]).filter(s=>!instList().some(p=>+p.principal===s.amount));
+  if(pend.length)items.push(`<button class="queue-item" style="background:var(--soft-blue);border-color:#dcdaf3" onclick="openInstFromPending(${pend[0].amount})"><span class="qi-ic">📆</span><span class="qi-txt"><b>分割の設定待ち</b> ${pend.length}件<span class="qi-sub">¥${pend[0].amount.toLocaleString()} の回数・手数料を入力</span></span><span class="qi-go">›</span></button>`);
   if(out>0)items.push(`<button class="queue-item loans" onclick="switchTab('loans')"><span class="qi-ic">🤝</span><span class="qi-txt"><b>未回収</b> ¥${out.toLocaleString()}<span class="qi-sub">全期間・${oc}件</span></span><span class="qi-go">›</span></button>`);
   if(!items.length){el.innerHTML='';el.style.display='none';return;}
   el.style.display='';
@@ -1174,10 +1354,10 @@ function renderQueueBanner(){
 }
 function renderMonthTabs(){
   const wrap=document.getElementById('monthTabs');
-  const months=Object.keys(data.months).sort().reverse();
+  const months=allCycleKeys().reverse();
   wrap.innerHTML=months.map(m=>{
-    const txs=data.months[m].transactions||[];
-    const tot=txs.reduce((s,t)=>s+t.amount,0);
+    const txs=cycleTxs(m);
+    const tot=txs.reduce((s,t)=>s+billedAmt(t),0);
     const ym=String(m).match(/^(\d{4})-(\d{2})/);
     const yr=ym?("'"+ym[1].slice(2)+" "):'';
     return `<div class="month-tab ${m===state.currentMonth?'active':''}" onclick="switchMonth('${m}')"><span class="mt-period">${yr}${cycleLabel(m)}</span><span class="mt-amt">¥${tot.toLocaleString()}</span></div>`;
@@ -1186,10 +1366,10 @@ function renderMonthTabs(){
 function switchMonth(m){exitSelectMode();state.currentMonth=m;render();}
 
 function renderSummary(){
-  const txs=data.months[state.currentMonth].transactions;
-  const total=txs.reduce((s,t)=>s+t.amount,0);
+  const txs=cycleTxs(state.currentMonth);
+  const total=txs.reduce((s,t)=>s+billedAmt(t),0);
   let loaned=0,loanedCount=0;
-  txs.forEach(t=>{const lt=getLoanTotalForTx(t.id);if(lt>0){loaned+=lt;loanedCount++;}});
+  txs.forEach(t=>{if(instForTx(t.id))return;const lt=getLoanTotalForTx(t.id);if(lt>0){loaned+=lt;loanedCount++;}});
   const self=total-loaned;
   document.getElementById('summaryMonth').textContent=cycleLabel(state.currentMonth,true);
   const heroEl=document.getElementById('heroAmount');
@@ -1206,12 +1386,9 @@ function renderSummary(){
 // 直近サイクルの「自分の実質支出」を横バーで一目化（3サイクル以上で表示・最大4本・現在を強調）
 function renderTrendBars(){
   const el=document.getElementById('trendBars');if(!el)return;
-  const keys=Object.keys(data.months).sort();
+  const keys=allCycleKeys();
   if(keys.length<3){el.innerHTML='';el.style.display='none';return;}
-  const vals=keys.slice(-4).map(k=>{
-    const txs=data.months[k].transactions||[];
-    return {k,v:txs.reduce((s,t)=>s+Math.max(0,selfAmt(t)),0)};
-  });
+  const vals=keys.slice(-4).map(k=>({k,v:cycleTxs(k).reduce((s,t)=>s+Math.max(0,selfAmt(t)),0)}));
   const max=Math.max(1,...vals.map(o=>o.v));
   el.style.display='';
   el.innerHTML='<div class="tb-title">最近の実質支出</div>'+vals.map(o=>{
@@ -1223,21 +1400,19 @@ function renderTrendBars(){
 // 前期間比（自分の実質支出 同士で1つ前のサイクルと比較。前期間が無い／差0なら非表示）
 function renderSelfTrend(self){
   const el=document.getElementById('selfTrend');if(!el)return;
-  const keys=Object.keys(data.months).sort();
+  const keys=allCycleKeys();
   const idx=keys.indexOf(state.currentMonth);
   if(idx<=0){el.innerHTML='';return;}
-  const prevTxs=data.months[keys[idx-1]].transactions||[];
-  let prevTotal=0,prevLoaned=0;
-  prevTxs.forEach(t=>{prevTotal+=t.amount;prevLoaned+=getLoanTotalForTx(t.id);});
-  const diff=self-(prevTotal-prevLoaned);
+  const prevSelf=cycleTxs(keys[idx-1]).reduce((s,t)=>s+selfAmt(t),0);
+  const diff=self-prevSelf;
   if(diff===0){el.innerHTML='';return;}
   const up=diff>0;
   el.innerHTML=`<span class="trend ${up?'up':'down'}">前期間比 ${up?'+':'−'}¥${Math.abs(diff).toLocaleString()}</span>`;
 }
 
-function selfAmt(t){return t.amount-getLoanTotalForTx(t.id);}
+function selfAmt(t){return billedAmt(t)-getLoanTotalForTx(t.id);}
 function renderCategories(){
-  const txs=data.months[state.currentMonth].transactions;
+  const txs=cycleTxs(state.currentMonth);
   const byCat={};
   txs.forEach(t=>{const s=selfAmt(t);if(s>0)byCat[t.category]=(byCat[t.category]||0)+s;});
   const total=Object.values(byCat).reduce((s,v)=>s+v,0)||1;
@@ -1286,7 +1461,7 @@ function toggleCat(cat){
 function renderCatDrillRow(t){
   const loans=getLoansForTx(t.id);
   const lt=loans.reduce((s,l)=>s+l.amount,0);
-  const self=t.amount-lt;
+  const self=selfAmt(t);
   const loanNote=lt>0?`<span>（決済¥${t.amount.toLocaleString()}）</span>`:'';
   const expanded=state.expandedCatTxIds.has(t.id);
 
@@ -1300,7 +1475,9 @@ function renderCatDrillRow(t){
 
   const note=(t.note||'').trim();
   const noteTag=note?`<span class="note-mini">📝 ${escapeHtml(note)}</span>`:'';
-  const actions=`<div class="tx-actions">
+  const actions=t._virtual
+    ? `<div class="tx-actions"><button class="btn-mini primary" onclick="event.stopPropagation();openInstModal('${t._inst.id}')">📆 分割を編集</button></div>`
+    : `<div class="tx-actions">
     <button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>
     ${loans.length>0?`<button class="btn-mini" onclick="event.stopPropagation();switchTab('loans')">台帳で見る</button>`:''}
   </div>`;
@@ -1326,9 +1503,10 @@ function toggleCatTxExpand(id){
 // 現在の期間×現在フィルタ×現在の並び替えで「画面に出ている明細」を返す。
 // 描画と「表示中を全選択」で同じ集合を共有する（選択対象と表示対象のズレ防止）。
 function getVisibleTxs(){
-  if(!state.currentMonth||!data.months[state.currentMonth])return [];
-  const txs=data.months[state.currentMonth].transactions;
+  if(!state.currentMonth)return [];
+  const txs=cycleTxs(state.currentMonth);
   const f=txs.filter(t=>{
+    if(t._virtual&&state.selectMode)return false;   // 分割の回は合成行なので選択・期間移動の対象にしない
     const lt=getLoanTotalForTx(t.id);
     if(state.currentFilter==='self')return lt<t.amount;
     if(state.currentFilter==='has-loan')return lt>0;
@@ -1348,7 +1526,34 @@ function renderTransactions(){
   updateSelectBar();
 }
 
+// 分割の各回（合成行）。実明細ではないので立替・カテゴリ・削除は出さず、分割の編集だけ持たせる
+function renderInstTxRow(t){
+  const p=t._inst,sch=instSchedule(p),paid=instPaidCount(p);
+  const rowId=t.id;
+  const expanded=state.expandedTxIds.has(rowId);
+  const rest=instRemaining(p);
+  const done=t._instNo<=paid;
+  const info=`<div class="inst-info">
+      <div class="label">📆 ${p.count}回払いの ${t._instNo}回目</div>
+      <div class="inst-bar"><span style="width:${Math.round(paid/sch.length*100)}%"></span></div>
+      <div class="row"><span>請求済み</span><b>${paid} / ${sch.length}回</b></div>
+      <div class="row"><span>のこり</span><b>${sch.length-paid}回・¥${rest.toLocaleString()}</b></div>
+      <div class="row"><span>お支払い総額</span><b>¥${instTotal(p).toLocaleString()}</b></div>
+      <div class="row"><span>うち手数料</span><b>¥${(+p.fee||0).toLocaleString()}</b></div>
+    </div>`;
+  const actions=`<div class="tx-actions"><button class="btn-mini primary" onclick="event.stopPropagation();openInstModal('${p.id}')">📆 分割を編集</button></div>`;
+  return `<div class="tx" data-id="${rowId}">
+    <div onclick="toggleTxExpand('${rowId}')">
+      <div class="desc">${escapeHtml(displayMerchantName(t.description))}</div>
+      <div class="meta"><span class="inst-tag">📆 ${t._instNo}/${sch.length}回目</span><span class="cat-tag">${escapeHtml(t.category)}</span>${done?'<span class="cat-tag">請求済み</span>':''}<span>のこり${sch.length-paid}回</span></div>
+      ${expanded?info+actions:''}
+    </div>
+    <div class="tx-side"><div class="amount">¥${t.amount.toLocaleString()}</div><div class="tx-chev ${expanded?'open':''}">›</div></div>
+  </div>`;
+}
 function renderTxRow(t){
+  if(t._virtual)return renderInstTxRow(t);
+  const inst=instForTx(t.id);
   const loans=getLoansForTx(t.id);
   const lt=loans.reduce((s,l)=>s+l.amount,0);
   const self=t.amount-lt;
@@ -1398,10 +1603,28 @@ function renderTxRow(t){
   }
   const actions=`<div class="tx-actions">
         <button class="btn-mini" onclick="event.stopPropagation();openCatModal('${t.id}')">🏷 ${escapeHtml(t.category)}</button>
-        <button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>
+        ${inst?'':`<button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>`}
         ${loans.length>0?`<button class="btn-mini" onclick="event.stopPropagation();switchTab('loans')">台帳で見る</button>`:''}
+        ${inst?`<button class="btn-mini primary" onclick="event.stopPropagation();openInstModal('${inst.id}')">📆 分割を編集</button>`
+              :`<button class="btn-mini" onclick="event.stopPropagation();openInstModal(null,'${t.id}')">📆 分割にする</button>`}
         <button class="btn-mini danger" onclick="event.stopPropagation();deleteTx('${t.id}')">🗑 削除</button>
       </div>`;
+  // 分割に変換済みの元明細：この期に請求されないので金額は取り消し線。中身は残す（何を買ったか消さない）
+  let instHtml='';
+  if(inst){
+    const sch=instSchedule(inst),paid=instPaidCount(inst);
+    instHtml=`<div class="inst-info">
+      <div class="label">📆 この買い物は${sch.length}回払いに変わりました（この期の請求からは外しています）</div>
+      <div class="inst-bar"><span style="width:${Math.round(paid/sch.length*100)}%"></span></div>
+      <div class="row"><span>請求済み</span><b>${paid} / ${sch.length}回</b></div>
+      <div class="row"><span>のこり</span><b>${sch.length-paid}回・¥${instRemaining(inst).toLocaleString()}</b></div>
+      <div class="row"><span>お支払い総額</span><b>¥${instTotal(inst).toLocaleString()}</b></div>
+      <div class="row"><span>うち手数料</span><b>¥${(+inst.fee||0).toLocaleString()}</b></div>
+      <div class="row"><span>初回の請求</span><b>${cycleLabel(inst.startCycle,true)}</b></div>
+    </div>`;
+  }
+  const instTag=inst?`<span class="inst-tag">📆 ${instSchedule(inst).length}回払いに変換</span>`:'';
+  const struck=(fullyLoaned||!!inst)?'struck':'';
   const note=(t.note||'').trim();
   const noteTag=note?`<span class="note-mini">📝 ${escapeHtml(note)}</span>`:'';
   const noteEdit=`<div class="tx-note-edit"><label>メモ（何に使った？）</label><textarea rows="1" placeholder="例: 友人との夕食代、仕事用の参考書" onclick="event.stopPropagation()" onchange="saveTxNote('${t.id}',this.value)">${escapeHtml(t.note||'')}</textarea></div>`;
@@ -1409,10 +1632,10 @@ function renderTxRow(t){
   return `<div class="${classes.join(' ')}" data-id="${t.id}">
     <div onclick="toggleTxExpand('${t.id}')">
       <div class="desc">${escapeHtml(displayMerchantName(t.description))}</div>
-      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}${noteTag}</div>
-      ${expanded?strip+amzHtml+noteEdit+actions:''}
+      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${instTag}${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}${noteTag}</div>
+      ${expanded?instHtml+strip+amzHtml+noteEdit+actions:''}
     </div>
-    <div class="tx-side"><div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div><div class="tx-chev ${expanded?'open':''}">›</div></div>
+    <div class="tx-side"><div class="amount ${struck}">¥${t.amount.toLocaleString()}</div><div class="tx-chev ${expanded?'open':''}">›</div></div>
   </div>`;
 }
 // 表示専用の店名整形（元descは常に保持）：
@@ -1545,8 +1768,10 @@ function deleteTx(id){
   const loc=findTxLocation(id);if(!loc)return;
   const t=loc.tx;
   const hasLoan=getLoansForTx(id).length>0;
-  openConfirmModal('明細を削除',`「${displayMerchantName(t.description)}」 ¥${t.amount.toLocaleString()} を削除しますか？`+(hasLoan?'\n※この明細から作った立て替えは台帳に残ります。':''),()=>{
+  const inst=instForTx(id);
+  openConfirmModal('明細を削除',`「${displayMerchantName(t.description)}」 ¥${t.amount.toLocaleString()} を削除しますか？`+(hasLoan?'\n※この明細から作った立て替えは台帳に残ります。':'')+(inst?'\n※この明細から作った分割払いは残ります（支払いは続くため）。':''),()=>{
     data.deletedTxIds[id]=Date.now();
+    if(inst)inst.txId=null;                          // 元明細が消えても分割の支払い義務は消えないので、紐付けだけ外す
     const arr=(data.months[loc.key].transactions||[]).filter(x=>x.id!==id);
     if(arr.length){data.months[loc.key].transactions=arr;}
     else{delete data.months[loc.key];const ks=Object.keys(data.months).sort();state.currentMonth=ks.length?ks[ks.length-1]:null;}
@@ -1602,10 +1827,129 @@ function assignCategory(cat){
   render();
 }
 
+/* ===== 分割払い：一覧・登録・編集 ===== */
+// 取込で見つけた「分割の合図」から登録へ。同じ金額の明細が1件だけなら、それを元明細として自動で結びつける
+function openInstFromPending(amount){
+  const cands=allTxArr(data).filter(t=>t.amount===amount&&!instForTx(t.id));
+  cands.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  openInstModal(null,cands.length?cands[0].id:null);
+  if(!cands.length){
+    document.getElementById('instPrincipal').value=amount;
+    document.getElementById('instModalSub').textContent=`カードで ¥${amount.toLocaleString()} が分割払いに切り替わっています。元になった明細が見つからないので、お店の名前だけ入れてください。`;
+    renderInstPreview();
+  }
+}
+function renderInstSummary(){
+  const card=document.getElementById('instSummaryCard');
+  const body=document.getElementById('instSummaryBody');
+  if(!card||!body)return;
+  const list=instList();
+  if(!list.length){card.style.display='none';body.innerHTML='';return;}
+  card.style.display='';
+  const live=list.filter(p=>!instIsDone(p)),done=list.filter(p=>instIsDone(p));
+  const total=instTotalRemaining();
+  const row=p=>{
+    const sch=instSchedule(p),paid=instPaidCount(p),fin=instIsDone(p);
+    return `<button class="inst-sum-row" onclick="openInstModal('${p.id}')">
+      <div><div class="isr-name">${escapeHtml(displayMerchantName(instName(p)))}</div>
+      <div class="isr-meta">${fin?'完済':`${paid}/${sch.length}回 請求済み・のこり${sch.length-paid}回`} ／ 月々¥${(sch[0]?sch[0].amount:0).toLocaleString()} ／ 初回 ${cycleLabel(p.startCycle)}</div></div>
+      <div class="isr-amt">${fin?'—':'¥'+instRemaining(p).toLocaleString()}</div>
+    </button>`;
+  };
+  body.innerHTML=`<div class="inst-total"><span class="it-label">これから払う残債（全${live.length}件）</span><span class="it-amt">¥${total.toLocaleString()}</span></div>
+    <div class="inst-sum-list">${live.map(row).join('')}${done.length?`<div class="muted" style="font-size:11px;margin-top:6px">完済 ${done.length}件</div>`+done.map(row).join(''):''}</div>`;
+}
+// 初回の請求期間の選択肢：既存サイクル＋前後の余白（未来12ヶ月ぶん）
+function fillInstCycleOptions(sel){
+  const el=document.getElementById('instStart');if(!el)return;
+  const s=new Set(allCycleKeys());
+  const base=currentCycleKey()||[...s].sort().pop();
+  if(base)for(let i=-12;i<=12;i++)s.add(cycleAdd(base,i));
+  if(sel)s.add(sel);
+  const keys=[...s].sort();
+  el.innerHTML=keys.map(k=>`<option value="${k}" ${k===sel?'selected':''}>${cycleLabel(k,true)}</option>`).join('');
+}
+// txId を渡すと「その明細を分割に変える」。instId を渡すと編集。どちらも無ければ空から手入力
+function openInstModal(instId,txId){
+  const p=instId?findInst(instId):null;
+  state.instEditingId=p?p.id:null;
+  state.instTargetTxId=p?(p.txId||null):(txId||null);
+  const tx=state.instTargetTxId?findTx(state.instTargetTxId):null;
+  if(tx&&!p&&getLoansForTx(tx.id).length>0){
+    alert('この明細には立て替えが登録されています。\n先に立て替えを外してから分割に変換してください（金額の二重管理を防ぐため）。');
+    return;
+  }
+  document.getElementById('instModalTitle').textContent=p?'📆 分割払いを編集':'📆 分割払いに登録';
+  document.getElementById('instModalSub').textContent=p?'カードの「お支払い状況」に合わせて直せます。'
+    :(tx?`「${displayMerchantName(tx.description)}」¥${tx.amount.toLocaleString()} を分割払いに切り替えます。`
+        :'カードの明細に出てこない分割払いを手で登録します。');
+  document.getElementById('instDesc').value=p?instName(p):(tx?tx.description:'');
+  document.getElementById('instPrincipal').value=p?(p.principal||''):(tx?tx.amount:'');
+  document.getElementById('instFee').value=p?(p.fee||''):'';
+  document.getElementById('instCount').value=p?(p.count||3):3;
+  document.getElementById('instMonthly').value=p&&p.monthly?p.monthly:'';
+  const defStart=p?p.startCycle:(currentCycleKey()||state.currentMonth);
+  fillInstCycleOptions(defStart);
+  document.getElementById('instDeleteBtn').style.display=p?'':'none';
+  renderInstPreview();
+  document.getElementById('instModal').classList.add('show');
+}
+function closeInstModal(){
+  document.getElementById('instModal').classList.remove('show');
+  state.instEditingId=null;state.instTargetTxId=null;
+}
+function readInstForm(){
+  return {
+    description:(document.getElementById('instDesc').value||'').trim(),
+    principal:parseInt(document.getElementById('instPrincipal').value,10)||0,
+    fee:parseInt(document.getElementById('instFee').value,10)||0,
+    count:parseInt(document.getElementById('instCount').value,10)||0,
+    monthly:parseInt(document.getElementById('instMonthly').value,10)||0,
+    startCycle:document.getElementById('instStart').value
+  };
+}
+function renderInstPreview(){
+  const el=document.getElementById('instPreview');if(!el)return;
+  const f=readInstForm();
+  if(!f.principal||!f.count||!f.startCycle){el.innerHTML='<div class="ip-head">金額と回数を入れると、各月の請求予定が出ます</div>';return;}
+  const sch=instSchedule(f),cur=currentCycleKey();
+  el.innerHTML=`<div class="ip-head">請求予定（お支払い総額 ¥${instTotal(f).toLocaleString()}＝元本¥${f.principal.toLocaleString()}＋手数料¥${f.fee.toLocaleString()}）</div>`
+    +sch.map(x=>`<div class="ip-row ${x.cycle<cur?'past':''}"><span>${x.no}回目 ${cycleLabel(x.cycle,true)}</span><span>¥${x.amount.toLocaleString()}</span></div>`).join('');
+}
+function saveInst(){
+  const f=readInstForm();
+  if(!f.principal||f.principal<=0){alert('ご利用金額（元本）を入れてください');return;}
+  if(!f.count||f.count<1){alert('回数を入れてください');return;}
+  if(!f.startCycle){alert('初回の請求期間を選んでください');return;}
+  if(!f.description)f.description='分割払い';
+  const tx=state.instTargetTxId?findTx(state.instTargetTxId):null;
+  if(state.instEditingId){
+    const p=findInst(state.instEditingId);if(!p)return;
+    Object.assign(p,f);
+  }else{
+    data.installments.push({
+      id:'ip_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+      txId:tx?tx.id:null,category:tx?tx.category:catForImport(f.description),
+      ...f,createdAt:Date.now()
+    });
+  }
+  // 取込時に見つけた「分割の設定待ち」で、同じ元本のものは解消済みとして消す
+  data.pendingInst=(data.pendingInst||[]).filter(s=>s.amount!==f.principal);
+  save();closeInstModal();render();
+}
+function deleteInst(){
+  const p=findInst(state.instEditingId);if(!p)return;
+  openConfirmModal('分割払いを削除',`「${displayMerchantName(instName(p))}」の分割払いを削除しますか？\n${p.txId?'元の明細は残り、その期の請求に戻ります。':''}`,()=>{
+    data.deletedInstallmentIds[p.id]=Date.now();
+    data.installments=instList().filter(x=>x.id!==p.id);
+    save();closeInstModal();render();
+  });
+}
+
 function deleteMonth(){
   if(!state.currentMonth)return;
   openConfirmModal('この期間を削除',`${cycleLabel(state.currentMonth,true)} の明細をすべて削除しますか？\nクレカ明細から作成された立て替えは残ります（台帳から手動で削除してください）。`,()=>{
-    const now=Date.now();(data.months[state.currentMonth]?.transactions||[]).forEach(t=>{data.deletedTxIds[t.id]=now;});
+    const now=Date.now();(data.months[state.currentMonth]?.transactions||[]).forEach(t=>{data.deletedTxIds[t.id]=now;const ip=instForTx(t.id);if(ip)ip.txId=null;});
     delete data.months[state.currentMonth];save();
     const ms=Object.keys(data.months).sort();
     state.currentMonth=ms.length>0?ms[ms.length-1]:null;
@@ -2066,10 +2410,13 @@ async function importData(file){
   if(!imported||typeof imported!=='object'||!imported.months){
     alert('このファイルはクレジット明細マネージャーのバックアップではないようです。');return;
   }
-  const summary=`期間数: ${Object.keys(imported.months||{}).length}\nAmazon注文: ${(imported.amazonOrders||[]).length}件\n立て替え: ${(imported.loans||[]).length}件\n回収レコード: ${(imported.payments||[]).length}件`;
+  const summary=`期間数: ${Object.keys(imported.months||{}).length}\nAmazon注文: ${(imported.amazonOrders||[]).length}件\n立て替え: ${(imported.loans||[]).length}件\n回収レコード: ${(imported.payments||[]).length}件\n分割払い: ${(imported.installments||[]).length}件`;
   openConfirmModal('データのインポート',`現在のデータを置き換えますか？\n\n読み込むデータ:\n${summary}`,()=>{
-    data={months:{},amazonOrders:[],loans:[],payments:[],people:[],...imported};
-    migrateToCycles();save();
+    data={months:{},amazonOrders:[],loans:[],payments:[],installments:[],pendingInst:[],people:[],deletedInstallmentIds:{},...imported};
+    if(!data.installments)data.installments=[];
+    if(!data.pendingInst)data.pendingInst=[];
+    if(!data.deletedInstallmentIds)data.deletedInstallmentIds={};
+    migrateToCycles();purgeInstallmentLedgerTx();save();
     const ms=Object.keys(data.months).sort();
     state.currentMonth=ms.length>0?ms[ms.length-1]:null;
     render();
