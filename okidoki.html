@@ -134,6 +134,30 @@
   }
   .hint{color:var(--sub); font-size:12px; line-height:1.7; margin-top:10px;}
 
+  /* 画像で保存ボタン */
+  .save-img{
+    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
+    margin-top:16px; width:100%; padding:13px; font-size:15px; font-weight:700; letter-spacing:.03em;
+    color:#fff; background:var(--accent); border:none; border-radius:13px;
+  }
+  .save-img:active{opacity:.85;}
+  .save-img:disabled{opacity:.4; cursor:default;}
+
+  /* 画像プレビュー・オーバーレイ */
+  .ov{position:fixed; inset:0; z-index:2000; background:rgba(36,35,33,.55);
+    -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center; padding:22px;}
+  .ov-box{max-width:420px; width:100%; background:var(--card); border-radius:18px; padding:16px;
+    max-height:92vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.32);}
+  .ov-box img{width:100%; height:auto; border-radius:10px; display:block; border:1px solid var(--line);}
+  .ov-actions{display:flex; gap:10px; margin-top:14px;}
+  .ov-dl, .ov-close{flex:1; text-align:center; padding:12px; border-radius:11px; font-size:14.5px;
+    font-weight:700; font-family:inherit; cursor:pointer; text-decoration:none; line-height:1.2;}
+  .ov-dl{background:var(--accent); color:#fff; border:none;}
+  .ov-close{background:var(--surface); color:var(--ink); border:1px solid var(--line);
+    -webkit-appearance:none; appearance:none;}
+  .ov-hint{color:var(--sub); font-size:12px; text-align:center; margin-top:11px; line-height:1.6;}
+
   /* ===== PC・タブレット：横幅を活かした2カラム ===== */
   @media(min-width:760px){
     body{padding:env(safe-area-inset-top) 32px 72px;}
@@ -202,6 +226,7 @@
       <section class="card">
         <h2><span class="num">③</span>タイムライン</h2>
         <div id="timeline"></div>
+        <button type="button" class="save-img" id="saveImgBtn">🖼️ 画像で保存・共有</button>
       </section>
 
       <div class="foot">
@@ -261,6 +286,8 @@
   var elGoalTime  = document.getElementById("goalTime");
   var elSteps     = document.getElementById("steps");
   var elTimeline  = document.getElementById("timeline");
+  var elSaveImg   = document.getElementById("saveImgBtn");
+  function setExportEnabled(on){ if(elSaveImg) elSaveImg.disabled = !on; }
 
   /* ---------- 時刻ユーティリティ ---------- */
   function parseTime(t){
@@ -318,46 +345,55 @@
     });
   }
 
-  /* ---------- タイムライン描画（値が変わるたび） ---------- */
-  function renderTimeline(){
+  /* ---------- 逆算モデル（DOM描画・画像書き出しで共有） ---------- */
+  function computeModel(){
     var goalMin = parseTime(state.goal.time);
-    if(goalMin === null){
-      elTimeline.innerHTML = '<p class="empty">ゴールの時刻を入れてください。</p>';
-      return;
-    }
+    if(goalMin === null) return null;
     var goalLabel = state.goal.label.trim() || "ゴール";
 
-    // 各区間の開始時刻 = ゴール − その区間以降の合計
     var total = state.steps.reduce(function(a, s){ return a + Math.max(0, +s.min || 0); }, 0);
+    // 各区間の開始時刻 = ゴール − その区間以降の合計
     var starts = [];
-    var acc = goalMin;
-    // 末尾から積み上げると各区間の開始が出る
     var suffix = 0;
     for(var i = state.steps.length - 1; i >= 0; i--){
       suffix += Math.max(0, +state.steps[i].min || 0);
       starts[i] = goalMin - suffix;
     }
 
-    var html = '<div class="tl">';
+    var items = [], gaps = [];
     if(state.steps.length === 0){
-      var g0 = fmt(goalMin);
-      html += tlItem(g0, goalLabel, "goal");
+      items.push({ f: fmt(goalMin), label: goalLabel, mark: "goal" });
     } else {
       state.steps.forEach(function(s, i){
-        var f = fmt(starts[i]);
-        html += tlItem(f, s.label.trim() || "（無題）", i === 0 ? "wake" : "");
-        html += tlGap(Math.max(0, +s.min || 0));
+        items.push({ f: fmt(starts[i]), label: s.label.trim() || "（無題）", mark: i === 0 ? "wake" : "" });
+        gaps.push(Math.max(0, +s.min || 0));
       });
-      var g = fmt(goalMin);
-      html += tlItem(g, goalLabel, "goal");
+      items.push({ f: fmt(goalMin), label: goalLabel, mark: "goal" });
     }
-    html += '</div>';
-
     var wake = starts.length ? fmt(starts[0]) : fmt(goalMin);
+    return { goalMin: goalMin, goalLabel: goalLabel, total: total, items: items, gaps: gaps, wake: wake };
+  }
+
+  /* ---------- タイムライン描画（値が変わるたび） ---------- */
+  function renderTimeline(){
+    var m = computeModel();
+    if(!m){
+      elTimeline.innerHTML = '<p class="empty">ゴールの時刻を入れてください。</p>';
+      setExportEnabled(false);
+      return;
+    }
+    setExportEnabled(true);
+
+    var html = '<div class="tl">';
+    m.items.forEach(function(it, i){
+      html += tlItem(it.f, it.label, it.mark);
+      if(i < m.gaps.length) html += tlGap(m.gaps[i]);
+    });
+    html += '</div>';
     html +=
       '<div class="summary">' +
-        '<span>合計 ' + durText(total) + '</span>' +
-        '<span>起きるのは <b>' + (wake.day ? wake.day + " " : "") + wake.time + '</b></span>' +
+        '<span>合計 ' + durText(m.total) + '</span>' +
+        '<span>起きるのは <b>' + (m.wake.day ? m.wake.day + " " : "") + m.wake.time + '</b></span>' +
       '</div>';
 
     elTimeline.innerHTML = html;
@@ -447,6 +483,234 @@
     elGoalTime.value  = state.goal.time;
     renderSteps(); renderTimeline(); save();
   });
+
+  /* ---------- 画像で保存・共有 ---------- */
+  var FAM = '"Zen Maru Gothic", -apple-system, BlinkMacSystemFont, "Hiragino Maru Gothic ProN", sans-serif';
+  var C = {
+    paper:"#F4F2EE", card:"#FBFAF7", surface:"#ECE9E3", ink:"#242321",
+    sub:"#77736B", line:"#D8D4CC", ghost:"#BEB9B0", accent:"#C7743B", accentSoft:"#F3E4D6"
+  };
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function fitText(ctx, text, maxW){
+    if(ctx.measureText(text).width <= maxW) return text;
+    var t = text;
+    while(t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+    return t + "…";
+  }
+
+  function drawCard(m){
+    var DPR = 2, W = 720, PAD = 46;
+    var dotX = PAD + 9, timeX = PAD + 36, labelX = PAD + 152;
+    var contentR = W - PAD;
+    var STEP = 74;                      // 項目の中心どうしの間隔
+    var timelineTop = 168;
+    var n = m.items.length;
+    var firstCY = timelineTop + 22;
+    var lastCY = firstCY + (n - 1) * STEP;
+    var dividerY = lastCY + 44;
+    var sumY = dividerY + 36;
+    var footY = sumY + 50;
+    var H = footY + 30;
+
+    var canvas = document.createElement("canvas");
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    var ctx = canvas.getContext("2d");
+    ctx.scale(DPR, DPR);
+    ctx.textBaseline = "middle";
+
+    // 背景＋カード
+    ctx.fillStyle = C.paper;
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.shadowColor = "rgba(36,35,33,.14)";
+    ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+    ctx.fillStyle = C.card;
+    roundRect(ctx, 16, 16, W - 32, H - 32, 22); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+    roundRect(ctx, 16, 16, W - 32, H - 32, 22); ctx.stroke();
+
+    // ヘッダー
+    ctx.textAlign = "left";
+    try{ ctx.letterSpacing = "3px"; }catch(e){}
+    ctx.font = '700 13px ' + FAM;
+    ctx.fillStyle = C.sub;
+    ctx.fillText("おきどき ・ 起きる時間の逆算", PAD, 56);
+    try{ ctx.letterSpacing = "0px"; }catch(e){}
+
+    ctx.font = '700 27px ' + FAM;
+    ctx.fillStyle = C.ink;
+    var title = fitText(ctx, m.goalLabel, contentR - PAD);
+    ctx.fillText(title, PAD, 96);
+
+    ctx.font = '500 15px ' + FAM;
+    ctx.fillStyle = C.sub;
+    ctx.fillText("⤷ " + m.items[n - 1].f.time + " に間に合わせる", PAD, 128);
+
+    // タイムラインの縦レール
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(dotX, firstCY); ctx.lineTo(dotX, lastCY); ctx.stroke();
+
+    // 各項目
+    m.items.forEach(function(it, i){
+      var cy = firstCY + i * STEP;
+
+      // 区間の分数（前の項目との間）
+      if(i > 0){
+        var midY = cy - STEP / 2;
+        ctx.font = '500 13px ' + FAM;
+        ctx.fillStyle = C.sub;
+        ctx.textAlign = "left";
+        ctx.fillText("↓ " + durText(m.gaps[i - 1]), labelX, midY);
+      }
+
+      // ドット
+      ctx.beginPath();
+      ctx.arc(dotX, cy, 7, 0, Math.PI * 2);
+      if(it.mark === "wake"){ ctx.fillStyle = C.accent; ctx.fill(); }
+      else if(it.mark === "goal"){ ctx.fillStyle = C.ink; ctx.fill(); }
+      else{
+        ctx.fillStyle = C.card; ctx.fill();
+        ctx.lineWidth = 2.5; ctx.strokeStyle = C.ghost; ctx.stroke();
+      }
+
+      // 時刻
+      ctx.textAlign = "left";
+      if(it.f.day){
+        ctx.font = '500 11px ' + FAM; ctx.fillStyle = C.sub;
+        ctx.fillText(it.f.day, timeX, cy - 12);
+        ctx.font = '700 21px ' + FAM; ctx.fillStyle = C.ink;
+        ctx.fillText(it.f.time, timeX, cy + 5);
+      } else {
+        ctx.font = '700 21px ' + FAM; ctx.fillStyle = C.ink;
+        ctx.fillText(it.f.time, timeX, cy);
+      }
+
+      // タグ幅を先に計算してラベルを詰める
+      var tagText = it.mark === "wake" ? "起きる" : it.mark === "goal" ? "ゴール" : "";
+      var tagW = 0;
+      if(tagText){ ctx.font = '700 12px ' + FAM; tagW = ctx.measureText(tagText).width + 20 + 12; }
+
+      // ラベル
+      ctx.font = '500 17px ' + FAM; ctx.fillStyle = C.ink;
+      var label = fitText(ctx, it.label, contentR - labelX - tagW);
+      ctx.fillText(label, labelX, cy);
+
+      // タグ（ピル）
+      if(tagText){
+        var lw = ctx.measureText(label).width;
+        var px = labelX + lw + 12, pw = ctx.measureText(tagText).width + 20, ph = 22;
+        // ↑ measureText はラベルフォントのまま。タグフォントに戻して幅を測り直す
+        ctx.font = '700 12px ' + FAM;
+        pw = ctx.measureText(tagText).width + 20;
+        roundRect(ctx, px, cy - ph / 2, pw, ph, ph / 2);
+        if(it.mark === "wake"){ ctx.fillStyle = C.accentSoft; ctx.fill(); ctx.fillStyle = C.accent; }
+        else { ctx.fillStyle = C.ink; ctx.fill(); ctx.fillStyle = C.paper; }
+        ctx.textAlign = "center";
+        ctx.fillText(tagText, px + pw / 2, cy + 1);
+        ctx.textAlign = "left";
+      }
+    });
+
+    // 区切り線
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PAD, dividerY); ctx.lineTo(contentR, dividerY); ctx.stroke();
+
+    // サマリー
+    ctx.font = '500 14px ' + FAM; ctx.fillStyle = C.sub;
+    ctx.textAlign = "left";
+    ctx.fillText("合計 " + durText(m.total), PAD, sumY);
+
+    var wakeStr = (m.wake.day ? m.wake.day + " " : "") + m.wake.time;
+    ctx.font = '700 17px ' + FAM;
+    var wakeW = ctx.measureText(wakeStr).width;
+    ctx.font = '500 14px ' + FAM;
+    var lblW = ctx.measureText("起きるのは ").width;
+    var startX = contentR - wakeW - lblW;
+    ctx.fillStyle = C.sub; ctx.fillText("起きるのは ", startX, sumY);
+    ctx.font = '700 17px ' + FAM; ctx.fillStyle = C.ink;
+    ctx.fillText(wakeStr, startX + lblW, sumY);
+
+    // フッター
+    ctx.font = '400 11px ' + FAM; ctx.fillStyle = C.ghost;
+    ctx.textAlign = "center";
+    ctx.fillText("tsumiki-apps.github.io/apps/okidoki", W / 2, footY);
+
+    return canvas;
+  }
+
+  function showPreview(url){
+    var ov = document.createElement("div");
+    ov.className = "ov";
+    ov.innerHTML =
+      '<div class="ov-box">' +
+        '<img src="' + url + '" alt="おきどきの逆算タイムライン">' +
+        '<div class="ov-actions">' +
+          '<a class="ov-dl" href="' + url + '" download="okidoki.png">画像を保存</a>' +
+          '<button type="button" class="ov-close">閉じる</button>' +
+        '</div>' +
+        '<p class="ov-hint">スマホは画像を長押し →「写真に追加」でも保存できます</p>' +
+      '</div>';
+    document.body.appendChild(ov);
+    function close(){ ov.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 2000); }
+    ov.addEventListener("click", function(e){
+      if(e.target === ov || e.target.classList.contains("ov-close")) close();
+    });
+  }
+
+  function exportImage(){
+    var m = computeModel();
+    if(!m) return;
+    var old = elSaveImg.textContent;
+    elSaveImg.disabled = true; elSaveImg.textContent = "作成中…";
+
+    function finish(){ elSaveImg.disabled = false; elSaveImg.textContent = old; }
+    function render(){
+      var canvas;
+      try{ canvas = drawCard(m); }catch(e){ finish(); return; }
+      canvas.toBlob(function(blob){
+        if(!blob){ finish(); return; }
+        var file = new File([blob], "okidoki.png", { type: "image/png" });
+        var shareText = m.goalLabel + " " + m.items[m.items.length - 1].f.time +
+          " → 起きるのは " + (m.wake.day ? m.wake.day + " " : "") + m.wake.time;
+        if(navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share){
+          navigator.share({ files: [file], title: "おきどき", text: shareText })
+            .catch(function(){})
+            .finally(function(){ finish(); });
+          return;
+        }
+        var url = URL.createObjectURL(blob);
+        // PC等はダウンロードも走らせつつ、プレビューで長押し保存にも対応
+        try{
+          var a = document.createElement("a");
+          a.href = url; a.download = "okidoki.png";
+          document.body.appendChild(a); a.click(); a.remove();
+        }catch(e){}
+        showPreview(url);
+        finish();
+      }, "image/png");
+    }
+    // フォント読込を待ってから描画（未読込だと別フォントで書き出される）
+    if(document.fonts && document.fonts.load){
+      Promise.all([
+        document.fonts.load('700 21px "Zen Maru Gothic"'),
+        document.fonts.load('500 17px "Zen Maru Gothic"')
+      ]).then(function(){ return document.fonts.ready; }).then(render, render);
+    } else {
+      render();
+    }
+  }
+
+  elSaveImg.addEventListener("click", exportImage);
 
   /* ---------- 初期描画 ---------- */
   renderSteps();
