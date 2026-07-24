@@ -110,15 +110,18 @@
     font-variant-numeric:tabular-nums; white-space:nowrap;}
   .tl-time .day{font-size:11px; font-weight:500; color:var(--sub); display:block; letter-spacing:.02em;}
   .tl-label{font-size:15px; color:var(--ink); min-width:0; overflow-wrap:anywhere;}
+  .tl-label.wake-label{color:var(--accent); font-weight:700;}
   .tl-tag{display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.04em;
     padding:2px 8px; border-radius:999px; margin-left:8px; vertical-align:middle; white-space:nowrap;}
   .tag-wake{background:var(--accent-soft); color:var(--accent);}
   .tag-goal{background:var(--ink); color:var(--paper);}
-  .tl-gap{display:flex; align-items:center; gap:13px; height:26px; color:var(--sub); font-size:11.5px;}
+  .tl-gap{display:flex; align-items:center; gap:13px; min-height:40px; padding:3px 0;}
   .tl-gap .tl-dot-col{align-self:stretch; position:relative;}
-  .tl-gap .line{position:absolute; left:50%; top:-3px; bottom:-3px; width:2px;
+  .tl-gap .line{position:absolute; left:50%; top:-4px; bottom:-4px; width:2px;
     margin-left:-1px; background:var(--line); border-radius:2px;}
-  .tl-gap .gap-min{padding-left:1px;}
+  .gap-body{min-width:0; display:flex; align-items:baseline; gap:9px; flex-wrap:wrap;}
+  .gap-name{font-size:14.5px; color:var(--ink); overflow-wrap:anywhere;}
+  .gap-min{font-size:12px; color:var(--sub); white-space:nowrap; font-variant-numeric:tabular-nums;}
 
   .summary{margin-top:16px; padding-top:14px; border-top:1px solid var(--line);
     display:flex; justify-content:space-between; align-items:baseline; color:var(--sub); font-size:12.5px;}
@@ -349,33 +352,41 @@
     }
   }
 
-  /* ---------- 逆算モデル（DOM描画・画像書き出しで共有） ---------- */
+  /* ---------- 逆算モデル（DOM描画・画像書き出しで共有） ----------
+     checkpoints = 時刻の"瞬間"（先頭=起きる / 末尾=ゴール / 途中=時刻のみ）
+     segments    = 瞬間と瞬間の間にやること（区間の名前＋分数）
+     時系列（上=起きる → 下=ゴール）で並ぶ。 */
   function computeModel(){
     var goalMin = parseTime(state.goal.time);
     if(goalMin === null) return null;
     var goalLabel = state.goal.label.trim() || "ゴール";
+    var N = state.steps.length;
 
     var total = state.steps.reduce(function(a, s){ return a + Math.max(0, +s.min || 0); }, 0);
     // 各区間の開始時刻 = ゴール − その区間以降の合計
     var starts = [];
     var suffix = 0;
-    for(var i = state.steps.length - 1; i >= 0; i--){
+    for(var i = N - 1; i >= 0; i--){
       suffix += Math.max(0, +state.steps[i].min || 0);
       starts[i] = goalMin - suffix;
     }
 
-    var items = [], gaps = [];
-    if(state.steps.length === 0){
-      items.push({ f: fmt(goalMin), label: goalLabel, mark: "goal" });
+    var checkpoints = [], segments = [];
+    if(N === 0){
+      checkpoints.push({ f: fmt(goalMin), label: goalLabel, mark: "goal" });
     } else {
-      state.steps.forEach(function(s, i){
-        items.push({ f: fmt(starts[i]), label: s.label.trim() || "（無題）", mark: i === 0 ? "wake" : "" });
-        gaps.push(Math.max(0, +s.min || 0));
-      });
-      items.push({ f: fmt(goalMin), label: goalLabel, mark: "goal" });
+      for(var j = 0; j < N; j++){
+        checkpoints.push({
+          f: fmt(starts[j]),
+          label: j === 0 ? "起きる" : "",
+          mark: j === 0 ? "wake" : ""
+        });
+        segments.push({ label: state.steps[j].label.trim() || "（無題）", min: Math.max(0, +state.steps[j].min || 0) });
+      }
+      checkpoints.push({ f: fmt(goalMin), label: goalLabel, mark: "goal" });
     }
-    var wake = starts.length ? fmt(starts[0]) : fmt(goalMin);
-    return { goalMin: goalMin, goalLabel: goalLabel, total: total, items: items, gaps: gaps, wake: wake };
+    var wake = N ? fmt(starts[0]) : fmt(goalMin);
+    return { goalMin: goalMin, goalLabel: goalLabel, total: total, checkpoints: checkpoints, segments: segments, wake: wake };
   }
 
   /* ---------- タイムライン描画（値が変わるたび） ---------- */
@@ -388,12 +399,12 @@
     }
     setExportEnabled(true);
 
-    // 「下から順にたどる」：ゴールを上、起きるを下に置くため反転して描画
+    // 上=起きる → 下=ゴール（時系列）。やることは瞬間と瞬間の間（矢印）に置く。
     var html = '<div class="tl">';
-    for(var i = m.items.length - 1; i >= 0; i--){
-      html += tlItem(m.items[i].f, m.items[i].label, m.items[i].mark);
-      if(i > 0) html += tlGap(m.gaps[i - 1]);
-    }
+    m.checkpoints.forEach(function(cp, i){
+      html += tlItem(cp.f, cp.label, cp.mark);
+      if(i < m.segments.length) html += tlGap(m.segments[i]);
+    });
     html += '</div>';
     html +=
       '<div class="summary">' +
@@ -405,20 +416,28 @@
   }
   function tlItem(f, label, mark){
     var cls = "tl-item" + (mark === "wake" ? " mark-wake" : mark === "goal" ? " mark-goal" : "");
-    var tag = "";
-    if(mark === "wake") tag = '<span class="tl-tag tag-wake">起きる</span>';
-    if(mark === "goal") tag = '<span class="tl-tag tag-goal">ゴール</span>';
+    var labelHtml;
+    if(mark === "goal"){
+      labelHtml = '<span class="tl-label">' + esc(label) + '<span class="tl-tag tag-goal">ゴール</span></span>';
+    } else if(mark === "wake"){
+      labelHtml = '<span class="tl-label wake-label">' + esc(label) + '</span>';
+    } else {
+      labelHtml = '<span class="tl-label"></span>';
+    }
     var dayHtml = f.day ? '<span class="day">' + f.day + '</span>' : '';
     return '<div class="' + cls + '">' +
         '<span class="tl-dot-col"><span class="tl-dot"></span></span>' +
         '<span class="tl-time">' + dayHtml + f.time + '</span>' +
-        '<span class="tl-label">' + esc(label) + tag + '</span>' +
+        labelHtml +
       '</div>';
   }
-  function tlGap(min){
+  function tlGap(seg){
     return '<div class="tl-gap">' +
         '<span class="tl-dot-col"><span class="line"></span></span>' +
-        '<span class="gap-min">↓ ' + durText(min) + '</span>' +
+        '<span class="gap-body">' +
+          '<span class="gap-name">' + esc(seg.label) + '</span>' +
+          '<span class="gap-min">' + durText(seg.min) + '</span>' +
+        '</span>' +
       '</div>';
   }
 
@@ -519,9 +538,9 @@
     var DPR = 2, W = 720, PAD = 46;
     var dotX = PAD + 9, timeX = PAD + 36, labelX = PAD + 152;
     var contentR = W - PAD;
-    var STEP = 74;                      // 項目の中心どうしの間隔
+    var STEP = 80;                      // 瞬間どうしの中心間隔（間に区間名が入る）
     var timelineTop = 168;
-    var n = m.items.length;
+    var n = m.checkpoints.length;
     var firstCY = timelineTop + 22;
     var lastCY = firstCY + (n - 1) * STEP;
     var dividerY = lastCY + 44;
@@ -562,33 +581,36 @@
 
     ctx.font = '500 15px ' + FAM;
     ctx.fillStyle = C.sub;
-    ctx.fillText("⤷ " + m.items[n - 1].f.time + " に間に合わせる", PAD, 128);
+    ctx.fillText("⤷ " + m.checkpoints[n - 1].f.time + " に間に合わせる", PAD, 128);
 
     // タイムラインの縦レール
     ctx.strokeStyle = C.line; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(dotX, firstCY); ctx.lineTo(dotX, lastCY); ctx.stroke();
 
-    // 各項目（「下から順にたどる」：ゴールを上・起きるを下に反転して描画）
-    var N = m.items.length;
-    for(var d = 0; d < N; d++){
-      var idx = N - 1 - d;
-      var it = m.items[idx];
-      var cy = firstCY + d * STEP;
+    // 各瞬間（上=起きる → 下=ゴール）。やること名は瞬間と瞬間の間に描く。
+    var N = m.checkpoints.length;
+    for(var i = 0; i < N; i++){
+      var cp = m.checkpoints[i];
+      var cy = firstCY + i * STEP;
 
-      // 区間の分数（この項目と一段下＝時系列で前の項目との間）
-      if(idx > 0){
+      // 区間（この瞬間と一段下の瞬間の間）にやること名＋分数
+      if(i < m.segments.length){
+        var seg = m.segments[i];
         var midY = cy + STEP / 2;
-        ctx.font = '500 13px ' + FAM;
-        ctx.fillStyle = C.sub;
         ctx.textAlign = "left";
-        ctx.fillText("↓ " + durText(m.gaps[idx - 1]), labelX, midY);
+        ctx.font = '500 15px ' + FAM; ctx.fillStyle = C.ink;
+        var segName = fitText(ctx, seg.label, contentR - labelX - 78);
+        ctx.fillText(segName, labelX, midY);
+        var nameW = ctx.measureText(segName).width;
+        ctx.font = '500 12.5px ' + FAM; ctx.fillStyle = C.sub;
+        ctx.fillText(durText(seg.min), labelX + nameW + 10, midY + 0.5);
       }
 
       // ドット
       ctx.beginPath();
       ctx.arc(dotX, cy, 7, 0, Math.PI * 2);
-      if(it.mark === "wake"){ ctx.fillStyle = C.accent; ctx.fill(); }
-      else if(it.mark === "goal"){ ctx.fillStyle = C.ink; ctx.fill(); }
+      if(cp.mark === "wake"){ ctx.fillStyle = C.accent; ctx.fill(); }
+      else if(cp.mark === "goal"){ ctx.fillStyle = C.ink; ctx.fill(); }
       else{
         ctx.fillStyle = C.card; ctx.fill();
         ctx.lineWidth = 2.5; ctx.strokeStyle = C.ghost; ctx.stroke();
@@ -596,38 +618,31 @@
 
       // 時刻
       ctx.textAlign = "left";
-      if(it.f.day){
+      if(cp.f.day){
         ctx.font = '500 11px ' + FAM; ctx.fillStyle = C.sub;
-        ctx.fillText(it.f.day, timeX, cy - 12);
+        ctx.fillText(cp.f.day, timeX, cy - 12);
         ctx.font = '700 21px ' + FAM; ctx.fillStyle = C.ink;
-        ctx.fillText(it.f.time, timeX, cy + 5);
+        ctx.fillText(cp.f.time, timeX, cy + 5);
       } else {
         ctx.font = '700 21px ' + FAM; ctx.fillStyle = C.ink;
-        ctx.fillText(it.f.time, timeX, cy);
+        ctx.fillText(cp.f.time, timeX, cy);
       }
 
-      // タグ幅を先に計算してラベルを詰める
-      var tagText = it.mark === "wake" ? "起きる" : it.mark === "goal" ? "ゴール" : "";
-      var tagW = 0;
-      if(tagText){ ctx.font = '700 12px ' + FAM; tagW = ctx.measureText(tagText).width + 20 + 12; }
-
-      // ラベル
-      ctx.font = '500 17px ' + FAM; ctx.fillStyle = C.ink;
-      var label = fitText(ctx, it.label, contentR - labelX - tagW);
-      ctx.fillText(label, labelX, cy);
-
-      // タグ（ピル）
-      if(tagText){
-        var lw = ctx.measureText(label).width;
-        var px = labelX + lw + 12, pw = ctx.measureText(tagText).width + 20, ph = 22;
-        // ↑ measureText はラベルフォントのまま。タグフォントに戻して幅を測り直す
+      // ラベル（先頭＝起きる／末尾＝ゴール。途中は時刻のみ）
+      if(cp.mark === "wake"){
+        ctx.font = '700 17px ' + FAM; ctx.fillStyle = C.accent; ctx.textAlign = "left";
+        ctx.fillText(cp.label, labelX, cy);
+      } else if(cp.mark === "goal"){
+        ctx.font = '700 17px ' + FAM; ctx.fillStyle = C.ink; ctx.textAlign = "left";
+        var glabel = fitText(ctx, cp.label, contentR - labelX - 78);
+        ctx.fillText(glabel, labelX, cy);
+        var glw = ctx.measureText(glabel).width;
         ctx.font = '700 12px ' + FAM;
-        pw = ctx.measureText(tagText).width + 20;
+        var pw = ctx.measureText("ゴール").width + 20, ph = 22, px = labelX + glw + 12;
         roundRect(ctx, px, cy - ph / 2, pw, ph, ph / 2);
-        if(it.mark === "wake"){ ctx.fillStyle = C.accentSoft; ctx.fill(); ctx.fillStyle = C.accent; }
-        else { ctx.fillStyle = C.ink; ctx.fill(); ctx.fillStyle = C.paper; }
-        ctx.textAlign = "center";
-        ctx.fillText(tagText, px + pw / 2, cy + 1);
+        ctx.fillStyle = C.ink; ctx.fill();
+        ctx.fillStyle = C.paper; ctx.textAlign = "center";
+        ctx.fillText("ゴール", px + pw / 2, cy + 1);
         ctx.textAlign = "left";
       }
     }
@@ -691,7 +706,7 @@
       canvas.toBlob(function(blob){
         if(!blob){ finish(); return; }
         var file = new File([blob], "okidoki.png", { type: "image/png" });
-        var shareText = m.goalLabel + " " + m.items[m.items.length - 1].f.time +
+        var shareText = m.goalLabel + " " + m.checkpoints[m.checkpoints.length - 1].f.time +
           " → 起きるのは " + (m.wake.day ? m.wake.day + " " : "") + m.wake.time;
         if(navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share){
           navigator.share({ files: [file], title: "おきどき", text: shareText })
