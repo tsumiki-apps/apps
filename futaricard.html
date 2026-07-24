@@ -599,13 +599,32 @@ function findHeaderIdx(cols,cands){
   return -1;
 }
 // 口座振替・支払い行（買い物ではない）は取り込まない
-const PAYMENT_RE=/(口座振替|お支払|ご入金|自動振替|カードお支払|リボお支払|ボーナス払い|振替|繰越|前回|今回お支払)/;
+const PAYMENT_RE=/(口座振替|お支払い金額|ご入金|自動振替|カードお支払|リボお支払|ボーナス払い|お振替|繰越|前回ご請求|今回お支払)/;
+const DATE_CELL_RE=/^\s*\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\s*$/;
+// セルを数値化（全角数字・¥・カンマ・空白・△▲・全角マイナスを吸収）。整数でなければNaN
+function cellToInt(cell){
+  const norm=String(cell||'').trim()
+    .replace(/[０-９]/g,d=>'０１２３４５６７８９'.indexOf(d))
+    .replace(/[▲△－]/g,'-').replace(/[¥￥,\s]/g,'');
+  return /^-?\d+$/.test(norm)?parseInt(norm,10):NaN;
+}
+function mkItem(date,desc,amount,counter){
+  const baseKey=date+'|'+desc+'|'+amount;
+  counter[baseKey]=(counter[baseKey]||0)+1;
+  const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
+  return {id:'tx_'+hashStr(baseKey+sfx), src:'csv', date, desc:desc.replace(/\s+/g,' '), amount, tag:'share'};
+}
 async function parseCreditCSV(file){
   const buf=await file.arrayBuffer();
   const text=decodeBuffer(buf);
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
-  if(lines.length<2){alert('CSVに明細がありません');return null;}
-  const header=parseCsvLine(lines[0]);
+  if(!lines.length){alert('CSVに明細がありません');return null;}
+  // ヘッダー行の有無を判定：先頭行の第1列が日付なら「ヘッダー無し（三井住友Vpass等）」
+  const first=parseCsvLine(lines[0]);
+  if(DATE_CELL_RE.test(first[0]||'')) return parseHeaderless(lines);
+
+  // ── ヘッダーあり（Amex等・列名で金額列を特定）──
+  const header=first;
   const dIdx=findHeaderIdx(header,['ご利用日','利用日','取引日','日付','ご利用年月日','Date','TransactionDate']);
   const descIdx=findHeaderIdx(header,['ご利用内容','ご利用先','ご利用店名','ご利用店名・商品名','店名','内容','店舗','摘要','利用店名','加盟店名','Description','Merchant','明細','ご利用明細']);
   const AMT_BAD=/海外|現地|手数料|割引|ポイント|レート|為替|キャッシュバック|処理日|利用日/;
@@ -625,14 +644,28 @@ async function parseCreditCSV(file){
     const cols=parseCsvLine(lines[i]); if(cols.length<2)continue;
     const rawDate=(cols[dIdx]||'').trim();
     const desc=(cols[descIdx]||'').trim();
-    const amount=parseInt((cols[amtIdx]||'').replace(/[,"¥\s]/g,'').trim(),10);
-    if(!rawDate||!desc||isNaN(amount)||amount===0)continue;
+    const amount=cellToInt(cols[amtIdx]);
+    if(!rawDate||!desc||!isFinite(amount)||amount===0)continue;
     if(PAYMENT_RE.test(desc))continue;
-    const date=normDate(rawDate);
-    const baseKey=date+'|'+desc+'|'+amount;
-    counter[baseKey]=(counter[baseKey]||0)+1;
-    const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
-    items.push({id:'tx_'+hashStr(baseKey+sfx), src:'csv', date, desc:desc.replace(/\s+/g,' '), amount, tag:'share'});
+    items.push(mkItem(normDate(rawDate), desc, amount, counter));
+  }
+  return items;
+}
+// ヘッダー無し・列位置固定（三井住友Vpass: 日付,店名,利用者,支払区分,,支払月,利用金額,請求額,…）
+function parseHeaderless(lines){
+  const items=[]; const counter={};
+  for(const line of lines){
+    const c=parseCsvLine(line);
+    const dm=(c[0]||'').trim().match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+    if(!dm)continue;                                   // 日付でない行（合計・注記等）はスキップ
+    const desc=(c[1]||'').trim();
+    if(!desc)continue;
+    // 金額＝第3列以降で最初の「きれいな整数」列（利用者/支払区分/支払月などの非数値列を自動でスキップ→利用金額を拾う）
+    let amount=NaN;
+    for(let i=2;i<c.length;i++){ const v=cellToInt(c[i]); if(isFinite(v)&&v!==0){amount=v;break;} }
+    if(!isFinite(amount)||amount===0)continue;
+    if(PAYMENT_RE.test(desc))continue;
+    items.push(mkItem(dm[1]+'-'+String(+dm[2]).padStart(2,'0')+'-'+String(+dm[3]).padStart(2,'0'), desc, amount, counter));
   }
   return items;
 }
