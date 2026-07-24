@@ -238,12 +238,12 @@
     }).join('');
   }
 
+  // 成否をオブジェクトで返す（例外を投げない）。ok=表示成功／auth=false は通信失敗（パスワードは消さない）
   function load(){
     return rpc('admin_list', { p_secret: secret }).then(function(res){
-      if(!res.ok){ throw new Error('auth'); }
-      render(res.data || []);
-      return true;
-    });
+      if(res.ok){ render(res.data || []); return { ok:true }; }
+      return { ok:false, auth:true };
+    }, function(){ return { ok:false, auth:false }; });
   }
 
   function fillApps(apps){
@@ -262,6 +262,10 @@
   }
 
   function openApp(){ lock.style.display='none'; app.hidden=false; loadApps(); }
+  function lockScreen(){
+    localStorage.removeItem(K_PASS); secret=''; passInput.value='';
+    app.hidden=true; lock.style.display='flex';
+  }
 
   // ---- ロック解除 ----
   lockForm.addEventListener('submit', function(e){
@@ -286,12 +290,14 @@
 
   // ---- ダッシュボード操作 ----
   document.getElementById('reloadBtn').addEventListener('click', function(){
-    load().then(function(){ toast('更新しました'); }).catch(function(){ toast('取得に失敗'); });
+    toast('更新中…');
+    load().then(function(r){
+      if(r.ok){ toast('更新しました'); loadApps(); }
+      else if(r.auth){ toast('パスワードが無効になりました'); lockScreen(); }
+      else { toast('接続できませんでした。もう一度お試しください'); }
+    });
   });
-  document.getElementById('lockNow').addEventListener('click', function(){
-    localStorage.removeItem(K_PASS); secret=''; passInput.value='';
-    app.hidden=true; lock.style.display='flex';
-  });
+  document.getElementById('lockNow').addEventListener('click', function(){ lockScreen(); });
 
   // 「＋新しいアプリを登録」を選んだら名簿に追加してドロップダウンへ反映
   document.getElementById('fApp').addEventListener('change', function(){
@@ -365,9 +371,16 @@
     }
   });
 
-  // 保存済みパスワードがあれば自動で開く
+  // 保存済みパスワードがあれば自動で開く（通信失敗ではログアウトしない＝毎回入力を避ける）
   if(secret){
-    load().then(openApp).catch(function(){ secret=''; localStorage.removeItem(K_PASS); });
+    openApp();
+    (function tryLoad(n){
+      load().then(function(r){
+        if(r.ok) return;
+        if(r.auth){ lockScreen(); return; }        // パスワードが本当に無効な時だけロック
+        if(n > 0){ setTimeout(function(){ tryLoad(n-1); }, 2000); }  // 通信失敗は少し待って再試行
+      });
+    })(2);
   }
 })();
 </script>
