@@ -15,7 +15,7 @@ RENDER = 540        # 3倍でレンダしてから縮小（アンチエイリア
 OUT_DIR = "icons"
 BG = "#1c1c1c"      # お手本に近い黒
 STROKE = "#ffffff"
-SW = 6              # 100座標系での線幅（180pxで約10.8px ≒ お手本の太さ）
+SW = 4.5            # 100座標系での線幅（180pxで約8.1px。細めの線画で軽く見せる）
 
 # name: 線画の中身（SVG 100x100座標）。塗りつぶしの点だけ fill 指定で上書き。
 ICONS = {
@@ -44,9 +44,9 @@ ICONS = {
     # Recognition＝お手本そのものの星
     "recognition": '<path d="M50,26 L55.9,41.9 L72.8,42.6 L59.5,53.1 L64.1,69.4 '
                    'L50,60 L35.9,69.4 L40.5,53.1 L27.2,42.6 L44.1,41.9 Z"/>',
-    "grownote": '<path d="M50,74 V50"/>'
-                '<path d="M50,57 C40,57 32,51 30,41 C40,41 48,47 50,57 Z"/>'
-                '<path d="M50,53 C60,53 68,47 70,37 C60,37 52,43 50,53 Z"/>',
+    "grownote": '<path d="M50,69 V45"/>'
+                '<path d="M50,52 C40,52 32,46 30,36 C40,36 48,42 50,52 Z"/>'
+                '<path d="M50,48 C60,48 68,42 70,32 C60,32 52,38 50,48 Z"/>',
     # 5Whys＝深掘りの連鎖（ジグザグのノード）
     "team5whys": '<circle cx="38" cy="28" r="7"/><circle cx="62" cy="50" r="7"/>'
                  '<circle cx="38" cy="72" r="7"/>'
@@ -54,13 +54,13 @@ ICONS = {
                  '<line x1="57" y1="54" x2="43" y2="68"/>',
     # 振り返り＝ハンドミラー（縦持ち：検索の斜め柄と区別）
     "reflection": '<circle cx="50" cy="38" r="19"/><line x1="50" y1="57" x2="50" y2="78"/>',
-    "vault": '<rect x="32" y="48" width="36" height="30" rx="6"/>'
-             '<path d="M40,48 V40 a10,10 0 0 1 20,0 V48"/>'
-             '<circle cx="50" cy="61" r="3.5" fill="#fff" stroke="none"/>',
-    "osusowake": '<rect x="30" y="48" width="40" height="28" rx="3"/>'
-                 '<rect x="28" y="38" width="44" height="11" rx="3"/>'
-                 '<line x1="50" y1="38" x2="50" y2="76"/>'
-                 '<path d="M50,38 C44,30 34,30 36,40 M50,38 C56,30 66,30 64,40"/>',
+    "vault": '<rect x="32" y="44" width="36" height="30" rx="6"/>'
+             '<path d="M40,44 V36 a10,10 0 0 1 20,0 V44"/>'
+             '<circle cx="50" cy="57" r="3.5" fill="#fff" stroke="none"/>',
+    "osusowake": '<rect x="30" y="45" width="40" height="28" rx="3"/>'
+                 '<rect x="28" y="35" width="44" height="11" rx="3"/>'
+                 '<line x1="50" y1="35" x2="50" y2="73"/>'
+                 '<path d="M50,35 C44,27 34,27 36,37 M50,35 C56,27 66,27 64,37"/>',
     "schedule": '<rect x="28" y="32" width="44" height="42" rx="6"/>'
                 '<line x1="28" y1="44" x2="72" y2="44"/>'
                 '<line x1="40" y1="28" x2="40" y2="38"/>'
@@ -207,22 +207,57 @@ ICONS = {
                   '<line x1="41" y1="55" x2="59" y2="55"/>'
                   '<path d="M40,66 L50,76 L60,66"/>',
     # コピペ箱＝コピー(2枚重ね)
-    "copybox": '<rect x="38" y="38" width="30" height="34" rx="6"/>'
-               '<path d="M32,52 H28 a4,4 0 0 1 -4,-4 V32 a4,4 0 0 1 4,-4 H48 '
+    "copybox": '<rect x="42" y="38" width="30" height="34" rx="6"/>'
+               '<path d="M36,52 H32 a4,4 0 0 1 -4,-4 V32 a4,4 0 0 1 4,-4 H52 '
                'a4,4 0 0 1 4,4 V38"/>',
     # 議事録＝書類＋行（メモ）
     "gijiroku": '<rect x="28" y="22" width="44" height="56" rx="6"/>'
                 '<line x1="38" y1="40" x2="62" y2="40"/>'
                 '<line x1="38" y1="52" x2="62" y2="52"/>'
                 '<line x1="38" y1="64" x2="54" y2="64"/>',
+
+    # ===== 旧・色付き/別スタイルから統一線画へ作り直し =====
+    # ひとこま＝撮影情報のフレーム（額縁の中に山＋太陽＝写真を一枚の作品に）
+    "hitokoma": '<rect x="24" y="28" width="52" height="44" rx="5"/>'
+                '<circle cx="37" cy="42" r="5"/>'
+                '<path d="M28,66 L42,51 L51,59 L63,45 L72,66"/>',
+    # せいかつの木＝生活費わけ。幹＋丸い樹冠＋地面（ふたりの暮らしが育つ木）
+    "seikatsu": '<circle cx="50" cy="42" r="20"/>'
+                '<line x1="50" y1="62" x2="50" y2="75"/>'
+                '<line x1="40" y1="75" x2="60" y2="75"/>',
+    # ぴずかご＝ふたりの共有リスト。買い物かご（持ち手＋格子）
+    "issho": '<path d="M30,40 H70 L64,67 H36 Z"/>'
+             '<path d="M40,40 C40,31 60,31 60,40"/>'
+             '<line x1="41" y1="46" x2="43" y2="61"/>'
+             '<line x1="50" y1="46" x2="50" y2="61"/>'
+             '<line x1="59" y1="46" x2="57" y2="61"/>',
+    # Floor Memo＝書類＋時計（時間つきの記録）
+    "floormemo": '<rect x="26" y="26" width="40" height="50" rx="5"/>'
+                 '<line x1="34" y1="43" x2="52" y2="43"/>'
+                 '<line x1="34" y1="53" x2="52" y2="53"/>'
+                 '<line x1="34" y1="63" x2="46" y2="63"/>'
+                 '<circle cx="65" cy="35" r="12" fill="#1c1c1c" stroke="none"/>'
+                 '<circle cx="65" cy="35" r="12"/>'
+                 '<path d="M65,35 V28"/><path d="M65,35 L70,38"/>',
 }
 
+
+# 図案本体の中央そろえ用オフセット（100座標系, dx,dy）。
+# 外接矩形の中央がアプリの四角の中心に来るよう微調整。バッジは別描画なので動かない。
+SHIFT = {
+    "career": (0, -3), "chiritsumo": (0, 2), "cooking": (1, -3),
+    "kaimono": (2, -1), "kakeru": (0, -2), "okidoki": (0, -2),
+    "recap": (0, -3), "recognition": (0, 3), "reflection": (0, 2),
+    "sashizu": (0, 1), "seikatsu": (0, 2), "serifu": (0, -2),
+    "tabinoki": (3, 2), "tasknote": (1, -2), "think": (2, -2),
+    "tsugi": (0, -4), "yuzuwari": (0, 1),
+}
 
 # 仕事(Apple)で使うアプリ＝右下に小さくAppleロゴ
 WORK_APPS = {
     "search", "nps", "recap", "recognition", "grownote", "team5whys",
     "reflection", "vault", "osusowake", "schedule", "career", "interview",
-    "memo",
+    "memo", "floormemo",
 }
 # Appleロゴ(silhouette)。24x24座標→右下にscale配置。塗り白。
 APPLE_PATH = (
@@ -238,6 +273,9 @@ APPLE_PATH = (
 
 
 def render(name, inner):
+    dx, dy = SHIFT.get(name, (0, 0))
+    if dx or dy:
+        inner = f'<g transform="translate({dx},{dy})">{inner}</g>'
     badge = ""
     if name in WORK_APPS:
         badge = (f'<g transform="translate(77,77) scale(0.55)" fill="{STROKE}" '
