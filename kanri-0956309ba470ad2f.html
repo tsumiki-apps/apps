@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>ライセンス管理 — つみき</title>
+<link rel="apple-touch-icon" href="icons/icon-kouban.png">
+<meta name="apple-mobile-web-app-title" content="ライセンス管理">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  :root{ --paper:#F4F2EE; --surface:#ECE9E3; --ink:#242321; --muted:#77736B;
+         --hair:#D8D4CC; --ghost:#BEB9B0; --control:#F8F7F4; --shu:#9C4735; --ok:#5B7052; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--paper); color:var(--ink);
+        font-family:"Zen Maru Gothic",-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
+        -webkit-text-size-adjust:100%; }
+  a{ color:var(--muted); }
+  .wrap{ max-width:720px; margin:0 auto; padding:20px 16px 64px; }
+
+  /* ロック画面 */
+  #lock{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+         background:var(--paper); padding:24px; z-index:10; }
+  #lock .card{ width:100%; max-width:340px; text-align:center; }
+  .kicker{ font-size:11px; letter-spacing:.18em; color:var(--muted); margin:0 0 6px; }
+  #lock h1{ font-size:20px; margin:0 0 18px; }
+  input, select{ font-size:16px; font-family:inherit; color:var(--ink);
+    background:var(--control); border:1px solid var(--hair); border-radius:12px;
+    padding:12px; width:100%; outline:none; }
+  input:focus, select:focus{ border-color:var(--ghost); }
+  button{ font-family:inherit; font-weight:700; cursor:pointer; }
+  .btn-primary{ font-size:15px; padding:13px; width:100%; border:none; border-radius:12px;
+    background:var(--ink); color:var(--paper); margin-top:12px; }
+  .btn-primary:disabled{ opacity:.5; }
+  .err{ color:var(--shu); font-size:12.5px; min-height:1.5em; margin:12px 0 0; }
+
+  /* ヘッダ */
+  header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  header h1{ font-size:18px; margin:0; }
+  .hbtns{ display:flex; gap:8px; }
+  .chip{ font-size:12px; font-weight:700; padding:8px 12px; border-radius:999px;
+    background:var(--surface); border:1px solid var(--hair); color:var(--ink); }
+
+  /* 発行フォーム */
+  details.issue{ background:var(--surface); border:1px solid var(--hair); border-radius:14px;
+    padding:14px 16px; margin-bottom:20px; }
+  details.issue summary{ font-weight:700; font-size:14px; cursor:pointer; list-style:none; }
+  details.issue summary::-webkit-details-marker{ display:none; }
+  .field{ margin-top:12px; }
+  .field label{ display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+  .row2{ display:flex; gap:10px; }
+  .row2 .field{ flex:1; }
+  .newkey{ margin-top:12px; padding:12px; border-radius:10px; background:var(--control);
+    border:1px dashed var(--ghost); font-size:14px; word-break:break-all; display:none; }
+
+  /* カード */
+  .card-lic{ background:var(--surface); border:1px solid var(--hair); border-radius:14px;
+    padding:14px 16px; margin-bottom:12px; }
+  .card-lic.off{ opacity:.62; }
+  .toprow{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .cust{ font-size:16px; font-weight:700; }
+  .badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }
+  .badge.on{ background:#E6ECE2; color:var(--ok); }
+  .badge.off{ background:#F0E2DE; color:var(--shu); }
+  .keyline{ font-size:13px; color:var(--muted); margin-top:4px; word-break:break-all;
+    cursor:pointer; user-select:all; }
+  .meta{ display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:10px; font-size:12.5px; color:var(--muted); }
+  .meta b{ color:var(--ink); font-weight:700; }
+  .meta .warn b{ color:var(--shu); }
+  .actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .act{ font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:10px;
+    border:1px solid var(--hair); background:var(--control); color:var(--ink); }
+  .act.danger{ color:var(--shu); border-color:#E4D2CD; }
+  .empty{ text-align:center; color:var(--muted); font-size:13px; padding:40px 0; }
+  .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:var(--ink); color:var(--paper); font-size:13px; padding:10px 16px;
+    border-radius:999px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:20; }
+  .toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+
+<!-- ロック画面 -->
+<div id="lock">
+  <form class="card" id="lockForm">
+    <p class="kicker">TSUMIKI ADMIN</p>
+    <h1>ライセンス管理</h1>
+    <input id="pass" type="password" placeholder="管理パスワード"
+      autocomplete="current-password" enterkeyhint="go">
+    <button class="btn-primary" id="lockBtn" type="submit">ひらく</button>
+    <p class="err" id="lockErr"></p>
+  </form>
+</div>
+
+<!-- ダッシュボード -->
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1>ライセンス管理</h1>
+    <div class="hbtns">
+      <button class="chip" id="reloadBtn">更新</button>
+      <button class="chip" id="lockNow">ロック</button>
+    </div>
+  </header>
+
+  <details class="issue">
+    <summary>＋ 新しいキーを発行</summary>
+    <div class="field">
+      <label>お渡し先の名前（透かしに表示）</label>
+      <input id="fCustomer" placeholder="例：お客様">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>アプリ名</label>
+        <input id="fApp" placeholder="kouban" value="kouban">
+      </div>
+      <div class="field">
+        <label>台数上限</label>
+        <input id="fMax" type="number" inputmode="numeric" value="3" min="1" max="100">
+      </div>
+    </div>
+    <div class="field">
+      <label>メモ（任意・自分用）</label>
+      <input id="fNote" placeholder="例：舞台プロデューサー・初回無料">
+    </div>
+    <button class="btn-primary" id="issueBtn" type="button">発行する</button>
+    <div class="newkey" id="newKey"></div>
+  </details>
+
+  <div id="list"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var SUPABASE_URL = 'https://okbjqtdirrathscctyvx.supabase.co';
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+  var K_PASS = 'tsumiki-admin-pass';
+  var secret = localStorage.getItem(K_PASS) || '';
+
+  var lock = document.getElementById('lock');
+  var lockForm = document.getElementById('lockForm');
+  var passInput = document.getElementById('pass');
+  var lockBtn = document.getElementById('lockBtn');
+  var lockErr = document.getElementById('lockErr');
+  var app = document.getElementById('app');
+  var listEl = document.getElementById('list');
+  var toastEl = document.getElementById('toast');
+
+  function rpc(name, body){
+    return fetch(SUPABASE_URL + '/rest/v1/rpc/' + name, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':ANON, 'Authorization':'Bearer '+ANON },
+      body: JSON.stringify(body)
+    }).then(function(r){
+      return r.json().then(function(j){ return { ok:r.ok, data:j }; });
+    });
+  }
+  var toastT;
+  function toast(msg){
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function(){ toastEl.classList.remove('show'); }, 1800);
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function fmtSeen(iso){
+    if(!iso) return { text:'未使用', warn:false };
+    var d = new Date(iso), now = new Date();
+    var days = Math.floor((now - d)/86400000);
+    var rel = days<=0 ? '今日' : (days===1 ? '昨日' : days+'日前');
+    var s = d.getFullYear()+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+('0'+d.getDate()).slice(-2)
+          +' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+    return { text: rel+'（'+s+'）', warn:false };
+  }
+
+  function render(rows){
+    if(!rows.length){ listEl.innerHTML = '<div class="empty">まだキーがありません。上の「＋ 新しいキーを発行」から作れます。</div>'; return; }
+    listEl.innerHTML = rows.map(function(r){
+      var over = r.device_count >= r.max_devices;
+      var seen = fmtSeen(r.last_seen);
+      return '<div class="card-lic '+(r.active?'':'off')+'">'
+        + '<div class="toprow"><span class="cust">'+esc(r.customer)+'</span>'
+        +   '<span class="badge '+(r.active?'on':'off')+'">'+(r.active?'有効':'失効中')+'</span></div>'
+        + '<div class="keyline" data-copy="'+esc(r.key)+'">'+esc(r.key)+'</div>'
+        + '<div class="meta">'
+        +   '<span class="'+(over?'warn':'')+'">端末 <b>'+r.device_count+' / '+r.max_devices+'</b>'+(over?'（満杯）':'')+'</span>'
+        +   '<span>アプリ <b>'+esc(r.app)+'</b></span>'
+        +   '<span>最終利用 <b>'+esc(seen.text)+'</b></span>'
+        +   (r.note ? '<span>メモ '+esc(r.note)+'</span>' : '')
+        + '</div>'
+        + '<div class="actions">'
+        +   '<button class="act" data-act="toggle" data-key="'+esc(r.key)+'" data-active="'+(r.active?'1':'0')+'">'+(r.active?'無効化する':'復活させる')+'</button>'
+        +   '<button class="act" data-act="max" data-key="'+esc(r.key)+'" data-max="'+r.max_devices+'">台数を変更</button>'
+        +   '<button class="act danger" data-act="reset" data-key="'+esc(r.key)+'">端末リセット</button>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  function load(){
+    return rpc('admin_list', { p_secret: secret }).then(function(res){
+      if(!res.ok){ throw new Error('auth'); }
+      render(res.data || []);
+      return true;
+    });
+  }
+
+  function openApp(){ lock.style.display='none'; app.hidden=false; }
+
+  // ---- ロック解除 ----
+  lockForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    var v = passInput.value.trim();
+    if(!v){ lockErr.textContent='パスワードを入力してください'; return; }
+    lockBtn.disabled=true; lockErr.textContent='確認中…';
+    secret = v;
+    load().then(function(){
+      localStorage.setItem(K_PASS, secret);
+      lockErr.textContent=''; lockBtn.disabled=false;
+      openApp();
+    }).catch(function(){
+      secret=''; lockBtn.disabled=false;
+      lockErr.textContent='パスワードが違うようです';
+    });
+  });
+
+  // ---- ダッシュボード操作 ----
+  document.getElementById('reloadBtn').addEventListener('click', function(){
+    load().then(function(){ toast('更新しました'); }).catch(function(){ toast('取得に失敗'); });
+  });
+  document.getElementById('lockNow').addEventListener('click', function(){
+    localStorage.removeItem(K_PASS); secret=''; passInput.value='';
+    app.hidden=true; lock.style.display='flex';
+  });
+
+  document.getElementById('issueBtn').addEventListener('click', function(){
+    var c = document.getElementById('fCustomer').value.trim();
+    var a = document.getElementById('fApp').value.trim();
+    var m = parseInt(document.getElementById('fMax').value, 10) || 3;
+    var n = document.getElementById('fNote').value.trim();
+    if(!c || !a){ toast('名前とアプリ名は必須です'); return; }
+    var btn = document.getElementById('issueBtn'); btn.disabled=true;
+    rpc('admin_issue', { p_secret:secret, p_customer:c, p_app:a, p_max_devices:m, p_note:(n||null) })
+      .then(function(res){
+        btn.disabled=false;
+        if(!res.ok){ toast('発行に失敗しました'); return; }
+        var nk = document.getElementById('newKey');
+        nk.style.display='block';
+        nk.innerHTML = '発行しました（タップでコピー）<br><b data-copy="'+esc(res.data)+'">'+esc(res.data)+'</b>';
+        document.getElementById('fCustomer').value=''; document.getElementById('fNote').value='';
+        load();
+      }).catch(function(){ btn.disabled=false; toast('通信エラー'); });
+  });
+
+  // 委譲：コピー & 各アクション
+  document.body.addEventListener('click', function(e){
+    var cp = e.target.closest('[data-copy]');
+    if(cp){ var t=cp.getAttribute('data-copy');
+      if(navigator.clipboard){ navigator.clipboard.writeText(t).then(function(){ toast('コピーしました'); }); }
+      return;
+    }
+    var b = e.target.closest('[data-act]');
+    if(!b) return;
+    var act = b.getAttribute('data-act'), key = b.getAttribute('data-key');
+    if(act==='toggle'){
+      var makeActive = b.getAttribute('data-active')==='0';
+      if(!confirm(makeActive?'このキーを復活させますか？':'このキーを無効化しますか？（次に開いた時にロックされます）')) return;
+      rpc('admin_set_active', { p_secret:secret, p_key:key, p_active:makeActive })
+        .then(function(res){ if(res.ok){ toast(makeActive?'復活しました':'無効化しました'); load(); } else toast('失敗'); });
+    } else if(act==='max'){
+      var cur = b.getAttribute('data-max');
+      var v = prompt('台数上限を入力（1〜100）', cur);
+      if(v===null) return; var m=parseInt(v,10);
+      if(!(m>=1 && m<=100)){ toast('1〜100で入力'); return; }
+      rpc('admin_set_max', { p_secret:secret, p_key:key, p_max:m })
+        .then(function(res){ if(res.ok){ toast('台数を'+m+'台に変更'); load(); } else toast('失敗'); });
+    } else if(act==='reset'){
+      if(!confirm('このキーの登録端末をすべて消しますか？（お客様は次回また台数枠を使えます）')) return;
+      rpc('admin_reset_devices', { p_secret:secret, p_key:key })
+        .then(function(res){ if(res.ok){ toast(res.data+'台の端末を解除'); load(); } else toast('失敗'); });
+    }
+  });
+
+  // 保存済みパスワードがあれば自動で開く
+  if(secret){
+    load().then(openApp).catch(function(){ secret=''; localStorage.removeItem(K_PASS); });
+  }
+})();
+</script>
+</body>
+</html>
