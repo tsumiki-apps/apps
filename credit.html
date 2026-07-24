@@ -924,7 +924,9 @@ async function parseCreditCSV(file){
       if(Math.abs(amount)>0)signals.push({amount:Math.abs(amount),date,desc:desc.replace(/\s+/g,' ')});
       continue;
     }
-    if(amount<0)continue;
+    // 口座振替など「支払い・引き落とし」の行は買い物でも返金でもないので明細にしない。
+    // ここに当てはまらないマイナス金額（＝返金/取消）はマイナス明細として残し、支出から差し引く。
+    if(PAYMENT_RE.test(desc))continue;
     // 上のパターンに当てはまらない「分割/リボ」を含む行＝カードが書き方を変えた可能性。取込後に知らせる
     if(INST_SUSPECT_RE.test(desc))suspects.push({desc:desc.replace(/\s+/g,' '),amount,date});
     const postDate=postIdx>=0?(cols[postIdx]||'').trim():'';
@@ -1083,6 +1085,9 @@ const INST_LEDGER_RE=/分割払い利用分|一括払いからの変更|あと�
 // 上記以外で「分割/リボ」を含む未知の行＝将来カードが出し方を変えた時の検知用（取込後に警告する）
 const INST_SUSPECT_RE=/分割|リボ/;
 function isInstLedgerDesc(d){return INST_LEDGER_RE.test(String(d||''));}
+// 支払い・引き落とし・入金の行（＝先月分の口座振替など）。買い物でも返金でもないので明細にしない。
+// これに当てはまらないマイナス金額は「返金/取消」とみなし、マイナス明細として残す（＝支出から差し引く）。
+const PAYMENT_RE=/口座振替|お支払い|ご入金|自動引落|口座引落|お振込|ご返済/;
 // 旧バージョンで明細として取り込んでしまった振替行を消す（＝二重計上の後始末）。tombstoneで他端末にも伝える
 function purgeInstallmentLedgerTx(){
   let n=0;const now=Date.now();
@@ -1388,7 +1393,7 @@ function renderTrendBars(){
   const el=document.getElementById('trendBars');if(!el)return;
   const keys=allCycleKeys();
   if(keys.length<3){el.innerHTML='';el.style.display='none';return;}
-  const vals=keys.slice(-4).map(k=>({k,v:cycleTxs(k).reduce((s,t)=>s+Math.max(0,selfAmt(t)),0)}));
+  const vals=keys.slice(-4).map(k=>({k,v:Math.max(0,cycleTxs(k).reduce((s,t)=>s+selfAmt(t),0))})); // 期内で返金を相殺してから0下限
   const max=Math.max(1,...vals.map(o=>o.v));
   el.style.display='';
   el.innerHTML='<div class="tb-title">最近の実質支出</div>'+vals.map(o=>{
@@ -1414,9 +1419,9 @@ function selfAmt(t){return billedAmt(t)-getLoanTotalForTx(t.id);}
 function renderCategories(){
   const txs=cycleTxs(state.currentMonth);
   const byCat={};
-  txs.forEach(t=>{const s=selfAmt(t);if(s>0)byCat[t.category]=(byCat[t.category]||0)+s;});
-  const total=Object.values(byCat).reduce((s,v)=>s+v,0)||1;
-  const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  txs.forEach(t=>{const s=selfAmt(t);if(s!==0)byCat[t.category]=(byCat[t.category]||0)+s;}); // 返金(マイナス)も同カテゴリで相殺
+  const sorted=Object.entries(byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]); // 相殺後にプラスのカテゴリだけ表示
+  const total=sorted.reduce((s,[,v])=>s+v,0)||1;
   const list=document.getElementById('categoryList');
   if(sorted.length===0){list.innerHTML='<div class="empty">自分の支出がありません</div>';return;}
 
@@ -1435,7 +1440,7 @@ function renderCategories(){
     const exp=state.expandedCats.has(cat);
     let drill='';
     if(exp){
-      const inner=txs.filter(t=>t.category===cat&&selfAmt(t)>0)
+      const inner=txs.filter(t=>t.category===cat&&selfAmt(t)!==0)
         .sort((a,b)=>selfAmt(b)-selfAmt(a)).map(renderCatDrillRow).join('');
       drill=`<div class="cat-drill">${inner}</div>`;
     }
