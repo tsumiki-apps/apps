@@ -234,7 +234,7 @@ let cloudReady=false, applyingRemote=false;
 const LS_KEY='futaricard_db_v1';
 function defaultDB(){
   const p=newPeriod(monthLabel(new Date()));
-  return { names:{kodai:'こうだい', yuzu:'ゆず'}, defaultRatio:50,
+  return { names:{kodai:'こうだい', yuzu:'ゆずは'}, defaultRatio:50,
     periods:[p], current:p.id, updatedAt:0 };
 }
 function newPeriod(name){ return {id:uid(), name, items:[], ratio:null, createdAt:nowMs()}; }
@@ -245,7 +245,8 @@ function load(){
 }
 function migrate(r){
   if(r.defaultRatio==null)r.defaultRatio=50;
-  if(!r.names)r.names={kodai:'こうだい',yuzu:'ゆず'};
+  if(!r.names)r.names={kodai:'こうだい',yuzu:'ゆずは'};
+  if(r.names.yuzu==='ゆず')r.names.yuzu='ゆずは'; // 旧デフォルト名を正式名に自動更新
   if(!r.current||!r.periods.find(p=>p.id===r.current))r.current=r.periods[0].id;
   return r;
 }
@@ -320,6 +321,54 @@ function calc(p){
 function yen(n){const s=n<0?'-':''; return s+'¥'+Math.abs(Math.round(n)).toLocaleString('ja-JP');}
 function nm(id){return db.names[id]||id;}
 
+/* ===== 明細名を見やすく整形（表示専用・元の明細descは常に保持） ===== */
+// 全角英数字→半角
+function zenNum(s){return String(s).replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));}
+// 照合用：区切り記号・空白を除いて小文字化
+const MERCH_SEP=/[ー－—\-・／\/\s　]/g;
+// 既知チェーン→短い正式名（先頭一致で判定＝誤爆しにくい）
+const MERCH_BRANDS=[
+  {n:'Amazon',k:['アマゾン','amazon']},{n:'Apple',k:['アップル','apple','itunes']},
+  {n:'マクドナルド',k:['マクドナルド']},{n:'セブンイレブン',k:['セブンイレブン']},
+  {n:'ローソン',k:['ローソン','lawson']},{n:'ファミリーマート',k:['ファミリーマート']},
+  {n:'ミニストップ',k:['ミニストップ']},{n:'すき家',k:['すき家']},{n:'松屋',k:['松屋']},
+  {n:'吉野家',k:['吉野家']},{n:'スシロー',k:['スシロー']},{n:'ガスト',k:['ガスト']},
+  {n:'サイゼリヤ',k:['サイゼリヤ']},{n:'モスバーガー',k:['モスバーガー','モスフード']},
+  {n:'ケンタッキー',k:['ケンタッキー','kfc']},{n:'ドミノ・ピザ',k:['ドミノピザ','ドミノ']},
+  {n:'スターバックス',k:['スターバックス','starbucks']},{n:'ドトール',k:['ドトール']},
+  {n:'タリーズ',k:['タリーズ']},{n:'コメダ珈琲',k:['コメダ']},
+  {n:'ユニクロ',k:['ユニクロ','uniqlo']},{n:'GU',k:['ジーユー']},{n:'無印良品',k:['無印良品']},
+  {n:'マツモトキヨシ',k:['マツモトキヨシ','マツキヨ']},{n:'クリエイト',k:['クリエイトエス','クリエイト']},
+  {n:'ウエルシア',k:['ウエルシア']},{n:'サンドラッグ',k:['サンドラッグ']},{n:'ツルハドラッグ',k:['ツルハ']},
+  {n:'ドン・キホーテ',k:['ドンキホーテ']},{n:'ダイソー',k:['ダイソー','daiso']},{n:'セリア',k:['セリア']},
+  {n:'カルディ',k:['カルディ','kaldi']},{n:'成城石井',k:['成城石井']},
+  {n:'イトーヨーカドー',k:['イトーヨーカドー']},{n:'マルエツ',k:['マルエツ']},{n:'いなげや',k:['いなげや']},
+  {n:'サミット',k:['サミットストア','サミット']},{n:'オーケー',k:['オーケーストア','オーケー']},
+  {n:'まいばすけっと',k:['まいばすけっと']},{n:'業務スーパー',k:['業務スーパー']},{n:'コストコ',k:['コストコ','costco']},
+  {n:'Netflix',k:['netflix']},{n:'Spotify',k:['spotify']},{n:'Uber Eats',k:['ubereats']},
+];
+function cleanMerchant(desc){
+  let s=String(desc||'').trim();
+  if(!s)return String(desc||'');
+  // 文字化け「?」→カタカナ隣接は長音「ー」と推定
+  s=s.replace(/([ァ-ヶ])[?？]/g,'$1ー').replace(/ー{2,}/g,'ー');
+  // 決済手段のサフィックス（／ｉＤ ／ＮＦＣ ／ＡＰ 等）を末尾から除去
+  s=s.replace(/[\/／]\s*(?:ｉＤ|id|ＮＦＣ|nfc|ＡＰ|ap|ＡＰＬ|apl|ＱＰ|qp|クイックペイ|ＥＤＹ|edy|ＷＡＯＮ|waon|ｎａｎａｃｏ|nanaco|ｉｃ|ic|ｓｕｉｃａ|suica|ｐａｓｍｏ|pasmo|ＥＣ|ec|ＡＰＰ|app|ｑｒ|qr|ｐａｙ|pay)\s*$/i,'');
+  // 先頭の店舗コード（4桁以上の数字＋直後が日本語）を除去
+  s=s.replace(/^[0-9０-９]{4,}(?=[ぁ-んァ-ヶ一-龠])/,'');
+  // 既知チェーン→短い正式名（先頭一致）
+  const flat=zenNum(s).toLowerCase().replace(MERCH_SEP,'');
+  for(const b of MERCH_BRANDS){ for(const k of b.k){ const kf=k.toLowerCase().replace(MERCH_SEP,''); if(kf&&flat.indexOf(kf)===0)return b.n; } }
+  // 未知店名：全角英数を半角化・余分な空白/「?」を整理
+  s=zenNum(s).replace(/[?？]/g,'').replace(/[\s　]{2,}/g,' ').trim();
+  return s||String(desc||'');
+}
+// 表示名：ユーザー編集(label)優先 → CSVは自動整形 → 手動明細はそのまま
+function dispName(it){
+  if(it.label&&it.label.trim())return it.label.trim();
+  return it.src==='csv'?cleanMerchant(it.desc):(it.desc||'');
+}
+
 /* ============ レンダリング ============ */
 function render(){
   const p=curPeriod();
@@ -383,7 +432,7 @@ function renderPeriod(p){
     const tl={share:'共同',kodai:nm('kodai')+'個人',yuzu:nm('yuzu')+'個人',excl:'対象外'}[tag];
     html+='<div class="entry '+(tag==='excl'?'excl':'')+'" data-id="'+it.id+'">'+
       '<span class="tag '+(tag==='excl'?'excl':tag==='share'?'share':tag)+'">'+esc(tl)+'</span>'+
-      '<div class="info"><div class="ti">'+esc(it.desc||'（無題）')+'</div>'+
+      '<div class="info"><div class="ti">'+esc(dispName(it)||'（無題）')+'</div>'+
         '<div class="me">'+esc(fmtDateShort(it.date))+'</div></div>'+
       '<span class="amt '+(it.amount<0?'minus':'')+'">'+yen(it.amount)+'</span></div>';
   });
@@ -458,7 +507,9 @@ function openItem(p, existing){
   openSheet(
     '<h2>'+(existing?'明細を編集':'手動で追加')+'</h2>'+
     '<div class="field"><label>金額（返金・マイナスは頭に -）</label><input type="number" inputmode="numeric" id="iAmt" placeholder="0" value="'+(it.amount===''?'':it.amount)+'" style="font-size:24px;font-weight:800;"></div>'+
-    '<div class="field"><label>内容</label><input type="text" id="iDesc" placeholder="例：スーパー / コンビニ" value="'+esc(it.desc)+'"></div>'+
+    '<div class="field"><label>表示名（見やすく編集できます）</label><input type="text" id="iDesc" placeholder="例：スーパー / コンビニ" value="'+esc(existing?dispName(it):(it.desc||''))+'">'+
+      (existing&&it.src==='csv'&&(it.desc||'').replace(/\s+/g,'')!==dispName(it).replace(/\s+/g,'')?'<div class="hint" style="text-align:left;margin-top:6px">元の明細：'+esc(it.desc)+'</div>':'')+
+    '</div>'+
     '<div class="field"><label>だれの負担？</label><div class="seg" id="iTag">'+
       '<button data-v="share" class="'+(it.tag==='share'?'on share':'')+'">共同でわける</button>'+
       '<button data-v="kodai" class="'+(it.tag==='kodai'?'on k':'')+'">'+esc(nm('kodai'))+'個人</button>'+
@@ -478,9 +529,17 @@ function openItem(p, existing){
   ov.querySelector('#iSave').onclick=()=>{
     const amount=Math.round(+ov.querySelector('#iAmt').value||0);
     if(amount===0){toast('金額を入力してね'); return;}
-    const data={date:ov.querySelector('#iDate').value||today(), desc:ov.querySelector('#iDesc').value.trim(), amount, tag};
-    if(existing){Object.assign(existing,data);}
-    else{curPeriod().items.push({id:uid(),src:'manual',...data});}
+    const nameVal=ov.querySelector('#iDesc').value.trim();
+    const date=ov.querySelector('#iDate').value||today();
+    if(existing){
+      existing.date=date; existing.amount=amount; existing.tag=tag;
+      if(existing.src==='csv'){
+        // 元の明細(desc)は保持し再取込のズレを防ぐ。表示名の手直しはlabelへ（自動整形と同じなら解除）
+        if(nameVal && nameVal!==cleanMerchant(existing.desc)) existing.label=nameVal; else delete existing.label;
+      } else { existing.desc=nameVal; delete existing.label; }
+    } else {
+      curPeriod().items.push({id:uid(),src:'manual',date,desc:nameVal,amount,tag});
+    }
     save(); closeSheet(); toast(existing?'保存しました':'追加しました ✓');
   };
   if(existing){
@@ -534,7 +593,7 @@ function openSettings(){
     '<div class="field"><label>共同ぶんの既定の比率（'+esc(db.names.kodai)+'の取り分 %）</label>'+
       '<input type="number" inputmode="numeric" id="defR" min="0" max="100" step="5" value="'+db.defaultRatio+'"></div>'+
     '<div class="hint" style="margin:0 0 6px">新しい期間はこの比率で始まります。期間ごとの調整は結果画面のスライダーで。</div>'+
-    '<button class="secbtn" id="shareBtn"><span class="em">🔗</span><div>ゆずちゃんと共有（別の端末）<small>同じ明細・仕分け・比率を2台でリアルタイム同期</small></div></button>'+
+    '<button class="secbtn" id="shareBtn"><span class="em">🔗</span><div>'+esc(nm('yuzu'))+'ちゃんと共有（別の端末）<small>同じ明細・仕分け・比率を2台でリアルタイム同期</small></div></button>'+
     '<button class="secbtn" id="renameP"><span class="em">✏️</span><div>この期間の名前を変える<small>いま：'+esc(p.name)+'</small></div></button>'+
     '<button class="secbtn" id="setShareAll"><span class="em">↩️</span><div>この期間を全部「共同」に戻す<small>個人・対象外の仕分けをリセット</small></div></button>'+
     '<button class="secbtn" id="exportBtn"><span class="em">⬇️</span><div>バックアップを書き出す<small>全期間をJSONファイルで保存</small></div></button>'+
@@ -545,7 +604,7 @@ function openSettings(){
   ov.querySelector('#nameK').onchange=commitNames; ov.querySelector('#nameY').onchange=commitNames;
   function commitNames(){
     db.names.kodai=ov.querySelector('#nameK').value.trim()||'こうだい';
-    db.names.yuzu=ov.querySelector('#nameY').value.trim()||'ゆず';
+    db.names.yuzu=ov.querySelector('#nameY').value.trim()||'ゆずは';
     save({noRender:true});
   }
   ov.querySelector('#defR').onchange=e=>{ let v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); db.defaultRatio=v; e.target.value=v; save({noRender:true}); };
