@@ -173,6 +173,19 @@
   .prow .pi .pmt{font-size:11px; color:var(--sub);}
   .prow .pv{font-weight:800; font-size:13px; color:var(--sub); flex:0 0 auto;}
 
+  /* ===== PC：横幅を活用（左＝集計＆比率を画面に固定／右＝明細一覧）===== */
+  @media(min-width:900px){
+    .wrap{max-width:min(1180px,94vw);}
+    header{padding-top:30px;}
+    .periodsel{flex:0 1 460px; margin-right:auto;}
+    .pgrid{display:grid; grid-template-columns:376px minmax(0,1fr); gap:24px; align-items:start; margin-top:14px;}
+    .col-summary{position:sticky; top:16px;}
+    .result{margin-top:0;}
+    .listhead{margin-top:0;}
+    .actionbar{max-width:min(1180px,94vw); justify-content:flex-end; gap:12px;}
+    .actionbar .btn{flex:0 0 auto; min-width:200px;}
+  }
+
   .toast{position:fixed; bottom:calc(env(safe-area-inset-bottom) + 100px); left:50%; transform:translateX(-50%) translateY(20px);
     background:#232a33; color:#fff; padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600;
     z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; white-space:nowrap; max-width:88vw;}
@@ -324,8 +337,8 @@ let curFilter='all';
 function renderPeriod(p){
   const c=calc(p);
   const r=c.r;
-  // 結果
-  let html='<div class="result">'+
+  // 結果（PCでは左カラム：集計＋比率＋内訳を固定表示）
+  let html='<div class="pgrid"><div class="col-summary"><div class="result">'+
     '<div class="lab">カード合計（対象外をのぞく）</div>'+
     '<div class="totalrow"><span class="total"><small>¥</small>'+Math.round(c.cardTotal).toLocaleString('ja-JP')+'</span></div>'+
     '<div class="totalsub">共同 '+yen(c.share)+(c.excl?'／対象外 '+yen(c.excl):'')+'</div>'+
@@ -354,15 +367,15 @@ function renderPeriod(p){
     (c.excl?'<span class="chip"><span class="d" style="background:#c2cad3"></span>対象外 <b>'+yen(c.excl)+'</b></span>':'')+
     '</div>';
 
-  // 明細
-  html+='<div class="listhead"><h2>明細</h2><div class="filters" id="filters">'+
+  // 明細（PCでは右カラム）
+  html+='</div><div class="col-list"><div class="listhead"><h2>明細</h2><div class="filters" id="filters">'+
     [['all','すべて'],['share','共同'],['kodai',nm('kodai')],['yuzu',nm('yuzu')],['excl','対象外']]
       .map(f=>'<button data-f="'+f[0]+'" class="'+(curFilter===f[0]?'on':'')+'">'+esc(f[1])+'</button>').join('')+
     '</div></div>';
 
   let items=[...p.items].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.id>a.id?1:-1));
   if(curFilter!=='all') items=items.filter(it=>(it.tag||'share')===curFilter);
-  if(!items.length){ html+='<div class="empty" style="padding:26px"><p>この条件の明細はありません</p></div>'; return html; }
+  if(!items.length){ html+='<div class="empty" style="padding:26px"><p>この条件の明細はありません</p></div></div></div>'; return html; }
   let lastDay='';
   items.forEach(it=>{
     if(it.date!==lastDay){lastDay=it.date; html+='<div class="daygroup">'+fmtDate(it.date)+'</div>';}
@@ -374,6 +387,7 @@ function renderPeriod(p){
         '<div class="me">'+esc(fmtDateShort(it.date))+'</div></div>'+
       '<span class="amt '+(it.amount<0?'minus':'')+'">'+yen(it.amount)+'</span></div>';
   });
+  html+='</div></div>';
   return html;
 }
 function bindBody(p){
@@ -520,6 +534,7 @@ function openSettings(){
     '<div class="field"><label>共同ぶんの既定の比率（'+esc(db.names.kodai)+'の取り分 %）</label>'+
       '<input type="number" inputmode="numeric" id="defR" min="0" max="100" step="5" value="'+db.defaultRatio+'"></div>'+
     '<div class="hint" style="margin:0 0 6px">新しい期間はこの比率で始まります。期間ごとの調整は結果画面のスライダーで。</div>'+
+    '<button class="secbtn" id="shareBtn"><span class="em">🔗</span><div>ゆずちゃんと共有（別の端末）<small>同じ明細・仕分け・比率を2台でリアルタイム同期</small></div></button>'+
     '<button class="secbtn" id="renameP"><span class="em">✏️</span><div>この期間の名前を変える<small>いま：'+esc(p.name)+'</small></div></button>'+
     '<button class="secbtn" id="setShareAll"><span class="em">↩️</span><div>この期間を全部「共同」に戻す<small>個人・対象外の仕分けをリセット</small></div></button>'+
     '<button class="secbtn" id="exportBtn"><span class="em">⬇️</span><div>バックアップを書き出す<small>全期間をJSONファイルで保存</small></div></button>'+
@@ -534,6 +549,7 @@ function openSettings(){
     save({noRender:true});
   }
   ov.querySelector('#defR').onchange=e=>{ let v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); db.defaultRatio=v; e.target.value=v; save({noRender:true}); };
+  ov.querySelector('#shareBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openShare,260); };
   ov.querySelector('#renameP').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openRename,260); };
   ov.querySelector('#setShareAll').onclick=()=>{
     if(confirm('この期間の明細をすべて「共同」に戻しますか？')){ curPeriod().items.forEach(it=>it.tag='share'); commitNames(); save(); closeSheet(); toast('共同に戻しました'); }
@@ -545,6 +561,30 @@ function openSettings(){
     if(confirm('「'+curPeriod().name+'」を削除しますか？\nこの期間の明細も消えます。')){
       db.periods=db.periods.filter(x=>x.id!==db.current); db.current=db.periods[0].id; curFilter='all';
       commitNames(); save(); closeSheet(); toast('削除しました');
+    }
+  };
+}
+/* ============ ゆずちゃんと共有（同じデータを2台で同期） ============ */
+function shareUrl(){
+  // 本番URL（このページ自身）。localhostでもpathnameで正しいパスになる
+  return location.origin.replace(/^http:/,'https:') + location.pathname;
+}
+function openShare(){
+  const url=shareUrl();
+  openSheet(
+    '<h2>🔗 ゆずちゃんと共有</h2>'+
+    '<div class="sd">このアプリは、ひとつのデータをふたりで同期して使えます。下のリンクを <b>'+esc(nm('yuzu'))+'ちゃんの端末で開く</b>と、明細・仕分け・比率が<b>リアルタイムで両方に反映</b>されます（どちらが編集してもOK）。</div>'+
+    '<div class="field"><label>共有リンク</label><input type="text" id="shareLink" value="'+esc(url)+'" readonly onclick="this.select()"></div>'+
+    '<div class="sheetbtns"><button class="save" id="doShare">リンクを送る／コピー</button></div>'+
+    '<div class="hint">'+esc(nm('yuzu'))+'ちゃんはホーム画面に追加すればアプリのように使えます。<br>※ このリンクを知っている人は同じデータを見られます。ふたりだけで使ってね。</div>'
+  );
+  ov.querySelector('#doShare').onclick=async()=>{
+    try{
+      if(navigator.share){ await navigator.share({title:'ふたりカード', text:'共同カードの精算をふたりで同期しよう', url}); return; }
+      await navigator.clipboard.writeText(url); toast('リンクをコピーしました ✓');
+    }catch(e){
+      try{ await navigator.clipboard.writeText(url); toast('リンクをコピーしました ✓'); }
+      catch(_){ const el=ov.querySelector('#shareLink'); if(el){el.focus(); el.select();} toast('リンクを選択しました。長押しでコピーしてね'); }
     }
   };
 }
