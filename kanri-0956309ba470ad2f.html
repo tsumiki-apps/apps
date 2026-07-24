@@ -73,6 +73,7 @@
   .act{ font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:10px;
     border:1px solid var(--hair); background:var(--control); color:var(--ink); }
   .act.danger{ color:var(--shu); border-color:#E4D2CD; }
+  .act.copy{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
   .empty{ text-align:center; color:var(--muted); font-size:13px; padding:40px 0; }
   .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
     background:var(--ink); color:var(--paper); font-size:13px; padding:10px 16px;
@@ -162,6 +163,19 @@
       return r.json().then(function(j){ return { ok:r.ok, data:j }; });
     });
   }
+  function copyText(t){
+    function done(){ toast('コピーしました'); }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(done).catch(function(){ fallback(); });
+    } else { fallback(); }
+    function fallback(){
+      try{
+        var ta=document.createElement('textarea'); ta.value=t;
+        ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done();
+      }catch(e){ toast('コピーできませんでした'); }
+    }
+  }
   var toastT;
   function toast(msg){
     toastEl.textContent = msg; toastEl.classList.add('show');
@@ -196,6 +210,7 @@
         +   (r.note ? '<span>メモ '+esc(r.note)+'</span>' : '')
         + '</div>'
         + '<div class="actions">'
+        +   '<button class="act copy" data-copy="'+esc(r.key)+'">キーをコピー</button>'
         +   '<button class="act" data-act="toggle" data-key="'+esc(r.key)+'" data-active="'+(r.active?'1':'0')+'">'+(r.active?'無効化する':'復活させる')+'</button>'
         +   '<button class="act" data-act="max" data-key="'+esc(r.key)+'" data-max="'+r.max_devices+'">台数を変更</button>'
         +   '<button class="act danger" data-act="reset" data-key="'+esc(r.key)+'">端末リセット</button>'
@@ -253,7 +268,8 @@
         if(!res.ok){ toast('発行に失敗しました'); return; }
         var nk = document.getElementById('newKey');
         nk.style.display='block';
-        nk.innerHTML = '発行しました（タップでコピー）<br><b data-copy="'+esc(res.data)+'">'+esc(res.data)+'</b>';
+        nk.innerHTML = '発行しました<br><b>'+esc(res.data)+'</b>'
+          + '<br><button type="button" class="act copy" data-copy="'+esc(res.data)+'" style="margin-top:8px;">キーをコピー</button>';
         document.getElementById('fCustomer').value=''; document.getElementById('fNote').value='';
         load();
       }).catch(function(){ btn.disabled=false; toast('通信エラー'); });
@@ -262,10 +278,7 @@
   // 委譲：コピー & 各アクション
   document.body.addEventListener('click', function(e){
     var cp = e.target.closest('[data-copy]');
-    if(cp){ var t=cp.getAttribute('data-copy');
-      if(navigator.clipboard){ navigator.clipboard.writeText(t).then(function(){ toast('コピーしました'); }); }
-      return;
-    }
+    if(cp){ copyText(cp.getAttribute('data-copy')); return; }
     var b = e.target.closest('[data-act]');
     if(!b) return;
     var act = b.getAttribute('data-act'), key = b.getAttribute('data-key');
