@@ -214,10 +214,10 @@
 
       <!-- ② 区間 -->
       <section class="card">
-        <h2><span class="num">②</span>やること・移動（上から順にたどる）</h2>
+        <h2><span class="num">②</span>やること・移動（下から順にたどる）</h2>
         <div class="steps" id="steps"></div>
         <button type="button" class="add-btn" id="addBtn">＋ 区間を追加</button>
-        <p class="hint">上が「朝いちばん」、下が「ゴール直前」。各行にかかる分数を入れると、タイムラインが逆算されます。</p>
+        <p class="hint">上が「ゴール直前」、下が「朝いちばん（起きる）」。各行にかかる分数を入れると、タイムラインが逆算されます。</p>
       </section>
     </div>
 
@@ -322,10 +322,14 @@
     });
   }
 
-  /* ---------- 区間リスト描画（構造変化のときだけ） ---------- */
+  /* ---------- 区間リスト描画（構造変化のときだけ） ----------
+     データは時系列（index 0 = 朝いちばん）。表示は「下から順にたどる」ため
+     反転して描画する（上＝ゴール直前 / 下＝朝いちばん・起きる）。 */
   function renderSteps(){
     elSteps.innerHTML = "";
-    state.steps.forEach(function(s, idx){
+    var last = state.steps.length - 1;
+    for(var idx = last; idx >= 0; idx--){
+      var s = state.steps[idx];
       var row = document.createElement("div");
       row.className = "step";
       row.dataset.id = s.id;
@@ -337,12 +341,12 @@
           '<span class="s-unit">分</span>' +
         '</span>' +
         '<span class="arrows">' +
-          '<button type="button" class="icon-btn up" title="上へ"' + (idx === 0 ? ' disabled style="opacity:.25"' : '') + '>▲</button>' +
-          '<button type="button" class="icon-btn down" title="下へ"' + (idx === state.steps.length - 1 ? ' disabled style="opacity:.25"' : '') + '>▼</button>' +
+          '<button type="button" class="icon-btn up" title="上へ"' + (idx === last ? ' disabled style="opacity:.25"' : '') + '>▲</button>' +
+          '<button type="button" class="icon-btn down" title="下へ"' + (idx === 0 ? ' disabled style="opacity:.25"' : '') + '>▼</button>' +
         '</span>' +
         '<button type="button" class="icon-btn del" title="削除">×</button>';
       elSteps.appendChild(row);
-    });
+    }
   }
 
   /* ---------- 逆算モデル（DOM描画・画像書き出しで共有） ---------- */
@@ -384,11 +388,12 @@
     }
     setExportEnabled(true);
 
+    // 「下から順にたどる」：ゴールを上、起きるを下に置くため反転して描画
     var html = '<div class="tl">';
-    m.items.forEach(function(it, i){
-      html += tlItem(it.f, it.label, it.mark);
-      if(i < m.gaps.length) html += tlGap(m.gaps[i]);
-    });
+    for(var i = m.items.length - 1; i >= 0; i--){
+      html += tlItem(m.items[i].f, m.items[i].label, m.items[i].mark);
+      if(i > 0) html += tlGap(m.gaps[i - 1]);
+    }
     html += '</div>';
     html +=
       '<div class="summary">' +
@@ -458,10 +463,12 @@
 
     if(btn.classList.contains("del")){
       state.steps.splice(idx, 1);
-    } else if(btn.classList.contains("up") && idx > 0){
-      var a = state.steps; var t = a[idx-1]; a[idx-1] = a[idx]; a[idx] = t;
-    } else if(btn.classList.contains("down") && idx < state.steps.length - 1){
-      var b = state.steps; var u = b[idx+1]; b[idx+1] = b[idx]; b[idx] = u;
+    } else if(btn.classList.contains("up") && idx < state.steps.length - 1){
+      // 表示上「上へ」＝ゴール側（時系列で後ろ）へ
+      var a = state.steps; var t = a[idx+1]; a[idx+1] = a[idx]; a[idx] = t;
+    } else if(btn.classList.contains("down") && idx > 0){
+      // 表示上「下へ」＝起きる側（時系列で前）へ
+      var b = state.steps; var u = b[idx-1]; b[idx-1] = b[idx]; b[idx] = u;
     } else {
       return;
     }
@@ -469,9 +476,10 @@
   });
 
   document.getElementById("addBtn").addEventListener("click", function(){
-    state.steps.push({ id: ++uid, label: "", min: 10 });
+    // 「下から順にたどる」表示なので、ボタン付近＝最下段（朝いちばん側）に追加
+    state.steps.unshift({ id: ++uid, label: "", min: 10 });
     renderSteps(); renderTimeline(); save();
-    // 追加した行の名前欄にフォーカス
+    // 追加した行（最下段）の名前欄にフォーカス
     var rows = elSteps.querySelectorAll(".step .s-name");
     if(rows.length) rows[rows.length - 1].focus();
   });
@@ -560,17 +568,20 @@
     ctx.strokeStyle = C.line; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(dotX, firstCY); ctx.lineTo(dotX, lastCY); ctx.stroke();
 
-    // 各項目
-    m.items.forEach(function(it, i){
-      var cy = firstCY + i * STEP;
+    // 各項目（「下から順にたどる」：ゴールを上・起きるを下に反転して描画）
+    var N = m.items.length;
+    for(var d = 0; d < N; d++){
+      var idx = N - 1 - d;
+      var it = m.items[idx];
+      var cy = firstCY + d * STEP;
 
-      // 区間の分数（前の項目との間）
-      if(i > 0){
-        var midY = cy - STEP / 2;
+      // 区間の分数（この項目と一段下＝時系列で前の項目との間）
+      if(idx > 0){
+        var midY = cy + STEP / 2;
         ctx.font = '500 13px ' + FAM;
         ctx.fillStyle = C.sub;
         ctx.textAlign = "left";
-        ctx.fillText("↓ " + durText(m.gaps[i - 1]), labelX, midY);
+        ctx.fillText("↓ " + durText(m.gaps[idx - 1]), labelX, midY);
       }
 
       // ドット
@@ -619,7 +630,7 @@
         ctx.fillText(tagText, px + pw / 2, cy + 1);
         ctx.textAlign = "left";
       }
-    });
+    }
 
     // 区切り線
     ctx.strokeStyle = C.line; ctx.lineWidth = 1;
