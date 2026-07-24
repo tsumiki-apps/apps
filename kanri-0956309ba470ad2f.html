@@ -120,8 +120,8 @@
     </div>
     <div class="row2">
       <div class="field">
-        <label>アプリ名</label>
-        <input id="fApp" placeholder="kouban" value="kouban">
+        <label>アプリ（ゲートに付けた名前と自動で一致）</label>
+        <select id="fApp"></select>
       </div>
       <div class="field">
         <label>台数上限</label>
@@ -236,7 +236,22 @@
     });
   }
 
-  function openApp(){ lock.style.display='none'; app.hidden=false; }
+  function fillApps(apps){
+    var sel = document.getElementById('fApp');
+    var cur = sel.value;
+    sel.innerHTML = apps.map(function(a){
+      return '<option value="'+esc(a.name)+'">'+esc(a.label)+'（'+esc(a.name)+'）</option>';
+    }).join('')
+      + '<option value="__all__">全アプリ共通（*）</option>'
+      + '<option value="__add__">＋ 新しいアプリを登録…</option>';
+    if(cur){ sel.value = cur; }
+  }
+  function loadApps(){
+    return rpc('admin_apps', { p_secret: secret })
+      .then(function(res){ if(res.ok) fillApps(res.data || []); }).catch(function(){});
+  }
+
+  function openApp(){ lock.style.display='none'; app.hidden=false; loadApps(); }
 
   // ---- ロック解除 ----
   lockForm.addEventListener('submit', function(e){
@@ -268,9 +283,24 @@
     app.hidden=true; lock.style.display='flex';
   });
 
+  // 「＋新しいアプリを登録」を選んだら名簿に追加してドロップダウンへ反映
+  document.getElementById('fApp').addEventListener('change', function(){
+    var sel = this;
+    if(sel.value !== '__add__') return;
+    var name = prompt('新しいアプリ名（半角英数と - _ . ／ アプリのゲートに付けた名前と同じにする）');
+    if(!name){ sel.value=''; return; }
+    var label = prompt('画面に出す表示名（例：まぜいろ）', '') || name;
+    rpc('admin_app_add', { p_secret:secret, p_name:name, p_label:label }).then(function(res){
+      if(res.ok){ loadApps().then(function(){ sel.value = name.toLowerCase().trim(); }); toast('アプリを登録しました'); }
+      else { sel.value=''; toast('登録に失敗しました'); }
+    }).catch(function(){ sel.value=''; toast('通信エラー'); });
+  });
+
   document.getElementById('issueBtn').addEventListener('click', function(){
     var c = document.getElementById('fCustomer').value.trim();
-    var a = document.getElementById('fApp').value.trim();
+    var a = document.getElementById('fApp').value;
+    if(a === '__all__'){ a = '*'; }
+    if(a === '__add__' || !a){ toast('アプリを選んでください'); return; }
     var m = parseInt(document.getElementById('fMax').value, 10) || 3;
     var n = document.getElementById('fNote').value.trim();
     if(!c || !a){ toast('名前とアプリ名は必須です'); return; }

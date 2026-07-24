@@ -96,3 +96,46 @@ begin
 end; $$;
 revoke execute on function public.admin_reset_devices(text, text) from public, authenticated;
 grant execute on function public.admin_reset_devices(text, text) to anon;
+
+-- ---------- アプリ名簿（発行画面のドロップダウン。ゲート名と発行名の一致をUIで担保） ----------
+
+create table public.apps (
+  name       text primary key,
+  label      text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.apps enable row level security;
+revoke all on public.apps from public, anon, authenticated;
+insert into public.apps(name, label) values ('kouban','香盤メーカー') on conflict do nothing;
+
+create or replace function public.admin_apps(p_secret text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare res jsonb;
+begin
+  if not public.admin_verify(p_secret) then perform pg_sleep(0.5); raise exception 'unauthorized'; end if;
+  select coalesce(jsonb_agg(to_jsonb(t) order by t.label), '[]'::jsonb) into res
+  from (
+    select a.name, a.label from public.apps a
+    union
+    select d.app as name, coalesce(a2.label, d.app) as label
+      from (select distinct app from public.licenses where app <> '*') d
+      left join public.apps a2 on a2.name = d.app
+  ) t;
+  return res;
+end; $$;
+revoke execute on function public.admin_apps(text) from public, authenticated;
+grant execute on function public.admin_apps(text) to anon;
+
+create or replace function public.admin_app_add(p_secret text, p_name text, p_label text) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare nm text;
+begin
+  if not public.admin_verify(p_secret) then perform pg_sleep(0.5); raise exception 'unauthorized'; end if;
+  nm := lower(trim(p_name));
+  if nm = '' or nm !~ '^[a-z0-9._-]{1,64}$' then raise exception 'invalid app name'; end if;
+  insert into public.apps(name, label) values (nm, coalesce(nullif(trim(p_label),''), nm))
+    on conflict (name) do update set label = excluded.label;
+  return true;
+end; $$;
+revoke execute on function public.admin_app_add(text, text, text) from public, authenticated;
+grant execute on function public.admin_app_add(text, text, text) to anon;
