@@ -22,7 +22,7 @@
     line-height:1.78; padding:env(safe-area-inset-top) 18px 56px;
     -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
   }
-  .wrap{max-width:720px; margin:0 auto;}
+  .wrap{max-width:1180px; margin:0 auto;}
   header{padding:52px 4px 30px; text-align:center;}
   .kicker{color:var(--sub); font-size:12px; letter-spacing:.18em; margin-bottom:18px;}
   .brand{display:flex; align-items:center; justify-content:center; gap:13px;}
@@ -46,6 +46,8 @@
     border-radius:999px; padding:3px 11px;}
   .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
   @media(min-width:560px){ .grid{grid-template-columns:repeat(3,1fr);} }
+  @media(min-width:820px){ .grid{grid-template-columns:repeat(4,1fr); gap:16px;} }
+  @media(min-width:1080px){ .grid{grid-template-columns:repeat(5,1fr);} }
   a.card{
     position:relative;
     display:flex; flex-direction:column; justify-content:space-between; gap:14px;
@@ -82,10 +84,13 @@
   body.editing .card{cursor:pointer;}
   .editing-hint{color:var(--sub); font-size:12px; letter-spacing:.04em; text-align:center; margin-top:12px;}
   .fav-empty{color:var(--sub); font-size:13px; padding:6px 4px 2px; line-height:1.7;}
+  .favsync{margin-left:8px; font-size:12px; font-weight:500; color:var(--sub);
+    letter-spacing:.02em; display:inline-flex; align-items:center; gap:4px;}
+  .favsync .dot{width:6px; height:6px; border-radius:50%; background:#5b8c6b;}
   footer{text-align:center; color:var(--sub); font-size:12px; letter-spacing:.06em;
     margin-top:56px; padding-top:30px; border-top:1px solid var(--line); line-height:1.8;}
   /* 今週のWork ダッシュボード（テキストなし） */
-  .dash{margin-top:22px; background:var(--card); border:1px solid var(--line);
+  .dash{margin:22px auto 0; max-width:560px; background:var(--card); border:1px solid var(--line);
     border-radius:var(--radius); padding:16px 16px 13px; position:relative;}
   .dash .ds{position:absolute; top:13px; right:13px; width:7px; height:7px;
     border-radius:50%; background:var(--ink);}
@@ -218,16 +223,45 @@
       {emoji:"🗓️", title:"ひきおとし", desc:"固定費・サブスクがいつ引き落とされるかカレンダーで管理", href:"hikiotoshi.html"},
       {emoji:"📋", title:"コピペ箱", desc:"クレカ・口座・EPP注文などよくコピーする情報を保管", href:"copybox.html"},
     ]},
+    {key:"apps", emoji:"📱", label:"アプリ", apps:[
+      {emoji:"🎬", title:"いつつ", desc:"1日5回・各2秒。撮りためた今日の断片が、夜にそっと1本の動画日記になる", href:"itsutsu.html"},
+      {emoji:"🎙️", title:"こえがき", desc:"話すだけで、そのまま使える文章に。完全オンデバイスのAI音声入力キーボード", href:"koegaki.html"},
+    ]},
   ];
   const app = document.getElementById("app");
 
-  /* ===== お気に入り（よく使う）：端末ローカル保存・手動登録 ===== */
+  /* ===== お気に入り（よく使う）：ローカル即時保存＋クラウドで端末間同期 =====
+     ・localStorage に即保存（オフラインOK・すぐ描画）。
+     ・Supabase favs_state（id='kodai' の1行）へ最終更新時刻つきで同期（Last-Write-Wins）。
+     ・別の端末で追加/解除すると、次に開いたとき新しい方が反映される。 */
   const FAV_KEY = "tsumikiFavs";
+  const FAV_TS_KEY = "tsumikiFavsTs";      // 端末ローカルの最終更新時刻(ms)
+  const FAV_ROW_ID = "kodai";              // 個人用の固定行
+  const FAV_TABLE  = "favs_state";
+  const SUPABASE_URL  = "https://okbjqtdirrathscctyvx.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y";
   function readFavs(){ try{ return JSON.parse(localStorage.getItem(FAV_KEY) || "[]"); }catch(e){ return []; } }
-  function writeFavs(a){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(a)); }catch(e){} }
+  function readFavTs(){ const n = +localStorage.getItem(FAV_TS_KEY); return Number.isFinite(n) ? n : 0; }
+  function writeFavs(a, ts){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(a)); if(ts) localStorage.setItem(FAV_TS_KEY, String(ts)); }catch(e){} }
   let favs = readFavs();
+  let favSynced = false;                   // クラウドと繋がったか（バッジ表示用）
 
-  const stemOf = href => href.replace(/\.html$/i,"");
+  /* Supabaseクライアント（CDNを遅延ロード。career.js と同じ手口） */
+  let sbPromise = null;
+  function getSB(){
+    if(sbPromise) return sbPromise;
+    sbPromise = new Promise(resolve=>{
+      if(window.supabase && window.supabase.createClient){ resolve(window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON)); return; }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+      s.onload  = ()=> resolve(window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null);
+      s.onerror = ()=> resolve(null);
+      document.head.appendChild(s);
+    });
+    return sbPromise;
+  }
+
+  const stemOf = href => href.replace(/\.html$/i,"").split("/").pop();   // 外部URL(まぜいろ/香盤)でもファイル名だけを取る
   const ALL = {};   // stem -> app
   categories.forEach(c => c.apps.forEach(a => { ALL[stemOf(a.href)] = a; }));
   /* 消えたアプリのstemは掃除 */
@@ -268,22 +302,66 @@
     const body = items.length
       ? '<div class="grid">'+items.map(cardHTML).join("")+'</div>'
       : '<p class="fav-empty">まだありません。下のカードをタップして追加してください。</p>';
+    const sync = favSynced
+      ? '<span class="favsync" title="端末をまたいで同期中"><span class="dot"></span>同期</span>' : '';
     sec.innerHTML =
       '<h2><span class="cat-emoji">★</span>よく使う'+
-      '<span class="badge">'+items.length+'</span></h2>'+ body;
+      '<span class="badge">'+items.length+'</span>'+ sync +'</h2>'+ body;
   }
 
   function toggleFav(stem){
     const i = favs.indexOf(stem);
     if(i >= 0) favs.splice(i,1); else favs.push(stem);
-    writeFavs(favs);
+    writeFavs(favs, Date.now());
     buildCategories();
     renderFavs();
+    pushFavs();               // クラウドへ反映（ベストエフォート）
+  }
+
+  /* ローカルのお気に入りをクラウドへ upsert（最終更新時刻つき） */
+  async function pushFavs(){
+    try{
+      const sb = await getSB(); if(!sb) return false;
+      const ts = readFavTs() || Date.now();
+      const { error } = await sb.from(FAV_TABLE).upsert({
+        id: FAV_ROW_ID, state: { favs }, updated_at: new Date(ts).toISOString()
+      });
+      if(!error){ favSynced = true; renderFavs(); return true; }
+    }catch(e){}
+    return false;
+  }
+
+  /* クラウドの最新を取り込む（Last-Write-Wins） */
+  async function pullFavs(){
+    try{
+      const sb = await getSB(); if(!sb) return;
+      const { data, error } = await sb.from(FAV_TABLE)
+        .select("state,updated_at").eq("id", FAV_ROW_ID).maybeSingle();
+      if(error) return;
+      favSynced = true;
+      const localTs = readFavTs();
+      if(data){
+        const remoteTs = Date.parse(data.updated_at) || 0;
+        const remoteFavs = (data.state && Array.isArray(data.state.favs))
+          ? data.state.favs.filter(s => ALL[s]) : [];
+        if(remoteTs > localTs){                 // クラウドが新しい → 取り込む
+          favs = remoteFavs; writeFavs(favs, remoteTs);
+          buildCategories();
+        }else if(localTs > remoteTs){           // 手元が新しい（オフライン変更等） → 押し上げる
+          await pushFavs();
+        }
+      }else if(favs.length){                     // クラウド未作成 → 手元を種にする
+        writeFavs(favs, readFavTs() || Date.now());
+        await pushFavs();
+      }
+      renderFavs();
+    }catch(e){}
   }
 
   buildCategories();
   renderFavs();
   document.getElementById("count").textContent = Object.keys(ALL).length + " 個のアプリ";
+  pullFavs();   // クラウドの最新お気に入りを取り込む（端末間同期）
 
   /* 編集モード：カードタップでお気に入り付け外し */
   const editBtn = document.getElementById("editBtn");
