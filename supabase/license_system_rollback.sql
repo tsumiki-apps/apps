@@ -6,6 +6,7 @@
 drop function if exists public.admin_app_add(text, text, text);
 drop function if exists public.admin_apps(text);
 drop table if exists public.apps;
+drop function if exists public.admin_set_info(text, text, text, text);
 drop function if exists public.admin_reset_devices(text, text);
 drop function if exists public.admin_set_max(text, text, int);
 drop function if exists public.admin_set_active(text, text, boolean);

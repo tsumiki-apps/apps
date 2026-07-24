@@ -28,7 +28,10 @@
   #lock h1{ font-size:20px; margin:0 0 18px; }
   input, select{ font-size:16px; font-family:inherit; color:var(--ink);
     background:var(--control); border:1px solid var(--hair); border-radius:12px;
-    padding:12px; width:100%; outline:none; }
+    padding:0 12px; height:48px; line-height:normal; width:100%; outline:none;
+    -webkit-appearance:none; appearance:none; }
+  select{ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2377736B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat:no-repeat; background-position:right 12px center; padding-right:36px; }
   input:focus, select:focus{ border-color:var(--ghost); }
   button{ font-family:inherit; font-weight:700; cursor:pointer; }
   .btn-primary{ font-size:15px; padding:13px; width:100%; border:none; border-radius:12px;
@@ -59,8 +62,13 @@
   .card-lic{ background:var(--surface); border:1px solid var(--hair); border-radius:14px;
     padding:14px 16px; }
   .card-lic.off{ opacity:.62; }
-  .toprow{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .toprow{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .custwrap{ display:flex; align-items:center; gap:6px; min-width:0; }
   .cust{ font-size:16px; font-weight:700; }
+  .editbtn{ flex:none; display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; padding:0; border:none; border-radius:7px;
+    background:transparent; color:var(--ghost); cursor:pointer; }
+  .editbtn:hover, .editbtn:active{ background:var(--control); color:var(--ink); }
   .badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }
   .badge.on{ background:#E6ECE2; color:var(--ok); }
   .badge.off{ background:#F0E2DE; color:var(--shu); }
@@ -171,6 +179,7 @@
     }, function(e){ clearTimeout(to); throw e; });
   }
   var COPY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  var EDIT_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
 
   function copyText(t){
     function done(){ toast('コピーしました'); }
@@ -209,7 +218,8 @@
       var over = r.device_count >= r.max_devices;
       var seen = fmtSeen(r.last_seen);
       return '<div class="card-lic '+(r.active?'':'off')+'">'
-        + '<div class="toprow"><span class="cust">'+esc(r.customer)+'</span>'
+        + '<div class="toprow"><div class="custwrap"><span class="cust">'+esc(r.customer)+'</span>'
+        +   '<button class="editbtn" data-act="edit" data-key="'+esc(r.key)+'" data-customer="'+esc(r.customer)+'" data-note="'+esc(r.note||'')+'" title="名前・メモを編集" aria-label="編集">'+EDIT_SVG+'</button></div>'
         +   '<span class="badge '+(r.active?'on':'off')+'">'+(r.active?'有効':'失効中')+'</span></div>'
         + '<div class="keyrow"><span class="keytext">'+esc(r.key)+'</span>'
         +   '<button class="copybtn" data-copy="'+esc(r.key)+'" title="キーをコピー" aria-label="キーをコピー">'+COPY_SVG+'</button></div>'
@@ -326,7 +336,17 @@
     var b = e.target.closest('[data-act]');
     if(!b) return;
     var act = b.getAttribute('data-act'), key = b.getAttribute('data-key');
-    if(act==='toggle'){
+    if(act==='edit'){
+      var curC = b.getAttribute('data-customer')||'';
+      var curN = b.getAttribute('data-note')||'';
+      var nc = prompt('お渡し先の名前（透かしに表示）', curC);
+      if(nc===null) return;
+      if(!nc.trim()){ toast('名前は必須です'); return; }
+      var nn = prompt('メモ（自分用・空でもOK）', curN);
+      if(nn===null) return;
+      rpc('admin_set_info', { p_secret:secret, p_key:key, p_customer:nc, p_note:nn })
+        .then(function(res){ if(res.ok){ toast('更新しました'); load(); } else toast('失敗'); });
+    } else if(act==='toggle'){
       var makeActive = b.getAttribute('data-active')==='0';
       if(!confirm(makeActive?'このキーを復活させますか？':'このキーを無効化しますか？（次に開いた時にロックされます）')) return;
       rpc('admin_set_active', { p_secret:secret, p_key:key, p_active:makeActive })

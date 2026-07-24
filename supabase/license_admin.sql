@@ -97,6 +97,24 @@ end; $$;
 revoke execute on function public.admin_reset_devices(text, text) from public, authenticated;
 grant execute on function public.admin_reset_devices(text, text) to anon;
 
+-- お渡し先名（透かし）・メモの編集
+create or replace function public.admin_set_info(
+  p_secret text, p_key text, p_customer text, p_note text
+) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare n int;
+begin
+  if not public.admin_verify(p_secret) then perform pg_sleep(0.5); raise exception 'unauthorized'; end if;
+  if coalesce(trim(p_customer),'') = '' then raise exception 'customer required'; end if;
+  update public.licenses
+     set customer = trim(p_customer),
+         note     = nullif(trim(coalesce(p_note,'')), '')
+   where key = p_key;
+  get diagnostics n = row_count; return n > 0;
+end; $$;
+revoke execute on function public.admin_set_info(text, text, text, text) from public, authenticated;
+grant execute on function public.admin_set_info(text, text, text, text) to anon;
+
 -- ---------- アプリ名簿（発行画面のドロップダウン。ゲート名と発行名の一致をUIで担保） ----------
 
 create table public.apps (
