@@ -183,6 +183,15 @@ ICONS = {
     "credit": '<rect x="26" y="36" width="48" height="30" rx="6"/>'
               '<line x1="26" y1="46" x2="74" y2="46"/>'
               '<line x1="34" y1="58" x2="50" y2="58"/>',
+    # ふたりカード＝共同カードを2人でわける。カード→Y字で2人へ分岐
+    "futaricard": '<rect x="34" y="22" width="32" height="21" rx="4"/>'
+                  '<line x1="34" y1="29" x2="66" y2="29"/>'
+                  '<path d="M50,43 V50"/>'
+                  '<path d="M50,50 L37,58"/><path d="M50,50 L63,58"/>'
+                  '<circle cx="34" cy="63" r="5.5"/>'
+                  '<path d="M26,77 a8,8 0 0 0 16,0"/>'
+                  '<circle cx="66" cy="63" r="5.5"/>'
+                  '<path d="M58,77 a8,8 0 0 0 16,0"/>',
     # 残高計算＝電卓
     "money": '<rect x="32" y="26" width="36" height="48" rx="6"/>'
              '<rect x="38" y="32" width="24" height="9" rx="2"/>'

@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-futaricard.png">
+<meta name="apple-mobile-web-app-title" content="ふたりカード">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ふたりカード — 共同カードを比率でわける</title>
+<style>
+  :root{
+    --bg:#f4f7fb; --card:#ffffff; --ink:#232a33; --sub:#7c8794;
+    --line:#e6ecf3; --accent:#3b93ff; --accent2:#6fb0ff;
+    --kodai:#3b93ff; --yuzu:#f5a623; --ok:#34c759; --danger:#e5484d;
+    --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
+  html,body{overscroll-behavior-y:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 96px);
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:0 16px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  input,select,textarea{font-family:inherit; font-size:16px;}
+
+  /* ===== ヘッダー ===== */
+  header{padding:24px 4px 6px; display:flex; align-items:center; gap:10px;}
+  header .logo{font-size:28px; line-height:1;}
+  header h1{font-size:22px; font-weight:800; letter-spacing:-.02em;}
+  header .sync{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--sub);
+    background:var(--card); border:1px solid var(--line); border-radius:999px; padding:5px 10px;}
+  .sync .dot{width:7px; height:7px; border-radius:50%; background:var(--ok);}
+  .sync .dot.off{background:#c7c7cc;}
+  .toolbar{display:flex; align-items:center; gap:8px; margin:10px 0 2px;}
+  .periodsel{flex:1; display:flex; align-items:center; gap:7px; background:var(--card);
+    border:1px solid var(--line); border-radius:14px; padding:11px 14px; font-weight:700; font-size:15px;
+    min-width:0; text-align:left;}
+  .periodsel .pn{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .periodsel .cnt{color:var(--sub); font-weight:600; font-size:12px; margin-left:auto; flex:0 0 auto;}
+  .periodsel .chev{color:#c2cdd9; flex:0 0 auto;}
+  .iconbtn{width:44px; height:44px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+    background:var(--card); border:1px solid var(--line); border-radius:14px; font-size:19px;}
+  .iconbtn:active{transform:scale(.95);}
+
+  /* ===== 結果カード ===== */
+  .result{background:linear-gradient(135deg,#eaf3ff,#e3ecff); border:1px solid #d6e5fb;
+    border-radius:var(--radius); padding:18px 18px 20px; margin-top:12px;}
+  .result .lab{font-size:12px; color:#5f7fae; font-weight:700; letter-spacing:.02em;}
+  .result .totalrow{display:flex; align-items:baseline; gap:8px; margin-top:2px;}
+  .result .total{font-size:30px; font-weight:800; letter-spacing:-.02em;}
+  .result .total small{font-size:18px; font-weight:700;}
+  .result .totalsub{font-size:11px; color:#6f8bb3;}
+  .splitcards{display:grid; grid-template-columns:1fr 1fr; gap:11px; margin-top:14px;}
+  .pc{background:var(--card); border-radius:16px; padding:13px 14px; border:1px solid rgba(255,255,255,.7);}
+  .pc .nm{font-size:12px; color:var(--sub); font-weight:700; display:flex; align-items:center; gap:6px;}
+  .pc .nm .ic{width:9px; height:9px; border-radius:50%; flex:0 0 auto;}
+  .pc .vl{font-size:23px; font-weight:800; margin-top:3px; letter-spacing:-.02em;}
+  .pc .vl small{font-size:14px; font-weight:700;}
+  .pc .sb{font-size:10.5px; color:var(--sub); margin-top:1px;}
+
+  /* 比率スライダー */
+  .ratiobox{background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:14px 15px; margin-top:12px;}
+  .ratiobox .rt{display:flex; align-items:center; font-size:12px; font-weight:700; color:var(--sub);}
+  .ratiobox .rt .rr{margin-left:auto; color:var(--ink);}
+  .ratiobox .rt .rr .k{color:var(--kodai);} .ratiobox .rt .rr .y{color:var(--yuzu);}
+  .rslide{position:relative; margin-top:12px;}
+  .rslide input[type=range]{width:100%; -webkit-appearance:none; appearance:none; height:8px; border-radius:999px;
+    background:linear-gradient(to right,var(--kodai) 0%,var(--kodai) var(--p,50%),var(--yuzu) var(--p,50%),var(--yuzu) 100%);
+    outline:none;}
+  .rslide input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:26px; height:26px; border-radius:50%;
+    background:#fff; border:2px solid var(--line); box-shadow:0 2px 6px rgba(0,0,0,.18); cursor:pointer;}
+  .rpresets{display:flex; gap:7px; margin-top:11px;}
+  .rpresets button{flex:1; padding:8px 4px; border-radius:10px; border:1px solid var(--line);
+    background:var(--bg); font-weight:700; font-size:12px; color:var(--sub);}
+  .rpresets button.on{border-color:var(--accent); background:rgba(59,147,255,.10); color:var(--accent);}
+
+  /* 内訳ミニ */
+  .minibd{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .chip{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+    padding:6px 11px; border-radius:999px; background:var(--card); border:1px solid var(--line); color:var(--sub);}
+  .chip b{color:var(--ink); font-weight:800;}
+  .chip .d{width:8px; height:8px; border-radius:2px;}
+
+  /* ===== 明細 ===== */
+  .listhead{display:flex; align-items:center; margin:22px 4px 8px;}
+  .listhead h2{font-size:14px; font-weight:800;}
+  .listhead .filters{margin-left:auto; display:flex; gap:6px;}
+  .listhead .filters button{font-size:11px; font-weight:700; color:var(--sub); padding:5px 10px;
+    border-radius:999px; background:var(--card); border:1px solid var(--line);}
+  .listhead .filters button.on{color:var(--accent); border-color:var(--accent); background:rgba(59,147,255,.08);}
+
+  .daygroup{font-size:11px; font-weight:700; color:var(--sub); margin:14px 4px 6px;}
+  .entry{display:flex; align-items:center; gap:11px; background:var(--card);
+    border:1px solid var(--line); border-radius:14px; padding:11px 13px; margin-bottom:8px;}
+  .entry:active{transform:scale(.994);}
+  .entry.excl{opacity:.5;}
+  .entry .info{min-width:0; flex:1;}
+  .entry .ti{font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .entry .me{font-size:11px; color:var(--sub); display:flex; gap:7px; align-items:center; margin-top:1px;}
+  .entry .amt{font-weight:800; font-size:15.5px; flex:0 0 auto;}
+  .entry .amt.minus{color:var(--ok);}
+  .tag{font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; flex:0 0 auto;}
+  .tag.share{background:rgba(120,120,128,.12); color:#5a6470;}
+  .tag.kodai{background:rgba(59,147,255,.13); color:#1f6fd6;}
+  .tag.yuzu{background:rgba(245,166,35,.16); color:#c47e0a;}
+  .tag.excl{background:rgba(120,120,128,.10); color:#98a0aa;}
+
+  .empty{text-align:center; color:var(--sub); padding:42px 20px;}
+  .empty .big{font-size:44px;} .empty p{margin-top:10px; font-size:14px;}
+  .empty .ib{display:inline-block; margin-top:16px; background:var(--accent); color:#fff;
+    padding:12px 22px; border-radius:14px; font-weight:700; font-size:14px;}
+
+  /* ===== 下部アクションバー ===== */
+  .actionbar{position:fixed; left:0; right:0; bottom:0; z-index:40;
+    padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);
+    background:linear-gradient(to top, var(--bg) 72%, rgba(244,247,251,0));
+    display:flex; gap:9px; max-width:560px; margin:0 auto;}
+  .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:14px; border-radius:15px; font-weight:700; font-size:15px;
+    background:var(--card); border:1px solid var(--line); color:var(--ink);}
+  .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent);
+    box-shadow:0 6px 18px rgba(59,147,255,.32);}
+  .btn:active{transform:scale(.97);}
+
+  /* ===== モーダル ===== */
+  .ov{position:fixed; inset:0; z-index:100; background:rgba(20,30,45,.42);
+    display:flex; align-items:flex-end; justify-content:center; opacity:0; pointer-events:none;
+    transition:opacity .2s ease; backdrop-filter:blur(2px);}
+  .ov.show{opacity:1; pointer-events:auto;}
+  .sheet{width:100%; max-width:560px; background:var(--bg); border-radius:24px 24px 0 0;
+    padding:8px 18px calc(env(safe-area-inset-bottom) + 22px); max-height:92vh; overflow-y:auto;
+    transform:translateY(20px); transition:transform .25s cubic-bezier(.2,.8,.2,1);
+    -webkit-overflow-scrolling:touch;}
+  .ov.show .sheet{transform:translateY(0);}
+  .grip{width:38px; height:5px; border-radius:3px; background:#d6dee8; margin:6px auto 14px;}
+  .sheet h2{font-size:19px; font-weight:800; margin-bottom:4px;}
+  .sheet .sd{font-size:12px; color:var(--sub); margin-bottom:16px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12px; font-weight:700; color:var(--sub); margin-bottom:6px;}
+  .field input[type=text],.field input[type=number],.field input[type=date],.field select{
+    width:100%; padding:13px 14px; border:1px solid var(--line); border-radius:13px;
+    background:var(--card); color:var(--ink); outline:none;}
+  .field input:focus,.field select:focus{border-color:var(--accent);}
+  .seg{display:flex; gap:7px; flex-wrap:wrap;}
+  .seg button{flex:1 1 auto; min-width:calc(50% - 4px); padding:12px 6px; border-radius:12px; border:1.5px solid var(--line);
+    background:var(--card); font-weight:700; font-size:14px; color:var(--sub); transition:all .12s;}
+  .seg button.on{border-color:var(--accent); background:rgba(59,147,255,.10); color:var(--ink);}
+  .seg button.on.share{border-color:#8a94a0; background:rgba(120,120,128,.12); color:#4a545f;}
+  .seg button.on.k{border-color:var(--kodai); background:rgba(59,147,255,.12); color:#1f6fd6;}
+  .seg button.on.y{border-color:var(--yuzu); background:rgba(245,166,35,.14); color:#c47e0a;}
+  .seg button.on.x{border-color:#98a0aa; background:rgba(120,120,128,.10); color:#6b7480;}
+  .sheetbtns{display:flex; gap:9px; margin-top:8px;}
+  .sheetbtns .save{flex:1; background:var(--accent); color:#fff; padding:15px; border-radius:14px; font-weight:800; font-size:16px;}
+  .sheetbtns .save:active{transform:scale(.97);}
+  .delbtn{width:100%; text-align:center; color:var(--danger); font-weight:700; font-size:14px; padding:14px; margin-top:4px;}
+  .secbtn{width:100%; display:flex; align-items:center; gap:10px; text-align:left; background:var(--card);
+    border:1px solid var(--line); padding:15px; border-radius:14px; font-weight:700; font-size:15px; margin-top:10px;}
+  .secbtn .em{font-size:18px;}
+  .secbtn small{display:block; font-weight:500; font-size:11.5px; color:var(--sub);}
+  .hint{font-size:11px; color:var(--sub); text-align:center; margin-top:10px; line-height:1.7;}
+
+  /* 期間ピッカー行 */
+  .prow{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:13px 14px; margin-bottom:8px;}
+  .prow.on{border-color:var(--accent); background:rgba(59,147,255,.06);}
+  .prow .pi{min-width:0; flex:1;}
+  .prow .pi .pnm{font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .prow .pi .pmt{font-size:11px; color:var(--sub);}
+  .prow .pv{font-weight:800; font-size:13px; color:var(--sub); flex:0 0 auto;}
+
+  .toast{position:fixed; bottom:calc(env(safe-area-inset-bottom) + 100px); left:50%; transform:translateX(-50%) translateY(20px);
+    background:#232a33; color:#fff; padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600;
+    z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; white-space:nowrap; max-width:88vw;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="logo">💳</span>
+    <h1>ふたりカード</h1>
+    <span class="sync" id="syncBadge"><span class="dot off"></span><span id="syncTxt">この端末</span></span>
+  </header>
+
+  <div class="toolbar">
+    <button class="periodsel" id="periodBtn">
+      <span class="pn" id="periodName">期間</span>
+      <span class="cnt" id="periodCnt"></span>
+      <span class="chev">▾</span>
+    </button>
+    <button class="iconbtn" id="settingsBtn" aria-label="設定">⚙️</button>
+  </div>
+
+  <div id="body"></div>
+</div>
+
+<div class="actionbar" id="actionBar">
+  <button class="btn" id="addBtn">＋ 手動追加</button>
+  <button class="btn primary" id="importBtn">📄 CSVを読み込む</button>
+</div>
+<input type="file" id="csvInput" accept=".csv" hidden>
+<input type="file" id="restoreInput" accept=".json" hidden>
+
+<div class="ov" id="ov"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============ Supabase 同期（個人用1行ブロブ・yuzuwari等と同じ方式） ============ */
+const SUPABASE_URL='https://okbjqtdirrathscctyvx.supabase.co';
+const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+const STATE_TABLE='futaricard_state', STATE_ID='kodai';
+const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
+let cloudReady=false, applyingRemote=false;
+
+/* ============ データ ============ */
+const LS_KEY='futaricard_db_v1';
+function defaultDB(){
+  const p=newPeriod(monthLabel(new Date()));
+  return { names:{kodai:'こうだい', yuzu:'ゆず'}, defaultRatio:50,
+    periods:[p], current:p.id, updatedAt:0 };
+}
+function newPeriod(name){ return {id:uid(), name, items:[], ratio:null, createdAt:nowMs()}; }
+let db=load();
+function load(){
+  try{const r=JSON.parse(localStorage.getItem(LS_KEY)); if(r&&r.periods&&r.periods.length) return migrate(r);}catch(e){}
+  return defaultDB();
+}
+function migrate(r){
+  if(r.defaultRatio==null)r.defaultRatio=50;
+  if(!r.names)r.names={kodai:'こうだい',yuzu:'ゆず'};
+  if(!r.current||!r.periods.find(p=>p.id===r.current))r.current=r.periods[0].id;
+  return r;
+}
+let saveTimer=null;
+function save(opts={}){
+  db.updatedAt=nowMs();
+  localStorage.setItem(LS_KEY, JSON.stringify(db));
+  if(!opts.noRender) render();
+  if(!applyingRemote){ clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud, 600); }
+}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function nowMs(){return Date.now();}
+
+/* ============ クラウド ============ */
+async function loadRemote(){
+  if(!sb) return;
+  try{
+    const {data,error}=await sb.from(STATE_TABLE).select('state,updated_at').eq('id',STATE_ID).maybeSingle();
+    if(error){console.warn(error);return;}
+    cloudReady=true; setSync(true);
+    if(data&&data.state&&data.state.periods){
+      if((data.state.updatedAt||0) >= (db.updatedAt||0)){
+        applyingRemote=true; db=migrate(data.state); applyingRemote=false;
+        localStorage.setItem(LS_KEY, JSON.stringify(db)); render();
+      } else { pushCloud(); }
+    } else { pushCloud(); }
+  }catch(e){console.warn(e);}
+}
+async function pushCloud(){
+  if(!sb||!cloudReady) return;
+  try{ await sb.from(STATE_TABLE).upsert({id:STATE_ID, state:db, updated_at:new Date().toISOString()}); }
+  catch(e){console.warn(e);}
+}
+function subscribeRealtime(){
+  if(!sb) return;
+  sb.channel('futaricard-rt')
+    .on('postgres_changes',{event:'*',schema:'public',table:STATE_TABLE,filter:'id=eq.'+STATE_ID},
+      payload=>{
+        const st=payload.new&&payload.new.state;
+        if(st&&st.periods&&(st.updatedAt||0)>(db.updatedAt||0)){
+          applyingRemote=true; db=migrate(st); applyingRemote=false;
+          localStorage.setItem(LS_KEY, JSON.stringify(db)); render();
+        }
+      }).subscribe();
+}
+function setSync(on){
+  const dot=document.querySelector('#syncBadge .dot');
+  document.getElementById('syncTxt').textContent = on?'同期中':'この端末';
+  if(dot) dot.classList.toggle('off', !on);
+}
+
+/* ============ 計算 ============ */
+// 明細の tag: 'share'(共同) / 'kodai' / 'yuzu' / 'excl'(対象外)
+function curPeriod(){ return db.periods.find(p=>p.id===db.current)||db.periods[0]; }
+function ratioOf(p){ return (p.ratio==null?db.defaultRatio:p.ratio); } // こうだいの取り分%
+function calc(p){
+  let share=0, kPer=0, yPer=0, excl=0;
+  p.items.forEach(it=>{
+    const a=it.amount;
+    if(it.tag==='kodai') kPer+=a;
+    else if(it.tag==='yuzu') yPer+=a;
+    else if(it.tag==='excl') excl+=a;
+    else share+=a; // share
+  });
+  const r=ratioOf(p);
+  const kShare=Math.round(share*r/100);
+  const yShare=share-kShare;
+  const kodai=kShare+kPer;
+  const yuzu=yShare+yPer;
+  return {share, kPer, yPer, excl, r, kShare, yShare, kodai, yuzu, cardTotal:kodai+yuzu};
+}
+function yen(n){const s=n<0?'-':''; return s+'¥'+Math.abs(Math.round(n)).toLocaleString('ja-JP');}
+function nm(id){return db.names[id]||id;}
+
+/* ============ レンダリング ============ */
+function render(){
+  const p=curPeriod();
+  document.getElementById('periodName').textContent=p.name;
+  document.getElementById('periodCnt').textContent=p.items.length?p.items.length+'件':'';
+  document.getElementById('body').innerHTML = p.items.length? renderPeriod(p) : renderEmpty();
+  bindBody(p);
+}
+function renderEmpty(){
+  return '<div class="empty"><div class="big">💳</div>'+
+    '<p>共同カードの明細CSVを読み込むと<br>共同ぶんを比率でわけて計算します。</p>'+
+    '<div class="ib" id="emptyImport">📄 CSVを読み込む</div></div>';
+}
+let curFilter='all';
+function renderPeriod(p){
+  const c=calc(p);
+  const r=c.r;
+  // 結果
+  let html='<div class="result">'+
+    '<div class="lab">カード合計（対象外をのぞく）</div>'+
+    '<div class="totalrow"><span class="total"><small>¥</small>'+Math.round(c.cardTotal).toLocaleString('ja-JP')+'</span></div>'+
+    '<div class="totalsub">共同 '+yen(c.share)+(c.excl?'／対象外 '+yen(c.excl):'')+'</div>'+
+    '<div class="splitcards">'+
+      '<div class="pc"><div class="nm"><span class="ic" style="background:var(--kodai)"></span>'+esc(nm('kodai'))+'</div>'+
+        '<div class="vl"><small>¥</small>'+Math.round(c.kodai).toLocaleString('ja-JP')+'</div>'+
+        '<div class="sb">共同'+yen(c.kShare)+(c.kPer?'＋個人'+yen(c.kPer):'')+'</div></div>'+
+      '<div class="pc"><div class="nm"><span class="ic" style="background:var(--yuzu)"></span>'+esc(nm('yuzu'))+'</div>'+
+        '<div class="vl"><small>¥</small>'+Math.round(c.yuzu).toLocaleString('ja-JP')+'</div>'+
+        '<div class="sb">共同'+yen(c.yShare)+(c.yPer?'＋個人'+yen(c.yPer):'')+'</div></div>'+
+    '</div></div>';
+
+  // 比率スライダー
+  html+='<div class="ratiobox">'+
+    '<div class="rt">共同ぶんの比率<span class="rr"><span class="k">'+esc(nm('kodai'))+' '+r+'%</span> / <span class="y">'+esc(nm('yuzu'))+' '+(100-r)+'%</span></span></div>'+
+    '<div class="rslide" style="--p:'+r+'%"><input type="range" id="ratio" min="0" max="100" step="5" value="'+r+'"></div>'+
+    '<div class="rpresets" id="rpresets">'+
+      [50,60,70].map(v=>'<button data-v="'+v+'" class="'+(r===v?'on':'')+'">'+v+':'+(100-v)+'</button>').join('')+
+    '</div></div>';
+
+  // ミニ内訳
+  html+='<div class="minibd">'+
+    '<span class="chip"><span class="d" style="background:#8a94a0"></span>共同 <b>'+yen(c.share)+'</b></span>'+
+    (c.kPer?'<span class="chip"><span class="d" style="background:var(--kodai)"></span>'+esc(nm('kodai'))+'個人 <b>'+yen(c.kPer)+'</b></span>':'')+
+    (c.yPer?'<span class="chip"><span class="d" style="background:var(--yuzu)"></span>'+esc(nm('yuzu'))+'個人 <b>'+yen(c.yPer)+'</b></span>':'')+
+    (c.excl?'<span class="chip"><span class="d" style="background:#c2cad3"></span>対象外 <b>'+yen(c.excl)+'</b></span>':'')+
+    '</div>';
+
+  // 明細
+  html+='<div class="listhead"><h2>明細</h2><div class="filters" id="filters">'+
+    [['all','すべて'],['share','共同'],['kodai',nm('kodai')],['yuzu',nm('yuzu')],['excl','対象外']]
+      .map(f=>'<button data-f="'+f[0]+'" class="'+(curFilter===f[0]?'on':'')+'">'+esc(f[1])+'</button>').join('')+
+    '</div></div>';
+
+  let items=[...p.items].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.id>a.id?1:-1));
+  if(curFilter!=='all') items=items.filter(it=>(it.tag||'share')===curFilter);
+  if(!items.length){ html+='<div class="empty" style="padding:26px"><p>この条件の明細はありません</p></div>'; return html; }
+  let lastDay='';
+  items.forEach(it=>{
+    if(it.date!==lastDay){lastDay=it.date; html+='<div class="daygroup">'+fmtDate(it.date)+'</div>';}
+    const tag=it.tag||'share';
+    const tl={share:'共同',kodai:nm('kodai')+'個人',yuzu:nm('yuzu')+'個人',excl:'対象外'}[tag];
+    html+='<div class="entry '+(tag==='excl'?'excl':'')+'" data-id="'+it.id+'">'+
+      '<span class="tag '+(tag==='excl'?'excl':tag==='share'?'share':tag)+'">'+esc(tl)+'</span>'+
+      '<div class="info"><div class="ti">'+esc(it.desc||'（無題）')+'</div>'+
+        '<div class="me">'+esc(fmtDateShort(it.date))+'</div></div>'+
+      '<span class="amt '+(it.amount<0?'minus':'')+'">'+yen(it.amount)+'</span></div>';
+  });
+  return html;
+}
+function bindBody(p){
+  const ei=document.getElementById('emptyImport'); if(ei) ei.onclick=()=>document.getElementById('csvInput').click();
+  const ratio=document.getElementById('ratio');
+  if(ratio){
+    ratio.oninput=e=>{ const v=+e.target.value; e.target.parentElement.style.setProperty('--p',v+'%');
+      document.querySelectorAll('#rpresets button').forEach(b=>b.classList.toggle('on',+b.dataset.v===v));
+      // ラベルだけ即時更新（保存はchangeで）
+      const rr=document.querySelector('.ratiobox .rr');
+      if(rr) rr.innerHTML='<span class="k">'+esc(nm('kodai'))+' '+v+'%</span> / <span class="y">'+esc(nm('yuzu'))+' '+(100-v)+'%</span>';
+      liveSplit(p,v);
+    };
+    ratio.onchange=e=>{ curPeriod().ratio=+e.target.value; save(); };
+  }
+  document.querySelectorAll('#rpresets button').forEach(b=>b.onclick=()=>{ curPeriod().ratio=+b.dataset.v; save(); });
+  document.querySelectorAll('#filters button').forEach(b=>b.onclick=()=>{ curFilter=b.dataset.f; render(); });
+  document.querySelectorAll('#body .entry').forEach(el=>el.onclick=()=>openItem(p, p.items.find(x=>x.id===el.dataset.id)));
+}
+// スライダー操作中の即時プレビュー（保存はしない）
+function liveSplit(p,v){
+  const c0={...calc(p)}; // shareはtag集計なので比率だけ差し替え
+  let share=0,kPer=0,yPer=0;
+  p.items.forEach(it=>{const a=it.amount; if(it.tag==='kodai')kPer+=a; else if(it.tag==='yuzu')yPer+=a; else if(it.tag==='excl'){} else share+=a;});
+  const kShare=Math.round(share*v/100), yShare=share-kShare;
+  const cards=document.querySelectorAll('.splitcards .pc .vl');
+  const subs=document.querySelectorAll('.splitcards .pc .sb');
+  if(cards[0]) cards[0].innerHTML='<small>¥</small>'+Math.round(kShare+kPer).toLocaleString('ja-JP');
+  if(cards[1]) cards[1].innerHTML='<small>¥</small>'+Math.round(yShare+yPer).toLocaleString('ja-JP');
+  if(subs[0]) subs[0].textContent='共同'+yen(kShare)+(kPer?'＋個人'+yen(kPer):'');
+  if(subs[1]) subs[1].textContent='共同'+yen(yShare)+(yPer?'＋個人'+yen(yPer):'');
+}
+
+/* ============ 日付ヘルパ ============ */
+function pad(n){return String(n).padStart(2,'0');}
+function today(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function monthLabel(d){return (d.getMonth()+1)+'月分'+(d.getMonth()===11?'':'');}
+function normDate(s){ // "2026/01/07" や "2026-1-7" → "2026-01-07"
+  const m=String(s||'').match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if(!m)return String(s||'');
+  return m[1]+'-'+pad(+m[2])+'-'+pad(+m[3]);
+}
+function fmtDate(d){
+  const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m)return d||'日付なし';
+  const y=+m[1],mo=+m[2],day=+m[3];
+  const wd=['日','月','火','水','木','金','土'][new Date(y,mo-1,day).getDay()];
+  return mo+'月'+day+'日('+wd+')';
+}
+function fmtDateShort(d){
+  const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m)return d||'';
+  return (+m[2])+'/'+(+m[3]);
+}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+/* ============ モーダル基盤 ============ */
+const ov=document.getElementById('ov');
+function openSheet(html){
+  ov.innerHTML='<div class="sheet"><div class="grip"></div>'+html+'</div>';
+  requestAnimationFrame(()=>ov.classList.add('show'));
+  ov.querySelector('.sheet').onclick=e=>e.stopPropagation();
+}
+function closeSheet(){ov.classList.remove('show'); setTimeout(()=>ov.innerHTML='',250);}
+ov.onclick=closeSheet;
+
+/* ============ 明細 追加/編集 ============ */
+function openItem(p, existing){
+  const it=existing||{date:today(),desc:'',amount:'',tag:'share'};
+  openSheet(
+    '<h2>'+(existing?'明細を編集':'手動で追加')+'</h2>'+
+    '<div class="field"><label>金額（返金・マイナスは頭に -）</label><input type="number" inputmode="numeric" id="iAmt" placeholder="0" value="'+(it.amount===''?'':it.amount)+'" style="font-size:24px;font-weight:800;"></div>'+
+    '<div class="field"><label>内容</label><input type="text" id="iDesc" placeholder="例：スーパー / コンビニ" value="'+esc(it.desc)+'"></div>'+
+    '<div class="field"><label>だれの負担？</label><div class="seg" id="iTag">'+
+      '<button data-v="share" class="'+(it.tag==='share'?'on share':'')+'">共同でわける</button>'+
+      '<button data-v="kodai" class="'+(it.tag==='kodai'?'on k':'')+'">'+esc(nm('kodai'))+'個人</button>'+
+      '<button data-v="yuzu" class="'+(it.tag==='yuzu'?'on y':'')+'">'+esc(nm('yuzu'))+'個人</button>'+
+      '<button data-v="excl" class="'+(it.tag==='excl'?'on x':'')+'">対象外</button>'+
+    '</div></div>'+
+    '<div class="field"><label>日付</label><input type="date" id="iDate" value="'+(normDate(it.date)||today())+'"></div>'+
+    '<div class="sheetbtns"><button class="save" id="iSave">'+(existing?'保存':'追加する')+'</button></div>'+
+    (existing?'<button class="delbtn" id="iDel">この明細を削除</button>':'')
+  );
+  let tag=it.tag||'share';
+  ov.querySelectorAll('#iTag button').forEach(b=>b.onclick=()=>{
+    tag=b.dataset.v;
+    ov.querySelectorAll('#iTag button').forEach(x=>x.classList.remove('on','share','k','y','x'));
+    b.classList.add('on', {share:'share',kodai:'k',yuzu:'y',excl:'x'}[tag]);
+  });
+  ov.querySelector('#iSave').onclick=()=>{
+    const amount=Math.round(+ov.querySelector('#iAmt').value||0);
+    if(amount===0){toast('金額を入力してね'); return;}
+    const data={date:ov.querySelector('#iDate').value||today(), desc:ov.querySelector('#iDesc').value.trim(), amount, tag};
+    if(existing){Object.assign(existing,data);}
+    else{curPeriod().items.push({id:uid(),src:'manual',...data});}
+    save(); closeSheet(); toast(existing?'保存しました':'追加しました ✓');
+  };
+  if(existing){
+    ov.querySelector('#iDel').onclick=()=>{
+      const p2=curPeriod(); p2.items=p2.items.filter(x=>x.id!==existing.id); save(); closeSheet(); toast('削除しました');
+    };
+  }
+  if(!existing) setTimeout(()=>{const a=ov.querySelector('#iAmt'); if(a)a.focus();},300);
+}
+
+/* ============ 期間ピッカー ============ */
+function openPeriods(){
+  const rows=db.periods.map(p=>{
+    const c=calc(p);
+    return '<button class="prow '+(p.id===db.current?'on':'')+'" data-id="'+p.id+'">'+
+      '<div class="pi"><div class="pnm">'+esc(p.name)+'</div>'+
+        '<div class="pmt">'+p.items.length+'件・合計 '+yen(c.cardTotal)+'</div></div>'+
+      '<span class="pv">'+esc(nm('kodai'))+' '+yen(c.kodai)+'</span></button>';
+  }).join('');
+  openSheet(
+    '<h2>期間をえらぶ</h2>'+
+    '<div class="sd">月ごとに明細をまとめられます。CSVは選んでいる期間に読み込まれます。</div>'+
+    rows+
+    '<button class="secbtn" id="newPeriod"><span class="em">＋</span><div>あたらしい期間をつくる<small>いまの期間はそのまま残ります</small></div></button>'
+  );
+  ov.querySelectorAll('.prow').forEach(el=>el.onclick=()=>{ db.current=el.dataset.id; curFilter='all'; save(); closeSheet(); window.scrollTo(0,0); });
+  ov.querySelector('#newPeriod').onclick=()=>{ closeSheet(); setTimeout(openNewPeriod,260); };
+}
+function openNewPeriod(){
+  openSheet(
+    '<h2>あたらしい期間</h2>'+
+    '<div class="field"><label>期間の名前</label><input type="text" id="npName" placeholder="例：1月分 / 2026年1月" value="'+esc(monthLabel(new Date()))+'"></div>'+
+    '<div class="sheetbtns"><button class="save" id="npSave">つくる</button></div>'
+  );
+  ov.querySelector('#npSave').onclick=()=>{
+    const name=ov.querySelector('#npName').value.trim()||'名称未設定';
+    const p=newPeriod(name); db.periods.unshift(p); db.current=p.id; curFilter='all';
+    save(); closeSheet(); toast('「'+name+'」を作成しました ✓');
+  };
+  setTimeout(()=>{const i=ov.querySelector('#npName'); if(i)i.focus();},300);
+}
+
+/* ============ 設定 ============ */
+function openSettings(){
+  const p=curPeriod();
+  openSheet(
+    '<h2>設定</h2>'+
+    '<div class="field"><label>ふたりの呼び名</label>'+
+      '<input type="text" id="nameK" placeholder="あなた" value="'+esc(db.names.kodai)+'" style="margin-bottom:8px">'+
+      '<input type="text" id="nameY" placeholder="あいて" value="'+esc(db.names.yuzu)+'"></div>'+
+    '<div class="field"><label>共同ぶんの既定の比率（'+esc(db.names.kodai)+'の取り分 %）</label>'+
+      '<input type="number" inputmode="numeric" id="defR" min="0" max="100" step="5" value="'+db.defaultRatio+'"></div>'+
+    '<div class="hint" style="margin:0 0 6px">新しい期間はこの比率で始まります。期間ごとの調整は結果画面のスライダーで。</div>'+
+    '<button class="secbtn" id="renameP"><span class="em">✏️</span><div>この期間の名前を変える<small>いま：'+esc(p.name)+'</small></div></button>'+
+    '<button class="secbtn" id="setShareAll"><span class="em">↩️</span><div>この期間を全部「共同」に戻す<small>個人・対象外の仕分けをリセット</small></div></button>'+
+    '<button class="secbtn" id="exportBtn"><span class="em">⬇️</span><div>バックアップを書き出す<small>全期間をJSONファイルで保存</small></div></button>'+
+    '<button class="secbtn" id="restoreBtn"><span class="em">⬆️</span><div>バックアップから復元<small>書き出したJSONを読み込む</small></div></button>'+
+    (db.periods.length>1?'<button class="delbtn" id="delP">この期間を削除</button>':'')+
+    '<div class="hint">明細は「共同／個人／対象外」で仕分けできます。<br>共同ぶんだけが比率でわけられ、個人はその人が全額、対象外は計算から外れます。</div>'
+  );
+  ov.querySelector('#nameK').onchange=commitNames; ov.querySelector('#nameY').onchange=commitNames;
+  function commitNames(){
+    db.names.kodai=ov.querySelector('#nameK').value.trim()||'こうだい';
+    db.names.yuzu=ov.querySelector('#nameY').value.trim()||'ゆず';
+    save({noRender:true});
+  }
+  ov.querySelector('#defR').onchange=e=>{ let v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); db.defaultRatio=v; e.target.value=v; save({noRender:true}); };
+  ov.querySelector('#renameP').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openRename,260); };
+  ov.querySelector('#setShareAll').onclick=()=>{
+    if(confirm('この期間の明細をすべて「共同」に戻しますか？')){ curPeriod().items.forEach(it=>it.tag='share'); commitNames(); save(); closeSheet(); toast('共同に戻しました'); }
+  };
+  ov.querySelector('#exportBtn').onclick=exportBackup;
+  ov.querySelector('#restoreBtn').onclick=()=>document.getElementById('restoreInput').click();
+  const dp=ov.querySelector('#delP');
+  if(dp) dp.onclick=()=>{
+    if(confirm('「'+curPeriod().name+'」を削除しますか？\nこの期間の明細も消えます。')){
+      db.periods=db.periods.filter(x=>x.id!==db.current); db.current=db.periods[0].id; curFilter='all';
+      commitNames(); save(); closeSheet(); toast('削除しました');
+    }
+  };
+}
+function openRename(){
+  const p=curPeriod();
+  openSheet(
+    '<h2>期間の名前</h2>'+
+    '<div class="field"><label>名前</label><input type="text" id="rnName" value="'+esc(p.name)+'"></div>'+
+    '<div class="sheetbtns"><button class="save" id="rnSave">保存</button></div>'
+  );
+  ov.querySelector('#rnSave').onclick=()=>{ curPeriod().name=ov.querySelector('#rnName').value.trim()||p.name; save(); closeSheet(); toast('保存しました'); };
+}
+
+/* ============ バックアップ ============ */
+function exportBackup(){
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='futaricard-backup-'+today()+'.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000); toast('書き出しました ✓');
+}
+function handleRestore(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{ const r=JSON.parse(rd.result);
+      if(!r||!r.periods) throw 0;
+      if(!confirm('バックアップから復元しますか？\nいまのデータは置きかわります。')) return;
+      db=migrate(r); save(); closeSheet(); toast('復元しました ✓');
+    }catch(e){ toast('ファイルを読めませんでした'); }
+  };
+  rd.readAsText(file);
+}
+
+/* ============ CSV 取り込み ============ */
+function parseCsvLine(line){
+  const res=[];let cur='',inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;continue;}inQ=!inQ;continue;}
+    if(c===','&&!inQ){res.push(cur);cur='';continue;}
+    cur+=c;
+  }
+  res.push(cur);return res;
+}
+function decodeBuffer(buf){
+  try{return new TextDecoder('utf-8',{fatal:true}).decode(buf);}
+  catch(e){try{return new TextDecoder('shift-jis',{fatal:false}).decode(buf);}
+  catch(e2){return new TextDecoder('utf-8').decode(buf);}}
+}
+function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=((h<<5)-h+s.charCodeAt(i))|0;return Math.abs(h).toString(36);}
+function findHeaderIdx(cols,cands){
+  for(const c of cands){const i=cols.findIndex(h=>h.replace(/\s/g,'').includes(c));if(i>=0)return i;}
+  return -1;
+}
+// 口座振替・支払い行（買い物ではない）は取り込まない
+const PAYMENT_RE=/(口座振替|お支払|ご入金|自動振替|カードお支払|リボお支払|ボーナス払い|振替|繰越|前回|今回お支払)/;
+async function parseCreditCSV(file){
+  const buf=await file.arrayBuffer();
+  const text=decodeBuffer(buf);
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length<2){alert('CSVに明細がありません');return null;}
+  const header=parseCsvLine(lines[0]);
+  const dIdx=findHeaderIdx(header,['ご利用日','利用日','取引日','日付','ご利用年月日','Date','TransactionDate']);
+  const descIdx=findHeaderIdx(header,['ご利用内容','ご利用先','ご利用店名','ご利用店名・商品名','店名','内容','店舗','摘要','利用店名','加盟店名','Description','Merchant','明細','ご利用明細']);
+  const AMT_BAD=/海外|現地|手数料|割引|ポイント|レート|為替|キャッシュバック|処理日|利用日/;
+  const amtCand=header.map((h,i)=>({h,i})).filter(o=>/金額/.test(o.h)&&!AMT_BAD.test(o.h));
+  let amtIdx=-1;
+  if(amtCand.length){
+    const pri=amtCand.find(o=>/ご利用金額|ご請求金額|請求金額|お支払金額|支払金額|利用金額|本体金額/.test(o.h));
+    amtIdx=pri?pri.i:amtCand[0].i;
+  }
+  if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']);
+  if(dIdx<0||descIdx<0||amtIdx<0){
+    alert('CSVのフォーマットが認識できませんでした。\nヘッダ: '+header.join(' / ')+'\n\n必要な列: ご利用日 / ご利用内容(店名) / 金額\nこのヘッダをClaudeに伝えてもらえれば対応を追加します。');
+    return null;
+  }
+  const items=[]; const counter={};
+  for(let i=1;i<lines.length;i++){
+    const cols=parseCsvLine(lines[i]); if(cols.length<2)continue;
+    const rawDate=(cols[dIdx]||'').trim();
+    const desc=(cols[descIdx]||'').trim();
+    const amount=parseInt((cols[amtIdx]||'').replace(/[,"¥\s]/g,'').trim(),10);
+    if(!rawDate||!desc||isNaN(amount)||amount===0)continue;
+    if(PAYMENT_RE.test(desc))continue;
+    const date=normDate(rawDate);
+    const baseKey=date+'|'+desc+'|'+amount;
+    counter[baseKey]=(counter[baseKey]||0)+1;
+    const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
+    items.push({id:'tx_'+hashStr(baseKey+sfx), src:'csv', date, desc:desc.replace(/\s+/g,' '), amount, tag:'share'});
+  }
+  return items;
+}
+async function handleCSV(file){
+  const parsed=await parseCreditCSV(file);
+  if(!parsed) return;
+  if(!parsed.length){ toast('取り込める明細がありませんでした'); return; }
+  const p=curPeriod();
+  const idset=new Set(p.items.map(x=>x.id));
+  let added=0,dup=0;
+  parsed.forEach(t=>{ if(idset.has(t.id)){dup++;return;} p.items.push(t); idset.add(t.id); added++; });
+  save();
+  toast(added+'件を「'+p.name+'」に追加'+(dup?'（重複'+dup+'件はスキップ）':'')+' ✓');
+}
+
+/* ============ トースト ============ */
+let toastT=null;
+function toast(msg){
+  let t=document.getElementById('toast');
+  if(!t){t=document.createElement('div'); t.id='toast'; t.className='toast'; document.body.appendChild(t);}
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+/* ============ イベント ============ */
+document.getElementById('periodBtn').onclick=openPeriods;
+document.getElementById('settingsBtn').onclick=openSettings;
+document.getElementById('addBtn').onclick=()=>openItem(curPeriod(),null);
+document.getElementById('importBtn').onclick=()=>document.getElementById('csvInput').click();
+document.getElementById('csvInput').addEventListener('change',e=>{ if(e.target.files[0])handleCSV(e.target.files[0]); e.target.value=''; });
+document.getElementById('restoreInput').addEventListener('change',e=>{ if(e.target.files[0])handleRestore(e.target.files[0]); e.target.value=''; });
+
+/* ============ 起動 ============ */
+render();
+loadRemote();
+subscribeRealtime();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
