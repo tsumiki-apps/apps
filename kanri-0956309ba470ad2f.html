@@ -64,8 +64,12 @@
   .badge{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }
   .badge.on{ background:#E6ECE2; color:var(--ok); }
   .badge.off{ background:#F0E2DE; color:var(--shu); }
-  .keyline{ font-size:13px; color:var(--muted); margin-top:4px; word-break:break-all;
-    cursor:pointer; user-select:all; }
+  .keyrow{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .keytext{ font-size:13px; color:var(--muted); word-break:break-all; user-select:all; }
+  .copybtn{ flex:none; display:inline-flex; align-items:center; justify-content:center;
+    width:30px; height:30px; padding:0; border:1px solid var(--hair); border-radius:8px;
+    background:var(--control); color:var(--muted); cursor:pointer; }
+  .copybtn:active{ background:var(--surface); color:var(--ink); }
   .meta{ display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:10px; font-size:12.5px; color:var(--muted); }
   .meta b{ color:var(--ink); font-weight:700; }
   .meta .warn b{ color:var(--shu); }
@@ -73,7 +77,6 @@
   .act{ font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:10px;
     border:1px solid var(--hair); background:var(--control); color:var(--ink); }
   .act.danger{ color:var(--shu); border-color:#E4D2CD; }
-  .act.copy{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
   .empty{ text-align:center; color:var(--muted); font-size:13px; padding:40px 0; }
   .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
     background:var(--ink); color:var(--paper); font-size:13px; padding:10px 16px;
@@ -163,6 +166,8 @@
       return r.json().then(function(j){ return { ok:r.ok, data:j }; });
     });
   }
+  var COPY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+
   function copyText(t){
     function done(){ toast('コピーしました'); }
     if(navigator.clipboard && navigator.clipboard.writeText){
@@ -202,7 +207,8 @@
       return '<div class="card-lic '+(r.active?'':'off')+'">'
         + '<div class="toprow"><span class="cust">'+esc(r.customer)+'</span>'
         +   '<span class="badge '+(r.active?'on':'off')+'">'+(r.active?'有効':'失効中')+'</span></div>'
-        + '<div class="keyline" data-copy="'+esc(r.key)+'">'+esc(r.key)+'</div>'
+        + '<div class="keyrow"><span class="keytext">'+esc(r.key)+'</span>'
+        +   '<button class="copybtn" data-copy="'+esc(r.key)+'" title="キーをコピー" aria-label="キーをコピー">'+COPY_SVG+'</button></div>'
         + '<div class="meta">'
         +   '<span class="'+(over?'warn':'')+'">端末 <b>'+r.device_count+' / '+r.max_devices+'</b>'+(over?'（満杯）':'')+'</span>'
         +   '<span>アプリ <b>'+esc(r.app)+'</b></span>'
@@ -210,7 +216,6 @@
         +   (r.note ? '<span>メモ '+esc(r.note)+'</span>' : '')
         + '</div>'
         + '<div class="actions">'
-        +   '<button class="act copy" data-copy="'+esc(r.key)+'">キーをコピー</button>'
         +   '<button class="act" data-act="toggle" data-key="'+esc(r.key)+'" data-active="'+(r.active?'1':'0')+'">'+(r.active?'無効化する':'復活させる')+'</button>'
         +   '<button class="act" data-act="max" data-key="'+esc(r.key)+'" data-max="'+r.max_devices+'">台数を変更</button>'
         +   '<button class="act danger" data-act="reset" data-key="'+esc(r.key)+'">端末リセット</button>'
@@ -268,8 +273,9 @@
         if(!res.ok){ toast('発行に失敗しました'); return; }
         var nk = document.getElementById('newKey');
         nk.style.display='block';
-        nk.innerHTML = '発行しました<br><b>'+esc(res.data)+'</b>'
-          + '<br><button type="button" class="act copy" data-copy="'+esc(res.data)+'" style="margin-top:8px;">キーをコピー</button>';
+        nk.innerHTML = '発行しました'
+          + '<div class="keyrow" style="margin-top:6px;"><span class="keytext"><b>'+esc(res.data)+'</b></span>'
+          + '<button type="button" class="copybtn" data-copy="'+esc(res.data)+'" title="キーをコピー" aria-label="キーをコピー">'+COPY_SVG+'</button></div>';
         document.getElementById('fCustomer').value=''; document.getElementById('fNote').value='';
         load();
       }).catch(function(){ btn.disabled=false; toast('通信エラー'); });
