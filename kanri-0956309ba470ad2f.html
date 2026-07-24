@@ -18,7 +18,7 @@
   a{ color:var(--muted); }
   .wrap{ max-width:1180px; margin:0 auto; padding:20px 16px 64px; }
   #list{ display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr));
-    gap:12px; align-items:start; }
+    gap:12px; grid-auto-rows:1fr; }
 
   /* ロック画面 */
   #lock{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
@@ -116,7 +116,7 @@
     <summary>＋ 新しいキーを発行</summary>
     <div class="field">
       <label>お渡し先の名前（透かしに表示）</label>
-      <input id="fCustomer" placeholder="例：お客様">
+      <input id="fCustomer" placeholder="お名前">
     </div>
     <div class="row2">
       <div class="field">
@@ -130,7 +130,7 @@
     </div>
     <div class="field">
       <label>メモ（任意・自分用）</label>
-      <input id="fNote" placeholder="例：舞台プロデューサー・初回無料">
+      <input id="fNote" placeholder="">
     </div>
     <button class="btn-primary" id="issueBtn" type="button">発行する</button>
     <div class="newkey" id="newKey"></div>
@@ -158,13 +158,17 @@
   var toastEl = document.getElementById('toast');
 
   function rpc(name, body){
+    var ctrl = new AbortController();
+    var to = setTimeout(function(){ ctrl.abort(); }, 15000);
     return fetch(SUPABASE_URL + '/rest/v1/rpc/' + name, {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'apikey':ANON, 'Authorization':'Bearer '+ANON },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: ctrl.signal
     }).then(function(r){
+      clearTimeout(to);
       return r.json().then(function(j){ return { ok:r.ok, data:j }; });
-    });
+    }, function(e){ clearTimeout(to); throw e; });
   }
   var COPY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 
@@ -241,13 +245,17 @@
     if(!v){ lockErr.textContent='パスワードを入力してください'; return; }
     lockBtn.disabled=true; lockErr.textContent='確認中…';
     secret = v;
-    load().then(function(){
-      localStorage.setItem(K_PASS, secret);
-      lockErr.textContent=''; lockBtn.disabled=false;
-      openApp();
+    rpc('admin_list', { p_secret: secret }).then(function(res){
+      lockBtn.disabled=false;
+      if(res.ok){
+        localStorage.setItem(K_PASS, secret);
+        lockErr.textContent=''; render(res.data||[]); openApp();
+      } else {
+        secret=''; lockErr.textContent='パスワードが違うようです';
+      }
     }).catch(function(){
-      secret=''; lockBtn.disabled=false;
-      lockErr.textContent='パスワードが違うようです';
+      lockBtn.disabled=false; secret='';
+      lockErr.textContent='接続できませんでした。もう一度「ひらく」を押してください';
     });
   });
 
