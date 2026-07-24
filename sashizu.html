@@ -128,6 +128,64 @@
   .card.is-done .c-title { color: var(--ghost); }
   .card.is-done .c-body { color: var(--ghost); }
 
+  /* メモ件数バッジ（一覧カード） */
+  .c-meta {
+    display: flex; align-items: center; gap: 8px; margin-top: 7px;
+    font-size: 12px; color: var(--sub); cursor: pointer;
+  }
+  .c-meta .mnum {
+    background: var(--surface); border-radius: 999px; padding: 3px 10px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .c-meta .mdone { color: var(--green); font-weight: 600; }
+  .c-meta .mnone { color: var(--ghost); }
+  .c-meta .mchev { margin-left: auto; color: var(--ghost); display: flex; }
+  .card.is-done .c-meta .mnum { background: transparent; color: var(--ghost); }
+
+  /* ===== 詳細ページ ===== */
+  .page {
+    position: fixed; inset: 0; background: var(--bg); z-index: 1000;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    transform: translateX(100%); transition: transform .24s ease;
+    visibility: hidden;
+    padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  }
+  .page.show { transform: translateX(0); visibility: visible; }
+  .p-head {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: center; gap: 4px;
+    padding: calc(8px + env(safe-area-inset-top)) 8px 8px;
+    background: rgba(244,242,238,.92);
+    -webkit-backdrop-filter: saturate(180%) blur(12px); backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .p-back {
+    border: none; background: none; cursor: pointer; font: inherit;
+    color: var(--text); font-size: 15px; font-weight: 600;
+    display: flex; align-items: center; gap: 2px;
+    padding: 8px 8px 8px 4px; min-height: 44px;
+  }
+  .p-title {
+    flex: 1; font-size: 15px; font-weight: 700; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px;
+  }
+  .p-sub { color: var(--sub); font-size: 12.5px; padding: 12px 4px 2px; }
+
+  /* メモカード（詳細ページ内） */
+  .note .n-idx { font-size: 11px; color: var(--ghost); font-weight: 600; }
+  .note .n-head { font-size: 14.5px; font-weight: 700; word-break: break-word; margin-bottom: 2px; }
+  .note .n-body {
+    font-size: 14px; color: var(--text); white-space: pre-wrap; word-break: break-word; line-height: 1.65;
+  }
+  .note .n-empty { font-size: 13px; color: var(--ghost); }
+  .note.is-done .n-head, .note.is-done .n-body { color: var(--ghost); }
+  .add-note {
+    width: 100%; border: 1px dashed var(--line); background: var(--card); cursor: pointer;
+    font: inherit; font-size: 14px; font-weight: 700; color: var(--sub);
+    border-radius: var(--radius); padding: 15px; margin-top: 2px;
+  }
+  .add-note:active { background: var(--surface); }
+
   .empty {
     text-align: center; color: var(--sub); font-size: 14px;
     padding: 44px 20px; line-height: 1.8;
@@ -145,7 +203,7 @@
 
   /* ===== ボトムシート ===== */
   .overlay {
-    position: fixed; inset: 0; background: rgba(36,35,33,.32); z-index: 50;
+    position: fixed; inset: 0; background: rgba(36,35,33,.32); z-index: 1100;
     display: none; align-items: flex-end; justify-content: center;
   }
   .overlay.show { display: flex; }
@@ -193,7 +251,7 @@
     transform: translateX(-50%) translateY(16px);
     background: var(--text); color: var(--card); font-size: 13px; font-weight: 600;
     padding: 10px 18px; border-radius: 999px; opacity: 0; pointer-events: none;
-    transition: all .25s; z-index: 90; white-space: nowrap;
+    transition: all .25s; z-index: 1200; white-space: nowrap;
     display: flex; align-items: center; gap: 10px;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
@@ -215,7 +273,7 @@
 
   <div class="add-card">
     <input id="addTitle" type="text" placeholder="タイトル（何をしてほしいか）" autocomplete="off">
-    <textarea id="addBody" placeholder="詳細（Claudeに渡す指示文）" rows="2"></textarea>
+    <textarea id="addBody" placeholder="最初のメモ（Claudeに渡す指示文）" rows="2"></textarea>
     <div class="add-foot">
       <button class="add-btn" id="addBtn" disabled>＋ 追加</button>
     </div>
@@ -233,13 +291,13 @@
 <!-- ステータス選択シート -->
 <div class="overlay" id="stOverlay">
   <div class="sheet">
-    <h2>ステータスを変更</h2>
+    <h2 id="stTitle">ステータスを変更</h2>
     <div id="stOpts"></div>
     <button class="sheet-cancel" id="stCancel">キャンセル</button>
   </div>
 </div>
 
-<!-- 編集シート -->
+<!-- 編集シート（さしず＝タイトル） -->
 <div class="overlay" id="edOverlay">
   <div class="sheet">
     <h2>さしずを編集</h2>
@@ -247,15 +305,45 @@
       <label>タイトル</label>
       <input id="edTitle" type="text" autocomplete="off">
     </div>
-    <div class="e-field">
-      <label>詳細</label>
-      <textarea id="edBody"></textarea>
-    </div>
     <div class="sheet-btns">
       <button class="del" id="edDelete">削除</button>
       <button class="save" id="edSave">保存</button>
     </div>
     <button class="sheet-cancel" id="edCancel">キャンセル</button>
+  </div>
+</div>
+
+<!-- メモ編集シート -->
+<div class="overlay" id="ntOverlay">
+  <div class="sheet">
+    <h2 id="ntHead">メモを追加</h2>
+    <div class="e-field">
+      <label>小見出し（任意）</label>
+      <input id="ntTitle" type="text" autocomplete="off" placeholder="例：2個目の指示">
+    </div>
+    <div class="e-field">
+      <label>メモ（Claudeに渡す指示文）</label>
+      <textarea id="ntBody"></textarea>
+    </div>
+    <div class="sheet-btns">
+      <button class="del" id="ntDelete">削除</button>
+      <button class="save" id="ntSave">保存</button>
+    </div>
+    <button class="sheet-cancel" id="ntCancel">キャンセル</button>
+  </div>
+</div>
+
+<!-- 詳細ページ -->
+<div class="page" id="detail">
+  <div class="p-head">
+    <button class="p-back" id="dtBack">‹ 一覧</button>
+    <div class="p-title" id="dtTitle"></div>
+    <button class="icon-btn" id="dtEdit" title="タイトルを編集"></button>
+  </div>
+  <div class="wrap">
+    <div class="p-sub" id="dtMeta"></div>
+    <div id="dtNotes"></div>
+    <button class="add-note" id="dtAdd">＋ メモを追加</button>
   </div>
 </div>
 
@@ -319,6 +407,7 @@ const ICON = {
   copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
   edit:'<path d="M5 19h3l9.5-9.5a1.8 1.8 0 0 0-2.5-2.5L5 16.5V19z"/>',
   chev:'<path d="M9 6l6 6-6 6"/>',
+  note:'<path d="M6 4h9l4 4v12H6z"/><path d="M15 4v4h4"/><path d="M9 12h7M9 16h5"/>',
 };
 function svg(name, size){ return '<svg viewBox="0 0 24 24" style="width:'+(size||20)+'px;height:'+(size||20)+'px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round">'+ICON[name]+'</svg>'; }
 
@@ -329,12 +418,36 @@ let online = null;
 let lastPushed = '';
 let filter = 'all';          // 'all' | status key（doneは下の畳みセクション固定）
 let doneOpen = false;
-let expandedIds = new Set(); // 詳細を全文表示中のカード
-let sheetItemId = null;      // ステータス/編集シートの対象
+let sheetItemId = null;      // ステータス/編集シートの対象さしず
+let sheetNoteId = null;      // ステータス/編集シートの対象メモ（null＝さしず自体）
 let sheetOpen = false;       // シート表示中はリアルタイム上書き描画を遅延
 let pendingRender = false;
+let detailId = null;         // 詳細ページで開いているさしず
 
 /* ===================== 永続化・同期 ===================== */
+function blankNote(body, head){
+  const now = Date.now();
+  return { id:uid(), head:head||'', body:body||'', status:'idea', ts:now, updated:now };
+}
+/* さしずのステータスは、ぶら下がるメモから自動で決まる（メモが無い時だけ手動） */
+const RANK = { idea:0, asked:1, review:2, fix:3 };
+function recalc(x){
+  const notes = x.notes || [];
+  if(notes.length){
+    const undone = notes.filter(n=>n.status!=='done');
+    if(!undone.length){
+      x.status = 'done';
+      if(!x.doneAt) x.doneAt = Math.max.apply(null, notes.map(n=>n.doneAt||n.updated||0)) || Date.now();
+    }else{
+      let best = undone[0].status;
+      undone.forEach(n=>{ if(RANK[n.status] > RANK[best]) best = n.status; });
+      x.status = best;
+      delete x.doneAt;
+    }
+  }
+  /* 旧バージョンのページで開いた時に中身が消えて見えないための保険（表示には使わない） */
+  x.body = notes.map(n=> (n.head ? '【'+n.head+'】\n' : '') + n.body).join('\n\n');
+}
 function migrate(){
   if(!Array.isArray(db.items)) db.items = [];
   db.items.forEach(x=>{
@@ -342,7 +455,35 @@ function migrate(){
     if(!ST[x.status]) x.status = 'idea';
     if(!x.ts) x.ts = Date.now();
     if(!x.updated) x.updated = x.ts;
+    if(!Array.isArray(x.notes)){
+      /* 旧データ：詳細1本 → メモ1件目に移す */
+      x.notes = [];
+      if(x.body && x.body.trim()){
+        const n = blankNote(x.body.trim());
+        n.status = x.status; n.ts = x.ts; n.updated = x.updated;
+        if(x.status==='done') n.doneAt = x.doneAt || x.updated;
+        x.notes.push(n);
+      }
+    }
+    x.notes.forEach(n=>{
+      if(!n.id) n.id = uid();
+      if(!ST[n.status]) n.status = 'idea';
+      if(typeof n.head !== 'string') n.head = '';
+      if(typeof n.body !== 'string') n.body = '';
+      if(!n.ts) n.ts = Date.now();
+      if(!n.updated) n.updated = n.ts;
+    });
+    recalc(x);
   });
+}
+function findItem(id){ return db.items.find(i=>i.id===id) || null; }
+function findNote(x, id){ return (x && x.notes || []).find(n=>n.id===id) || null; }
+/* コピー文：さしずのタイトル＋そのメモ */
+function noteText(x, n){
+  let s = x.title;
+  if(n.head) s += '\n\n【' + n.head + '】';
+  if(n.body) s += (n.head ? '\n' : '\n\n') + n.body;
+  return s;
 }
 function loadLocal(){ try{ const s=localStorage.getItem(KEY); if(s) db=Object.assign(blank(), JSON.parse(s)); }catch(e){} }
 
@@ -409,6 +550,7 @@ function render(){
   renderChips();
   renderList();
   renderDone();
+  if(detailId) renderDetail();
 }
 function renderChips(){
   const el = document.getElementById('chips');
@@ -426,20 +568,24 @@ function renderChips(){
 function cardHTML(x){
   const s = ST[x.status];
   const isDone = x.status==='done';
-  const open = expandedIds.has(x.id);
-  const longBody = (x.body||'').split('\n').length > 3 || (x.body||'').length > 120;
+  const notes = x.notes || [];
+  const done = notes.filter(n=>n.status==='done').length;
   let html = '<div class="card'+(isDone?' is-done':'')+'" data-id="'+x.id+'">';
   html += '<div class="c-top">';
   html += '<button class="pill st-'+x.status+'" data-st="'+x.id+'">'+s.emoji+' '+s.label+'</button>';
   html += '<div class="c-actions">';
-  html += '<button class="icon-btn" data-copy="'+x.id+'" title="コピー">'+svg('copy')+'</button>';
-  html += '<button class="icon-btn" data-edit="'+x.id+'" title="編集">'+svg('edit')+'</button>';
+  html += '<button class="icon-btn" data-edit="'+x.id+'" title="タイトルを編集">'+svg('edit')+'</button>';
   html += '</div></div>';
-  html += '<div class="c-title" data-edit2="'+x.id+'">'+esc(x.title)+'</div>';
-  if(x.body){
-    html += '<div class="c-body'+(open?' open':'')+'" data-expand="'+x.id+'">'+esc(x.body)+'</div>';
-    if(longBody && !open) html += '<div class="c-more">タップで全文</div>';
+  html += '<div class="c-title" data-open="'+x.id+'">'+esc(x.title)+'</div>';
+  html += '<div class="c-meta" data-open="'+x.id+'">';
+  if(notes.length){
+    html += '<span class="mnum">'+svg('note',13)+' メモ '+notes.length+'</span>';
+    if(done) html += '<span class="mdone">✅ '+done+' 完了</span>';
+  }else{
+    html += '<span class="mnone">メモなし・タップで追加</span>';
   }
+  html += '<span class="mchev">'+svg('chev',16)+'</span>';
+  html += '</div>';
   html += '</div>';
   return html;
 }
@@ -468,23 +614,84 @@ function renderDone(){
 }
 function bindCardEvents(root){
   root.querySelectorAll('[data-st]').forEach(b=>{
-    b.onclick = ()=> openStatusSheet(b.dataset.st);
-  });
-  root.querySelectorAll('[data-copy]').forEach(b=>{
-    b.onclick = async ()=>{
-      const x = db.items.find(i=>i.id===b.dataset.copy); if(!x) return;
-      const text = x.body ? (x.title + '\n\n' + x.body) : x.title;
-      const ok = await copyText(text);
-      toast(ok ? 'コピーしました' : 'コピーできませんでした');
+    b.onclick = ()=>{
+      const x = findItem(b.dataset.st); if(!x) return;
+      const notes = x.notes || [];
+      /* メモが0〜1件なら一覧から直接ステータスを変えられる。2件以上は詳細ページで個別に */
+      if(notes.length <= 1) openStatusSheet(x.id, notes.length ? notes[0].id : null);
+      else openDetail(x.id);
     };
   });
   root.querySelectorAll('[data-edit]').forEach(b=>{ b.onclick = ()=> openEditSheet(b.dataset.edit); });
-  root.querySelectorAll('[data-edit2]').forEach(b=>{ b.onclick = ()=> openEditSheet(b.dataset.edit2); });
-  root.querySelectorAll('[data-expand]').forEach(b=>{
-    b.onclick = ()=>{
-      const id = b.dataset.expand;
-      if(expandedIds.has(id)) expandedIds.delete(id); else expandedIds.add(id);
-      render();
+  root.querySelectorAll('[data-open]').forEach(b=>{ b.onclick = ()=> openDetail(b.dataset.open); });
+}
+
+/* ===================== 詳細ページ ===================== */
+const detailEl = document.getElementById('detail');
+const dtNotes = document.getElementById('dtNotes');
+document.getElementById('dtEdit').innerHTML = svg('edit');
+function openDetail(id){
+  const x = findItem(id); if(!x) return;
+  detailId = id;
+  renderDetail();
+  detailEl.classList.add('show');
+  document.body.style.overflow = 'hidden';
+  try{ history.pushState({ sashizuDetail:1 }, ''); }catch(e){}
+}
+function closeDetail(fromPop){
+  detailId = null;
+  detailEl.classList.remove('show');
+  document.body.style.overflow = '';
+  render();
+  /* 自分で積んだ履歴を戻しておく（端末の戻るで空振りしないように） */
+  if(!fromPop && history.state && history.state.sashizuDetail){ try{ history.back(); }catch(e){} }
+}
+document.getElementById('dtBack').onclick = ()=> closeDetail();
+window.addEventListener('popstate', ()=>{ if(detailId) closeDetail(true); });
+document.getElementById('dtEdit').onclick = ()=>{ if(detailId) openEditSheet(detailId); };
+document.getElementById('dtAdd').onclick = ()=>{ if(detailId) openNoteSheet(detailId, null); };
+
+function noteHTML(x, n, i){
+  const s = ST[n.status];
+  const isDone = n.status==='done';
+  let html = '<div class="card note'+(isDone?' is-done':'')+'">';
+  html += '<div class="c-top">';
+  html += '<button class="pill st-'+n.status+'" data-nst="'+n.id+'">'+s.emoji+' '+s.label+'</button>';
+  html += '<span class="n-idx">'+(i+1)+'</span>';
+  html += '<div class="c-actions">';
+  html += '<button class="icon-btn" data-ncopy="'+n.id+'" title="コピー">'+svg('copy')+'</button>';
+  html += '<button class="icon-btn" data-nedit="'+n.id+'" title="編集">'+svg('edit')+'</button>';
+  html += '</div></div>';
+  if(n.head) html += '<div class="n-head">'+esc(n.head)+'</div>';
+  html += n.body ? '<div class="n-body">'+esc(n.body)+'</div>'
+                 : '<div class="n-empty">（本文なし）</div>';
+  html += '</div>';
+  return html;
+}
+function renderDetail(){
+  const x = findItem(detailId);
+  if(!x){ closeDetail(); return; }
+  document.getElementById('dtTitle').textContent = x.title;
+  const notes = x.notes || [];
+  const done = notes.filter(n=>n.status==='done').length;
+  const s = ST[x.status];
+  document.getElementById('dtMeta').textContent =
+    notes.length ? (s.emoji+' '+s.label+'　メモ '+notes.length+'件（完了 '+done+'）')
+                 : (s.emoji+' '+s.label+'　メモはまだありません');
+  dtNotes.innerHTML = notes.length
+    ? notes.map((n,i)=>noteHTML(x,n,i)).join('')
+    : '<div class="empty"><span class="e-ico">📝</span>下の「＋ メモを追加」から<br>1つ目の指示を書こう</div>';
+  dtNotes.querySelectorAll('[data-nst]').forEach(b=>{
+    b.onclick = ()=> openStatusSheet(x.id, b.dataset.nst);
+  });
+  dtNotes.querySelectorAll('[data-nedit]').forEach(b=>{
+    b.onclick = ()=> openNoteSheet(x.id, b.dataset.nedit);
+  });
+  dtNotes.querySelectorAll('[data-ncopy]').forEach(b=>{
+    b.onclick = async ()=>{
+      const n = findNote(x, b.dataset.ncopy); if(!n) return;
+      const ok = await copyText(noteText(x, n));
+      toast(ok ? 'コピーしました' : 'コピーできませんでした');
     };
   });
 }
@@ -499,7 +706,11 @@ addBody.addEventListener('input', ()=>autoGrow(addBody));
 addBtn.onclick = ()=>{
   const title = addTitle.value.trim();
   if(!title) return;
-  db.items.push({ id:uid(), title, body:addBody.value.trim(), status:'idea', ts:Date.now(), updated:Date.now() });
+  const body = addBody.value.trim();
+  const item = { id:uid(), title, body:'', notes:[], status:'idea', ts:Date.now(), updated:Date.now() };
+  if(body) item.notes.push(blankNote(body));
+  recalc(item);
+  db.items.push(item);
   addTitle.value=''; addBody.value=''; autoGrow(addBody); refreshAddBtn();
   save(); render();
   toast('💡 アイデアに追加しました');
@@ -507,21 +718,26 @@ addBtn.onclick = ()=>{
 
 /* ===================== ステータスシート ===================== */
 const stOverlay = document.getElementById('stOverlay');
-function openStatusSheet(id){
-  const x = db.items.find(i=>i.id===id); if(!x) return;
-  sheetItemId = id; sheetOpen = true;
+function openStatusSheet(itemId, noteId){
+  const x = findItem(itemId); if(!x) return;
+  const target = noteId ? findNote(x, noteId) : x;
+  if(!target) return;
+  sheetItemId = itemId; sheetNoteId = noteId || null; sheetOpen = true;
+  document.getElementById('stTitle').textContent = noteId ? 'このメモのステータス' : 'ステータスを変更';
   const el = document.getElementById('stOpts');
   el.innerHTML = STATUSES.map(s=>
-    '<button class="st-opt'+(s.key===x.status?' cur':'')+'" data-key="'+s.key+'">'+
+    '<button class="st-opt'+(s.key===target.status?' cur':'')+'" data-key="'+s.key+'">'+
     s.emoji+' '+s.label+'<span class="st-desc">'+s.desc+'</span></button>'
   ).join('');
   el.querySelectorAll('.st-opt').forEach(b=>{
     b.onclick = ()=>{
-      const x2 = db.items.find(i=>i.id===sheetItemId);
-      if(x2 && x2.status !== b.dataset.key){
-        x2.status = b.dataset.key;
-        x2.updated = Date.now();
-        if(b.dataset.key==='done'){ x2.doneAt = Date.now(); } else { delete x2.doneAt; }
+      const x2 = findItem(sheetItemId);
+      const t2 = x2 ? (sheetNoteId ? findNote(x2, sheetNoteId) : x2) : null;
+      if(t2 && t2.status !== b.dataset.key){
+        t2.status = b.dataset.key;
+        t2.updated = Date.now();
+        if(b.dataset.key==='done'){ t2.doneAt = Date.now(); } else { delete t2.doneAt; }
+        if(sheetNoteId){ x2.updated = Date.now(); recalc(x2); }
         save();
         const s = ST[b.dataset.key];
         toast(s.emoji+' '+s.label+' にしました');
@@ -537,42 +753,93 @@ stOverlay.addEventListener('click', e=>{ if(e.target===stOverlay) closeSheets();
 /* ===================== 編集シート ===================== */
 const edOverlay = document.getElementById('edOverlay');
 const edTitle = document.getElementById('edTitle');
-const edBody = document.getElementById('edBody');
-edBody.addEventListener('input', ()=>autoGrow(edBody));
 function openEditSheet(id){
-  const x = db.items.find(i=>i.id===id); if(!x) return;
-  sheetItemId = id; sheetOpen = true;
-  edTitle.value = x.title; edBody.value = x.body||'';
+  const x = findItem(id); if(!x) return;
+  sheetItemId = id; sheetNoteId = null; sheetOpen = true;
+  edTitle.value = x.title;
   edOverlay.classList.add('show');
-  setTimeout(()=>autoGrow(edBody), 0);
 }
 document.getElementById('edSave').onclick = ()=>{
-  const x = db.items.find(i=>i.id===sheetItemId);
+  const x = findItem(sheetItemId);
   if(x){
     const t = edTitle.value.trim();
     if(!t){ toast('タイトルを入力してください'); return; }
-    x.title = t; x.body = edBody.value.trim(); x.updated = Date.now();
+    x.title = t; x.updated = Date.now();
     save();
   }
   closeSheets();
   toast('保存しました');
 };
 document.getElementById('edDelete').onclick = ()=>{
-  const x = db.items.find(i=>i.id===sheetItemId);
+  const x = findItem(sheetItemId);
   closeSheets();
   if(!x) return;
+  if(detailId === x.id) closeDetail();
   const idx = db.items.indexOf(x);
   db.items.splice(idx,1); save(); render();
-  undoToast('削除しました', ()=>{ db.items.splice(Math.min(idx,db.items.length),0,x); save(); render(); });
+  undoToast('さしずを削除しました', ()=>{ db.items.splice(Math.min(idx,db.items.length),0,x); save(); render(); });
 };
 document.getElementById('edCancel').onclick = closeSheets;
 edOverlay.addEventListener('click', e=>{ if(e.target===edOverlay) closeSheets(); });
 
+/* ===================== メモ編集シート ===================== */
+const ntOverlay = document.getElementById('ntOverlay');
+const ntTitle = document.getElementById('ntTitle');
+const ntBody = document.getElementById('ntBody');
+ntBody.addEventListener('input', ()=>autoGrow(ntBody));
+function openNoteSheet(itemId, noteId){
+  const x = findItem(itemId); if(!x) return;
+  const n = noteId ? findNote(x, noteId) : null;
+  if(noteId && !n) return;
+  sheetItemId = itemId; sheetNoteId = noteId || null; sheetOpen = true;
+  document.getElementById('ntHead').textContent = n ? 'メモを編集' : 'メモを追加';
+  document.getElementById('ntDelete').style.display = n ? '' : 'none';
+  ntTitle.value = n ? n.head : '';
+  ntBody.value = n ? n.body : '';
+  ntOverlay.classList.add('show');
+  setTimeout(()=>{ autoGrow(ntBody); if(!n) ntBody.focus(); }, 0);
+}
+document.getElementById('ntSave').onclick = ()=>{
+  const x = findItem(sheetItemId);
+  if(!x){ closeSheets(); return; }
+  const head = ntTitle.value.trim();
+  const body = ntBody.value.trim();
+  if(!head && !body){ toast('メモを入力してください'); return; }
+  const editing = !!sheetNoteId;
+  if(sheetNoteId){
+    const n = findNote(x, sheetNoteId);
+    if(n){ n.head = head; n.body = body; n.updated = Date.now(); }
+  }else{
+    const n = blankNote(body, head);
+    x.notes.push(n);
+  }
+  x.updated = Date.now();
+  recalc(x); save();
+  closeSheets();
+  toast(editing ? '保存しました' : 'メモを追加しました');
+};
+document.getElementById('ntDelete').onclick = ()=>{
+  const x = findItem(sheetItemId);
+  const nid = sheetNoteId;
+  closeSheets();
+  if(!x || !nid) return;
+  const n = findNote(x, nid); if(!n) return;
+  const idx = x.notes.indexOf(n);
+  x.notes.splice(idx,1); recalc(x); save(); render();
+  undoToast('メモを削除しました', ()=>{
+    x.notes.splice(Math.min(idx,x.notes.length),0,n); recalc(x); save(); render();
+  });
+};
+document.getElementById('ntCancel').onclick = closeSheets;
+ntOverlay.addEventListener('click', e=>{ if(e.target===ntOverlay) closeSheets(); });
+
 function closeSheets(){
   stOverlay.classList.remove('show');
   edOverlay.classList.remove('show');
-  sheetItemId = null; sheetOpen = false;
-  if(pendingRender){ pendingRender=false; render(); } else { render(); }
+  ntOverlay.classList.remove('show');
+  sheetItemId = null; sheetNoteId = null; sheetOpen = false;
+  if(pendingRender){ pendingRender=false; }
+  render();
 }
 
 /* ===================== 起動 ===================== */
