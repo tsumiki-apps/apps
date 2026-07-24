@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-okidoki.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="おきどき">
+<meta name="theme-color" content="#F4F2EE">
+<title>おきどき — 起きる時間 逆算</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3;
+    --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+    --accent:#C7743B; --accent-soft:#F3E4D6;
+    --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--paper); color:var(--ink);
+    line-height:1.7; padding:env(safe-area-inset-top) 16px 64px;
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:560px; margin:0 auto;}
+
+  header{padding:32px 4px 22px; text-align:center;}
+  .kicker{color:var(--sub); font-size:11.5px; letter-spacing:.2em; margin-bottom:10px;}
+  h1{font-size:28px; font-weight:700; letter-spacing:.03em; line-height:1.2;}
+  .tagline{color:#4a473f; font-size:13.5px; margin-top:9px; line-height:1.7;}
+
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px 16px; margin-top:16px;
+  }
+  .card h2{
+    font-size:12px; font-weight:700; letter-spacing:.12em; color:var(--sub);
+    text-transform:uppercase; margin-bottom:14px; display:flex; align-items:center; gap:8px;
+  }
+  .card h2 .num{font-size:15px;}
+
+  /* ゴール */
+  .goal-row{display:flex; gap:10px; align-items:flex-end;}
+  .fld{display:flex; flex-direction:column; gap:6px;}
+  .fld.grow{flex:1 1 auto; min-width:0;}
+  .fld label{font-size:12px; color:var(--sub); letter-spacing:.02em; padding-left:2px;}
+  input, .btn{font-family:inherit;}
+  input[type=text], input[type=time]{
+    width:100%; font-size:17px; padding:11px 12px; color:var(--ink);
+    border:1px solid var(--line); border-radius:12px; background:var(--paper);
+    min-height:46px;
+  }
+  input[type=time]{ -webkit-appearance:none; appearance:none; min-width:0; }
+  input:focus{outline:none; border-color:var(--accent); background:#fff;}
+
+  /* 区間リスト */
+  .steps{display:flex; flex-direction:column; gap:10px;}
+  .step{
+    display:flex; align-items:center; gap:8px;
+    background:var(--paper); border:1px solid var(--line); border-radius:14px;
+    padding:8px 8px 8px 10px;
+  }
+  .step .grip{color:var(--ghost); font-size:15px; flex:0 0 auto; line-height:1;}
+  .step .s-name{
+    flex:1 1 auto; min-width:0; font-size:16px; padding:9px 8px; color:var(--ink);
+    border:none; background:transparent; border-bottom:1px dashed var(--line); border-radius:0;
+    min-height:42px;
+  }
+  .step .s-name:focus{outline:none; border-bottom-color:var(--accent);}
+  .s-min-wrap{display:flex; align-items:center; gap:3px; flex:0 0 auto;}
+  .step .s-min{
+    width:52px; font-size:16px; text-align:right; padding:9px 4px; color:var(--ink);
+    border:none; background:transparent; border-bottom:1px dashed var(--line); border-radius:0;
+    min-height:42px;
+  }
+  .step .s-min:focus{outline:none; border-bottom-color:var(--accent);}
+  .s-unit{font-size:12px; color:var(--sub); flex:0 0 auto;}
+  .step .arrows{display:flex; flex-direction:column; gap:1px; flex:0 0 auto;}
+  .icon-btn{
+    -webkit-appearance:none; appearance:none; border:none; background:transparent; cursor:pointer;
+    color:var(--ghost); width:26px; height:22px; display:flex; align-items:center; justify-content:center;
+    font-size:14px; line-height:1; border-radius:7px; padding:0;
+  }
+  .icon-btn:active{background:var(--surface);}
+  .icon-btn.del{width:30px; height:44px; font-size:19px; color:var(--ghost);}
+  @media(hover:hover){ .icon-btn:hover{color:var(--sub);} }
+
+  .add-btn{
+    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
+    margin-top:12px; width:100%; padding:12px; font-size:14.5px; font-weight:500;
+    color:var(--sub); background:var(--paper);
+    border:1px dashed var(--line); border-radius:13px;
+  }
+  .add-btn:active{background:var(--surface);}
+
+  /* タイムライン（結果） */
+  .tl{display:flex; flex-direction:column;}
+  .tl-item{display:flex; align-items:center; gap:13px; padding:2px 0;}
+  .tl-dot-col{width:14px; flex:0 0 auto; display:flex; justify-content:center;}
+  .tl-dot{width:11px; height:11px; border-radius:50%; background:var(--card);
+    border:2.5px solid var(--ghost);}
+  .tl-item.mark-wake .tl-dot{border-color:var(--accent); background:var(--accent);}
+  .tl-item.mark-goal .tl-dot{border-color:var(--ink); background:var(--ink);}
+  .tl-time{font-size:19px; font-weight:700; letter-spacing:.02em; width:64px; flex:0 0 auto;
+    font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .tl-time .day{font-size:11px; font-weight:500; color:var(--sub); display:block; letter-spacing:.02em;}
+  .tl-label{font-size:15px; color:var(--ink); min-width:0; overflow-wrap:anywhere;}
+  .tl-tag{display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.04em;
+    padding:2px 8px; border-radius:999px; margin-left:8px; vertical-align:middle; white-space:nowrap;}
+  .tag-wake{background:var(--accent-soft); color:var(--accent);}
+  .tag-goal{background:var(--ink); color:var(--paper);}
+  .tl-gap{display:flex; align-items:center; gap:13px; height:26px; color:var(--sub); font-size:11.5px;}
+  .tl-gap .tl-dot-col{align-self:stretch; position:relative;}
+  .tl-gap .line{position:absolute; left:50%; top:-3px; bottom:-3px; width:2px;
+    margin-left:-1px; background:var(--line); border-radius:2px;}
+  .tl-gap .gap-min{padding-left:1px;}
+
+  .summary{margin-top:16px; padding-top:14px; border-top:1px solid var(--line);
+    display:flex; justify-content:space-between; align-items:baseline; color:var(--sub); font-size:12.5px;}
+  .summary b{color:var(--ink); font-weight:700; font-size:14px;}
+
+  .empty{color:var(--sub); font-size:13.5px; text-align:center; padding:8px 4px; line-height:1.7;}
+
+  .foot{margin-top:22px; text-align:center;}
+  .link-btn{
+    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
+    background:transparent; border:none; color:var(--sub); font-size:12.5px;
+    text-decoration:underline; text-underline-offset:3px; padding:6px 10px;
+  }
+  .hint{color:var(--sub); font-size:12px; line-height:1.7; margin-top:10px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker">TSUMIKI</p>
+    <h1>おきどき</h1>
+    <p class="tagline">やりたい時間から逆算して、<br>何時に起きればいいかを出す。</p>
+  </header>
+
+  <!-- ① ゴール -->
+  <section class="card">
+    <h2><span class="num">①</span>ゴール（この時刻に間に合わせたい）</h2>
+    <div class="goal-row">
+      <div class="fld grow">
+        <label for="goalLabel">なにに</label>
+        <input type="text" id="goalLabel" placeholder="出社" autocomplete="off">
+      </div>
+      <div class="fld">
+        <label for="goalTime">何時に</label>
+        <input type="time" id="goalTime">
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 区間 -->
+  <section class="card">
+    <h2><span class="num">②</span>やること・移動（上から順にたどる）</h2>
+    <div class="steps" id="steps"></div>
+    <button type="button" class="add-btn" id="addBtn">＋ 区間を追加</button>
+    <p class="hint">上が「朝いちばん」、下が「ゴール直前」。各行にかかる分数を入れると、下のタイムラインが逆算されます。</p>
+  </section>
+
+  <!-- ③ 結果 -->
+  <section class="card">
+    <h2><span class="num">③</span>タイムライン</h2>
+    <div id="timeline"></div>
+  </section>
+
+  <div class="foot">
+    <button type="button" class="link-btn" id="resetBtn">例（カフェ朝活）に戻す</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var KEY = "okidokiState_v1";
+
+  var DEFAULT = {
+    goal: { label: "出社", time: "09:45" },
+    steps: [
+      { label: "朝の準備",        min: 30 },
+      { label: "家 → 最寄り駅",    min: 15 },
+      { label: "電車でカフェへ",    min: 15 },
+      { label: "カフェで朝活",      min: 60 },
+      { label: "カフェ → 職場",    min: 15 }
+    ]
+  };
+
+  var uid = 0;
+  function withIds(st){
+    return {
+      goal: { label: st.goal.label, time: st.goal.time },
+      steps: st.steps.map(function(s){ return { id: ++uid, label: s.label, min: s.min }; })
+    };
+  }
+
+  var state;
+  function load(){
+    try{
+      var raw = localStorage.getItem(KEY);
+      if(raw){
+        var p = JSON.parse(raw);
+        if(p && p.goal && Array.isArray(p.steps)) return withIds(p);
+      }
+    }catch(e){}
+    return withIds(DEFAULT);
+  }
+  function save(){
+    try{
+      localStorage.setItem(KEY, JSON.stringify({
+        goal: state.goal,
+        steps: state.steps.map(function(s){ return { label: s.label, min: s.min }; })
+      }));
+    }catch(e){}
+  }
+
+  state = load();
+
+  var elGoalLabel = document.getElementById("goalLabel");
+  var elGoalTime  = document.getElementById("goalTime");
+  var elSteps     = document.getElementById("steps");
+  var elTimeline  = document.getElementById("timeline");
+
+  /* ---------- 時刻ユーティリティ ---------- */
+  function parseTime(t){
+    var m = /^(\d{1,2}):(\d{2})$/.exec(t || "");
+    if(!m) return null;
+    var h = +m[1], mi = +m[2];
+    if(h > 23 || mi > 59) return null;
+    return h * 60 + mi;
+  }
+  function fmt(totalMin){
+    // 前日・翌日をまたぐぶんを吸収して HH:MM と日ラベルを返す
+    var dayOff = Math.floor(totalMin / 1440);
+    var mins = ((totalMin % 1440) + 1440) % 1440;
+    var h = Math.floor(mins / 60), mi = mins % 60;
+    var hh = (h < 10 ? "0" : "") + h;
+    var mm = (mi < 10 ? "0" : "") + mi;
+    var day = "";
+    if(dayOff <= -1) day = "前日";
+    else if(dayOff >= 1) day = "翌日";
+    return { time: hh + ":" + mm, day: day };
+  }
+  function durText(min){
+    min = Math.max(0, Math.round(min || 0));
+    var h = Math.floor(min / 60), m = min % 60;
+    if(h && m) return h + "時間" + m + "分";
+    if(h) return h + "時間";
+    return m + "分";
+  }
+  function esc(s){
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];
+    });
+  }
+
+  /* ---------- 区間リスト描画（構造変化のときだけ） ---------- */
+  function renderSteps(){
+    elSteps.innerHTML = "";
+    state.steps.forEach(function(s, idx){
+      var row = document.createElement("div");
+      row.className = "step";
+      row.dataset.id = s.id;
+      row.innerHTML =
+        '<span class="grip">≡</span>' +
+        '<input class="s-name" type="text" value="' + esc(s.label) + '" placeholder="やること・移動" autocomplete="off">' +
+        '<span class="s-min-wrap">' +
+          '<input class="s-min" type="text" inputmode="numeric" value="' + esc(s.min) + '">' +
+          '<span class="s-unit">分</span>' +
+        '</span>' +
+        '<span class="arrows">' +
+          '<button type="button" class="icon-btn up" title="上へ"' + (idx === 0 ? ' disabled style="opacity:.25"' : '') + '>▲</button>' +
+          '<button type="button" class="icon-btn down" title="下へ"' + (idx === state.steps.length - 1 ? ' disabled style="opacity:.25"' : '') + '>▼</button>' +
+        '</span>' +
+        '<button type="button" class="icon-btn del" title="削除">×</button>';
+      elSteps.appendChild(row);
+    });
+  }
+
+  /* ---------- タイムライン描画（値が変わるたび） ---------- */
+  function renderTimeline(){
+    var goalMin = parseTime(state.goal.time);
+    if(goalMin === null){
+      elTimeline.innerHTML = '<p class="empty">ゴールの時刻を入れてください。</p>';
+      return;
+    }
+    var goalLabel = state.goal.label.trim() || "ゴール";
+
+    // 各区間の開始時刻 = ゴール − その区間以降の合計
+    var total = state.steps.reduce(function(a, s){ return a + Math.max(0, +s.min || 0); }, 0);
+    var starts = [];
+    var acc = goalMin;
+    // 末尾から積み上げると各区間の開始が出る
+    var suffix = 0;
+    for(var i = state.steps.length - 1; i >= 0; i--){
+      suffix += Math.max(0, +state.steps[i].min || 0);
+      starts[i] = goalMin - suffix;
+    }
+
+    var html = '<div class="tl">';
+    if(state.steps.length === 0){
+      var g0 = fmt(goalMin);
+      html += tlItem(g0, goalLabel, "goal");
+    } else {
+      state.steps.forEach(function(s, i){
+        var f = fmt(starts[i]);
+        html += tlItem(f, s.label.trim() || "（無題）", i === 0 ? "wake" : "");
+        html += tlGap(Math.max(0, +s.min || 0));
+      });
+      var g = fmt(goalMin);
+      html += tlItem(g, goalLabel, "goal");
+    }
+    html += '</div>';
+
+    var wake = starts.length ? fmt(starts[0]) : fmt(goalMin);
+    html +=
+      '<div class="summary">' +
+        '<span>合計 ' + durText(total) + '</span>' +
+        '<span>起きるのは <b>' + (wake.day ? wake.day + " " : "") + wake.time + '</b></span>' +
+      '</div>';
+
+    elTimeline.innerHTML = html;
+  }
+  function tlItem(f, label, mark){
+    var cls = "tl-item" + (mark === "wake" ? " mark-wake" : mark === "goal" ? " mark-goal" : "");
+    var tag = "";
+    if(mark === "wake") tag = '<span class="tl-tag tag-wake">起きる</span>';
+    if(mark === "goal") tag = '<span class="tl-tag tag-goal">ゴール</span>';
+    var dayHtml = f.day ? '<span class="day">' + f.day + '</span>' : '';
+    return '<div class="' + cls + '">' +
+        '<span class="tl-dot-col"><span class="tl-dot"></span></span>' +
+        '<span class="tl-time">' + dayHtml + f.time + '</span>' +
+        '<span class="tl-label">' + esc(label) + tag + '</span>' +
+      '</div>';
+  }
+  function tlGap(min){
+    return '<div class="tl-gap">' +
+        '<span class="tl-dot-col"><span class="line"></span></span>' +
+        '<span class="gap-min">↓ ' + durText(min) + '</span>' +
+      '</div>';
+  }
+
+  /* ---------- イベント ---------- */
+  elGoalLabel.value = state.goal.label;
+  elGoalTime.value  = state.goal.time;
+
+  elGoalLabel.addEventListener("input", function(){
+    state.goal.label = elGoalLabel.value; renderTimeline(); save();
+  });
+  elGoalTime.addEventListener("input", function(){
+    state.goal.time = elGoalTime.value; renderTimeline(); save();
+  });
+
+  // 区間の入力（名前・分数）はフォーカスを保つため、行を作り直さず値だけ反映
+  elSteps.addEventListener("input", function(e){
+    var row = e.target.closest(".step"); if(!row) return;
+    var id = +row.dataset.id;
+    var s = state.steps.find(function(x){ return x.id === id; }); if(!s) return;
+    if(e.target.classList.contains("s-name")) s.label = e.target.value;
+    if(e.target.classList.contains("s-min")){
+      var v = e.target.value.replace(/[^0-9]/g, "");
+      if(v !== e.target.value) e.target.value = v;
+      s.min = v === "" ? 0 : +v;
+    }
+    renderTimeline(); save();
+  });
+
+  // 分数欄からフォーカスが外れたら空を0で正規化表示
+  elSteps.addEventListener("blur", function(e){
+    if(e.target.classList && e.target.classList.contains("s-min") && e.target.value === ""){
+      e.target.value = "0";
+    }
+  }, true);
+
+  elSteps.addEventListener("click", function(e){
+    var btn = e.target.closest(".icon-btn"); if(!btn) return;
+    var row = e.target.closest(".step"); if(!row) return;
+    var id = +row.dataset.id;
+    var idx = state.steps.findIndex(function(x){ return x.id === id; });
+    if(idx < 0) return;
+
+    if(btn.classList.contains("del")){
+      state.steps.splice(idx, 1);
+    } else if(btn.classList.contains("up") && idx > 0){
+      var a = state.steps; var t = a[idx-1]; a[idx-1] = a[idx]; a[idx] = t;
+    } else if(btn.classList.contains("down") && idx < state.steps.length - 1){
+      var b = state.steps; var u = b[idx+1]; b[idx+1] = b[idx]; b[idx] = u;
+    } else {
+      return;
+    }
+    renderSteps(); renderTimeline(); save();
+  });
+
+  document.getElementById("addBtn").addEventListener("click", function(){
+    state.steps.push({ id: ++uid, label: "", min: 10 });
+    renderSteps(); renderTimeline(); save();
+    // 追加した行の名前欄にフォーカス
+    var rows = elSteps.querySelectorAll(".step .s-name");
+    if(rows.length) rows[rows.length - 1].focus();
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", function(){
+    if(!confirm("入力を「カフェ朝活」の例に戻します。よろしいですか？")) return;
+    state = withIds(DEFAULT);
+    elGoalLabel.value = state.goal.label;
+    elGoalTime.value  = state.goal.time;
+    renderSteps(); renderTimeline(); save();
+  });
+
+  /* ---------- 初期描画 ---------- */
+  renderSteps();
+  renderTimeline();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
