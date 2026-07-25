@@ -399,22 +399,9 @@ function blankNote(body, head){
   const now = Date.now();
   return { id:uid(), head:head||'', body:body||'', status:'idea', ts:now, updated:now };
 }
-/* ことづてのステータスは、ぶら下がるメモから自動で決まる（メモが無い時だけ手動） */
-const RANK = { idea:0, asked:1, review:2, fix:3 };
+/* ステータスは「ことづて（タイトル）」だけが持つ。メモは本文だけを持ち、ステータスは触らない。 */
 function recalc(x){
   const notes = x.notes || [];
-  if(notes.length){
-    const undone = notes.filter(n=>n.status!=='done');
-    if(!undone.length){
-      x.status = 'done';
-      if(!x.doneAt) x.doneAt = Math.max.apply(null, notes.map(n=>n.doneAt||n.updated||0)) || Date.now();
-    }else{
-      let best = undone[0].status;
-      undone.forEach(n=>{ if(RANK[n.status] > RANK[best]) best = n.status; });
-      x.status = best;
-      delete x.doneAt;
-    }
-  }
   /* 旧バージョンのページで開いた時に中身が消えて見えないための保険（表示には使わない） */
   x.body = notes.map(n=> (n.head ? '【'+n.head+'】\n' : '') + n.body).join('\n\n');
 }
@@ -538,7 +525,6 @@ function cardHTML(x){
   const s = ST[x.status];
   const isDone = x.status==='done';
   const notes = x.notes || [];
-  const done = notes.filter(n=>n.status==='done').length;
   let html = '<div class="card'+(isDone?' is-done':'')+'" data-id="'+x.id+'">';
   html += '<div class="c-top">';
   html += '<button class="pill st-'+x.status+'" data-st="'+x.id+'">'+s.emoji+' '+s.label+'</button>';
@@ -550,7 +536,6 @@ function cardHTML(x){
   html += '<div class="c-meta'+(open?' open':'')+'" data-open="'+x.id+'">';
   if(notes.length){
     html += '<span class="mnum">'+svg('note',13)+' メモ '+notes.length+'</span>';
-    if(done) html += '<span class="mdone">✅ '+done+' 完了</span>';
   }else{
     html += '<span class="mnone">メモなし・タップで追加</span>';
   }
@@ -592,10 +577,8 @@ function bindCardEvents(root){
   root.querySelectorAll('[data-st]').forEach(b=>{
     b.onclick = ()=>{
       const x = findItem(b.dataset.st); if(!x) return;
-      const notes = x.notes || [];
-      /* メモが0〜1件なら一覧から直接ステータスを変えられる。2件以上はメモごとに（開いて選ぶ） */
-      if(notes.length <= 1) openStatusSheet(x.id, notes.length ? notes[0].id : null);
-      else toggleOpen(x.id);
+      /* ステータスはことづて（タイトル）にだけ紐づく。いつでもここから変えられる。 */
+      openStatusSheet(x.id, null);
     };
   });
   root.querySelectorAll('[data-edit]').forEach(b=>{ b.onclick = ()=> openEditSheet(b.dataset.edit); });
@@ -623,10 +606,8 @@ function toggleOpen(id){
 
 /* カードを開いた時に中に並ぶメモ */
 function noteHTML(x, n, i){
-  const s = ST[n.status];
-  let html = '<div class="note'+(n.status==='done'?' is-done':'')+'">';
+  let html = '<div class="note">';
   html += '<div class="n-top">';
-  html += '<button class="pill st-'+n.status+'" data-nst="'+n.id+'" data-item="'+x.id+'">'+s.emoji+' '+s.label+'</button>';
   html += '<span class="n-idx">'+(i+1)+'</span>';
   html += '<div class="n-act">';
   html += '<button class="icon-btn" data-ncopy="'+n.id+'" data-item="'+x.id+'" title="コピー">'+svg('copy',18)+'</button>';
