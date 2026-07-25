@@ -134,8 +134,9 @@
   body.family #whoCardFamily { display:block; }
 
   /* ===== モーダル ===== */
-  .modal-bg { position:fixed; inset:0; background:rgba(40,30,20,.42); z-index:100; display:none; align-items:flex-end; justify-content:center;}
-  .modal-bg.show { display:flex; }
+  .modal-bg { position:fixed; inset:0; background:rgba(40,30,20,.42); z-index:100; display:flex; align-items:flex-end; justify-content:center;
+    opacity:0; visibility:hidden; pointer-events:none; transition:opacity .28s ease, visibility .28s ease;}
+  .modal-bg.show { opacity:1; visibility:visible; pointer-events:auto; }
   .modal {
     background:var(--bg); width:100%; max-width:680px; max-height:94vh; overflow-y:auto;
     border-radius: 24px 24px 0 0; padding: 8px 16px calc(28px + env(safe-area-inset-bottom));
@@ -267,8 +268,9 @@
   .cmt-input button { width:auto; padding:0 18px; }
 
   /* ===== ライトボックス ===== */
-  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.93); z-index:300; display:none; flex-direction:column; }
-  .lightbox.show { display:flex; }
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.93); z-index:300; display:flex; flex-direction:column;
+    opacity:0; visibility:hidden; pointer-events:none; transition:opacity .3s ease, visibility .3s ease; }
+  .lightbox.show { opacity:1; visibility:visible; pointer-events:auto; }
   .lb-top { display:flex; justify-content:space-between; align-items:center; padding:calc(10px + env(safe-area-inset-top)) 18px 6px; color:#fff; }
   .lb-top .idx { font-size:14px; opacity:.85; }
   .lb-top .x { font-size:26px; cursor:pointer; padding:4px 8px; }
@@ -301,8 +303,9 @@
   .memory-btn .ring { font-size:16px; }
 
   /* ===== ストーリーズ風「思い出」ビューア ===== */
-  .story { position:fixed; inset:0; background:#000; z-index:400; display:none; flex-direction:column; }
-  .story.show { display:flex; }
+  .story { position:fixed; inset:0; background:#000; z-index:400; display:flex; flex-direction:column;
+    opacity:0; visibility:hidden; pointer-events:none; transition:opacity .3s ease, visibility .3s ease; }
+  .story.show { opacity:1; visibility:visible; pointer-events:auto; }
   .st-top { display:flex; flex-direction:column; gap:9px; padding:calc(9px + env(safe-area-inset-top)) 14px 2px; }
   .st-bars { display:flex; gap:4px; }
   .st-bar { flex:1; height:3px; border-radius:3px; background:rgba(255,255,255,.26); }
@@ -375,6 +378,22 @@
   .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:rgba(40,30,20,.9);color:#fff;padding:11px 20px;border-radius:999px;font-size:14px;z-index:200;opacity:0;transition:opacity .25s;pointer-events:none;}
   .toast.show{opacity:1;}
   .hidden{display:none !important;}
+
+  /* ===== フェード演出（シームレスな操作感） ===== */
+  /* アプリ起動時のふわっと表示 */
+  @keyframes appIn { from{opacity:0;} to{opacity:1;} }
+  body { animation: appIn .45s ease both; }
+  /* ビュー切替（フィード / カレンダー / タグ）のクロスフェード */
+  @keyframes viewFade { from{opacity:0; transform:translateY(5px);} to{opacity:1; transform:none;} }
+  .view-fade { animation: viewFade .32s ease both; }
+  /* 記録カードのやさしい立ち上がり */
+  @keyframes entryIn { from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;} }
+  .feed .entry { animation: entryIn .34s ease both; }
+  /* 「動きを減らす」設定の端末では演出を無効化 */
+  @media (prefers-reduced-motion: reduce){
+    body, .view-fade, .feed .entry, .modal { animation:none !important; }
+    .modal-bg, .lightbox, .story { transition:none !important; }
+  }
 </style>
 </head>
 <body>
@@ -454,24 +473,24 @@
     <label class="fld">料理名</label>
     <input type="text" id="rName" placeholder="例：肉じゃが、ナポリタン" enterkeyhint="done">
 
+    <label class="fld">作ってもらった日</label>
+    <input type="date" id="rDate">
+
+    <label class="fld">タグ</label>
+    <div class="tag-input-row">
+      <input type="text" id="tagInput" placeholder="自由に追加（例：あったかい）" autocomplete="off">
+      <button class="btn" id="tagAddBtn">＋</button>
+    </div>
+    <div class="chosen-tags" id="chosenTags"></div>
+    <div class="tag-suggest" id="tagSuggest"></div>
+
     <button type="button" class="more-toggle" id="moreToggle" aria-expanded="false" aria-controls="moreFields">
-      <span>くわしく書く（日付・感想・タグ）</span><span class="chev">▾</span>
+      <span>感想・ありがとうメモを書く（任意）</span><span class="chev">▾</span>
     </button>
 
     <div class="more-fields" id="moreFields">
-      <label class="fld">作ってもらった日</label>
-      <input type="date" id="rDate">
-
       <label class="fld">感想・ありがとうメモ</label>
       <textarea id="rNote" placeholder="味の感想や、ゆずちゃんへのありがとうを残そう"></textarea>
-
-      <label class="fld">タグ</label>
-      <div class="tag-input-row">
-        <input type="text" id="tagInput" placeholder="自由に追加（例：あったかい）" autocomplete="off">
-        <button class="btn" id="tagAddBtn">＋</button>
-      </div>
-      <div class="chosen-tags" id="chosenTags"></div>
-      <div class="tag-suggest" id="tagSuggest"></div>
     </div>
 
     <div style="height:22px"></div>
@@ -934,8 +953,8 @@ function renderTagView(){
 /* 作った人フィルター。value は投稿者（こうだい/ゆずは）。表示は「作った人」 */
 const COOK_FILTERS=[
   { v:'すべて',   label:'すべて' },
-  { v:'こうだい', label:'👩 ゆずちゃんの手料理' },   // こうだいが投稿＝ゆずちゃんが作った
-  { v:'ゆずは',   label:'🧑 こうだいの手料理' },     // ゆずはが投稿＝こうだいが作った
+  { v:'こうだい', label:'👩🏻 ゆずちゃんの手料理' },   // こうだいが投稿＝ゆずちゃんが作った
+  { v:'ゆずは',   label:'🧒🏻 こうだいの手料理' },     // ゆずはが投稿＝こうだいが作った
 ];
 function renderCookFilter(){
   if(!COOK_FILTERS.some(f=>f.v===curCook)) curCook='すべて';
@@ -1033,9 +1052,9 @@ function openRecord(rec){
   $('#deleteRecordBtn').classList.toggle('hidden', !rec);
   $('#tagInput').value='';
   $('#saveRecordBtn').textContent = rec? '保存する' : 'これで残す 🍋';
-  // 新規はいちばん軽い状態（写真＋料理名だけ）で開く。
-  // 編集は、すでに書いてある内容が隠れないように開いておく。
-  setMoreOpen(!!rec && !!(rec.note || (rec.tags||[]).length || rec.date !== todayStr()));
+  // 料理名・日付・タグは常時表示。感想メモだけ任意の折りたたみ。
+  // 編集時にすでに感想が書いてあれば、隠れないよう開いておく。
+  setMoreOpen(!!rec && !!rec.note);
   renderPhotoStrip(); renderChosenTags(); renderTagSuggest();
   showModal('recordModal');
 }
@@ -1488,6 +1507,8 @@ function bindStoryControls(){
 $('#memoryBtn').onclick=openStory;
 
 /* ============ ビュー切替 ============ */
+/* 表示中のビューをふわっとクロスフェードさせる（切替時に呼ぶ） */
+function fadeView(el){ if(!el) return; el.classList.remove('view-fade'); void el.offsetWidth; el.classList.add('view-fade'); }
 $('#viewSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   viewMode=b.dataset.view;
   $('#viewSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on', x===b));
@@ -1496,13 +1517,19 @@ $('#viewSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   $('#calendar').style.display = viewMode==='calendar'?'':'none';
   $('#tagview').style.display = viewMode==='tags'?'':'none';
   renderCurrentView();
+  fadeView(viewMode==='calendar'?$('#calendar'):viewMode==='tags'?$('#tagview'):$('#feed'));
 });
 
 /* ============ 検索 ============ */
 $('#search').addEventListener('input', renderFeed);
 
 /* ============ モーダル制御 ============ */
-function showModal(id){$('#'+id).classList.add('show');document.body.style.overflow='hidden';}
+function showModal(id){
+  const bg=$('#'+id); bg.classList.add('show');
+  const m=bg.querySelector('.modal');            // 開くたびに下からのスライドを再生
+  if(m){ m.style.animation='none'; void m.offsetWidth; m.style.animation=''; }
+  document.body.style.overflow='hidden';
+}
 function hideModal(id){$('#'+id).classList.remove('show');document.body.style.overflow='';if(id==='detailModal')openDetailId=null;}
 $$('[data-close]').forEach(el=>el.onclick=()=>hideModal(el.dataset.close));
 $$('.modal-bg').forEach(bg=>bg.addEventListener('click',e=>{if(e.target===bg)hideModal(bg.id);}));
