@@ -254,7 +254,8 @@
         <tfoot id="recTableFoot"></tfoot>
       </table>
       <div class="addrow"><button id="addBtn">＋ 手動で記録を追加</button></div>
-      <div class="logout"><button id="logoutBtn">別のコードでログインし直す</button></div>
+      <div class="logout"><button id="commuteBtn">交通費・定期の設定</button></div>
+      <div class="logout" style="margin-top:10px"><button id="logoutBtn">別のコードでログインし直す</button></div>
     </div>
   </section>
 </div>
@@ -507,6 +508,29 @@ async function refreshAfterEdit(){
 }
 
 document.getElementById('addBtn').addEventListener('click',()=>openEdit(null));
+
+/* ===== 交通費・定期の設定 ===== */
+document.getElementById('commuteBtn').addEventListener('click',openCommute);
+function openCommute(){
+  modalRoot.innerHTML=`
+    <div class="modal" id="mBack"><div class="sheet">
+      <h3>交通費・定期の設定</h3>
+      <p style="color:var(--sub); font-size:12.5px; margin-bottom:12px">通勤区間と1ヶ月の定期代を入れておくと、勤務先の請求書に反映されます。</p>
+      <div class="field"><label>通勤区間</label><input id="cRoute" value="${esc(me.commute_route||'')}" placeholder="桜木町→東京"></div>
+      <div class="field"><label>1ヶ月定期代（税込・円）</label><input id="cIncl" type="number" inputmode="numeric" value="${me.commute_incl_yen||''}" placeholder="17970"></div>
+      <div class="row"><button class="btn-ghost" id="cCancel">閉じる</button><button class="btn-primary" id="cSave">保存</button></div>
+    </div></div>`;
+  document.getElementById('mBack').addEventListener('click',e=>{ if(e.target.id==='mBack') closeModal(); });
+  document.getElementById('cCancel').addEventListener('click',closeModal);
+  document.getElementById('cSave').addEventListener('click',async()=>{
+    const route=document.getElementById('cRoute').value.trim();
+    const incl=parseInt(document.getElementById('cIncl').value,10)||0;
+    try{ const res=await rpc('dakoku_worker_update_commute',{p_code:code,p_route:route,p_incl:incl});
+      me.commute_route=res.commute_route; me.commute_incl_yen=res.commute_incl_yen; closeModal(); toast('保存しました'); }
+    catch(e){ toast('保存に失敗しました'); }
+  });
+}
+
 document.getElementById('logoutBtn').addEventListener('click',()=>{
   if(!confirm('ログアウトしますか？（打刻コードの入力からやり直します）')) return;
   localStorage.removeItem(LS_KEY); location.reload();
