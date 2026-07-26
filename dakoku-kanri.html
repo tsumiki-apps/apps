@@ -196,21 +196,21 @@
   #printArea table.ksum th,#printArea table.ksum td{border:1px solid #000; padding:3px 10px; text-align:center; font-size:11px; white-space:nowrap;}
   #printArea table.ksum th{background:#cff3f3; font-weight:700;}
   #printArea table.kmain{width:100%; border-collapse:collapse; table-layout:fixed;}
-  #printArea table.kmain th,#printArea table.kmain td{border:1px solid #000; padding:2px 3px; text-align:center; font-size:10px; height:17px; overflow:hidden;}
+  #printArea table.kmain th,#printArea table.kmain td{border:1px solid #000; padding:2px 3px; text-align:center; vertical-align:middle; font-size:10px; height:19px; overflow:hidden;}
   #printArea table.kmain col.c-mo{width:4%;} #printArea col.c-day{width:4%;} #printArea col.c-wd{width:5%;}
   #printArea col.c-biz{width:29%;} #printArea col.c-t{width:8.5%;} #printArea col.c-brk{width:6%;} #printArea col.c-h{width:9%;}
   #printArea table.kmain thead th.g{background:#d9d9d9;} #printArea table.kmain thead th.y{background:#ffffcc;}
   #printArea table.kmain td.y{background:#ffffcc;}
-  #printArea table.kmain td.biz{text-align:left; padding-left:5px; font-size:9px; white-space:nowrap; text-overflow:ellipsis;}
-  #printArea table.kmain td.biz.hol{text-align:center; color:#e00000; font-weight:700;}
+  #printArea table.kmain td.biz{text-align:center; font-size:9px; line-height:1.2; white-space:normal; word-break:break-all;}
+  #printArea table.kmain td.biz.hol{color:#e00000; font-weight:700;}
   #printArea .sat{color:#0000ff;} #printArea .sun{color:#e00000;}
   #printArea table.kmain tr.total td{background:#d9d9d9; font-weight:700;}
   #printArea .kstampwrap{display:flex; justify-content:flex-end; margin-top:16px;}
   #printArea table.kstamp{border-collapse:collapse;}
   #printArea table.kstamp th,#printArea table.kstamp td{border:1px solid #000; font-size:11px; text-align:center;}
-  #printArea table.kstamp th{padding:4px 10px; letter-spacing:3px; font-weight:700;}
-  #printArea table.kstamp td.name{width:95px; height:46px; padding:4px; line-height:1.35;}
-  #printArea table.kstamp td.sp{width:70px;}
+  #printArea table.kstamp th{padding:5px 10px; letter-spacing:3px; font-weight:700;}
+  #printArea table.kstamp td.name{width:100px; height:50px; padding:4px; line-height:1.4; vertical-align:middle; text-align:center;}
+  #printArea table.kstamp td.sp{width:72px;}
 </style>
 </head>
 <body>
@@ -607,6 +607,16 @@ function buildDayRows(){
   return {rows,tHei,tZan,tKyu,workdays};
 }
 
+/* 会社名を「株式会社／◯◯」のように前株・後株で2行に割る */
+function coLines(s){
+  s=String(s||'').trim();
+  const pre=s.match(/^(株式会社|有限会社|合同会社|合資会社|合名会社)(.+)$/);
+  if(pre) return [pre[1], pre[2].trim()];
+  const suf=s.match(/^(.+?)(株式会社|有限会社|合同会社|合資会社|合名会社)$/);
+  if(suf) return [suf[1].trim(), suf[2]];
+  return [s];
+}
+
 /* ===== Excel書き出し（テンプレ再現・ExcelJS） ===== */
 document.getElementById('xlsxBtn').addEventListener('click',exportXlsx);
 async function exportXlsx(){
@@ -649,7 +659,7 @@ async function exportXlsx(){
     const row=ws.getRow(ri++);
     const vals=[r.mo,r.day,WD[r.wd],r.biz,r.inS,r.outS,r.brk,r.hei,r.zan,r.kyu];
     vals.forEach((v,i)=>{ const c=row.getCell(i+1); c.value=v; c.border=bd; c.font={size:11};
-      c.alignment=(i===3)?{vertical:'middle',horizontal:(r.biz==='休日'?'center':'left')}:ctr;
+      c.alignment=(i===3)?{vertical:'middle',horizontal:'center',wrapText:true}:ctr;
       if(i>=4&&i<=6) c.fill=fill(YEL);                                  // 始業/終業/休憩=黄
       if(i===2&&r.hol) c.font={size:11,color:{argb:r.wd===6?BLUE:RED}}; // 曜日色
       if(i===3&&r.biz==='休日') c.font={size:11,color:{argb:RED}};      // 休日文字
@@ -670,10 +680,10 @@ async function exportXlsx(){
   ws.mergeCells(`H${s}:J${s}`);
   const hc=ws.getCell(`H${s}`); hc.value='確 認 印'; hc.alignment=ctr; hc.font={bold:true};
   ws.mergeCells(`H${s+1}:H${s+2}`); ws.mergeCells(`I${s+1}:J${s+2}`);
-  ws.getCell(`H${s+1}`).value=org.haken_moto||'派遣元';
+  ws.getCell(`H${s+1}`).value=coLines(org.haken_moto||'派遣元').join('\n');
   ws.mergeCells(`H${s+3}:H${s+4}`); ws.mergeCells(`I${s+3}:J${s+4}`);
-  ws.getCell(`H${s+3}`).value=org.haken_saki||'派遣先';
-  [`H${s+1}`,`H${s+3}`].forEach(a=>{ const c=ws.getCell(a); c.alignment=ctr; c.font={size:10}; });
+  ws.getCell(`H${s+3}`).value=coLines(org.haken_saki||'派遣先').join('\n');
+  [`H${s+1}`,`H${s+3}`].forEach(a=>{ const c=ws.getCell(a); c.alignment={vertical:'middle',horizontal:'center',wrapText:true}; c.font={size:10}; });
   for(let rr=s;rr<=s+4;rr++){ ws.getRow(rr).height=17; ['H','I','J'].forEach(col=>{ ws.getCell(`${col}${rr}`).border=bd; }); }
 
   const buf=await wb.xlsx.writeBuffer();
@@ -705,8 +715,8 @@ function exportPdf(){
       </tbody></table>
     <div class="kstampwrap"><table class="kstamp">
       <tr><th colspan="2">確 認 印</th></tr>
-      <tr><td class="name">${esc(org.haken_moto||'派遣元')}</td><td class="sp"></td></tr>
-      <tr><td class="name">${esc(org.haken_saki||'派遣先')}</td><td class="sp"></td></tr>
+      <tr><td class="name">${coLines(org.haken_moto||'派遣元').map(esc).join('<br>')}</td><td class="sp"></td></tr>
+      <tr><td class="name">${coLines(org.haken_saki||'派遣先').map(esc).join('<br>')}</td><td class="sp"></td></tr>
     </table></div>`;
   document.getElementById('printArea').innerHTML=html;
   toast('プリント画面から「PDFで保存」を選べます');
