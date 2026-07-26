@@ -142,6 +142,39 @@
     background:#1a2734; color:#fff; padding:11px 18px; border-radius:999px; font-size:14px; font-weight:700;
     z-index:80; opacity:0; transition:opacity .2s; pointer-events:none;}
   .toast.show{opacity:1;}
+
+  /* 勤務表テーブル（PCのみ表示） */
+  .rectable{display:none;}
+
+  /* ===== PC（横長）レイアウト ===== */
+  @media (min-width:980px){
+    .wrap{max-width:1180px; padding:0 28px;}
+    header{padding:26px 6px 10px;}
+    .tabs{max-width:420px;}
+
+    /* 打刻タブは中央寄せ（1アクションなので広げない） */
+    #punchTab{max-width:520px; margin:0 auto;}
+
+    /* 記録タブ：左=月度・集計 / 右=横長テーブル の2ペイン */
+    #recTab{display:grid; grid-template-columns:320px 1fr; gap:26px; align-items:start;}
+    .rec-left{position:sticky; top:18px;}
+    .rec-right{min-width:0;}
+    .logout{margin-top:18px; text-align:left;}
+    .reclist{display:none;}
+    .rectable{display:table; width:100%; border-collapse:collapse; background:var(--card);
+      border:1px solid var(--line); border-radius:14px; overflow:hidden; font-variant-numeric:tabular-nums;}
+    .rectable th,.rectable td{border-bottom:1px solid var(--line); padding:9px 8px; text-align:center; font-size:13px;}
+    .rectable thead th{background:#f4f7fb; font-weight:800; color:var(--sub); font-size:12px; position:sticky; top:0;}
+    .rectable td.pj{text-align:left; color:var(--sub); font-size:12px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .rectable td.z{color:var(--out);} .rectable td.k{color:var(--kyu); font-weight:700;}
+    .rectable tbody tr{cursor:pointer;}
+    .rectable tbody tr.has{font-weight:700;}
+    .rectable tbody tr:hover{background:#f0f5fc;}
+    .rectable tbody tr.emptyday{color:#aab6c6; font-weight:400;}
+    .rectable .sat{color:#2b5fb0;} .rectable .sun{color:var(--kyu);}
+    .rectable tfoot td{background:#eef3f8; font-weight:800; border-top:2px solid var(--accent); padding:10px 8px; font-size:13px;}
+    .rectable tfoot td.z{color:var(--out);} .rectable tfoot td.k{color:var(--kyu);}
+  }
 </style>
 </head>
 <body>
@@ -198,22 +231,31 @@
 
   <!-- 記録タブ -->
   <section id="recTab" hidden>
-    <div class="monthbar">
-      <button id="mPrev">‹</button>
-      <div class="mlabel" id="mLabel">—<small id="mRange"></small></div>
-      <button id="mNext">›</button>
-    </div>
-    <div class="sumcard">
-      <div class="top"><div class="k">実働合計 <span id="sumDays"></span></div><div class="v" id="sumTotal">—</div></div>
-      <div class="brk">
-        <div><div class="bk">平日勤務</div><div class="bv" id="sumHei">—</div></div>
-        <div><div class="bk">残業</div><div class="bv" id="sumZan">—</div></div>
-        <div><div class="bk">休日出勤</div><div class="bv" id="sumKyu">—</div></div>
+    <div class="rec-left">
+      <div class="monthbar">
+        <button id="mPrev">‹</button>
+        <div class="mlabel" id="mLabel">—<small id="mRange"></small></div>
+        <button id="mNext">›</button>
+      </div>
+      <div class="sumcard">
+        <div class="top"><div class="k">実働合計 <span id="sumDays"></span></div><div class="v" id="sumTotal">—</div></div>
+        <div class="brk">
+          <div><div class="bk">平日勤務</div><div class="bv" id="sumHei">—</div></div>
+          <div><div class="bk">残業</div><div class="bv" id="sumZan">—</div></div>
+          <div><div class="bk">休日出勤</div><div class="bv" id="sumKyu">—</div></div>
+        </div>
       </div>
     </div>
-    <div class="reclist" id="recList"></div>
-    <div class="addrow"><button id="addBtn">＋ 手動で記録を追加</button></div>
-    <div class="logout"><button id="logoutBtn">別のコードでログインし直す</button></div>
+    <div class="rec-right">
+      <div class="reclist" id="recList"></div>
+      <table class="rectable" id="recTable">
+        <thead><tr><th>月</th><th>日</th><th>曜</th><th>業務内容</th><th>始業</th><th>終業</th><th>休憩</th><th>平日勤務</th><th>残業</th><th>休日出勤</th></tr></thead>
+        <tbody id="recTableBody"></tbody>
+        <tfoot id="recTableFoot"></tfoot>
+      </table>
+      <div class="addrow"><button id="addBtn">＋ 手動で記録を追加</button></div>
+      <div class="logout"><button id="logoutBtn">別のコードでログインし直す</button></div>
+    </div>
   </section>
 </div>
 
@@ -384,8 +426,39 @@ function renderRecList(recs){
   document.getElementById('sumKyu').textContent=fmtHM(tKyu);
   document.getElementById('sumTotal').textContent=fmtHM(tHei+tZan+tKyu);
   document.getElementById('sumDays').textContent=`／ 稼働 ${days} 日`;
+  renderTSTable(recs);
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* PC用：期間の全日を横長テーブルで（Excelと同じ列） */
+function renderTSTable(recs){
+  const tb=document.getElementById('recTableBody'), tf=document.getElementById('recTableFoot');
+  tb.innerHTML=''; tf.innerHTML='';
+  const {from,to}=periodRange(per.y,per.m1);
+  const byDay={}; recs.forEach(r=>{ const k=ymd(new Date(r.clock_in)); (byDay[k]=byDay[k]||[]).push(r); });
+  let tHei=0,tZan=0,tKyu=0,days=0;
+  for(let dt=new Date(from); dt<to; dt.setDate(dt.getDate()+1)){
+    const k=ymd(dt), wd=dt.getDay(), hol=isHolidayDate(dt);
+    const drecs=(byDay[k]||[]).slice().sort((a,b)=>new Date(a.clock_in)-new Date(b.clock_in));
+    let inS='',outS='',brk='',heiS='',zanS='',kyuS='',pj='',worked=false;
+    if(drecs.length){
+      const first=drecs[0], last=drecs[drecs.length-1];
+      inS=fmtClock(first.clock_in); outS=last.clock_out?fmtClock(last.clock_out):'（未）';
+      let h=0,z=0,ky=0;
+      drecs.forEach(r=>{ const b=buckets(r.clock_in,r.clock_out); if(b.actual!=null){ h+=b.hei; z+=b.zan; ky+=b.kyu; if(b.actual>0) worked=true; } });
+      pj=(drecs.find(r=>r.project&&r.project.trim())||{}).project||(hol?'休日':'');
+      if(worked){ tHei+=h; tZan+=z; tKyu+=ky; days++; brk='1:00'; heiS=h?fmtHM(h):''; zanS=z?fmtHM(z):''; kyuS=ky?fmtHM(ky):''; }
+    }else{ pj=hol?'休日':''; }
+    const cls=hol?(wd===6?'sat':'sun'):'';
+    const tr=document.createElement('tr'); tr.className=drecs.length?'has':'emptyday';
+    tr.innerHTML=`<td>${dt.getMonth()+1}</td><td class="${cls}">${dt.getDate()}</td><td class="${cls}">${WD[wd]}</td>
+      <td class="pj">${esc(pj)}</td><td>${inS}</td><td>${outS}</td><td>${brk}</td><td>${heiS}</td><td class="z">${zanS}</td><td class="k">${kyuS}</td>`;
+    const dayRecs=drecs, dCopy=new Date(dt);
+    tr.addEventListener('click',()=>{ if(dayRecs.length) openEdit(dayRecs[0]); else openEdit(null,dCopy); });
+    tb.appendChild(tr);
+  }
+  tf.innerHTML=`<tr><td colspan="7">合計　（稼働 ${days} 日）</td><td>${fmtHM(tHei)}</td><td class="z">${fmtHM(tZan)}</td><td class="k">${fmtHM(tKyu)}</td></tr>`;
+}
 
 /* ===== 記録の編集/追加/削除 ===== */
 const modalRoot=document.createElement('div'); document.body.appendChild(modalRoot);
@@ -393,10 +466,10 @@ function toLocalInput(ts){ const d=ts?new Date(ts):new Date(); const p=n=>String
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
 function fromLocalInput(v){ return v?new Date(v).toISOString():null; }
 
-function openEdit(rec){
+function openEdit(rec, defDate){
   const isNew=!rec;
-  const {from}=periodRange(per.y,per.m1);
-  const def=new Date(from.getFullYear(),from.getMonth(),from.getDate(),8,0);
+  const base=defDate||periodRange(per.y,per.m1).from;
+  const def=new Date(base.getFullYear(),base.getMonth(),base.getDate(),8,0);
   modalRoot.innerHTML=`
     <div class="modal" id="mBack"><div class="sheet">
       <h3>${isNew?'記録を追加':'記録を修正'}</h3>
