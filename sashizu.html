@@ -730,6 +730,47 @@ const ntOverlay = document.getElementById('ntOverlay');
 const ntTitle = document.getElementById('ntTitle');
 const ntBody = document.getElementById('ntBody');
 ntBody.addEventListener('input', ()=>autoGrow(ntBody));
+
+/* ===================== リスト入力ショートカット =====================
+   指示テキスト欄で Markdown 風の箇条書きを楽に打てるように。
+   ・「- 」「* 」＋Enter → 次行も自動で「- 」（空の箇条でEnter＝解除）
+   ・「1. 」＋Enter → 「2. 」「3. 」…と自動採番（1) 形式もOK）
+   ・「[]」＋スペース → 「- [ ] 」チェック項目に変換、Enterで継続
+   記号は Markdown のまま残す（Claude Codeがそのまま箇条書きとして読めるため）。*/
+const RE_CHECK=/^(\s*)([-*])\s+\[[ xX]?\]\s+/, RE_NUM=/^(\s*)(\d+)([.)])\s+/, RE_BUL=/^(\s*)([-*])\s+/;
+function lineHeadBounds(v,pos){ const start=v.lastIndexOf('\n',pos-1)+1; return start; }
+function listHandleEnter(ta,e){
+  if(e.isComposing||e.keyCode===229||ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadBounds(v,pos), line=v.slice(start,pos);
+  let m, marker=null, cs=0;
+  if((m=line.match(RE_CHECK))){ marker=m[1]+m[2]+' [ ] '; cs=m[0].length; }
+  else if((m=line.match(RE_NUM))){ marker=m[1]+(parseInt(m[2],10)+1)+m[3]+' '; cs=m[0].length; }
+  else if((m=line.match(RE_BUL))){ marker=m[1]+m[2]+' '; cs=m[0].length; }
+  else return false;
+  if(line.slice(cs).trim()===''){ // 中身が空 → マーカーを消してリスト解除
+    e.preventDefault(); ta.value=v.slice(0,start)+v.slice(pos); ta.selectionStart=ta.selectionEnd=start; return true;
+  }
+  e.preventDefault(); const ins='\n'+marker; ta.value=v.slice(0,pos)+ins+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=pos+ins.length; return true;
+}
+function listHandleSpace(ta,e){
+  if(e.isComposing||e.keyCode===229||ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadBounds(v,pos), line=v.slice(start,pos);
+  const m=line.match(/^(\s*)\[( ?)\]$/); // 行頭が [] または [ ]
+  if(!m) return false;
+  e.preventDefault(); const r=m[1]+'- [ ] '; ta.value=v.slice(0,start)+r+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=start+r.length; return true;
+}
+function attachListShortcuts(ta, after){
+  ta.addEventListener('keydown', e=>{
+    let handled=false;
+    if(e.key==='Enter'&&!e.shiftKey) handled=listHandleEnter(ta,e);
+    else if(e.key===' ') handled=listHandleSpace(ta,e);
+    if(handled&&after) after();
+  });
+}
+attachListShortcuts(addBody, ()=>{ autoGrow(addBody); saveDraft(); });
+attachListShortcuts(ntBody, ()=>{ autoGrow(ntBody); });
 function openNoteSheet(itemId, noteId){
   const x = findItem(itemId); if(!x) return;
   const n = noteId ? findNote(x, noteId) : null;
