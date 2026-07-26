@@ -46,6 +46,7 @@ APPS = {
     "hitokoma":    ("🖼️", "#9fb0d0", "#54689a"),
     "mazeiro":     ("🎨", "#d97bf0", "#9a3fd0"),
     "sashizu":     ("📮", "#ff8f7a", "#e0523f"),
+    "hitonowa":    ("🕸️", "#7d6bf0", "#4f3ad0"),
     # issho（ぴずかご）は専用の線画アイコン → make_issho_icon.py で生成する
 }
 

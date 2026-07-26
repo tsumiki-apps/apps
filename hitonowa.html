@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-hitonowa.png">
+<meta name="apple-mobile-web-app-title" content="ひとのわ">
+<title>ひとのわ — 人脈メモ</title>
+<style>
+  :root{
+    --bg:#f4f4f8; --card:#ffffff; --ink:#23232b; --sub:#8a8a99;
+    --line:#e8e8ef; --accent:#5b3fd6; --accent-soft:#efeaff;
+    --c-org:#2f80ed; --c-place:#f2994a; --c-friend:#27ae60;
+    --danger:#e5484d; --radius:18px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
+  html,body{overscroll-behavior-y:none; height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+    padding:env(safe-area-inset-top) 0 0;
+  }
+  .wrap{max-width:600px; margin:0 auto; padding:0 16px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  input,select,textarea{font-family:inherit; font-size:16px; color:var(--ink);}
+
+  /* header */
+  header{display:flex; align-items:center; gap:10px; padding:20px 4px 8px;}
+  header .logo{font-size:27px; line-height:1;}
+  header h1{font-size:21px; font-weight:800; letter-spacing:-.02em;}
+  header .menu-btn{margin-left:auto; width:38px; height:38px; border-radius:12px;
+    display:flex; align-items:center; justify-content:center; font-size:20px; color:var(--sub);
+    background:var(--card); border:1px solid var(--line);}
+
+  /* tabs */
+  .tabs{display:flex; gap:6px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:5px; margin:6px 0 12px;}
+  .tabs button{flex:1; padding:10px 6px; border-radius:10px; font-weight:700; font-size:14px;
+    color:var(--sub); transition:all .15s;}
+  .tabs button.on{background:var(--accent); color:#fff; box-shadow:0 3px 10px rgba(91,63,214,.28);}
+
+  /* list view */
+  .searchbar{display:flex; gap:8px; margin-bottom:10px;}
+  .searchbar input{flex:1; background:var(--card); border:1px solid var(--line);
+    border-radius:12px; padding:11px 14px; outline:none;}
+  .searchbar input:focus{border-color:var(--accent);}
+  .filters{display:flex; gap:7px; overflow-x:auto; padding-bottom:8px; margin-bottom:2px;
+    -webkit-overflow-scrolling:touch;}
+  .filters::-webkit-scrollbar{display:none;}
+  .chip{flex:none; padding:6px 12px; border-radius:999px; font-size:13px; font-weight:600;
+    background:var(--card); border:1px solid var(--line); color:var(--sub); white-space:nowrap;}
+  .chip.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+  .person{display:flex; align-items:center; gap:12px; background:var(--card);
+    border:1px solid var(--line); border-radius:16px; padding:13px 14px; margin-bottom:9px;}
+  .avatar{flex:none; width:44px; height:44px; border-radius:50%; background:var(--accent-soft);
+    color:var(--accent); font-weight:800; font-size:17px; display:flex; align-items:center;
+    justify-content:center;}
+  .person .body{flex:1; min-width:0;}
+  .person .nm{font-weight:700; font-size:16px; letter-spacing:-.01em;}
+  .person .meta{font-size:12.5px; color:var(--sub); margin-top:1px; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap;}
+  .person .via{font-size:11.5px; color:var(--accent); margin-top:3px; font-weight:600;}
+  .tagrow{display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;}
+  .tag{font-size:11px; font-weight:600; color:var(--sub); background:var(--bg);
+    border:1px solid var(--line); border-radius:999px; padding:2px 9px;}
+  .list-count{font-size:12.5px; color:var(--sub); font-weight:600; margin:2px 4px 10px;}
+
+  /* empty */
+  .empty{text-align:center; padding:56px 20px; color:var(--sub);}
+  .empty .big{font-size:40px; margin-bottom:12px;}
+  .empty p{font-size:14px; margin-bottom:18px;}
+  .empty .row{display:flex; gap:10px; justify-content:center; flex-wrap:wrap;}
+  .btn-ghost{background:var(--card); border:1px solid var(--line); color:var(--ink);
+    font-weight:700; font-size:14px; padding:11px 18px; border-radius:12px;}
+  .btn-primary{background:var(--accent); color:#fff; font-weight:700; font-size:14px;
+    padding:11px 20px; border-radius:12px; box-shadow:0 4px 12px rgba(91,63,214,.28);}
+
+  /* graph view */
+  #graphView{position:relative;}
+  .graph-stage{position:relative; width:100%; height:66vh; background:var(--card);
+    border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; touch-action:none;}
+  .graph-stage svg{width:100%; height:100%; display:block;}
+  .legend{display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin:10px 2px 4px;
+    font-size:11.5px; color:var(--sub); font-weight:600;}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .legend i{width:16px; height:0; border-top:2px dashed; display:inline-block;}
+  .graph-hint{text-align:center; font-size:11.5px; color:var(--sub); margin-top:6px;}
+  .zoom-ctrl{position:absolute; right:10px; bottom:10px; display:flex; flex-direction:column;
+    gap:6px;}
+  .zoom-ctrl button{width:36px; height:36px; border-radius:10px; background:var(--card);
+    border:1px solid var(--line); font-size:19px; font-weight:700; color:var(--ink);
+    box-shadow:0 2px 6px rgba(0,0,0,.06);}
+
+  node text{font-family:inherit;}
+
+  /* FAB */
+  .fab{position:fixed; right:calc(50% - 300px + 18px); bottom:calc(env(safe-area-inset-bottom) + 20px);
+    width:58px; height:58px; border-radius:50%; background:var(--accent); color:#fff;
+    font-size:30px; font-weight:300; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 6px 20px rgba(91,63,214,.4); z-index:40;}
+  @media(max-width:632px){ .fab{right:18px;} }
+
+  /* sheet */
+  .overlay{position:fixed; inset:0; background:rgba(20,20,30,.42); z-index:50; opacity:0;
+    transition:opacity .2s; display:flex; align-items:flex-end; justify-content:center;}
+  .overlay.show{opacity:1;}
+  .sheet{width:100%; max-width:600px; max-height:92vh; overflow-y:auto; background:var(--bg);
+    border-radius:22px 22px 0 0; padding:8px 18px calc(env(safe-area-inset-bottom) + 22px);
+    transform:translateY(100%); transition:transform .25s cubic-bezier(.2,.8,.2,1);
+    -webkit-overflow-scrolling:touch;}
+  .overlay.show .sheet{transform:translateY(0);}
+  .grip{width:40px; height:5px; border-radius:3px; background:var(--line); margin:8px auto 12px;}
+  .sheet h2{font-size:18px; font-weight:800; margin-bottom:2px;}
+  .sheet .sub{font-size:12.5px; color:var(--sub); margin-bottom:16px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; font-weight:700; color:var(--sub); margin-bottom:6px;}
+  .field input,.field select,.field textarea{width:100%; background:var(--card);
+    border:1px solid var(--line); border-radius:12px; padding:12px 14px; outline:none;}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);}
+  .field textarea{resize:none; min-height:76px; line-height:1.55;}
+  .two{display:flex; gap:10px;}
+  .two .field{flex:1;}
+  .sheet-actions{display:flex; gap:10px; margin-top:8px;}
+  .sheet-actions .btn-primary{flex:1; padding:14px; font-size:15px;}
+  .btn-del{background:none; color:var(--danger); font-weight:700; font-size:13.5px;
+    padding:12px; width:100%; margin-top:4px;}
+
+  /* link editor */
+  .linkbox{margin-top:4px;}
+  .linkrow{display:flex; align-items:center; gap:9px; background:var(--card);
+    border:1px solid var(--line); border-radius:12px; padding:9px 12px; margin-bottom:7px; font-size:13.5px;}
+  .linkrow .dot{width:9px; height:9px; border-radius:50%; flex:none;}
+  .linkrow .nm{font-weight:600; flex:1;}
+  .linkrow .kind{font-size:11.5px; color:var(--sub);}
+  .linkrow .rm{color:var(--danger); font-size:13px; font-weight:700; padding:2px 4px;}
+  .add-link{display:flex; gap:8px; margin-top:8px;}
+  .add-link select{flex:1; background:var(--card); border:1px solid var(--line);
+    border-radius:11px; padding:10px 11px; font-size:13.5px;}
+  .add-link button{flex:none; background:var(--accent-soft); color:var(--accent); font-weight:700;
+    font-size:13.5px; padding:0 15px; border-radius:11px;}
+
+  /* menu popover */
+  .menu-pop{position:fixed; inset:0; z-index:60; display:none;}
+  .menu-pop.show{display:block;}
+  .menu-pop .card{position:absolute; top:60px; right:16px; background:var(--card);
+    border:1px solid var(--line); border-radius:14px; padding:6px; min-width:190px;
+    box-shadow:0 12px 34px rgba(0,0,0,.16);}
+  .menu-pop .card button{display:flex; width:100%; text-align:left; padding:11px 12px;
+    border-radius:9px; font-size:14px; font-weight:600; gap:9px;}
+  .menu-pop .card button:active{background:var(--bg);}
+  .menu-pop .card button.danger{color:var(--danger);}
+  .menu-pop .card hr{border:none; border-top:1px solid var(--line); margin:4px 2px;}
+
+  .detail-card .kv{display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--line);
+    font-size:14px;}
+  .detail-card .kv .k{color:var(--sub); font-weight:600; width:82px; flex:none;}
+  .detail-card .kv .v{flex:1;}
+  .detail-card .memo{white-space:pre-wrap; font-size:14px; line-height:1.6; margin-top:4px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="logo">🕸️</span>
+    <h1>ひとのわ</h1>
+    <button class="menu-btn" onclick="openMenu()">⋯</button>
+  </header>
+
+  <div class="tabs">
+    <button id="tab-list" class="on" onclick="switchTab('list')">リスト</button>
+    <button id="tab-graph" onclick="switchTab('graph')">相関図</button>
+  </div>
+
+  <!-- LIST VIEW -->
+  <section id="listView">
+    <div class="searchbar">
+      <input id="search" type="text" placeholder="名前・肩書き・メモで検索" oninput="renderList()">
+    </div>
+    <div id="tagFilters" class="filters"></div>
+    <div id="listCount" class="list-count"></div>
+    <div id="listBody"></div>
+  </section>
+
+  <!-- GRAPH VIEW -->
+  <section id="graphView" hidden>
+    <div class="graph-stage" id="stage">
+      <svg id="svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="zoom-ctrl">
+        <button onclick="zoomBy(1.25)">＋</button>
+        <button onclick="zoomBy(0.8)">−</button>
+        <button onclick="fitGraph()" style="font-size:15px;">⤢</button>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="border-color:var(--c-org)"></i>同じ会社・所属</span>
+      <span><i style="border-color:var(--c-place)"></i>同じ場所で出会った</span>
+      <span><i style="border-color:var(--c-friend)"></i>友人・知人</span>
+    </div>
+    <div class="graph-hint">中心＝自分。外へ向かうほど「紹介の紹介」。ドラッグで移動・ピンチで拡大・タップで詳細。</div>
+  </section>
+</div>
+
+<button class="fab" onclick="openEdit(null)">＋</button>
+
+<!-- overlay host -->
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<!-- menu -->
+<div id="menuPop" class="menu-pop" onclick="if(event.target===this)closeMenu()">
+  <div class="card">
+    <button onclick="editSelfName()">👤 自分の名前を変更</button>
+    <button onclick="seedSample()">✨ サンプルを入れて試す</button>
+    <hr>
+    <button onclick="exportData()">📋 データを書き出す</button>
+    <button class="danger" onclick="wipeAll()">🗑 全部消す</button>
+  </div>
+</div>
+
+<script>
+/* ===== state ===== */
+const KEY='hitonowa_v1';
+const LINK_TYPES={
+  org:{label:'同じ会社・所属', color:'#2f80ed'},
+  place:{label:'同じ場所で出会った', color:'#f2994a'},
+  friend:{label:'友人・知人', color:'#27ae60'},
+};
+let STATE=load();
+let activeTag=null;
+let curTab='list';
+
+function load(){
+  try{const s=JSON.parse(localStorage.getItem(KEY)); if(s&&s.people) return s;}catch(e){}
+  return {self:{name:'自分'}, people:[]};
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(STATE)); }
+function uid(){ return 'p'+Math.random().toString(36).slice(2,9); }
+function personById(id){ return STATE.people.find(p=>p.id===id); }
+function displayName(id){ return id==='self' ? STATE.self.name : (personById(id)?.name||'?'); }
+
+/* ===== descendants (cycle guard) ===== */
+function descendantsOf(id){
+  const out=new Set();
+  (function walk(pid){
+    STATE.people.filter(p=>(p.parentId||'self')===pid).forEach(c=>{
+      if(!out.has(c.id)){ out.add(c.id); walk(c.id); }
+    });
+  })(id);
+  return out;
+}
+
+/* ===== tabs ===== */
+function switchTab(t){
+  curTab=t;
+  document.getElementById('tab-list').classList.toggle('on', t==='list');
+  document.getElementById('tab-graph').classList.toggle('on', t==='graph');
+  document.getElementById('listView').hidden = t!=='list';
+  document.getElementById('graphView').hidden = t!=='graph';
+  if(t==='graph') renderGraph();
+}
+
+/* ===== list view ===== */
+function allTags(){
+  const s=new Set();
+  STATE.people.forEach(p=>(p.tags||[]).forEach(t=>s.add(t)));
+  return [...s];
+}
+function renderList(){
+  const body=document.getElementById('listBody');
+  const q=(document.getElementById('search').value||'').trim().toLowerCase();
+
+  // tag filters
+  const tf=document.getElementById('tagFilters');
+  const tags=allTags();
+  tf.innerHTML = tags.length ? tags.map(t=>
+    `<button class="chip ${activeTag===t?'on':''}" onclick="toggleTag('${esc(t)}')">#${esc(t)}</button>`
+  ).join('') : '';
+
+  if(!STATE.people.length){
+    document.getElementById('listCount').textContent='';
+    body.innerHTML=`<div class="empty">
+      <div class="big">🕸️</div>
+      <p>知り合った人を貯めていきましょう。<br>「誰の紹介で会ったか」を残すと、相関図が自動でできます。</p>
+      <div class="row">
+        <button class="btn-primary" onclick="openEdit(null)">＋ 人を追加</button>
+        <button class="btn-ghost" onclick="seedSample()">サンプルで試す</button>
+      </div></div>`;
+    return;
+  }
+
+  let list=STATE.people.slice();
+  if(activeTag) list=list.filter(p=>(p.tags||[]).includes(activeTag));
+  if(q) list=list.filter(p=>{
+    const hay=[p.name,p.org,p.place,p.memo,(p.tags||[]).join(' ')].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+  list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')|| a.name.localeCompare(b.name,'ja'));
+
+  document.getElementById('listCount').textContent=`${list.length}人`;
+  body.innerHTML=list.map(p=>{
+    const via = (p.parentId&&personById(p.parentId)) ? `↳ ${esc(displayName(p.parentId))}さんの紹介` : '↳ 自分と直接';
+    const meta=[p.org, p.place].filter(Boolean).join(' ・ ');
+    const tags=(p.tags||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join('');
+    return `<div class="person" onclick="openDetail('${p.id}')">
+      <div class="avatar">${esc((p.name||'?').slice(0,1))}</div>
+      <div class="body">
+        <div class="nm">${esc(p.name)}</div>
+        ${meta?`<div class="meta">${esc(meta)}</div>`:''}
+        <div class="via">${via}${p.date?` ・ ${esc(p.date)}`:''}</div>
+        ${tags?`<div class="tagrow">${tags}</div>`:''}
+      </div></div>`;
+  }).join('');
+}
+function toggleTag(t){ activeTag = activeTag===t?null:t; renderList(); }
+
+/* ===== graph (force-directed, self pinned at center) ===== */
+let gTransform={x:0,y:0,k:1};
+let curLayout=null;
+function computeLayout(){
+  const nodes=[{id:'self', name:STATE.self.name, self:true}, ...STATE.people.map(p=>({...p}))];
+  const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
+  // parent id (fallback self) + BFS depth
+  const parentOf={};
+  STATE.people.forEach(p=>{ parentOf[p.id]=(p.parentId&&byId[p.parentId])?p.parentId:'self'; });
+  const depthOf={self:0};
+  nodes.forEach(n=>{ if(n.self)return; let d=0,cur=n.id; const seen=new Set();
+    while(cur&&cur!=='self'&&!seen.has(cur)){ seen.add(cur); cur=parentOf[cur]; d++; } depthOf[n.id]=d; });
+  // edges
+  const edges=[]; STATE.people.forEach(p=>edges.push({a:parentOf[p.id], b:p.id}));
+  const sideEdges=[]; const seen=new Set();
+  STATE.people.forEach(p=>(p.links||[]).forEach(l=>{
+    if(!byId[l.to]) return; const k=[p.id,l.to].sort().join('|')+l.type;
+    if(seen.has(k)) return; seen.add(k); sideEdges.push({a:p.id, b:l.to, type:l.type});
+  }));
+  // deterministic initial placement on rings by depth (golden-angle spread)
+  const GA=2.399963;
+  nodes.forEach((n,i)=>{ if(n.self){n._x=0;n._y=0;return;}
+    const ang=i*GA; const r=60+depthOf[n.id]*70; n._x=Math.cos(ang)*r; n._y=Math.sin(ang)*r; });
+  // simulation
+  const REP=2600, L_bb=88, L_side=132, K_bb=0.35, K_side=0.14, CENTER=0.022, MAX=34;
+  let alpha=1;
+  for(let it=0; it<340; it++){
+    const dx={}, dy={}; nodes.forEach(n=>{dx[n.id]=0;dy[n.id]=0;});
+    // repulsion (O(n^2), fine for our scale)
+    for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
+      const a=nodes[i], b=nodes[j];
+      let ux=a._x-b._x, uy=a._y-b._y; let d2=ux*ux+uy*uy+0.01; let d=Math.sqrt(d2);
+      const f=REP/d2; ux=ux/d*f; uy=uy/d*f;
+      dx[a.id]+=ux; dy[a.id]+=uy; dx[b.id]-=ux; dy[b.id]-=uy;
+    }
+    // springs
+    const spring=(e,L,k)=>{ const a=byId[e.a], b=byId[e.b];
+      let ux=b._x-a._x, uy=b._y-a._y; let d=Math.hypot(ux,uy)||0.01; const f=(d-L)*k;
+      ux=ux/d*f; uy=uy/d*f; dx[a.id]+=ux; dy[a.id]+=uy; dx[b.id]-=ux; dy[b.id]-=uy; };
+    edges.forEach(e=>spring(e,L_bb,K_bb));
+    sideEdges.forEach(e=>spring(e,L_side,K_side));
+    // centering + integrate (self pinned)
+    nodes.forEach(n=>{ if(n.self){n._x=0;n._y=0;return;}
+      let mx=dx[n.id]-n._x*CENTER, my=dy[n.id]-n._y*CENTER;
+      const m=Math.hypot(mx,my); if(m>MAX){ mx=mx/m*MAX; my=my/m*MAX; }
+      n._x+=mx*alpha; n._y+=my*alpha; });
+    alpha*=0.986;
+  }
+  nodes.forEach(n=>{ n._depth=depthOf[n.id]; });
+  return {nodes, byId, edges, sideEdges};
+}
+function renderGraph(){
+  const svg=document.getElementById('svg');
+  const L=computeLayout(); curLayout=L;
+  const NS='http://www.w3.org/2000/svg';
+  svg.innerHTML='';
+  const vp=document.createElementNS(NS,'g'); vp.setAttribute('id','vp'); svg.appendChild(vp);
+
+  // backbone (introduction) edges
+  STATE.people.forEach(p=>{
+    const pid=(p.parentId&&personById(p.parentId))?p.parentId:'self';
+    const a=L.byId[pid], b=L.byId[p.id];
+    const ln=document.createElementNS(NS,'line');
+    ln.setAttribute('x1',a._x); ln.setAttribute('y1',a._y);
+    ln.setAttribute('x2',b._x); ln.setAttribute('y2',b._y);
+    ln.setAttribute('stroke','#d7d3ea'); ln.setAttribute('stroke-width','1.6');
+    vp.appendChild(ln);
+  });
+  // side links (chords, bent toward center)
+  const seen=new Set();
+  STATE.people.forEach(p=>{
+    (p.links||[]).forEach(lk=>{
+      const key=[p.id,lk.to].sort().join('|')+lk.type;
+      if(seen.has(key)) return; seen.add(key);
+      const a=L.byId[p.id], b=L.byId[lk.to]; if(!a||!b) return;
+      const cx=(a._x+b._x)*0.35, cy=(a._y+b._y)*0.35;
+      const path=document.createElementNS(NS,'path');
+      path.setAttribute('d',`M${a._x},${a._y} Q${cx},${cy} ${b._x},${b._y}`);
+      path.setAttribute('fill','none');
+      path.setAttribute('stroke',(LINK_TYPES[lk.type]||{}).color||'#999');
+      path.setAttribute('stroke-width','1.8'); path.setAttribute('stroke-dasharray','4 4');
+      path.setAttribute('opacity','.85');
+      vp.appendChild(path);
+    });
+  });
+  // nodes
+  L.nodes.forEach(n=>{
+    const g=document.createElementNS(NS,'g');
+    g.setAttribute('transform',`translate(${n._x},${n._y})`);
+    g.style.cursor='pointer';
+    g.addEventListener('click',(e)=>{ e.stopPropagation(); if(!dragged) (n.self?editSelfName():openDetail(n.id)); });
+    const isSelf=n.self;
+    const circ=document.createElementNS(NS,'circle');
+    circ.setAttribute('r', isSelf?22:16);
+    circ.setAttribute('fill', isSelf?'#5b3fd6':'#ffffff');
+    circ.setAttribute('stroke', isSelf?'#5b3fd6':'#c9c3e8');
+    circ.setAttribute('stroke-width', isSelf?'0':'1.6');
+    g.appendChild(circ);
+    const ini=document.createElementNS(NS,'text');
+    ini.textContent=(n.name||'?').slice(0,1);
+    ini.setAttribute('text-anchor','middle'); ini.setAttribute('dy', isSelf?'6':'5');
+    ini.setAttribute('font-size', isSelf?'16':'13'); ini.setAttribute('font-weight','800');
+    ini.setAttribute('fill', isSelf?'#fff':'#5b3fd6');
+    g.appendChild(ini);
+    const lbl=document.createElementNS(NS,'text');
+    lbl.textContent=n.name;
+    lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('y', (isSelf?22:16)+15);
+    lbl.setAttribute('font-size','11'); lbl.setAttribute('font-weight','700');
+    lbl.setAttribute('fill','#3a3a48');
+    lbl.setAttribute('paint-order','stroke'); lbl.setAttribute('stroke','#ffffff'); lbl.setAttribute('stroke-width','3');
+    vp.appendChild(lbl); lbl.setAttribute('transform',`translate(${n._x},${n._y})`);
+    vp.appendChild(g);
+  });
+  fitGraph();
+}
+function applyTransform(){
+  document.getElementById('vp').setAttribute('transform',
+    `translate(${gTransform.x},${gTransform.y}) scale(${gTransform.k})`);
+}
+function fitGraph(){
+  const L=curLayout||(curLayout=computeLayout());
+  const xs=L.nodes.map(n=>n._x), ys=L.nodes.map(n=>n._y);
+  const pad=46;
+  const minX=Math.min(...xs)-pad, maxX=Math.max(...xs)+pad;
+  const minY=Math.min(...ys)-pad, maxY=Math.max(...ys)+pad;
+  const w=maxX-minX, h=maxY-minY;
+  const svg=document.getElementById('svg'); const R=svg.getBoundingClientRect();
+  const vb=400; // viewBox is 400x400
+  const k=Math.min(vb/Math.max(w,1), vb/Math.max(h,1), 2.2);
+  gTransform.k=k;
+  gTransform.x = vb/2 - ((minX+maxX)/2)*k;
+  gTransform.y = vb/2 - ((minY+maxY)/2)*k;
+  applyTransform();
+}
+function zoomBy(f){ gTransform.k*=f; applyTransform(); }
+
+/* pan / pinch */
+let dragging=false, dragged=false, last=null, pinchStart=null;
+(function bindStage(){
+  const stage=document.getElementById('stage');
+  const svg=document.getElementById('svg');
+  function toVB(cx,cy){ // client px -> viewBox units
+    const R=svg.getBoundingClientRect();
+    return {x:(cx-R.left)/R.width*400, y:(cy-R.top)/R.height*400};
+  }
+  stage.addEventListener('pointerdown',e=>{
+    stage.setPointerCapture(e.pointerId);
+    dragging=true; dragged=false; last=toVB(e.clientX,e.clientY);
+  });
+  stage.addEventListener('pointermove',e=>{
+    if(!dragging) return;
+    const p=toVB(e.clientX,e.clientY);
+    const dx=p.x-last.x, dy=p.y-last.y;
+    if(Math.abs(dx)>1||Math.abs(dy)>1) dragged=true;
+    gTransform.x+=dx; gTransform.y+=dy; last=p; applyTransform();
+  });
+  ['pointerup','pointercancel'].forEach(ev=>stage.addEventListener(ev,()=>{ dragging=false; }));
+  // wheel zoom
+  stage.addEventListener('wheel',e=>{ e.preventDefault(); zoomBy(e.deltaY<0?1.1:0.9); },{passive:false});
+  // pinch
+  const pts=new Map();
+  stage.addEventListener('pointerdown',e=>pts.set(e.pointerId,e));
+  stage.addEventListener('pointermove',e=>{
+    if(!pts.has(e.pointerId)) return; pts.set(e.pointerId,e);
+    if(pts.size===2){
+      dragged=true; dragging=false;
+      const [a,b]=[...pts.values()];
+      const dist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      if(pinchStart){ zoomBy(dist/pinchStart); }
+      pinchStart=dist;
+    }
+  });
+  ['pointerup','pointercancel'].forEach(ev=>stage.addEventListener(ev,e=>{ pts.delete(e.pointerId); if(pts.size<2)pinchStart=null; }));
+})();
+
+/* ===== sheets ===== */
+function showSheet(html){
+  document.getElementById('sheet').innerHTML='<div class="grip"></div>'+html;
+  const ov=document.getElementById('overlay');
+  ov.style.display='flex'; requestAnimationFrame(()=>ov.classList.add('show'));
+}
+function closeSheet(){
+  const ov=document.getElementById('overlay');
+  ov.classList.remove('show');
+  setTimeout(()=>{ov.style.display='none';},220);
+}
+
+function parentOptions(exclude){
+  const bad = exclude ? new Set([exclude, ...descendantsOf(exclude)]) : new Set();
+  let opts=`<option value="">自分と直接（紹介なし）</option>`;
+  STATE.people.filter(p=>!bad.has(p.id)).sort((a,b)=>a.name.localeCompare(b.name,'ja'))
+    .forEach(p=>opts+=`<option value="${p.id}">${esc(p.name)}さんの紹介</option>`);
+  return opts;
+}
+
+function openEdit(id){
+  const p = id ? personById(id) : null;
+  const sel = parentOptions(id);
+  showSheet(`
+    <h2>${p?'編集':'人を追加'}</h2>
+    <div class="sub">${p?'内容を直して保存':'知り合った人をメモ'}</div>
+    <div class="field"><label>名前 <span style="color:var(--danger)">*</span></label>
+      <input id="f-name" value="${p?esc(p.name):''}" placeholder="例：田中 太郎"></div>
+    <div class="two">
+      <div class="field"><label>肩書き・所属</label>
+        <input id="f-org" value="${p?esc(p.org||''):''}" placeholder="例：〇〇社 営業"></div>
+      <div class="field"><label>会った日</label>
+        <input id="f-date" type="month" value="${p?esc(p.date||''):''}"></div>
+    </div>
+    <div class="field"><label>会った場所・きっかけ</label>
+      <input id="f-place" value="${p?esc(p.place||''):''}" placeholder="例：名刺交換会"></div>
+    <div class="field"><label>誰の紹介？</label>
+      <select id="f-parent">${sel}</select></div>
+    <div class="field"><label>タグ（カンマ区切り）</label>
+      <input id="f-tags" value="${p?esc((p.tags||[]).join(', ')):''}" placeholder="例：デザイン, 要フォロー"></div>
+    <div class="field"><label>メモ</label>
+      <textarea id="f-memo" placeholder="話した内容・印象・次のアクション">${p?esc(p.memo||''):''}</textarea></div>
+    ${p?renderLinkEditor(p):''}
+    <div class="sheet-actions">
+      <button class="btn-primary" onclick="saveEdit('${id||''}')">保存</button>
+    </div>
+    ${p?`<button class="btn-del" onclick="delPerson('${id}')">この人を削除</button>`:''}
+  `);
+  if(p) setTimeout(()=>{const s=document.getElementById('f-parent'); if(s)s.value=p.parentId||'';},0);
+}
+function saveEdit(id){
+  const name=val('f-name').trim();
+  if(!name){ alert('名前を入れてください'); return; }
+  const data={
+    name, org:val('f-org').trim(), place:val('f-place').trim(), date:val('f-date'),
+    parentId:val('f-parent')||null, memo:val('f-memo').trim(),
+    tags: val('f-tags').split(',').map(s=>s.trim()).filter(Boolean),
+  };
+  if(id){ Object.assign(personById(id), data); }
+  else{ STATE.people.push({id:uid(), links:[], ...data}); }
+  save(); closeSheet(); renderList(); if(curTab==='graph') renderGraph();
+}
+function delPerson(id){
+  if(!confirm('この人を削除します。よろしいですか？')) return;
+  // reparent children to this person's parent
+  const p=personById(id); const gp=p.parentId||null;
+  STATE.people.forEach(c=>{ if(c.parentId===id) c.parentId=gp; });
+  STATE.people.forEach(c=>{ if(c.links) c.links=c.links.filter(l=>l.to!==id); });
+  STATE.people=STATE.people.filter(x=>x.id!==id);
+  save(); closeSheet(); renderList(); if(curTab==='graph') renderGraph();
+}
+
+/* link editor */
+function renderLinkEditor(p){
+  const rows=(p.links||[]).map((l,i)=>{
+    const t=LINK_TYPES[l.type]||{};
+    return `<div class="linkrow">
+      <span class="dot" style="background:${t.color}"></span>
+      <span class="nm">${esc(displayName(l.to))}</span>
+      <span class="kind">${esc(t.label||'')}</span>
+      <button class="rm" onclick="removeLink('${p.id}',${i})">×</button></div>`;
+  }).join('');
+  const others=STATE.people.filter(x=>x.id!==p.id);
+  const opts=others.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+  const typeOpts=Object.entries(LINK_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
+  return `<div class="field"><label>横のつながり（補助線）</label>
+    <div class="linkbox">${rows||'<div class="sub" style="margin:2px 0 6px">まだありません</div>'}
+      ${others.length?`<div class="add-link">
+        <select id="lk-to">${opts}</select>
+        <select id="lk-type" style="flex:none;width:auto">${typeOpts}</select>
+        <button onclick="addLink('${p.id}')">追加</button></div>`:''}
+    </div></div>`;
+}
+function addLink(id){
+  const to=val('lk-to'), type=val('lk-type'); if(!to) return;
+  const p=personById(id); p.links=p.links||[];
+  if(!p.links.some(l=>l.to===to&&l.type===type)) p.links.push({to,type});
+  save(); openEdit(id);
+}
+function removeLink(id,i){ const p=personById(id); p.links.splice(i,1); save(); openEdit(id); }
+
+/* detail */
+function openDetail(id){
+  const p=personById(id); if(!p) return;
+  const via=(p.parentId&&personById(p.parentId))?`${esc(displayName(p.parentId))}さんの紹介`:'自分と直接';
+  const kv=(k,v)=>v?`<div class="kv"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`:'';
+  const links=(p.links||[]).map(l=>{const t=LINK_TYPES[l.type]||{};
+    return `<span class="tag" style="border-color:${t.color};color:${t.color}">${esc(displayName(l.to))}・${esc(t.label)}</span>`;}).join(' ');
+  const tags=(p.tags||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join(' ');
+  showSheet(`<div class="detail-card">
+    <h2>${esc(p.name)}</h2>
+    <div class="sub">${via}${p.date?` ・ ${esc(p.date)}`:''}</div>
+    ${kv('肩書き',p.org)}${kv('場所',p.place)}
+    ${tags?`<div class="kv"><span class="k">タグ</span><span class="v"><div class="tagrow">${tags}</div></span></div>`:''}
+    ${links?`<div class="kv"><span class="k">つながり</span><span class="v"><div class="tagrow">${links}</div></span></div>`:''}
+    ${p.memo?`<div class="kv" style="flex-direction:column;gap:4px"><span class="k">メモ</span><div class="memo">${esc(p.memo)}</div></div>`:''}
+    <div class="sheet-actions"><button class="btn-primary" onclick="openEdit('${p.id}')">編集する</button></div>
+  </div>`);
+}
+
+/* ===== menu actions ===== */
+function openMenu(){ document.getElementById('menuPop').classList.add('show'); }
+function closeMenu(){ document.getElementById('menuPop').classList.remove('show'); }
+function editSelfName(){
+  closeMenu();
+  showSheet(`<h2>自分の名前</h2>
+    <div class="sub">相関図の中心に表示されます</div>
+    <div class="field"><input id="f-self" value="${esc(STATE.self.name)}"></div>
+    <div class="sheet-actions"><button class="btn-primary" onclick="saveSelf()">保存</button></div>`);
+}
+function saveSelf(){ STATE.self.name=val('f-self').trim()||'自分'; save(); closeSheet(); if(curTab==='graph')renderGraph(); }
+function exportData(){
+  closeMenu();
+  const txt=JSON.stringify(STATE,null,2);
+  navigator.clipboard?.writeText(txt).then(
+    ()=>alert('データをコピーしました（'+STATE.people.length+'人）'),
+    ()=>prompt('コピーしてください', txt));
+}
+function wipeAll(){
+  closeMenu();
+  if(!confirm('登録した人をすべて削除します。取り消せません。よろしいですか？')) return;
+  STATE={self:{name:STATE.self.name}, people:[]}; save(); activeTag=null;
+  renderList(); if(curTab==='graph')renderGraph();
+}
+
+/* ===== sample ===== */
+function seedSample(){
+  closeMenu();
+  if(STATE.people.length && !confirm('サンプルを追加します。よろしいですか？')) return;
+  const P=(name,org,place,date,parentId,tags,memo)=>({id:uid(),name,org,place,date,parentId,tags,memo,links:[]});
+  const tanaka=P('田中 一郎','マルヤマ商事 部長','異業種交流会','2026-03',null,['要フォロー'],'話が早い。紹介を惜しまない人。');
+  const yamamoto=P('山本 花','デザイナー(個人)','友人の結婚式','2026-04',null,['デザイン'],'ロゴが得意。');
+  const sato=P('佐藤 健','マルヤマ商事 営業','','2026-05',tanaka.id,['営業'],'田中さんの部下。フットワーク軽い。');
+  const suzuki=P('鈴木 みな','スタートアップCEO','','2026-06',sato.id,['起業','要フォロー'],'資金調達中。');
+  const kobayashi=P('小林 亮','カメラマン','山本さんの個展','2026-06',yamamoto.id,['クリエイター'],'物撮りが上手い。');
+  // side links
+  sato.links.push({to:tanaka.id,type:'org'});
+  kobayashi.links.push({to:yamamoto.id,type:'friend'});
+  suzuki.links.push({to:sato.id,type:'place'});
+  STATE.people.push(tanaka,yamamoto,sato,suzuki,kobayashi);
+  save(); renderList(); switchTab('graph');
+}
+
+/* ===== utils ===== */
+function val(id){ const e=document.getElementById(id); return e?e.value:''; }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+renderList();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
