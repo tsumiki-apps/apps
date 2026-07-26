@@ -92,6 +92,16 @@
   .exportrow{display:flex; gap:8px; margin-bottom:14px;}
   .exportrow button{flex:1; background:var(--card); border:1px solid var(--line); color:var(--accent);
     font-weight:800; font-size:14px; border-radius:12px; padding:12px;}
+  .billpanel{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px;}
+  .billhead{font-size:13px; font-weight:800; color:var(--sub); margin-bottom:8px;}
+  .billpanel .field{margin-bottom:8px;}
+  .billpanel .field label{display:block; font-size:11px; color:var(--sub); margin-bottom:4px; font-weight:700;}
+  .billpanel .field input{width:100%; border:1.5px solid var(--line); border-radius:10px; padding:8px 10px;}
+  .billsum{border-top:1px solid var(--line); margin-top:6px; padding-top:8px; font-size:12.5px; font-variant-numeric:tabular-nums;}
+  .billsum .r{display:flex; justify-content:space-between; padding:2px 0;}
+  .billsum .r .l{color:var(--sub);}
+  .billsum .r.sub{font-weight:800; border-top:1px solid var(--line); margin-top:4px; padding-top:6px; font-size:14px;}
+  .billsum .r.sub .v{color:var(--accent);}
   .reclist{display:flex; flex-direction:column; gap:8px;}
   .rec{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 13px;
     display:flex; align-items:center; gap:11px;}
@@ -206,7 +216,15 @@
   #printArea .sat{color:#0000ff;} #printArea .sun{color:#e00000;}
   #printArea table.kmain tr.total td{background:#d9d9d9; font-weight:700;}
   #printArea .kstampwrap{display:flex; justify-content:flex-end; margin-top:16px;}
-  #printArea table.kstamp{border-collapse:collapse;}
+  #printArea .kfoot{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-top:14px;}
+  #printArea table.kbilltbl{border-collapse:collapse; flex:1; max-width:66%;}
+  #printArea table.kbilltbl th,#printArea table.kbilltbl td{border:1px solid #000; font-size:10px; padding:3px 6px; vertical-align:middle;}
+  #printArea table.kbilltbl th{text-align:center; letter-spacing:2px; font-weight:700; background:#f0f0f0;}
+  #printArea table.kbilltbl td.bn{text-align:center; width:44%;}
+  #printArea table.kbilltbl td.bd{text-align:center; font-size:9px; color:#333;}
+  #printArea table.kbilltbl td.ba{text-align:right; width:20%; font-variant-numeric:tabular-nums;}
+  #printArea table.kbilltbl tr.bt td{font-weight:700; background:#f7f7f7;}
+  #printArea table.kstamp{border-collapse:collapse; flex:0 0 auto;}
   #printArea table.kstamp th,#printArea table.kstamp td{border:1px solid #000; font-size:11px; text-align:center;}
   #printArea table.kstamp th{padding:5px 10px; letter-spacing:3px; font-weight:700;}
   #printArea table.kstamp td.name{width:100px; height:50px; padding:4px; line-height:1.4; vertical-align:middle; text-align:center;}
@@ -277,6 +295,14 @@
         <button id="xlsxBtn">📊 Excel書き出し</button>
         <button id="pdfBtn">📄 PDF書き出し</button>
       </div>
+      <div class="billpanel" id="billPanel" hidden>
+        <div class="billhead">請求算定</div>
+        <div style="display:flex; gap:8px;">
+          <div class="field" style="flex:1"><label>早退（時間）</label><input id="bEarly" type="number" step="0.25" inputmode="decimal" value="0"></div>
+          <div class="field" style="flex:1"><label>欠勤（日）</label><input id="bAbsent" type="number" step="0.5" inputmode="decimal" value="0"></div>
+        </div>
+        <div id="billSummary" class="billsum"></div>
+      </div>
     </div>
     <div class="ts-right">
       <div class="reclist" id="recList"></div>
@@ -315,6 +341,34 @@ function buckets(inTs,outTs){
   if(isHolidayDate(d)) return {actual:a,hei:0,zan:0,kyu:a,open:false};
   return {actual:a,hei:Math.min(a,DAY_MIN),zan:Math.max(a-DAY_MIN,0),kyu:0,open:false};
 }
+/* 深夜(22:00〜翌5:00)の重なり時間(分)。15分丸め後、各日の[22:00,翌5:00]と重ねて合算 */
+function nightMinutes(inTs,outTs){
+  if(!inTs||!outTs) return 0;
+  const a=round15(inTs).getTime(), b=round15(outTs).getTime();
+  if(b<=a) return 0;
+  let total=0; const base=new Date(a); base.setHours(0,0,0,0);
+  for(let dd=-1; dd<=2; dd++){
+    const ds=new Date(base); ds.setDate(ds.getDate()+dd);
+    const wa=new Date(ds); wa.setHours(22,0,0,0);
+    const wb=new Date(ds); wb.setHours(29,0,0,0);   // 翌5:00
+    const s=Math.max(a,wa.getTime()), e=Math.min(b,wb.getTime());
+    if(e>s) total+=(e-s)/60000;
+  }
+  return Math.round(total);
+}
+/* 請求算定（1ヶ月分）。金額は円で四捨五入 */
+function computeBilling(w, tZ, tK, nightMin, earlyMin, absentDays){
+  const wage=w.wage_yen||0, base=w.base_pay_yen||0;
+  const otR=+org.ot_rate||1.25, nR=+org.night_rate||0.25, hR=+org.holiday_rate||1.35, tax=+org.tax_rate||0.10, dayH=+org.day_hours||8;
+  const otH=tZ/60, nH=nightMin/60, hH=tK/60, eH=earlyMin/60;
+  const ot=Math.round(otH*wage*otR), night=Math.round(nH*wage*nR), hol=Math.round(hH*wage*hR);
+  const early=Math.round(eH*wage), absent=Math.round(absentDays*wage*dayH);
+  const subtotal=base+ot+night+hol-early-absent;
+  const cIncl=w.commute_incl_yen||0, cExcl=Math.round(cIncl/(1+tax));
+  return {wage,base,otR,nR,hR,tax,dayH,otH,nH,hH,eH,ot,night,hol,early,absent,subtotal,cIncl,cExcl,absentDays,dailyRate:Math.round(wage*dayH)};
+}
+function yen(n){ return (n<0?'-':'')+Math.abs(Math.round(n)).toLocaleString('ja-JP'); }
+function hnum(h){ return (Math.round(h*100)/100).toString(); }
 function fmtHM(min){ if(min==null) return '--'; const s=min<0?'-':''; min=Math.abs(min); return s+Math.floor(min/60)+':'+String(min%60).padStart(2,'0'); }
 function fmtClock(ts){ if(!ts) return ''; const d=round15(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function periodRange(year,m1){ return {from:new Date(year,m1-2,PERIOD_START), to:new Date(year,m1-1,PERIOD_START)}; }
@@ -408,6 +462,16 @@ function openSettings(){
     <div class="field"><label>事業所名（自社・アプリ表示）</label><input id="sName" value="${esc(org.name)}" placeholder="〇〇スタッフ"></div>
     <div class="field"><label>派遣元 会社名（確認印）</label><input id="sMoto" value="${esc(org.haken_moto||'')}" placeholder="株式会社◯◯"></div>
     <div class="field"><label>派遣先 会社名（確認印）</label><input id="sSaki" value="${esc(org.haken_saki||'')}" placeholder="株式会社◯◯"></div>
+    <p class="muted" style="margin:6px 0 10px">請求算定の倍率（会社共通）。通常は変更不要です。</p>
+    <div style="display:flex; gap:8px;">
+      <div class="field" style="flex:1"><label>時間外倍率</label><input id="sOt" type="number" step="0.01" inputmode="decimal" value="${org.ot_rate??1.25}"></div>
+      <div class="field" style="flex:1"><label>深夜倍率</label><input id="sNight" type="number" step="0.01" inputmode="decimal" value="${org.night_rate??0.25}"></div>
+      <div class="field" style="flex:1"><label>休日倍率</label><input id="sHol" type="number" step="0.01" inputmode="decimal" value="${org.holiday_rate??1.35}"></div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <div class="field" style="flex:1"><label>消費税率</label><input id="sTax" type="number" step="0.01" inputmode="decimal" value="${org.tax_rate??0.10}"></div>
+      <div class="field" style="flex:1"><label>所定日時間(欠勤控除用)</label><input id="sDayh" type="number" step="0.5" inputmode="decimal" value="${org.day_hours??8}"></div>
+    </div>
     <div class="row"><button class="btn-ghost" id="sCancel">閉じる</button><button class="btn-primary" id="sSave">保存</button></div>
   </div></div>`;
   document.getElementById('mBack').addEventListener('click',e=>{ if(e.target.id==='mBack') closeModal(); });
@@ -417,7 +481,9 @@ function openSettings(){
     const moto=document.getElementById('sMoto').value.trim();
     const saki=document.getElementById('sSaki').value.trim();
     if(!name){ toast('事業所名を入れてください'); return; }
-    try{ const res=await rpc('dakoku_admin_update_org',{p_admin:admin,p_name:name,p_haken_moto:moto,p_haken_saki:saki});
+    const num=(id,def)=>{ const v=parseFloat(document.getElementById(id).value); return isNaN(v)?def:v; };
+    try{ const res=await rpc('dakoku_admin_update_org',{p_admin:admin,p_name:name,p_haken_moto:moto,p_haken_saki:saki,
+      p_ot:num('sOt',1.25),p_night:num('sNight',0.25),p_holiday:num('sHol',1.35),p_tax:num('sTax',0.10),p_dayh:num('sDayh',8)});
       org=Object.assign(org,res); document.getElementById('hOrg').textContent=org.name; closeModal(); toast('保存しました'); }
     catch(e){ toast('保存に失敗しました'); }
   });
@@ -440,8 +506,18 @@ function openWorkerEdit(w){
     ${isNew?'':`<div class="codebig"><div class="c">${w.code}</div><div class="h">この打刻コードを本人に渡してください</div></div>`}
     <div class="field"><label>名前</label><input id="wName" value="${isNew?'':esc(w.name)}" placeholder="山田 太郎"></div>
     <div class="field"><label>派遣先（既定の現場名）</label><input id="wSite" value="${isNew?'':esc(w.site||'')}" placeholder="〇〇再開発事業"></div>
-    ${isNew?'':`<div class="togglerow"><span style="font-weight:700;font-size:14px">打刻を有効にする</span>
-      <label class="switch"><input type="checkbox" id="wActive" ${w.active?'checked':''}><span class="sl"></span></label></div>`}
+    ${isNew?'':`
+    <div class="togglerow"><span style="font-weight:700;font-size:14px">打刻を有効にする</span>
+      <label class="switch"><input type="checkbox" id="wActive" ${w.active?'checked':''}><span class="sl"></span></label></div>
+    <p class="muted" style="margin:4px 0 10px">請求算定（金額計算）に使います。空欄なら請求算定は出力されません。</p>
+    <div style="display:flex; gap:8px;">
+      <div class="field" style="flex:1"><label>時給（円）</label><input id="wWage" type="number" inputmode="numeric" value="${w.wage_yen||''}" placeholder="4000"></div>
+      <div class="field" style="flex:1"><label>基本賃金（円/月）</label><input id="wBase" type="number" inputmode="numeric" value="${w.base_pay_yen||''}" placeholder="640000"></div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <div class="field" style="flex:2"><label>交通費 区間</label><input id="wCroute" value="${esc(w.commute_route||'')}" placeholder="桜木町→東京"></div>
+      <div class="field" style="flex:1"><label>交通費 税込（円/月）</label><input id="wCincl" type="number" inputmode="numeric" value="${w.commute_incl_yen||''}" placeholder="17970"></div>
+    </div>`}
     <div class="row"><button class="btn-ghost" id="wCancel">閉じる</button><button class="btn-primary" id="wSave">保存</button></div>
   </div></div>`;
   document.getElementById('mBack').addEventListener('click',e=>{ if(e.target.id==='mBack') closeModal(); });
@@ -455,7 +531,9 @@ async function saveWorker(w){
     if(!w){ const nw=await rpc('dakoku_admin_add_worker',{p_admin:admin,p_name:name,p_site:site});
       closeModal(); await loadWorkers(); openWorkerEdit(nw); toast('追加しました。コードを本人へ');
     }else{ const active=document.getElementById('wActive').checked;
-      await rpc('dakoku_admin_update_worker',{p_admin:admin,p_worker:w.id,p_name:name,p_site:site,p_active:active});
+      const intv=id=>{ const v=parseInt(document.getElementById(id).value,10); return isNaN(v)?0:v; };
+      await rpc('dakoku_admin_update_worker',{p_admin:admin,p_worker:w.id,p_name:name,p_site:site,p_active:active,
+        p_wage:intv('wWage'),p_base:intv('wBase'),p_croute:document.getElementById('wCroute').value.trim(),p_cincl:intv('wCincl')});
       closeModal(); await loadWorkers(); toast('保存しました'); }
   }catch(e){ toast('保存に失敗しました'); }
 }
@@ -484,7 +562,7 @@ async function loadTimesheet(){
   try{ recs=await rpc('dakoku_admin_records',{p_admin:admin,p_worker:selWorker.id,p_from:from.toISOString(),p_to:to.toISOString()}); }
   catch(e){ toast('読み込み失敗'); recs=[]; }
   if(seq!==loadSeq) return;   // 新しい読込が来ていたら古い結果は破棄
-  curRecs=recs; renderTimesheet();
+  curRecs=recs; renderTimesheet(); loadBilling();
 }
 async function loadWorkersQuiet(){ try{ workers=await rpc('dakoku_admin_workers',{p_admin:admin}); fillWorkerSelect(); }catch(e){} }
 
@@ -545,6 +623,52 @@ function renderTSTable(){
   }
   tf.innerHTML=`<tr><td colspan="7">合計　（稼働 ${days} 日）</td><td>${fmtHM(tHei)}</td><td class="z">${fmtHM(tZan)}</td><td class="k">${fmtHM(tKyu)}</td></tr>`;
 }
+
+/* ===== 請求算定 パネル ===== */
+let billEarly=0, billAbsent=0, billNight=0, billTZ=0, billTK=0;
+function monthTotals(){
+  let tZ=0,tK=0,night=0;
+  curRecs.forEach(r=>{ const b=buckets(r.clock_in,r.clock_out); if(b.actual!=null){ tZ+=b.zan; tK+=b.kyu; } night+=nightMinutes(r.clock_in,r.clock_out); });
+  return {tZ,tK,night};
+}
+function periodKey(){ return `${per.y}-${String(per.m1).padStart(2,'0')}`; }
+async function loadBilling(){
+  const panel=document.getElementById('billPanel');
+  if(!selWorker || !(selWorker.wage_yen>0)){ if(panel) panel.hidden=true; return; }
+  panel.hidden=false;
+  const t=monthTotals(); billNight=t.night; billTZ=t.tZ; billTK=t.tK;
+  try{ const b=await rpc('dakoku_admin_billing_get',{p_admin:admin,p_worker:selWorker.id,p_period:periodKey()});
+    billEarly=b.early_min||0; billAbsent=+b.absent_days||0; }catch(e){ billEarly=0; billAbsent=0; }
+  document.getElementById('bEarly').value=(Math.round(billEarly/60*100)/100);
+  document.getElementById('bAbsent').value=billAbsent;
+  renderBill();
+}
+function renderBill(){
+  if(!selWorker || !(selWorker.wage_yen>0)) return;
+  const b=computeBilling(selWorker, billTZ, billTK, billNight, billEarly, billAbsent);
+  document.getElementById('billSummary').innerHTML=`
+    <div class="r"><span class="l">基本賃金</span><span class="v">${yen(b.base)}</span></div>
+    <div class="r"><span class="l">時間外 ${hnum(b.otH)}h×${b.otR}</span><span class="v">${yen(b.ot)}</span></div>
+    <div class="r"><span class="l">深夜 ${hnum(b.nH)}h×${b.nR}</span><span class="v">${yen(b.night)}</span></div>
+    <div class="r"><span class="l">法定休日 ${hnum(b.hH)}h×${b.hR}</span><span class="v">${yen(b.hol)}</span></div>
+    <div class="r"><span class="l">早退控除</span><span class="v">${yen(-b.early)}</span></div>
+    <div class="r"><span class="l">欠勤控除</span><span class="v">${yen(-b.absent)}</span></div>
+    <div class="r sub"><span class="l">出向負担金(税抜)</span><span class="v">${yen(b.subtotal)}</span></div>
+    ${b.cIncl?`<div class="r"><span class="l">交通費(税抜)</span><span class="v">${yen(b.cExcl)}</span></div>`:''}`;
+}
+let billSaveT;
+function onBillInput(){
+  billEarly=Math.round((parseFloat(document.getElementById('bEarly').value)||0)*60);
+  billAbsent=parseFloat(document.getElementById('bAbsent').value)||0;
+  renderBill();
+  clearTimeout(billSaveT); billSaveT=setTimeout(saveBilling,600);
+}
+async function saveBilling(){
+  if(!selWorker) return;
+  try{ await rpc('dakoku_admin_billing_set',{p_admin:admin,p_worker:selWorker.id,p_period:periodKey(),p_early:billEarly,p_absent:billAbsent}); }catch(e){}
+}
+document.getElementById('bEarly').addEventListener('input',onBillInput);
+document.getElementById('bAbsent').addEventListener('input',onBillInput);
 
 document.getElementById('addRecBtn').addEventListener('click',()=>openRecEdit(null));
 function openRecEdit(rec, defDate){
@@ -675,8 +799,35 @@ async function exportXlsx(){
     const c=tr.getCell(i+1); c.value=v; c.border=bd; c.alignment=ctr; c.fill=fill(GRAY); c.font={bold:true,size:11}; });
   tr.height=20;
 
-  // 確認印ボックス（右下・会社名｜押印）
   const s=ri+2;
+  // 請求算定（時給が設定された労働者のみ・A:G列）
+  const night=monthTotals().night;
+  const bill=(selWorker.wage_yen>0)?computeBilling(selWorker,tZan,tKyu,night,billEarly,billAbsent):null;
+  if(bill){
+    ws.mergeCells(`A${s}:G${s}`);
+    const bh=ws.getCell(`A${s}`); bh.value='請 求 算 定'; bh.alignment=ctr; bh.font={bold:true};
+    for(let col=1;col<=7;col++){ ws.getCell(s,col).border=bd; ws.getCell(s,col).fill=fill(GRAY); }
+    const brows=[
+      ['基本賃金','',bill.base],
+      ['時間外手当',`${hnum(bill.otH)}時間 × ${yen(bill.wage)} × ${bill.otR}`,bill.ot],
+      ['深夜手当（22:00〜翌5:00）',`${hnum(bill.nH)}時間 × ${yen(bill.wage)} × ${bill.nR}`,bill.night],
+      ['法定休日出勤手当',`${hnum(bill.hH)}時間 × ${yen(bill.wage)} × ${bill.hR}`,bill.hol],
+      ['早退控除',`${hnum(bill.eH)}時間 × -${yen(bill.wage)}`,-bill.early],
+      ['欠勤控除',`${hnum(bill.absentDays)}日 × -${yen(bill.dailyRate)}`,-bill.absent],
+      ['出向負担金　合計　［円］（税抜額）','',bill.subtotal],
+    ];
+    if(bill.cIncl) brows.push([selWorker.commute_route||'交通費',`${yen(bill.cIncl)}（税込）`,bill.cExcl]);
+    let rr=s+1;
+    brows.forEach(([name,detail,amt],idx)=>{
+      ws.mergeCells(`A${rr}:C${rr}`); ws.mergeCells(`D${rr}:F${rr}`);
+      const cn=ws.getCell(`A${rr}`); cn.value=name; cn.alignment={vertical:'middle',horizontal:'center'}; cn.font={size:10,bold:idx===6};
+      const cd=ws.getCell(`D${rr}`); cd.value=detail; cd.alignment={vertical:'middle',horizontal:'center'}; cd.font={size:9};
+      const cg=ws.getCell(`G${rr}`); cg.value=amt; cg.alignment={vertical:'middle',horizontal:'right'}; cg.numFmt='#,##0'; cg.font={size:10,bold:idx===6};
+      for(let col=1;col<=7;col++){ ws.getCell(rr,col).border=bd; }
+      ws.getRow(rr).height=17; rr++;
+    });
+  }
+  // 確認印ボックス（右下・会社名｜押印）
   ws.mergeCells(`H${s}:J${s}`);
   const hc=ws.getCell(`H${s}`); hc.value='確 認 印'; hc.alignment=ctr; hc.font={bold:true};
   ws.mergeCells(`H${s+1}:H${s+2}`); ws.mergeCells(`I${s+1}:J${s+2}`);
@@ -713,7 +864,7 @@ function exportPdf(){
   html+=`<tr><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td></td><td></td><td></td></tr>
       <tr class="total"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>${fmtHM(tHei)}</td><td>${fmtHM(tZan)}</td><td>${fmtHM(tKyu)}</td></tr>
       </tbody></table>
-    <div class="kstampwrap"><table class="kstamp">
+    <div class="kfoot">${billHtml()}<table class="kstamp">
       <tr><th colspan="2">確 認 印</th></tr>
       <tr><td class="name">${coLines(org.haken_moto||'派遣元').map(esc).join('<br>')}</td><td class="sp"></td></tr>
       <tr><td class="name">${coLines(org.haken_saki||'派遣先').map(esc).join('<br>')}</td><td class="sp"></td></tr>
@@ -721,6 +872,23 @@ function exportPdf(){
   document.getElementById('printArea').innerHTML=html;
   toast('プリント画面から「PDFで保存」を選べます');
   setTimeout(()=>window.print(),300);
+}
+function billHtml(){
+  if(!(selWorker&&selWorker.wage_yen>0)) return '';
+  const {tZan,tKyu}=buildDayRows(); const night=monthTotals().night;
+  const b=computeBilling(selWorker,tZan,tKyu,night,billEarly,billAbsent);
+  const row=(n,d,a,bold)=>`<tr${bold?' class="bt"':''}><td class="bn">${esc(n)}</td><td class="bd">${d}</td><td class="ba">${yen(a)}</td></tr>`;
+  let h=`<table class="kbilltbl"><tr><th colspan="3">請 求 算 定</th></tr>`;
+  h+=row('基本賃金','',b.base);
+  h+=row('時間外手当',`${hnum(b.otH)}時間 × ${yen(b.wage)} × ${b.otR}`,b.ot);
+  h+=row('深夜手当（22:00〜翌5:00）',`${hnum(b.nH)}時間 × ${yen(b.wage)} × ${b.nR}`,b.night);
+  h+=row('法定休日出勤手当',`${hnum(b.hH)}時間 × ${yen(b.wage)} × ${b.hR}`,b.hol);
+  h+=row('早退控除',`${hnum(b.eH)}時間 × -${yen(b.wage)}`,-b.early);
+  h+=row('欠勤控除',`${hnum(b.absentDays)}日 × -${yen(b.dailyRate)}`,-b.absent);
+  h+=row('出向負担金　合計　［円］（税抜額）','',b.subtotal,true);
+  if(b.cIncl) h+=row(selWorker.commute_route||'交通費',`${yen(b.cIncl)}（税込）`,b.cExcl);
+  h+='</table>';
+  return h;
 }
 
 /* ===== 起動 ===== */
