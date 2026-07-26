@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-dakoku-kanri.png">
+<meta name="apple-mobile-web-app-title" content="打刻管理">
+<title>打刻管理 — 勤務表・書き出し</title>
+<style>
+  :root{
+    --bg:#eef3f8; --card:#ffffff; --ink:#1a2734; --sub:#7488a0;
+    --line:#e2e9f1; --accent:#2f6fd6; --accent2:#5a95ea;
+    --in:#2f9e6b; --out:#e0663b; --ok:#34c759; --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
+  html,body{overscroll-behavior-y:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 24px);
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:620px; margin:0 auto; padding:0 16px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  input,select,textarea{font-family:inherit; font-size:16px;}
+
+  /* ===== ログイン ===== */
+  .login{min-height:78vh; display:flex; flex-direction:column; justify-content:center; gap:14px; text-align:center;}
+  .login .logo{font-size:50px;}
+  .login h1{font-size:23px; font-weight:800; letter-spacing:-.02em;}
+  .login p{color:var(--sub); font-size:13px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px 18px;}
+  .card + .card{margin-top:12px;}
+  .login input{width:100%; border:2px solid var(--line); border-radius:14px; padding:13px 14px; margin-bottom:10px;}
+  .login input.code{text-align:center; letter-spacing:.24em; font-weight:700; font-size:20px; text-transform:uppercase;}
+  .login input:focus{outline:none; border-color:var(--accent);}
+  .btn-primary{background:var(--accent); color:#fff; font-weight:800; font-size:16px; border-radius:14px; padding:14px; width:100%;}
+  .btn-primary:disabled{opacity:.5;}
+  .btn-sub{background:var(--bg); color:var(--accent); font-weight:800; font-size:15px; border-radius:14px; padding:13px; width:100%;}
+  .muted{color:var(--sub); font-size:12px;}
+  .err{color:var(--out); font-size:13px; min-height:18px;}
+  .divider{display:flex; align-items:center; gap:10px; color:var(--sub); font-size:12px; margin:4px 0;}
+  .divider::before,.divider::after{content:''; flex:1; height:1px; background:var(--line);}
+
+  /* ===== ヘッダー ===== */
+  header{padding:20px 4px 6px; display:flex; align-items:center; gap:10px;}
+  header h1{font-size:19px; font-weight:800; letter-spacing:-.02em;}
+  header .sync{margin-left:auto; display:flex; align-items:center; gap:6px;
+    font-size:11px; color:var(--sub); background:var(--card); border:1px solid var(--line);
+    border-radius:999px; padding:5px 10px;}
+  .sync .dot{width:7px; height:7px; border-radius:50%; background:var(--ok);}
+  .sync .dot.off{background:#c7c7cc;}
+
+  .tabs{display:flex; gap:6px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:5px; margin:6px 0 12px;}
+  .tabs button{flex:1; padding:10px; border-radius:10px; font-weight:700; font-size:14px; color:var(--sub);}
+  .tabs button.on{background:var(--accent); color:#fff;}
+
+  /* ===== 従業員一覧 ===== */
+  .wlist{display:flex; flex-direction:column; gap:9px;}
+  .wcard{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px;
+    display:flex; align-items:center; gap:12px;}
+  .wcard.inactive{opacity:.55;}
+  .wcard .info{flex:1; min-width:0;}
+  .wcard .nm{font-weight:800; font-size:16px;}
+  .wcard .st{font-size:12px; color:var(--sub);}
+  .wcard .st .stdot{color:var(--in); font-weight:700;}
+  .wcard .codechip{background:var(--bg); border:1px dashed var(--accent); color:var(--accent);
+    font-weight:800; font-size:16px; letter-spacing:.12em; border-radius:10px; padding:6px 10px; font-variant-numeric:tabular-nums;}
+  .addrow{margin-top:14px; text-align:center;}
+  .addrow button{color:var(--accent); font-weight:700; font-size:15px; padding:12px 18px;
+    border:1px dashed var(--accent); border-radius:12px;}
+  .empty{text-align:center; color:var(--sub); padding:34px 0; font-size:14px;}
+  .logout{margin-top:24px; text-align:center;}
+  .logout button{color:var(--sub); font-size:13px; text-decoration:underline;}
+
+  /* ===== 勤務表 ===== */
+  .pickrow{display:flex; gap:8px; margin-bottom:10px;}
+  .pickrow select{flex:1; border:1px solid var(--line); background:var(--card); border-radius:12px; padding:11px 12px;}
+  .monthbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .monthbar button{width:38px; height:38px; border-radius:12px; background:var(--card);
+    border:1px solid var(--line); font-size:18px; font-weight:800; color:var(--accent);}
+  .monthbar .mlabel{font-size:16px; font-weight:800;}
+  .sumcard{background:var(--accent); color:#fff; border-radius:var(--radius); padding:15px 18px;
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+  .sumcard .k{font-size:13px; opacity:.9;} .sumcard .sub{font-size:12px; opacity:.85;}
+  .sumcard .v{font-size:25px; font-weight:800; font-variant-numeric:tabular-nums;}
+  .exportrow{display:flex; gap:8px; margin-bottom:14px;}
+  .exportrow button{flex:1; background:var(--card); border:1px solid var(--line); color:var(--accent);
+    font-weight:800; font-size:14px; border-radius:12px; padding:12px;}
+  .reclist{display:flex; flex-direction:column; gap:8px;}
+  .rec{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 14px;
+    display:flex; align-items:center; gap:12px;}
+  .rec .d{width:52px; flex:0 0 auto;}
+  .rec .d .day{font-size:17px; font-weight:800;}
+  .rec .d .wd{font-size:11px; color:var(--sub);}
+  .rec .d .wd.sat{color:#3a7bd5;} .rec .d .wd.sun{color:#e0663b;}
+  .rec .io{flex:1; font-size:14px; font-variant-numeric:tabular-nums;}
+  .rec .io .open{color:var(--out); font-weight:700;}
+  .rec .net{font-weight:800; font-variant-numeric:tabular-nums; font-size:15px;}
+  .rec .net.zero{color:var(--sub); font-weight:600;}
+  .addrow2{margin:12px 0 0; text-align:center;}
+  .addrow2 button{color:var(--accent); font-weight:700; font-size:14px; padding:10px 16px;
+    border:1px dashed var(--accent); border-radius:12px;}
+
+  /* ===== モーダル ===== */
+  .modal{position:fixed; inset:0; background:rgba(20,30,44,.42); display:flex; align-items:flex-end;
+    justify-content:center; z-index:50;}
+  .sheet{background:var(--card); border-radius:22px 22px 0 0; width:100%; max-width:620px;
+    padding:20px 18px calc(env(safe-area-inset-bottom) + 20px); animation:up .22s ease;}
+  @keyframes up{from{transform:translateY(30px); opacity:.5;} to{transform:none; opacity:1;}}
+  .sheet h3{font-size:17px; font-weight:800; margin-bottom:14px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12px; color:var(--sub); margin-bottom:5px; font-weight:700;}
+  .field input{width:100%; border:2px solid var(--line); border-radius:12px; padding:11px 12px;}
+  .field input:focus{outline:none; border-color:var(--accent);}
+  .togglerow{display:flex; align-items:center; justify-content:space-between; padding:6px 2px 12px;}
+  .switch{position:relative; width:50px; height:30px;}
+  .switch input{display:none;}
+  .switch .sl{position:absolute; inset:0; background:#cbd6e4; border-radius:999px; transition:.2s;}
+  .switch .sl::before{content:''; position:absolute; width:24px; height:24px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s;}
+  .switch input:checked + .sl{background:var(--in);}
+  .switch input:checked + .sl::before{transform:translateX(20px);}
+  .sheet .row{display:flex; gap:10px; margin-top:6px;}
+  .sheet .row .btn-primary{flex:1;}
+  .btn-ghost{flex:0 0 auto; padding:14px 16px; border-radius:14px; background:var(--bg); color:var(--sub); font-weight:700;}
+  .btn-del{color:var(--out); font-size:13px; text-decoration:underline; margin-top:12px; display:block; text-align:center; width:100%;}
+  .codebig{text-align:center; background:var(--bg); border-radius:14px; padding:16px; margin-bottom:10px;}
+  .codebig .c{font-size:34px; font-weight:800; letter-spacing:.2em; color:var(--accent); font-variant-numeric:tabular-nums;}
+  .codebig .h{font-size:12px; color:var(--sub);}
+
+  .toast{position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 26px); transform:translateX(-50%);
+    background:#1a2734; color:#fff; padding:11px 18px; border-radius:999px; font-size:14px; font-weight:700;
+    z-index:80; opacity:0; transition:opacity .2s; pointer-events:none;}
+  .toast.show{opacity:1;}
+
+  /* ===== 印刷（PDF）用 ===== */
+  #printArea{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #printArea, #printArea *{visibility:visible;}
+    #printArea{display:block; position:absolute; left:0; top:0; width:100%; padding:14px;}
+  }
+  #printArea h2{font-size:18px; margin-bottom:4px;}
+  #printArea .meta{font-size:12px; color:#333; margin-bottom:10px;}
+  #printArea table{width:100%; border-collapse:collapse; font-size:12px;}
+  #printArea th,#printArea td{border:1px solid #888; padding:4px 6px; text-align:center;}
+  #printArea th{background:#eef3f8;}
+  #printArea td.day{text-align:left;} #printArea .sat{color:#2b5fb0;} #printArea .sun{color:#c0442a;}
+  #printArea tr.total td{font-weight:800; background:#f4f7fb;}
+</style>
+</head>
+<body>
+
+<!-- ログイン -->
+<div class="wrap login" id="loginView">
+  <div class="logo">🗂️</div>
+  <h1>打刻管理</h1>
+  <p>派遣会社（管理者）用</p>
+  <div class="card">
+    <input class="code" id="adminCode" maxlength="8" autocomplete="off" autocapitalize="characters" placeholder="管理者コード">
+    <button class="btn-primary" id="loginBtn">ログイン</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+  <div class="divider">はじめての方</div>
+  <div class="card">
+    <input id="orgName" placeholder="会社・事業所名（例：〇〇スタッフ）" autocomplete="off">
+    <button class="btn-sub" id="createBtn">新しく登録する</button>
+    <div class="muted" style="margin-top:8px">登録すると管理者コードが発行されます。<br>大切に保管してください。</div>
+  </div>
+</div>
+
+<!-- アプリ -->
+<div class="wrap" id="appView" hidden>
+  <header>
+    <h1 id="hOrg">—</h1>
+    <div class="sync"><span class="dot" id="syncDot"></span><span id="syncTxt">同期</span></div>
+  </header>
+
+  <div class="tabs">
+    <button id="tabW" class="on">従業員</button>
+    <button id="tabT">勤務表</button>
+  </div>
+
+  <!-- 従業員タブ -->
+  <section id="wTab">
+    <div class="wlist" id="wList"></div>
+    <div class="addrow"><button id="addWBtn">＋ 従業員を追加</button></div>
+    <div class="logout">
+      <button id="showCodeBtn">管理者コードを表示</button>
+      <button id="logoutBtn">ログアウト</button>
+    </div>
+  </section>
+
+  <!-- 勤務表タブ -->
+  <section id="tTab" hidden>
+    <div class="pickrow">
+      <select id="workerSel"></select>
+    </div>
+    <div class="monthbar">
+      <button id="mPrev">‹</button>
+      <div class="mlabel" id="mLabel">—</div>
+      <button id="mNext">›</button>
+    </div>
+    <div class="sumcard">
+      <div><div class="k">実働合計</div><div class="sub" id="sumDays">—</div></div>
+      <div class="v" id="sumTotal">—</div>
+    </div>
+    <div class="exportrow">
+      <button id="xlsxBtn">📊 Excel書き出し</button>
+      <button id="pdfBtn">📄 PDF書き出し</button>
+    </div>
+    <div class="reclist" id="recList"></div>
+    <div class="addrow2"><button id="addRecBtn">＋ 記録を追加</button></div>
+  </section>
+</div>
+
+<div id="printArea"></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+const SUPABASE_URL='https://okbjqtdirrathscctyvx.supabase.co';
+const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+const LS_KEY='dakoku_admin_code';
+
+/* ===== 共通：計算ロジック（労働者アプリと同一） ===== */
+const BREAK_MIN=60, ROUND_MIN=15;
+function round15(d){ const ms=ROUND_MIN*60*1000; return new Date(Math.round(new Date(d).getTime()/ms)*ms); }
+function grossMinutes(inTs,outTs){ if(!inTs||!outTs) return null; const g=(round15(outTs)-round15(inTs))/60000; return g>0?Math.round(g):0; }
+function breakMinutes(inTs,outTs){ const g=grossMinutes(inTs,outTs); return (g!=null&&g>BREAK_MIN)?BREAK_MIN:0; }
+function netMinutes(inTs,outTs){ const g=grossMinutes(inTs,outTs); if(g==null) return null; return Math.max(0, g>BREAK_MIN?g-BREAK_MIN:g); }
+function fmtHM(min){ if(min==null) return '--'; const h=Math.floor(min/60), m=min%60; return h+':'+String(m).padStart(2,'0'); }
+function fmtClock(ts){ if(!ts) return ''; const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+const WD=['日','月','火','水','木','金','土'];
+
+let admin=null, org=null, workers=[], selWorker=null, viewMonth=null;
+
+async function rpc(fn,params){ const {data,error}=await sb.rpc(fn,params); setSync(!error); if(error) throw error; return data; }
+function setSync(ok){ const d=document.getElementById('syncDot'),t=document.getElementById('syncTxt'); if(!d)return; d.classList.toggle('off',!ok); t.textContent=ok?'同期':'オフライン'; }
+let toastT; function toast(m){ const el=document.getElementById('toast'); el.textContent=m; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),1900); }
+
+/* ===== ログイン / 登録 ===== */
+const adminInput=document.getElementById('adminCode');
+adminInput.addEventListener('input',()=>{ adminInput.value=adminInput.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+document.getElementById('loginBtn').addEventListener('click',doLogin);
+adminInput.addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('createBtn').addEventListener('click',doCreate);
+
+async function doLogin(){
+  const c=adminInput.value.trim().toUpperCase(); const err=document.getElementById('loginErr'); err.textContent='';
+  if(c.length<6){ err.textContent='管理者コードを入力してください'; return; }
+  try{
+    const info=await rpc('dakoku_admin_login',{p_admin:c});
+    if(!info){ err.textContent='そのコードは見つかりません'; return; }
+    admin=c; org=info; localStorage.setItem(LS_KEY,c); enterApp();
+  }catch(e){ err.textContent='通信に失敗しました'; }
+}
+async function doCreate(){
+  const name=document.getElementById('orgName').value.trim(); const err=document.getElementById('loginErr'); err.textContent='';
+  if(!name){ err.textContent='会社・事業所名を入力してください'; return; }
+  try{
+    const res=await rpc('dakoku_admin_create_org',{p_name:name});
+    admin=res.admin_code; org={org_id:res.org_id,name:res.name}; localStorage.setItem(LS_KEY,admin);
+    alert('登録しました。\n\n管理者コード：'+res.admin_code+'\n\nこのコードでログインします。必ず控えてください。');
+    enterApp();
+  }catch(e){ err.textContent='登録に失敗しました'; }
+}
+
+async function enterApp(){
+  document.getElementById('loginView').hidden=true;
+  document.getElementById('appView').hidden=false;
+  document.getElementById('hOrg').textContent=org.name;
+  viewMonth=new Date(); viewMonth.setDate(1);
+  await loadWorkers();
+}
+
+/* ===== タブ ===== */
+const tabW=document.getElementById('tabW'), tabT=document.getElementById('tabT');
+tabW.addEventListener('click',()=>switchTab('w'));
+tabT.addEventListener('click',()=>switchTab('t'));
+function switchTab(t){
+  const w=t==='w';
+  tabW.classList.toggle('on',w); tabT.classList.toggle('on',!w);
+  document.getElementById('wTab').hidden=!w; document.getElementById('tTab').hidden=w;
+  if(w){ loadWorkers(); } else { fillWorkerSelect(); loadTimesheet(); }
+}
+
+/* ===== 従業員一覧 ===== */
+async function loadWorkers(){
+  try{ workers=await rpc('dakoku_admin_workers',{p_admin:admin}); }catch(e){ toast('読み込み失敗'); return; }
+  renderWorkers();
+}
+function renderWorkers(){
+  const list=document.getElementById('wList'); list.innerHTML='';
+  if(!workers.length){ list.innerHTML='<div class="empty">従業員がまだいません。<br>「＋ 従業員を追加」から登録してください。</div>'; return; }
+  workers.forEach(w=>{
+    const el=document.createElement('div'); el.className='wcard'+(w.active?'':' inactive');
+    el.innerHTML=`
+      <div class="info">
+        <div class="nm">${esc(w.name)}</div>
+        <div class="st">${esc(w.site||'派遣先未設定')}${w.open?' ・<span class="stdot">出勤中</span>':''}${w.active?'':' ・停止中'}</div>
+      </div>
+      <div class="codechip">${w.code}</div>`;
+    el.addEventListener('click',()=>openWorkerEdit(w));
+    list.appendChild(el);
+  });
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+document.getElementById('addWBtn').addEventListener('click',()=>openWorkerEdit(null));
+document.getElementById('logoutBtn').addEventListener('click',()=>{
+  if(!confirm('ログアウトしますか？')) return; localStorage.removeItem(LS_KEY); location.reload();
+});
+document.getElementById('showCodeBtn').addEventListener('click',()=>{
+  modalRoot.innerHTML=`<div class="modal" id="mBack"><div class="sheet">
+    <h3>管理者コード</h3>
+    <div class="codebig"><div class="c">${admin}</div><div class="h">ログインに使います。控えておいてください</div></div>
+    <div class="row"><button class="btn-primary" id="ccClose">閉じる</button></div>
+  </div></div>`;
+  document.getElementById('mBack').addEventListener('click',e=>{ if(e.target.id==='mBack') closeModal(); });
+  document.getElementById('ccClose').addEventListener('click',closeModal);
+});
+
+/* ===== モーダル基盤 ===== */
+const modalRoot=document.createElement('div'); document.body.appendChild(modalRoot);
+function closeModal(){ modalRoot.innerHTML=''; }
+function toLocalInput(ts){ const d=ts?new Date(ts):new Date(); const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+function fromLocalInput(v){ return v?new Date(v).toISOString():null; }
+
+/* ===== 従業員 追加/編集 ===== */
+function openWorkerEdit(w){
+  const isNew=!w;
+  modalRoot.innerHTML=`<div class="modal" id="mBack"><div class="sheet">
+    <h3>${isNew?'従業員を追加':'従業員を編集'}</h3>
+    ${isNew?'':`<div class="codebig"><div class="c">${w.code}</div><div class="h">この打刻コードを本人に渡してください</div></div>`}
+    <div class="field"><label>名前</label><input id="wName" value="${isNew?'':esc(w.name)}" placeholder="山田 太郎"></div>
+    <div class="field"><label>派遣先（現場名）</label><input id="wSite" value="${isNew?'':esc(w.site||'')}" placeholder="〇〇物流センター"></div>
+    ${isNew?'':`<div class="togglerow"><span style="font-weight:700;font-size:14px">打刻を有効にする</span>
+      <label class="switch"><input type="checkbox" id="wActive" ${w.active?'checked':''}><span class="sl"></span></label></div>`}
+    <div class="row"><button class="btn-ghost" id="wCancel">閉じる</button><button class="btn-primary" id="wSave">保存</button></div>
+  </div></div>`;
+  document.getElementById('mBack').addEventListener('click',e=>{ if(e.target.id==='mBack') closeModal(); });
+  document.getElementById('wCancel').addEventListener('click',closeModal);
+  document.getElementById('wSave').addEventListener('click',()=>saveWorker(w));
+}
+async function saveWorker(w){
+  const name=document.getElementById('wName').value.trim();
+  const site=document.getElementById('wSite').value.trim();
+  if(!name){ toast('名前を入れてください'); return; }
+  try{
+    if(!w){
+      const nw=await rpc('dakoku_admin_add_worker',{p_admin:admin,p_name:name,p_site:site});
+      closeModal(); await loadWorkers();
+      openWorkerEdit(nw); // 発行コードを表示
+      toast('追加しました。コードを本人へ');
+    }else{
+      const active=document.getElementById('wActive').checked;
+      await rpc('dakoku_admin_update_worker',{p_admin:admin,p_worker:w.id,p_name:name,p_site:site,p_active:active});
+      closeModal(); await loadWorkers(); toast('保存しました');
+    }
+  }catch(e){ toast('保存に失敗しました'); }
+}
+
+/* ===== 勤務表 ===== */
+function fillWorkerSelect(){
+  const sel=document.getElementById('workerSel'); const prev=selWorker?selWorker.id:'';
+  sel.innerHTML='';
+  if(!workers.length){ sel.innerHTML='<option>従業員がいません</option>'; selWorker=null; return; }
+  workers.forEach(w=>{ const o=document.createElement('option'); o.value=w.id; o.textContent=w.name+(w.site?'（'+w.site+'）':''); sel.appendChild(o); });
+  if(prev && workers.some(w=>w.id===prev)) sel.value=prev; else selWorker=workers[0];
+  if(!selWorker || sel.value!==selWorker.id) selWorker=workers.find(w=>w.id===sel.value)||workers[0];
+  sel.value=selWorker.id;
+}
+document.getElementById('workerSel').addEventListener('change',e=>{ selWorker=workers.find(w=>w.id===e.target.value); loadTimesheet(); });
+document.getElementById('mPrev').addEventListener('click',()=>{ viewMonth.setMonth(viewMonth.getMonth()-1); loadTimesheet(); });
+document.getElementById('mNext').addEventListener('click',()=>{ viewMonth.setMonth(viewMonth.getMonth()+1); loadTimesheet(); });
+
+let curRecs=[];
+async function loadTimesheet(){
+  if(!workers.length){ await loadWorkersQuiet(); }
+  if(!selWorker){ document.getElementById('recList').innerHTML='<div class="empty">従業員を追加してください</div>';
+    document.getElementById('sumTotal').textContent='—'; document.getElementById('sumDays').textContent='—'; return; }
+  const from=new Date(viewMonth.getFullYear(),viewMonth.getMonth(),1);
+  const to=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,1);
+  document.getElementById('mLabel').textContent=`${from.getFullYear()}年${from.getMonth()+1}月`;
+  try{ curRecs=await rpc('dakoku_admin_records',{p_admin:admin,p_worker:selWorker.id,p_from:from.toISOString(),p_to:to.toISOString()}); }
+  catch(e){ toast('読み込み失敗'); curRecs=[]; }
+  renderTimesheet();
+}
+async function loadWorkersQuiet(){ try{ workers=await rpc('dakoku_admin_workers',{p_admin:admin}); fillWorkerSelect(); }catch(e){} }
+
+function renderTimesheet(){
+  const list=document.getElementById('recList'); list.innerHTML='';
+  let total=0, days=0;
+  if(!curRecs.length){ list.innerHTML='<div class="empty">この月の記録はありません</div>'; }
+  curRecs.forEach(r=>{
+    const din=new Date(r.clock_in); const nm=netMinutes(r.clock_in,r.clock_out);
+    if(nm!=null){ total+=nm; if(nm>0) days++; }
+    const wd=din.getDay(), wdc=wd===0?'sun':wd===6?'sat':'';
+    const io=r.clock_out?`${fmtClock(r.clock_in)} → ${fmtClock(r.clock_out)}`:`${fmtClock(r.clock_in)} → <span class="open">退勤未</span>`;
+    const el=document.createElement('div'); el.className='rec';
+    el.innerHTML=`<div class="d"><div class="day">${din.getDate()}</div><div class="wd ${wdc}">${WD[wd]}</div></div>
+      <div class="io">${io}</div><div class="net ${nm?'':'zero'}">${nm==null?'—':fmtHM(nm)}</div>`;
+    el.addEventListener('click',()=>openRecEdit(r));
+    list.appendChild(el);
+  });
+  document.getElementById('sumTotal').textContent=fmtHM(total);
+  document.getElementById('sumDays').textContent=`稼働 ${days} 日`;
+}
+
+document.getElementById('addRecBtn').addEventListener('click',()=>openRecEdit(null));
+function openRecEdit(rec){
+  if(!selWorker){ toast('従業員を選んでください'); return; }
+  const isNew=!rec;
+  const def=new Date(viewMonth.getFullYear(),viewMonth.getMonth(),Math.min(new Date().getDate(),28),9,0);
+  modalRoot.innerHTML=`<div class="modal" id="mBack"><div class="sheet">
+    <h3>${isNew?'記録を追加':'記録を修正'}（${esc(selWorker.name)}）</h3>
+    <div class="field"><label>出勤</label><input type="datetime-local" id="eIn" value="${toLocalInput(rec?rec.clock_in:def)}"></div>
+    <div class="field"><label>退勤（未入力なら出勤中のまま）</label><input type="datetime-local" id="eOut" value="${rec&&rec.clock_out?toLocalInput(rec.clock_out):''}"></div>
+    <div class="row"><button class="btn-ghost" id="eCancel">閉じる</button><button class="btn-primary" id="eSave">保存</button></div>
+    ${isNew?'':'<button class="btn-del" id="eDel">この記録を削除</button>'}
+  </div></div>`;
+  document.getElementById('mBack').addEventListener('click',e=>{ if(e.target.id==='mBack') closeModal(); });
+  document.getElementById('eCancel').addEventListener('click',closeModal);
+  document.getElementById('eSave').addEventListener('click',()=>saveRec(rec));
+  if(!isNew) document.getElementById('eDel').addEventListener('click',()=>delRec(rec));
+}
+async function saveRec(rec){
+  const inV=fromLocalInput(document.getElementById('eIn').value);
+  const outV=fromLocalInput(document.getElementById('eOut').value);
+  if(!inV){ toast('出勤時刻を入れてください'); return; }
+  if(outV && new Date(outV)<=new Date(inV)){ toast('退勤は出勤より後に'); return; }
+  try{
+    await rpc('dakoku_admin_save_record',{p_admin:admin,p_id:rec?rec.id:null,p_worker:selWorker.id,p_in:inV,p_out:outV});
+    closeModal(); toast('保存しました'); loadTimesheet();
+  }catch(e){ toast('保存に失敗しました'); }
+}
+async function delRec(rec){
+  if(!confirm('この記録を削除しますか？')) return;
+  try{ await rpc('dakoku_admin_delete_record',{p_admin:admin,p_id:rec.id}); closeModal(); toast('削除しました'); loadTimesheet(); }
+  catch(e){ toast('削除に失敗しました'); }
+}
+
+/* ===== 月次テーブル生成（Excel/PDF共通） ===== */
+function buildMonthRows(){
+  const y=viewMonth.getFullYear(), m=viewMonth.getMonth();
+  const days=new Date(y,m+1,0).getDate();
+  // 出勤日(clock_inのローカル日付)ごとに集計
+  const byDay={};
+  curRecs.forEach(r=>{
+    const d=new Date(r.clock_in); const key=d.getDate();
+    (byDay[key]=byDay[key]||[]).push(r);
+  });
+  const rows=[]; let totNet=0, totGross=0, totBreak=0, workdays=0;
+  for(let day=1; day<=days; day++){
+    const recs=byDay[day]||[];
+    const wd=new Date(y,m,day).getDay();
+    if(!recs.length){ rows.push({day,wd,in:'',out:'',brk:'',net:'',netMin:null}); continue; }
+    recs.sort((a,b)=>new Date(a.clock_in)-new Date(b.clock_in));
+    const first=recs[0], last=recs[recs.length-1];
+    let net=0,gross=0,brk=0,anyOpen=false;
+    recs.forEach(r=>{ const n=netMinutes(r.clock_in,r.clock_out); if(n==null){anyOpen=true;return;} net+=n; gross+=grossMinutes(r.clock_in,r.clock_out)||0; brk+=breakMinutes(r.clock_in,r.clock_out); });
+    totNet+=net; totGross+=gross; totBreak+=brk; if(net>0) workdays++;
+    rows.push({ day, wd,
+      in:fmtClock(first.clock_in),
+      out:last.clock_out?fmtClock(last.clock_out):(anyOpen?'（未）':''),
+      brk:fmtHM(brk), net:fmtHM(net), netMin:net });
+  }
+  return {rows,totNet,totGross,totBreak,workdays,y,m};
+}
+
+document.getElementById('xlsxBtn').addEventListener('click',exportXlsx);
+document.getElementById('pdfBtn').addEventListener('click',exportPdf);
+
+function exportXlsx(){
+  if(!selWorker){ toast('従業員を選んでください'); return; }
+  const {rows,totNet,totBreak,workdays,y,m}=buildMonthRows();
+  const aoa=[];
+  aoa.push([`勤務表　${y}年${m+1}月`]);
+  aoa.push([`氏名：${selWorker.name}`,'',`派遣先：${selWorker.site||''}`]);
+  aoa.push([]);
+  aoa.push(['日付','曜日','出勤','退勤','休憩','実働(h:mm)']);
+  rows.forEach(r=>aoa.push([`${m+1}/${r.day}`,WD[r.wd],r.in,r.out,r.brk,r.net]));
+  aoa.push([]);
+  aoa.push(['稼働日数',workdays+'日','','','休憩計',fmtHM(totBreak)]);
+  aoa.push(['実働合計','','','','',fmtHM(totNet)]);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:8},{wch:5},{wch:8},{wch:8},{wch:8},{wch:11}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,`${y}年${m+1}月`);
+  XLSX.writeFile(wb,`勤務表_${selWorker.name}_${y}年${String(m+1).padStart(2,'0')}月.xlsx`);
+  toast('Excelを書き出しました');
+}
+
+function exportPdf(){
+  if(!selWorker){ toast('従業員を選んでください'); return; }
+  const {rows,totNet,totBreak,workdays,y,m}=buildMonthRows();
+  let html=`<h2>勤務表　${y}年${m+1}月</h2>
+    <div class="meta">氏名：${esc(selWorker.name)}　／　派遣先：${esc(selWorker.site||'')}　／　${esc(org.name)}</div>
+    <table><thead><tr><th>日付</th><th>曜日</th><th>出勤</th><th>退勤</th><th>休憩</th><th>実働</th></tr></thead><tbody>`;
+  rows.forEach(r=>{ const c=r.wd===0?'sun':r.wd===6?'sat':'';
+    html+=`<tr><td class="day ${c}">${m+1}/${r.day}</td><td class="${c}">${WD[r.wd]}</td><td>${r.in}</td><td>${r.out}</td><td>${r.brk}</td><td>${r.net}</td></tr>`; });
+  html+=`<tr class="total"><td colspan="4">稼働 ${workdays} 日　休憩計 ${fmtHM(totBreak)}</td><td colspan="2">実働合計 ${fmtHM(totNet)}</td></tr>`;
+  html+=`</tbody></table>`;
+  document.getElementById('printArea').innerHTML=html;
+  toast('プリント画面から「PDFで保存」を選べます');
+  setTimeout(()=>window.print(),300);
+}
+
+/* ===== 起動 ===== */
+(async function init(){
+  const saved=localStorage.getItem(LS_KEY);
+  if(saved){
+    try{ const info=await rpc('dakoku_admin_login',{p_admin:saved}); if(info){ admin=saved; org=info; enterApp(); return; } }catch(e){}
+  }
+  adminInput.focus();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
