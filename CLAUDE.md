@@ -22,13 +22,18 @@
    動作確認 → 戻るボタン/アイコン注入 → `index.html` 追加 → commit & push まで完結し、
    **最後にまとめて報告＋公開URLを必ず貼る**。例外はユーザーが「まだ公開しないで」と明示した時のみ。
    → 詳細 `Preferences/deploy-workflow.md`
-   **⚠️ 他人に渡すアプリはここ（apps）に置かない**。配布用は `~/tsumiki-tools`（戻るボタン非注入）。
-   更新は2通り：ビルドあり＝`python3 deploy_tools.py <name>`／**ビルド不要の単一HTML＝
+   **⚠️ 置き場は「外部に使わせるか？」で決める（3系統）**：
+   - **外部向け（無料公開も有料も全部）→ `~/tsumiki-tools`＝tools.tsumiki-apps.com**（戻るボタン非注入）。
+   - **自分専用 → ここ（apps）＝tsumiki-apps.github.io/apps/**（戻るボタン注入）。
+   - **root tsumiki-apps.com は会社の顔＝ポートフォリオ**（`~/tsumiki-portfolio`・墨シミュ・今回は現状維持）。
+   迷ったら：少しでも外部に見せる/渡す/使わせる＝tools。
+   tools 更新は2通り：ビルドあり＝`python3 deploy_tools.py <name>`／**ビルド不要の単一HTML＝
    `~/tsumiki-tools` を直接編集して push**（制作物側に開発ソースを持たない）。
    引っ越したら TOOLS からの撤去までワンセット（残すと本体を案内ページで上書きする事故）。
    有料で渡すアプリは**プロダクトキーゲートを注入**（`inject_license.py <HTML> <app名>` または
    TOOLS エントリに `license:`）。キー発行は Supabase の `license_issue()`（Claudeに頼めばよい）。
-   → 詳細 `Decisions/2026-07-23-tools-distribution-repo.md`, `Decisions/2026-07-23-license-key-system.md`
+   → 詳細 `Decisions/2026-07-27-server-operation-model.md`（振り分けの正本）,
+   `Decisions/2026-07-23-tools-distribution-repo.md`, `Decisions/2026-07-23-license-key-system.md`
 
 3. **新規アプリには `~/制作物/inject_backbtn.py` を実行**して戻るボタンを注入する。
    **HTMLにベタ書きしない**（常時表示の `<a href="index.html">`・フッターリンク等は禁止）。
