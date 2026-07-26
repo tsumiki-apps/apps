@@ -733,13 +733,12 @@ ntBody.addEventListener('input', ()=>autoGrow(ntBody));
 
 /* ===================== リスト入力ショートカット =====================
    指示テキスト欄で Markdown 風の箇条書きを楽に打てるように。
-   ・「- 」「* 」＋Enter → 次行も自動で「- 」（中身が空のままEnter＝解除）
-   ・「1. 」＋Enter → 「2. 」「3. 」…と自動採番（1) 形式もOK）
+   ・「-」「*」＋スペース → 「• 」箇条書きに変換、Enterで継続（空のままEnter＝解除）
+   ・「1.」＋スペース → 番号リスト、Enterで「2.」「3.」…自動採番（1) 形式もOK）
    ・「[]」＋スペース → 「- [ ] 」チェック項目に変換、Enterで継続
-   記号は Markdown のまま残す（Claude Codeがそのまま箇条書きとして読めるため）。
    ★keydown ではなく beforeinput で判定：iOSのソフトキーボードは keydown を
      まともに発火せず（Space/Enterが keyCode:229 になる）効かないため。*/
-const RE_CHECK=/^(\s*)([-*])\s+\[[ xX]?\]\s+/, RE_NUM=/^(\s*)(\d+)([.)])\s+/, RE_BUL=/^(\s*)([-*])\s+/;
+const RE_CHECK=/^(\s*)([-*])\s+\[[ xX]?\]\s+/, RE_NUM=/^(\s*)(\d+)([.)])\s+/, RE_BUL=/^(\s*)([-*•])\s+/;
 function lineHeadStart(v,pos){ return v.lastIndexOf('\n',pos-1)+1; }
 /* Enter（改行が入る直前）：リストを継続 or 解除。処理したら true。 */
 function listContinue(ta,e){
@@ -760,9 +759,11 @@ function listContinue(ta,e){
 function listSpace(ta,e){
   if(ta.selectionStart!==ta.selectionEnd) return false;
   const v=ta.value, pos=ta.selectionStart, start=lineHeadStart(v,pos), line=v.slice(start,pos);
-  const m=line.match(/^(\s*)\[( ?)\]$/);
-  if(!m) return false;
-  e.preventDefault(); const r=m[1]+'- [ ] '; ta.value=v.slice(0,start)+r+v.slice(pos);
+  let m, r=null;
+  if((m=line.match(/^(\s*)\[( ?)\]$/))) r=m[1]+'- [ ] ';   // [] → チェック項目
+  else if((m=line.match(/^(\s*)[-*•]$/))) r=m[1]+'• ';      // - / * → 箇条書き（•に変換）
+  else return false;
+  e.preventDefault(); ta.value=v.slice(0,start)+r+v.slice(pos);
   ta.selectionStart=ta.selectionEnd=start+r.length; return true;
 }
 function attachListShortcuts(ta, after){
@@ -771,7 +772,7 @@ function attachListShortcuts(ta, after){
     let handled=false;
     const t=e.inputType;
     if(t==='insertLineBreak'||t==='insertParagraph') handled=listContinue(ta,e);
-    else if(t==='insertText'&&e.data===' ') handled=listSpace(ta,e);
+    else if(t==='insertText'&&(e.data===' '||e.data==='　')) handled=listSpace(ta,e);
     if(handled&&after) after();
   });
 }
