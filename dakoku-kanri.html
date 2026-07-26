@@ -44,7 +44,8 @@
 
   /* ===== ヘッダー ===== */
   header{padding:20px 4px 6px; display:flex; align-items:center; gap:10px;}
-  header h1{font-size:19px; font-weight:800; letter-spacing:-.02em;}
+  header h1{font-size:19px; font-weight:800; letter-spacing:-.02em; cursor:pointer;}
+  header h1::after{content:'✎'; font-size:12px; color:var(--sub); margin-left:6px; font-weight:600; vertical-align:middle;}
   header .sync{margin-left:auto; display:flex; align-items:center; gap:6px;
     font-size:11px; color:var(--sub); background:var(--card); border:1px solid var(--line);
     border-radius:999px; padding:5px 10px;}
@@ -200,7 +201,7 @@
     <div class="wlist" id="wList"></div>
     <div class="addrow"><button id="addWBtn">＋ 従業員を追加</button></div>
     <div class="footlinks">
-      <button id="settingsBtn">提出先・会社名の設定</button>
+      <button id="settingsBtn">会社名・提出先の設定</button>
       <button id="showCodeBtn">管理者コードを表示</button>
       <button id="logoutBtn">ログアウト</button>
     </div>
@@ -341,12 +342,12 @@ document.getElementById('showCodeBtn').addEventListener('click',()=>{
   document.getElementById('ccClose').addEventListener('click',closeModal);
 });
 
-/* ===== 設定（提出先・会社名＝確認印） ===== */
-document.getElementById('settingsBtn').addEventListener('click',()=>{
+/* ===== 設定（事業所名・提出先会社名＝確認印） ===== */
+function openSettings(){
   modalRoot.innerHTML=`<div class="modal" id="mBack"><div class="sheet">
-    <h3>提出先・会社名の設定</h3>
-    <p class="muted" style="margin-bottom:12px">Excel/PDFの見出しと確認印欄に使われます。</p>
-    <div class="field"><label>事業所名（自社）</label><input id="sName" value="${esc(org.name)}"></div>
+    <h3>会社名・提出先の設定</h3>
+    <p class="muted" style="margin-bottom:12px">事業所名はアプリ上部の表示に、会社名はExcel/PDFの見出し・確認印欄に使われます。登録時に入れた名前もここで直せます。</p>
+    <div class="field"><label>事業所名（自社・アプリ表示）</label><input id="sName" value="${esc(org.name)}" placeholder="〇〇スタッフ"></div>
     <div class="field"><label>派遣元 会社名（確認印）</label><input id="sMoto" value="${esc(org.haken_moto||'')}" placeholder="株式会社◯◯"></div>
     <div class="field"><label>派遣先 会社名（確認印）</label><input id="sSaki" value="${esc(org.haken_saki||'')}" placeholder="株式会社◯◯"></div>
     <div class="row"><button class="btn-ghost" id="sCancel">閉じる</button><button class="btn-primary" id="sSave">保存</button></div>
@@ -357,11 +358,14 @@ document.getElementById('settingsBtn').addEventListener('click',()=>{
     const name=document.getElementById('sName').value.trim();
     const moto=document.getElementById('sMoto').value.trim();
     const saki=document.getElementById('sSaki').value.trim();
+    if(!name){ toast('事業所名を入れてください'); return; }
     try{ const res=await rpc('dakoku_admin_update_org',{p_admin:admin,p_name:name,p_haken_moto:moto,p_haken_saki:saki});
       org=Object.assign(org,res); document.getElementById('hOrg').textContent=org.name; closeModal(); toast('保存しました'); }
     catch(e){ toast('保存に失敗しました'); }
   });
-});
+}
+document.getElementById('settingsBtn').addEventListener('click',openSettings);
+document.getElementById('hOrg').addEventListener('click',openSettings);
 
 /* ===== モーダル基盤 ===== */
 const modalRoot=document.createElement('div'); document.body.appendChild(modalRoot);
