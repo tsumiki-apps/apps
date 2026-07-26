@@ -159,6 +159,47 @@
   .detail-card .kv .k{color:var(--sub); font-weight:600; width:82px; flex:none;}
   .detail-card .kv .v{flex:1;}
   .detail-card .memo{white-space:pre-wrap; font-size:14px; line-height:1.6; margin-top:4px;}
+
+  /* add-button in search row (desktop only) */
+  .searchbar .add-btn{display:none; flex:none; background:var(--accent); color:#fff;
+    font-weight:700; font-size:14px; padding:0 18px; border-radius:12px; white-space:nowrap;
+    box-shadow:0 3px 10px rgba(91,63,214,.28);}
+
+  /* ===== PC（横長）レイアウト：左=リスト / 右=大きな相関図 の2ペイン ===== */
+  @media (min-width:980px){
+    body{padding-bottom:0; height:100vh; overflow:hidden;}
+    .wrap{max-width:none; padding:0 32px; height:100vh; display:flex; flex-direction:column;}
+    header{padding:20px 6px 6px; flex:none;}
+    header h1{font-size:23px;}
+    .tabs{display:none;}
+
+    .panes{flex:1; min-height:0; display:grid;
+      grid-template-columns:minmax(340px,400px) 1fr; gap:26px; padding-bottom:22px;}
+
+    /* 両ペインを常に表示（タブのhiddenを上書き） */
+    #listView[hidden],#graphView[hidden]{display:flex !important;}
+    #listView{display:flex; flex-direction:column; min-height:0;}
+    #graphView{display:flex; flex-direction:column; min-height:0;}
+
+    .searchbar{margin-top:2px;}
+    .searchbar .add-btn{display:flex; align-items:center;}
+    #tagFilters{flex:none;}
+    #listCount{flex:none;}
+    #listBody{flex:1; overflow-y:auto; padding-right:4px; margin-right:-4px;}
+
+    .graph-stage{flex:1; height:auto; min-height:0;}
+    .legend{flex:none;}
+    .graph-hint{flex:none; margin-bottom:2px;}
+
+    .fab{display:none;}
+
+    /* シートは中央モーダルに */
+    .overlay{align-items:center;}
+    .sheet{max-width:540px; border-radius:22px; transform:translateY(24px) scale(.98);
+      max-height:88vh; padding-top:18px;}
+    .overlay.show .sheet{transform:translateY(0) scale(1);}
+    .sheet .grip{display:none;}
+  }
 </style>
 </head>
 <body>
@@ -174,10 +215,12 @@
     <button id="tab-graph" onclick="switchTab('graph')">相関図</button>
   </div>
 
+  <div class="panes">
   <!-- LIST VIEW -->
   <section id="listView">
     <div class="searchbar">
       <input id="search" type="text" placeholder="名前・肩書き・メモで検索" oninput="renderList()">
+      <button class="add-btn" onclick="openEdit(null)">＋ 人を追加</button>
     </div>
     <div id="tagFilters" class="filters"></div>
     <div id="listCount" class="list-count"></div>
@@ -199,8 +242,9 @@
       <span><i style="border-color:var(--c-place)"></i>同じ場所で出会った</span>
       <span><i style="border-color:var(--c-friend)"></i>友人・知人</span>
     </div>
-    <div class="graph-hint">中心＝自分。外へ向かうほど「紹介の紹介」。ドラッグで移動・ピンチで拡大・タップで詳細。</div>
+    <div class="graph-hint">中心＝自分。外へ向かうほど「紹介の紹介」。ドラッグで移動・ホイール/ピンチで拡大・クリックで詳細。</div>
   </section>
+  </div>
 </div>
 
 <button class="fab" onclick="openEdit(null)">＋</button>
@@ -252,6 +296,10 @@ function descendantsOf(id){
   })(id);
   return out;
 }
+
+/* ===== layout mode ===== */
+function isDesktop(){ return window.matchMedia('(min-width:980px)').matches; }
+function graphVisible(){ return isDesktop() || curTab==='graph'; }
 
 /* ===== tabs ===== */
 function switchTab(t){
@@ -436,19 +484,24 @@ function applyTransform(){
   document.getElementById('vp').setAttribute('transform',
     `translate(${gTransform.x},${gTransform.y}) scale(${gTransform.k})`);
 }
+let vbW=400, vbH=400;   // viewBox は毎回ステージ実寸に合わせる（全幅活用）
+function setViewBox(){
+  const R=document.getElementById('stage').getBoundingClientRect();
+  vbW=Math.max(320,Math.round(R.width)); vbH=Math.max(320,Math.round(R.height));
+  document.getElementById('svg').setAttribute('viewBox',`0 0 ${vbW} ${vbH}`);
+}
 function fitGraph(){
   const L=curLayout||(curLayout=computeLayout());
+  setViewBox();
   const xs=L.nodes.map(n=>n._x), ys=L.nodes.map(n=>n._y);
-  const pad=46;
+  const pad=54;
   const minX=Math.min(...xs)-pad, maxX=Math.max(...xs)+pad;
   const minY=Math.min(...ys)-pad, maxY=Math.max(...ys)+pad;
   const w=maxX-minX, h=maxY-minY;
-  const svg=document.getElementById('svg'); const R=svg.getBoundingClientRect();
-  const vb=400; // viewBox is 400x400
-  const k=Math.min(vb/Math.max(w,1), vb/Math.max(h,1), 2.2);
+  const k=Math.min(vbW/Math.max(w,1), vbH/Math.max(h,1), 2.4);
   gTransform.k=k;
-  gTransform.x = vb/2 - ((minX+maxX)/2)*k;
-  gTransform.y = vb/2 - ((minY+maxY)/2)*k;
+  gTransform.x = vbW/2 - ((minX+maxX)/2)*k;
+  gTransform.y = vbH/2 - ((minY+maxY)/2)*k;
   applyTransform();
 }
 function zoomBy(f){ gTransform.k*=f; applyTransform(); }
@@ -460,7 +513,7 @@ let dragging=false, dragged=false, last=null, pinchStart=null;
   const svg=document.getElementById('svg');
   function toVB(cx,cy){ // client px -> viewBox units
     const R=svg.getBoundingClientRect();
-    return {x:(cx-R.left)/R.width*400, y:(cy-R.top)/R.height*400};
+    return {x:(cx-R.left)/R.width*vbW, y:(cy-R.top)/R.height*vbH};
   }
   stage.addEventListener('pointerdown',e=>{
     stage.setPointerCapture(e.pointerId);
@@ -552,7 +605,7 @@ function saveEdit(id){
   };
   if(id){ Object.assign(personById(id), data); }
   else{ STATE.people.push({id:uid(), links:[], ...data}); }
-  save(); closeSheet(); renderList(); if(curTab==='graph') renderGraph();
+  save(); closeSheet(); renderList(); if(graphVisible()) renderGraph();
 }
 function delPerson(id){
   if(!confirm('この人を削除します。よろしいですか？')) return;
@@ -561,7 +614,7 @@ function delPerson(id){
   STATE.people.forEach(c=>{ if(c.parentId===id) c.parentId=gp; });
   STATE.people.forEach(c=>{ if(c.links) c.links=c.links.filter(l=>l.to!==id); });
   STATE.people=STATE.people.filter(x=>x.id!==id);
-  save(); closeSheet(); renderList(); if(curTab==='graph') renderGraph();
+  save(); closeSheet(); renderList(); if(graphVisible()) renderGraph();
 }
 
 /* link editor */
@@ -622,7 +675,7 @@ function editSelfName(){
     <div class="field"><input id="f-self" value="${esc(STATE.self.name)}"></div>
     <div class="sheet-actions"><button class="btn-primary" onclick="saveSelf()">保存</button></div>`);
 }
-function saveSelf(){ STATE.self.name=val('f-self').trim()||'自分'; save(); closeSheet(); if(curTab==='graph')renderGraph(); }
+function saveSelf(){ STATE.self.name=val('f-self').trim()||'自分'; save(); closeSheet(); if(graphVisible())renderGraph(); }
 function exportData(){
   closeMenu();
   const txt=JSON.stringify(STATE,null,2);
@@ -634,7 +687,7 @@ function wipeAll(){
   closeMenu();
   if(!confirm('登録した人をすべて削除します。取り消せません。よろしいですか？')) return;
   STATE={self:{name:STATE.self.name}, people:[]}; save(); activeTag=null;
-  renderList(); if(curTab==='graph')renderGraph();
+  renderList(); if(graphVisible())renderGraph();
 }
 
 /* ===== sample ===== */
@@ -660,6 +713,14 @@ function val(id){ const e=document.getElementById(id); return e?e.value:''; }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 renderList();
+if(isDesktop()) renderGraph();   // PCは相関図を常時表示するので初期描画
+
+// リサイズ（PC⇄モバイル切替・ウィンドウ幅変更）に追従
+let _resizeT=null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_resizeT);
+  _resizeT=setTimeout(()=>{ if(graphVisible()){ curLayout ? fitGraph() : renderGraph(); } }, 150);
+});
 </script>
 <!-- tsumiki-back-button -->
 <style>
