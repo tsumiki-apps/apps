@@ -625,8 +625,25 @@ const addTitle = document.getElementById('addTitle');
 const addBody = document.getElementById('addBody');
 const addBtn = document.getElementById('addBtn');
 function refreshAddBtn(){ addBtn.disabled = !addTitle.value.trim(); }
-addTitle.addEventListener('input', refreshAddBtn);
-addBody.addEventListener('input', ()=>autoGrow(addBody));
+/* 入力欄の下書きを自動保存。リロードや誤操作で打ちかけが消えないように。 */
+const DRAFT_KEY = 'sashizu_draft_v1';
+function saveDraft(){
+  try{
+    const t=addTitle.value, b=addBody.value;
+    if(t || b) localStorage.setItem(DRAFT_KEY, JSON.stringify({t,b}));
+    else localStorage.removeItem(DRAFT_KEY);
+  }catch(e){}
+}
+function restoreDraft(){
+  try{
+    const s=localStorage.getItem(DRAFT_KEY); if(!s) return;
+    const d=JSON.parse(s);
+    if(d && (d.t || d.b)){ addTitle.value=d.t||''; addBody.value=d.b||''; autoGrow(addBody); refreshAddBtn(); }
+  }catch(e){}
+}
+function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+addTitle.addEventListener('input', ()=>{ refreshAddBtn(); saveDraft(); });
+addBody.addEventListener('input', ()=>{ autoGrow(addBody); saveDraft(); });
 addBtn.onclick = ()=>{
   const title = addTitle.value.trim();
   if(!title) return;
@@ -635,7 +652,7 @@ addBtn.onclick = ()=>{
   if(body) item.notes.push(blankNote(body));
   recalc(item);
   db.items.push(item);
-  addTitle.value=''; addBody.value=''; autoGrow(addBody); refreshAddBtn();
+  addTitle.value=''; addBody.value=''; autoGrow(addBody); refreshAddBtn(); clearDraft();
   save(); render();
   toast('💡 アイデアに追加しました');
 };
@@ -770,10 +787,15 @@ function closeSheets(){
 loadLocal();
 migrate();
 render();
+restoreDraft();
 renderSync();
 loadRemote();
 subscribeRealtime();
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) loadRemote(); });
+/* 通信が復活したら自動で繋ぎ直す（手動リロード不要でオフライン表示を解消） */
+window.addEventListener('online', ()=>{ loadRemote(); });
+/* オフラインの間だけ、20秒ごとに静かに再接続を試す */
+setInterval(()=>{ if(sb && online!==true && (navigator.onLine!==false)) loadRemote(); }, 20000);
 </script>
 <!-- tsumiki-back-button -->
 <style>
