@@ -539,6 +539,8 @@ const IC = {
   status:'<circle cx="12" cy="12" r="8"/>',
   flag:'<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5l3 2"/>',
+  sparkle:'<path d="M12 3l1.7 5.1a2 2 0 001.2 1.2L20 11l-5.1 1.7a2 2 0 00-1.2 1.2L12 19l-1.7-5.1a2 2 0 00-1.2-1.2L4 11l5.1-1.7a2 2 0 001.2-1.2z"/>',
+  history:'<path d="M3.5 12a8.5 8.5 0 108.5-8.5A8.5 8.5 0 004.6 8M3.5 4v4h4"/><path d="M12 8.5V12l2.5 1.8"/>',
   tag:'<path d="M3 11.5V5a2 2 0 012-2h6.5L21 12.5 12.5 21z"/><circle cx="7.5" cy="7.5" r="1.4"/>',
   text:'<path d="M5 7h14M9 7v12M15 7v6"/>',
   h1:'<path d="M4 6v12M12 6v12M4 12h8M17 8.5l2.5-1.5V18"/>',
@@ -759,6 +761,10 @@ function sortTasks(list){
     arr.sort((a,b)=>{ const da=a.due?dueDelta(a.due):Infinity, dbb=b.due?dueDelta(b.due):Infinity; return da-dbb; });
   }else if(s==='priority'){
     arr.sort((a,b)=>{ const pa=a.priority in PRI_RANK?PRI_RANK[a.priority]:3, pb=b.priority in PRI_RANK?PRI_RANK[b.priority]:3; return pa-pb; });
+  }else if(s==='newest'){
+    arr.sort((a,b)=>(b.created||0)-(a.created||0));
+  }else if(s==='recent'){
+    arr.sort((a,b)=>((b.updated||b.created||0)-(a.updated||a.created||0)));
   }
   return arr;
 }
@@ -833,7 +839,7 @@ function renderView(){
   root.className='view';
   renderSummary();
   const s=db.ui.sort||'manual';
-  $('#sortLabel').textContent = s==='due'?'期限順':s==='priority'?'優先度順':'並べ替え';
+  $('#sortLabel').textContent = s==='due'?'期限順':s==='priority'?'優先度順':s==='newest'?'新しい順':s==='recent'?'最近動かした順':'並べ替え';
   $('#sortBtn').classList.toggle('active', s!=='manual');
   if(db.ui.view==='board') renderBoard(root);
   else if(db.ui.view==='list') renderList(root);
@@ -1695,7 +1701,7 @@ function openFilter(){
 }
 function openSort(){
   const cur=db.ui.sort||'manual';
-  const opts=[['manual','手動（ドラッグ順）',IC.list],['due','期限が近い順',IC.clock],['priority','優先度が高い順',IC.flag]];
+  const opts=[['manual','手動（ドラッグ順）',IC.list],['recent','最近動かした順',IC.history],['newest','新しい順',IC.sparkle],['due','期限が近い順',IC.clock],['priority','優先度が高い順',IC.flag]];
   let html=`<div class="ps-title">並べ替え</div><div class="ps-list">`;
   opts.forEach(([v,l,ic])=>{ html+=`<div class="ps-item ${cur===v?'on':''}" data-sort="${v}"><div class="ic">${svg(ic,2)}</div>${l}<span class="chk">${svg(IC.check,2.4)}</span></div>`; });
   html+=`</div>`; openPop(html);
