@@ -173,6 +173,12 @@ ICONS = {
               '<line x1="50" y1="36" x2="50" y2="70"/>',
 
     # ===== Asset =====
+    # 独立ロードマップ＝つみきを段々に積み上げ、頂上にゴール旗（積み上げ×つみき×独立）
+    "dokuritsu": '<rect x="16" y="54" width="20" height="20" rx="4"/>'
+                 '<rect x="38" y="43" width="20" height="20" rx="4"/>'
+                 '<rect x="60" y="32" width="20" height="20" rx="4"/>'
+                 '<line x1="70" y1="33" x2="70" y2="15"/>'
+                 '<path d="M70,15 L83,19 L70,23 Z" fill="#fff" stroke="none"/>',
     # ちりつも＝コインの山
     "chiritsumo": '<ellipse cx="50" cy="36" rx="20" ry="7"/>'
                   '<line x1="30" y1="36" x2="30" y2="60"/>'
@@ -273,6 +279,7 @@ SHIFT = {
     "sashizu": (0, 1), "seikatsu": (0, 2), "serifu": (0, -2),
     "tabinoki": (3, 2), "tasknote": (1, -2), "think": (2, -2),
     "tsugi": (0, -4), "yuzuwari": (0, 1),
+    "dokuritsu": (0, 2),
 }
 
 # 仕事(Apple)で使うアプリ＝右下に小さくAppleロゴ
