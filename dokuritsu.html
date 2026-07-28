@@ -151,6 +151,25 @@
   .task .dec:active{transform:scale(.92);}
   .task .dec[disabled]{opacity:.35; pointer-events:none;}
 
+  /* ---------- 枝分かれAction（タスク直下の小さな階段） ---------- */
+  .taskwrap{display:grid; gap:7px;}
+  .acts{display:grid; gap:5px; margin-left:16px;}
+  .act{
+    display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:10px;
+    background:var(--surface); border:1px dashed var(--line-2); cursor:pointer;
+    -webkit-user-select:none; user-select:none; transition:background .15s, border-color .15s;
+  }
+  .act:active{transform:scale(.99);}
+  .act .adot{
+    width:20px; height:20px; flex:none; border:1.5px solid var(--line-2); border-radius:50%;
+    display:grid; place-items:center; color:transparent; background:var(--surface); transition:.15s;
+  }
+  .act.done{border-style:solid; border-color:var(--good); background:var(--good-wash);}
+  .act.done .adot{background:var(--good); border-color:transparent; color:#fff;}
+  .act .atext{font-size:.88rem; line-height:1.4; color:var(--ink); word-break:break-word;}
+  .act.done .atext{color:var(--ink-soft); text-decoration:line-through; text-decoration-color:var(--line-2);}
+  .task .aprog{font-size:.72rem; color:var(--ink-soft); font-weight:700;}
+
   .empty-week{display:grid; gap:12px; justify-items:center; text-align:center; padding:8px 0 2px;}
   .empty-week .em{font-size:2rem;}
   .empty-week p{margin:0; color:var(--ink-mid); font-size:.94rem;}
@@ -194,6 +213,7 @@
   .task-in-row .num{width:74px; flex:none; text-align:center;}
   .task-in-row .numlab{flex:none; font-size:.74rem; color:var(--ink-soft);}
   .task-in-row .rm{border:none; background:transparent; color:var(--ink-soft); font-size:1.3rem; cursor:pointer; padding:2px 6px; flex:none;}
+  .editor .acts-in{margin:0 0 14px; padding:9px 12px; font-size:16px; line-height:1.5; border-style:dashed;}
   .add-row{border:none; background:transparent; color:var(--accent-2); font-weight:700; font-size:.88rem; cursor:pointer; padding:3px 0;}
   .ed-actions{display:flex; gap:10px; margin-top:18px;}
   .seg{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
@@ -338,6 +358,9 @@ function migrate(){
       if(typeof t.text!=='string') t.text='';
       t.target=Math.max(1, Math.floor(+t.target||1));
       t.count=Math.min(Math.max(0, Math.floor(+t.count||0)), t.target);
+      if(!Array.isArray(t.actions)) t.actions=[];
+      t.actions=t.actions.filter(a=>a && typeof a.text==='string' && a.text);
+      t.actions.forEach(a=>{ if(!a.id) a.id=uid(); a.done=!!a.done; });
     });
     if(w.review && typeof w.review!=='object') w.review=null;
   });
@@ -459,12 +482,22 @@ function renderWeekPage(){
       const tick = full
         ? `<svg viewBox="0 0 24 24" style="width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4 4 10-10"/></svg>`
         : (t.target>1 ? `<span class="tnum">${t.count}</span>` : '');
-      h+=`<div class="task ${cls}" data-act="inc" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.text)} ${t.count}/${t.target}">
+      const acts=t.actions||[];
+      let actsH='';
+      if(acts.length){
+        const aDone=acts.filter(a=>a.done).length;
+        actsH=`<div class="acts"><span class="aprog tnum">└ 枝分かれ ${aDone}/${acts.length}</span>`+acts.map(a=>
+          `<span class="act ${a.done?'done':''}" data-act="act-toggle" data-tid="${t.id}" data-aid="${a.id}" role="button" tabindex="0" aria-label="${esc(a.text)}${a.done?'（済）':''}">
+            <span class="adot"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4 4 10-10"/></svg></span>
+            <span class="atext">${esc(a.text)}</span>
+          </span>`).join('')+`</div>`;
+      }
+      h+=`<div class="taskwrap"><div class="task ${cls}" data-act="inc" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.text)} ${t.count}/${t.target}">
         <span class="tick">${tick}</span>
         <span class="tbody"><span class="ttext">${esc(t.text)}</span>${t.target>1?`<span class="bar tbar ${full?'good':''}"><i style="width:${pct}%"></i></span>`:''}</span>
         ${t.target>1?`<span class="tcount tnum">${t.count}/${t.target}</span>`:''}
         <button class="dec" data-act="dec" data-id="${t.id}" ${t.count===0?'disabled':''} aria-label="1つ戻す">−</button>
-      </div>`;
+      </div>${actsH}</div>`;
     });
     h+=`</div>`;
     if(st.pct>=100) h+=`<div class="week-done-msg">🎉 今週の目標 すべて達成！</div>`;
@@ -583,10 +616,11 @@ function taskEditorHTML(){
       <span class="numlab">×</span>
       <input type="number" class="num tnin" data-i="${i}" value="${t.target}" min="1" max="99" inputmode="numeric">
       ${draft.tasks.length>1?`<button class="rm" data-act="rm-task" data-i="${i}">×</button>`:''}
-    </div>`;
+    </div>
+    <textarea class="acts-in" data-i="${i}" rows="2" placeholder="枝分かれAction（1行に1つ・任意）&#10;例：送り先リストを作る">${esc(t.actsText||'')}</textarea>`;
   });
   return `<div class="card editor">
-    <div class="ed-field"><label>今週の目標（回数つき。1回だけならそのまま ×1）</label>${rows}
+    <div class="ed-field"><label>今週の目標（回数つき）＋ 枝分かれAction</label>${rows}
     <button class="add-row" data-act="add-task">＋ 目標を追加</button></div>
     <div class="ed-actions"><button class="btn ghost" data-act="ed-cancel">キャンセル</button><button class="btn primary" data-act="ed-save">保存</button></div>
   </div>`;
@@ -632,6 +666,18 @@ document.querySelector('main').addEventListener('click', e=>{
   const btn=e.target.closest('[data-act]'); if(!btn) return;
   const act=btn.dataset.act;
 
+  /* --- 枝分かれActionのチェック --- */
+  if(act==='act-toggle'){
+    e.stopPropagation();
+    const w=ensureWeek(weekKey());
+    const t=w.tasks.find(x=>x.id===btn.dataset.tid); if(!t) return;
+    const a=(t.actions||[]).find(x=>x.id===btn.dataset.aid); if(!a) return;
+    a.done=!a.done;
+    save(); render();
+    if(a.done && t.actions.every(x=>x.done)) toast('枝分かれ全部クリア！本体を進めよう');
+    return;
+  }
+
   /* --- タスクのカウント --- */
   if(act==='inc' || act==='dec'){
     if(act==='inc' && e.target.closest('[data-act="dec"]')) return;
@@ -647,21 +693,33 @@ document.querySelector('main').addEventListener('click', e=>{
   /* --- タスク編集 --- */
   if(act==='edit-tasks'){
     const w=getWeek(weekKey());
-    draft={ tasks: w.tasks.length ? w.tasks.map(t=>({id:t.id,text:t.text,target:t.target,count:t.count})) : [{id:uid(),text:'',target:1,count:0}] };
+    draft={ tasks: w.tasks.length ? w.tasks.map(t=>({id:t.id,text:t.text,target:t.target,count:t.count,actsText:(t.actions||[]).map(a=>a.text).join('\n')})) : [{id:uid(),text:'',target:1,count:0,actsText:''}] };
     mode='tasks'; render(); return;
   }
   if(act==='copy-prev'){
     const pk=prevWeekWithTasks(); if(!pk) return;
-    draft={ tasks: db.weeks[pk].tasks.map(t=>({id:uid(),text:t.text,target:t.target,count:0})) };
+    draft={ tasks: db.weeks[pk].tasks.map(t=>({id:uid(),text:t.text,target:t.target,count:0,actsText:(t.actions||[]).map(a=>a.text).join('\n')})) };
     mode='tasks'; render(); return;
   }
-  if(act==='add-task'){ syncTaskDraft(); draft.tasks.push({id:uid(),text:'',target:1,count:0}); render(); focusEnd('#tin-'+(draft.tasks.length-1)); return; }
+  if(act==='add-task'){ syncTaskDraft(); draft.tasks.push({id:uid(),text:'',target:1,count:0,actsText:''}); render(); focusEnd('#tin-'+(draft.tasks.length-1)); return; }
   if(act==='rm-task'){ syncTaskDraft(); draft.tasks.splice(+btn.dataset.i,1); render(); return; }
   if(act==='ed-cancel'){ mode=null; draft=null; render(); return; }
   if(act==='ed-save'){
     syncTaskDraft();
     const w=ensureWeek(weekKey());
-    w.tasks=draft.tasks.map(t=>({id:t.id, text:t.text.trim(), target:Math.max(1,Math.floor(+t.target||1)), count:Math.min(t.count||0, Math.max(1,Math.floor(+t.target||1)))})).filter(t=>t.text);
+    const orig=w.tasks;
+    w.tasks=draft.tasks.map(t=>{
+      const target=Math.max(1,Math.floor(+t.target||1));
+      // 枝分かれ：1行=1Action。既存と同じ文言はチェック状態(done)を引き継ぐ
+      const prev=((orig.find(x=>x.id===t.id)||{}).actions)||[];
+      const used=new Set();
+      const actions=String(t.actsText||'').split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{
+        const m=prev.find(p=>!used.has(p.id) && p.text===line);
+        if(m){ used.add(m.id); return {id:m.id, text:line, done:!!m.done}; }
+        return {id:uid(), text:line, done:false};
+      });
+      return {id:t.id, text:t.text.trim(), target, count:Math.min(t.count||0, target), actions};
+    }).filter(t=>t.text);
     mode=null; draft=null; save(); render();
     toast('今週の目標を保存しました');
     return;
@@ -708,6 +766,7 @@ document.querySelector('main').addEventListener('click', e=>{
 function syncTaskDraft(){
   document.querySelectorAll('.tin').forEach(inp=>{ const i=+inp.dataset.i; if(draft.tasks[i]) draft.tasks[i].text=inp.value; });
   document.querySelectorAll('.tnin').forEach(inp=>{ const i=+inp.dataset.i; if(draft.tasks[i]) draft.tasks[i].target=inp.value; });
+  document.querySelectorAll('.acts-in').forEach(inp=>{ const i=+inp.dataset.i; if(draft.tasks[i]) draft.tasks[i].actsText=inp.value; });
 }
 function syncReviewDraft(){
   const g=document.getElementById('rvGrowth'); if(g) draft.growth=g.value;
@@ -720,6 +779,7 @@ document.querySelector('main').addEventListener('input', e=>{
   if(!draft) return;
   if(e.target.classList.contains('tin')){ const i=+e.target.dataset.i; if(draft.tasks[i]) draft.tasks[i].text=e.target.value; }
   else if(e.target.classList.contains('tnin')){ const i=+e.target.dataset.i; if(draft.tasks[i]) draft.tasks[i].target=e.target.value; }
+  else if(e.target.classList.contains('acts-in')){ autoGrow(e.target); const i=+e.target.dataset.i; if(draft.tasks[i]) draft.tasks[i].actsText=e.target.value; }
   else if(e.target.id==='rvGrowth'){ autoGrow(e.target); draft.growth=e.target.value; }
   else if(e.target.id==='rvNext'){ autoGrow(e.target); draft.next=e.target.value; }
   else if(e.target.id==='mGoal'){ draft.goal=e.target.value; }
