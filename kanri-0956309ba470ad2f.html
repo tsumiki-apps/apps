@@ -197,7 +197,8 @@
         <input type="file" id="imgIconFile" accept="image/*" hidden>
       </div>
     </div>
-    <button class="btn-primary" id="imgDownload" type="button">画像をダウンロード</button>
+    <button class="btn-primary" id="imgSave" type="button">写真に保存</button>
+    <button class="act" id="imgDownload" type="button" style="width:100%; margin-top:10px;">ファイルとして保存</button>
   </div>
 </div>
 
@@ -635,16 +636,43 @@
     imgState.iconImg = null; document.getElementById('imgIconFile').value='';
     document.getElementById('imgIconPrev').textContent='なし'; this.style.display='none'; iRender();
   });
-  document.getElementById('imgDownload').addEventListener('click', function(){
-    iRender();
+  function imgFilename(){
     var ap = (imgState.app||'app').replace(/[\/\\:*?"<>|\s]+/g,'_');
     var cu = (imgState.customer||'').replace(/[\/\\:*?"<>|\s]+/g,'_');
-    imgCanvas.toBlob(function(blob){
-      var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-      a.download = 'TSUMIKIキー_'+ap+(cu?'_'+cu:'')+'.png';
-      document.body.appendChild(a); a.click();
-      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    }, 'image/png');
+    return 'TSUMIKIキー_'+ap+(cu?'_'+cu:'')+'.png';
+  }
+  // キャンバスを同期でBlob化（iOSの共有はタップ操作の中で呼ぶ必要があるため、非同期のtoBlobは使わない）
+  function canvasBlobSync(){
+    var dataurl = imgCanvas.toDataURL('image/png');
+    var bin = atob(dataurl.split(',')[1]);
+    var arr = new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], {type:'image/png'});
+  }
+  function downloadBlob(blob, name){
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  // 写真に保存（iOS: 共有シート→「画像を保存」でカメラロールへ直接。未対応ならダウンロード）
+  document.getElementById('imgSave').addEventListener('click', function(){
+    iRender();
+    var name = imgFilename();
+    var blob = canvasBlobSync();
+    var file = null;
+    try{ file = new File([blob], name, {type:'image/png'}); }catch(e){ file = null; }
+    if(file && navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({ files:[file] }).catch(function(err){
+        if(err && err.name === 'AbortError') return;   // ユーザーがキャンセルしただけ
+        downloadBlob(blob, name);                        // それ以外は保険でダウンロード
+      });
+    } else {
+      downloadBlob(blob, name);   // 共有非対応（主にPC）はダウンロード
+    }
+  });
+  document.getElementById('imgDownload').addEventListener('click', function(){
+    iRender();
+    downloadBlob(canvasBlobSync(), imgFilename());
   });
 
   // 保存済みパスワードがあれば自動で開く（通信失敗ではログアウトしない＝毎回入力を避ける）
