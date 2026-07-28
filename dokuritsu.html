@@ -91,7 +91,7 @@
   .view-head p{margin:0; color:var(--ink-mid); font-size:.86rem;}
 
   .card{background:var(--surface); border:1px solid var(--line); border-radius:15px; box-shadow:var(--shadow);}
-  .stack{display:grid; gap:13px;}
+  .stack,.list{display:grid; gap:13px;}
 
   /* ---------- summary banner ---------- */
   .summary{padding:15px 17px; display:flex; align-items:center; gap:14px; margin-bottom:14px;}
@@ -228,6 +228,21 @@
   #toast .undo{border:none; background:none; color:var(--accent-2); font-weight:700; font-size:.86rem; cursor:pointer; font-family:var(--sans); padding:0;}
   @media (prefers-color-scheme: dark){ #toast .undo{color:var(--accent);} }
 
+  /* ---------- PC（横幅フル活用・多カラム） ---------- */
+  @media (min-width: 900px){
+    main{max-width:1180px; padding-left:32px; padding-right:32px; padding-top:26px;}
+    .topbar{padding-left:32px; padding-right:32px;}
+    .view-head h2{font-size:1.5rem;}
+    .stack{grid-template-columns:repeat(2, minmax(0,1fr)); align-items:start;}
+    .list{grid-template-columns:repeat(auto-fill, minmax(360px,1fr)); align-items:start;}
+    .add-btn{max-width:420px;}
+    .tabbar{justify-content:center; gap:8px;}
+    .tab{flex:0 0 150px;}
+  }
+  @media (min-width: 1320px){
+    main{max-width:1320px;}
+    .list{grid-template-columns:repeat(3, minmax(0,1fr));}
+  }
   @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 </style>
 </head>
@@ -419,6 +434,7 @@ function renderWeek(){
   if(!db.weeks.length){
     h += `<div class="empty">まだ週がありません。<br><b>「＋ 今週をはじめる」</b>で最初の週を作りましょう。<br>W1の目標例：<b>打診・声かけ 合計3件を送信</b></div>`;
   }
+  h += `<div class="list">`;
   db.weeks.forEach((w,i)=>{
     const no = db.weeks.length - i; // 新しいものが上、番号は古い方がW1
     let acts='';
@@ -429,7 +445,7 @@ function renderWeek(){
         <button class="row-del" data-act="del-act" aria-label="削除">×</button>
       </div>`;
     });
-    h+=`<div class="card entry" data-id="${w.id}" style="margin-bottom:13px">
+    h+=`<div class="card entry" data-id="${w.id}">
       <div class="entry-head">
         <span class="badge">W${no}</span>
         <input type="date" data-field="date" value="${esc(w.date||'')}">
@@ -444,6 +460,7 @@ function renderWeek(){
       <div class="entry-foot"><button class="del-entry" data-act="del-week">この週を削除</button></div>
     </div>`;
   });
+  h += `</div>`;
   view.innerHTML=h;
 }
 
@@ -465,8 +482,9 @@ function renderKpi(){
   if(!db.kpis.length){
     h += `<div class="empty">まだ記録がありません。<br><b>「＋ 月を追加」</b>で今月から記録を。</div>`;
   }
+  h += `<div class="list">`;
   [...db.kpis].sort((a,b)=>(b.month||'').localeCompare(a.month||'')).forEach(k=>{
-    h+=`<div class="card entry" data-id="${k.id}" style="margin-bottom:13px">
+    h+=`<div class="card entry" data-id="${k.id}">
       <div class="entry-head"><span class="badge">月</span><input type="month" data-field="month" value="${esc(k.month||'')}"><button class="del-entry" data-act="del-kpi" style="margin-left:auto">削除</button></div>
       <div class="entry-body">
         <div class="kpi-grid">
@@ -478,6 +496,7 @@ function renderKpi(){
       </div>
     </div>`;
   });
+  h += `</div>`;
   view.innerHTML=h;
 }
 
@@ -486,13 +505,14 @@ function renderProspect(){
   let h = `<div class="view-head"><h2>見込み客</h2><p>相手・ステージ・提示額・次の一手・voice を1件ずつ。</p></div>`;
   h += `<button class="add-btn" data-act="add-prospect">＋ 見込み客</button>`;
   if(!db.prospects.length){
-    h += `<div class="empty">まだ見込み客がいません。<br><b>「＋ 見込み客」</b>で最初の1件（例：<b>お客様さん</b>）を追加。</div>`;
+    h += `<div class="empty">まだ見込み客がいません。<br><b>「＋ 見込み客」</b>で最初の1件（例：知人のお店・事務所）を追加。</div>`;
   }
+  h += `<div class="list">`;
   db.prospects.forEach(p=>{
     const stageOpts=STAGES.map(s=>`<option ${s===p.stage?'selected':''}>${s}</option>`).join('');
     const voiceOpts=VOICES.map(s=>`<option ${s===p.voice?'selected':''}>${s}</option>`).join('');
     const vtag = p.voice==='voice取得' ? 'background:var(--good-wash);color:var(--good)' : 'background:var(--surface-2);color:var(--ink-mid)';
-    h+=`<div class="card entry" data-id="${p.id}" style="margin-bottom:13px">
+    h+=`<div class="card entry" data-id="${p.id}">
       <div class="p-head">
         <input type="text" data-field="name" value="${esc(p.name||'')}" placeholder="お名前・会社名">
         <select class="stage-sel" data-field="stage">${stageOpts}</select>
@@ -512,6 +532,7 @@ function renderProspect(){
       </div>
     </div>`;
   });
+  h += `</div>`;
   view.innerHTML=h;
 }
 
