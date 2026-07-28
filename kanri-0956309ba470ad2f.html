@@ -465,16 +465,29 @@
     for(var i=0;i<text.length;i++){ ictx.fillText(text[i],x,y); x+=ictx.measureText(text[i]).width+sp; } }
   function iFit(text,weight,maxW,startPx,sp){ var px=startPx;
     while(px>14){ ictx.font=weight+' '+px+'px "Zen Maru Gothic", sans-serif'; if(iSW(text,sp)<=maxW) break; px-=2; } return px; }
+  // つみきロゴ（立体キューブ3つ・線画）。stroke に色を渡す
+  function iLogo(cx,cy,R,stroke,lw){
+    var c = 0.86602540378*R;
+    function cube(x,y){
+      var V=[[x,y-R],[x+c,y-0.5*R],[x+c,y+0.5*R],[x,y+R],[x-c,y+0.5*R],[x-c,y-0.5*R]];
+      ictx.beginPath(); ictx.moveTo(V[0][0],V[0][1]);
+      for(var i=1;i<6;i++) ictx.lineTo(V[i][0],V[i][1]);
+      ictx.closePath(); ictx.stroke();
+      [1,3,5].forEach(function(i){ ictx.beginPath(); ictx.moveTo(x,y); ictx.lineTo(V[i][0],V[i][1]); ictx.stroke(); });
+    }
+    ictx.save(); ictx.strokeStyle=stroke; ictx.lineWidth=lw; ictx.lineJoin='round'; ictx.lineCap='round';
+    cube(cx-c, cy+0.5*R); cube(cx+c, cy+0.5*R); cube(cx, cy-R);
+    ictx.restore();
+  }
   function iSeal(cx,cy,r){
     ictx.save(); ictx.lineWidth=5; ictx.strokeStyle=iGold(cx-r,cy-r,cx+r,cy+r);
     ictx.beginPath(); ictx.arc(cx,cy,r,0,Math.PI*2); ictx.stroke();
     ictx.lineWidth=2; ictx.beginPath(); ictx.arc(cx,cy,r-9,0,Math.PI*2); ictx.stroke();
-    ictx.fillStyle=iGold(cx-r,cy-r,cx+r,cy+r); var s=r*0.30, gap=3;
-    ictx.fillRect(cx-s/2, cy-s-gap/2-4, s, s);
-    ictx.fillRect(cx-s-gap/2, cy+gap/2-4, s, s);
-    ictx.fillRect(cx+gap/2, cy+gap/2-4, s, s);
-    ictx.fillStyle=G_MID; ictx.font='700 13px "Zen Maru Gothic", sans-serif';
-    ictx.textAlign='center'; ictx.textBaseline='middle'; ictx.fillText('認証',cx,cy+r-20);
+    ictx.restore();
+    // つみきロゴを金で（視覚中心が少し上に来るよう cy を補正）
+    iLogo(cx, cy-8+0.25*16, 16, iGold(cx-r,cy-r,cx+r,cy+r), 4.5);
+    ictx.save(); ictx.fillStyle=G_MID; ictx.font='700 12px "Zen Maru Gothic", sans-serif';
+    ictx.textAlign='center'; ictx.textBaseline='middle'; ictx.fillText('認証',cx,cy+r-17);
     ictx.restore();
   }
   function iQR(url,cx,top,size){
@@ -492,6 +505,37 @@
   function iDate(v){ if(!v) return ''; var p=v.split('-'); return p.length===3?p[0]+'.'+p[1]+'.'+p[2]:v; }
   function iToday(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
   function iAppUrl(name){ if(!name || name==='*') return ''; return 'https://tools.tsumiki-apps.com/'+name+'.html'; }
+
+  // アプリ名からアイコンURLの候補を作る（-pro等を外した名前・第1トークンもフォールバック）
+  function iconCandidates(name){
+    if(!name || name==='*') return [];
+    var base = name.replace(/-(pro|lite|plus|kanri|std)$/,'');
+    var first = name.split('-')[0];
+    var stems = []; [name, base, first].forEach(function(n){ if(n && stems.indexOf(n)<0) stems.push(n); });
+    var urls = [];
+    stems.forEach(function(n){ urls.push('https://tools.tsumiki-apps.com/icon-'+n+'.png'); });
+    stems.forEach(function(n){ urls.push('icons/icon-'+n+'.png'); });  // 同一オリジンのフォールバック
+    return urls;
+  }
+  var iconToken = 0;  // 開き直し時に古い読込結果を捨てるための世代番号
+  function autoLoadIcon(appName){
+    var urls = iconCandidates(appName), i = 0, gen = ++iconToken;
+    (function next(){
+      if(i >= urls.length || gen !== iconToken) return;   // 全滅＝アイコンなし
+      var im = new Image();
+      im.crossOrigin = 'anonymous';   // CORS対応。これで書き出しも汚染されない
+      im.onload = function(){
+        if(gen !== iconToken) return;
+        imgState.iconImg = im;
+        var p = document.getElementById('imgIconPrev'); p.innerHTML='';
+        var pi = new Image(); pi.src = im.src; p.appendChild(pi);
+        document.getElementById('imgIconClear').style.display='';
+        iRender();
+      };
+      im.onerror = function(){ i++; next(); };
+      im.src = urls[i];
+    })();
+  }
 
   function iRender(){
     ictx.clearRect(0,0,IMW,IMH);
@@ -569,6 +613,7 @@
     document.getElementById('imgIconFile').value = '';
     imgModal.hidden = false;
     ensureFonts(iRender);
+    autoLoadIcon(d.appName);   // アイコンを自動取得（見つかれば差し込む）
   }
   function closeImageModal(){ imgModal.hidden = true; imgState.iconImg = null; }
   document.getElementById('imgClose').addEventListener('click', closeImageModal);
@@ -577,6 +622,7 @@
   document.getElementById('imgIconBtn').addEventListener('click', function(){ document.getElementById('imgIconFile').click(); });
   document.getElementById('imgIconFile').addEventListener('change', function(){
     var f = this.files && this.files[0]; if(!f) return;
+    iconToken++;   // 手動アップロードを優先（自動取得の途中結果を無効化）
     var rd = new FileReader();
     rd.onload = function(e){
       var im = new Image();
@@ -591,6 +637,7 @@
     rd.readAsDataURL(f);
   });
   document.getElementById('imgIconClear').addEventListener('click', function(){
+    iconToken++;   // 自動取得の途中結果も無効化
     imgState.iconImg = null; document.getElementById('imgIconFile').value='';
     document.getElementById('imgIconPrev').textContent='なし'; this.style.display='none'; iRender();
   });
