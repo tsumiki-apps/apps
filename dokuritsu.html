@@ -827,6 +827,55 @@ function syncReviewDraft(){
 function syncMonthDraft(){
   const g=document.getElementById('mGoal'); if(g) draft.goal=g.value;
 }
+/* ===================== リスト入力ショートカット =====================
+   ことづて（sashizu.html）から移植。メモ系のテキスト欄で Markdown 風の箇条書きを楽に打てるように。
+   ・「-」「*」＋スペース → 「• 」箇条書きに変換、Enterで継続（空のままEnter＝解除）
+   ・「1.」＋スペース → 番号リスト、Enterで「2.」「3.」…自動採番（1) 形式もOK）
+   ・「[]」＋スペース → 「- [ ] 」チェック項目に変換、Enterで継続
+   対象＝Actionメモ・振り返りの自由記述欄のみ。枝分かれAction欄（.acts-in）は
+   「1行に1つ＝行頭がそのままAction名」仕様のため、マーカー変換すると名前に混入するので対象外。
+   ★keydown ではなく beforeinput で判定：iOSのソフトキーボードは keydown を
+     まともに発火せず（Space/Enterが keyCode:229 になる）効かないため。*/
+const RE_CHECK=/^(\s*)([-*])\s+\[[ xX]?\]\s+/, RE_NUM=/^(\s*)(\d+)([.)])\s+/, RE_BUL=/^(\s*)([-*•])\s+/;
+function lineHeadStart(v,pos){ return v.lastIndexOf('\n',pos-1)+1; }
+/* Enter（改行が入る直前）：リストを継続 or 解除。処理したら true。 */
+function listContinue(ta,e){
+  if(ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadStart(v,pos), line=v.slice(start,pos);
+  let m, marker=null, cs=0;
+  if((m=line.match(RE_CHECK))){ marker=m[1]+m[2]+' [ ] '; cs=m[0].length; }
+  else if((m=line.match(RE_NUM))){ marker=m[1]+(parseInt(m[2],10)+1)+m[3]+' '; cs=m[0].length; }
+  else if((m=line.match(RE_BUL))){ marker=m[1]+m[2]+' '; cs=m[0].length; }
+  else return false;
+  if(line.slice(cs).trim()===''){ // 中身が空 → マーカーを消してリスト解除
+    e.preventDefault(); ta.value=v.slice(0,start)+v.slice(pos); ta.selectionStart=ta.selectionEnd=start; return true;
+  }
+  e.preventDefault(); const ins='\n'+marker; ta.value=v.slice(0,pos)+ins+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=pos+ins.length; return true;
+}
+/* スペースが入る直前：行頭が [] / - / * なら箇条書きマーカーに変換。処理したら true。 */
+function listSpace(ta,e){
+  if(ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadStart(v,pos), line=v.slice(start,pos);
+  let m, r=null;
+  if((m=line.match(/^(\s*)\[( ?)\]$/))) r=m[1]+'- [ ] ';   // [] → チェック項目
+  else if((m=line.match(/^(\s*)[-*•]$/))) r=m[1]+'• ';      // - / * → 箇条書き（•に変換）
+  else return false;
+  e.preventDefault(); ta.value=v.slice(0,start)+r+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=start+r.length; return true;
+}
+const LIST_TA_IDS=new Set(['anoteIn','rvGrowth','rvNext']);
+document.querySelector('main').addEventListener('beforeinput', e=>{
+  const ta=e.target;
+  if(!(ta instanceof HTMLTextAreaElement) || !LIST_TA_IDS.has(ta.id)) return;
+  if(e.isComposing) return; // 日本語変換の確定Enter等は無視
+  let handled=false;
+  const t=e.inputType;
+  if(t==='insertLineBreak'||t==='insertParagraph') handled=listContinue(ta,e);
+  else if(t==='insertText'&&(e.data===' '||e.data==='　')) handled=listSpace(ta,e);
+  if(handled) ta.dispatchEvent(new Event('input',{bubbles:true})); // 既存のinput委譲に autoGrow＋draft同期を任せる
+});
+
 document.querySelector('main').addEventListener('input', e=>{
   if(!draft) return;
   if(e.target.classList.contains('tin')){ const i=+e.target.dataset.i; if(draft.tasks[i]) draft.tasks[i].text=e.target.value; }
