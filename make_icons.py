@@ -48,6 +48,7 @@ APPS = {
     "sashizu":     ("📮", "#ff8f7a", "#e0523f"),
     "hitonowa":    ("🕸️", "#7d6bf0", "#4f3ad0"),
     "dokuritsu":   ("🧱", "#c88a3e", "#8a5a24"),
+    "koekake":     ("🤝", "#e0a86b", "#a8652c"),
     # issho（ぴずかご）は専用の線画アイコン → make_issho_icon.py で生成する
 }
 
