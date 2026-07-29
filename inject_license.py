@@ -11,7 +11,8 @@
   - 2回目以降は即アプリ表示、裏で license_verify。サーバーが明確に
     無効と答えた時だけゲート再表示。ネットワークエラー時は解錠のまま
     （オフラインでもお客様を止めない）。
-  - 解錠後は右下に小さく「◯◯さま専用」の透かし（流出抑止＋パーソナライズ）。
+  - 解錠後は右下に小さく「◯◯ 専用」の透かし（流出抑止＋パーソナライズ）。
+    ◯◯＝キー発行時に入れた名前をそのまま表示（敬称はこちらで足さない）。
   - 埋め込むのは公開前提のanonキーのみ。台帳テーブルは完全非公開（RLS）で、
     RPCも照合専用なので、ここから個人データには届かない。
 
@@ -120,7 +121,7 @@ SNIPPET = """<!-- tsumiki-license-gate -->
       gate.style.display = 'none';
       if(customer){
         localStorage.setItem(K_CUST, customer);
-        mark.textContent = customer + ' さま専用';
+        mark.textContent = customer + ' 専用';
         mark.hidden = false;
       }
     }
