@@ -328,6 +328,9 @@ const sb = (window.supabase && window.supabase.createClient) ? supabase.createCl
 const STATE_TABLE = 'sashizu_state';
 const STATE_ID = 'kodai';        // 個人の複数端末で共有する1行
 const KEY = 'sashizu_db_v1';
+const SYNCED_KEY = 'sashizu_synced_v1';   // 最後にクラウドと一致した時刻
+const BAK_KEY = 'sashizu_bak_v1';         // 取りこぼし保険：直近の状態スナップショット
+const DEV_KEY = 'sashizu_dev_v1';         // 端末ID（自分の書き込みのエコー判定用）
 
 /* ===================== ステータス定義 ===================== */
 const STATUSES = [
@@ -385,7 +388,15 @@ function svg(name, size){ return '<svg viewBox="0 0 24 24" style="width:'+(size|
 function blank(){ return { items:[] }; }
 let db = blank();
 let online = null;
-let lastPushed = '';
+let pendingSave = false;     // ローカルに「まだクラウドへ届いていない変更」がある
+let syncedAt = 0;            // これより後に触ったものは「クラウドがまだ知らない」とみなす
+const DEV_ID = (function(){
+  try{
+    let v = localStorage.getItem(DEV_KEY);
+    if(!v){ v = uid(); localStorage.setItem(DEV_KEY, v); }
+    return v;
+  }catch(e){ return uid(); }
+})();
 let filter = 'all';          // 'all' | status key（doneは下の畳みセクション固定）
 let doneOpen = false;
 let sheetItemId = null;      // ステータス/編集シートの対象ことづて
@@ -405,9 +416,10 @@ function recalc(x){
   /* 旧バージョンのページで開いた時に中身が消えて見えないための保険（表示には使わない） */
   x.body = notes.map(n=> (n.head ? '【'+n.head+'】\n' : '') + n.body).join('\n\n');
 }
-function migrate(){
-  if(!Array.isArray(db.items)) db.items = [];
-  db.items.forEach(x=>{
+function migrate(state){
+  const st = state || db;
+  if(!Array.isArray(st.items)) st.items = [];
+  st.items.forEach(x=>{
     if(!x.id) x.id = uid();
     if(!ST[x.status]) x.status = 'idea';
     if(!x.ts) x.ts = Date.now();
@@ -442,31 +454,112 @@ function noteText(x, n){
   if(n.body) s += (n.head ? '\n' : '\n\n') + n.body;
   return s;
 }
-function loadLocal(){ try{ const s=localStorage.getItem(KEY); if(s) db=Object.assign(blank(), JSON.parse(s)); }catch(e){} }
+function loadLocal(){
+  try{ const s=localStorage.getItem(KEY); if(s) db=Object.assign(blank(), JSON.parse(s)); }catch(e){}
+  try{ syncedAt = parseInt(localStorage.getItem(SYNCED_KEY)||'0', 10) || 0; }catch(e){ syncedAt = 0; }
+}
+function markSynced(t){
+  syncedAt = t || Date.now();
+  try{ localStorage.setItem(SYNCED_KEY, String(syncedAt)); }catch(e){}
+}
+/* 取りこぼし保険：クラウドの状態を当てる直前のローカルを数世代残す。
+   何かが消えた時に、ここから中身を拾い出して戻せる。 */
+function snapshot(reason){
+  try{
+    const arr = JSON.parse(localStorage.getItem(BAK_KEY) || '[]');
+    arr.push({ at:Date.now(), reason:reason||'', state:db });
+    while(arr.length > 8) arr.shift();
+    localStorage.setItem(BAK_KEY, JSON.stringify(arr));
+  }catch(e){}
+}
 
 let saveTimer=null;
 function save(){
+  db.rev = Date.now();          // どちらが新しいかの判定に使う
+  db.by  = DEV_ID;              // 自分の書き込みのエコー判定に使う
+  pendingSave = true;
   localStorage.setItem(KEY, JSON.stringify(db));
   if(!sb) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async()=>{
-    lastPushed = JSON.stringify(db);
-    const { error } = await sb.from(STATE_TABLE)
-      .upsert({ id:STATE_ID, state: db, updated_at:new Date().toISOString() });
-    if(error){ online=false; } else if(online!==true){ online=true; }
-    renderSync();
-  }, 350);
+  saveTimer = setTimeout(push, 350);
+}
+/* クラウドへ送る。送信中に増えた変更は pendingSave を落とさない（落とすと次の取り込みで消える）。 */
+async function push(){
+  if(!sb) return;
+  clearTimeout(saveTimer);
+  const sending = db.rev || 0;
+  const { error } = await sb.from(STATE_TABLE)
+    .upsert({ id:STATE_ID, state: db, updated_at:new Date().toISOString() });
+  if(error){ online=false; }
+  else{
+    online = true;
+    if((db.rev||0) === sending){ pendingSave = false; markSynced(); }
+  }
+  renderSync();
+}
+/* リモートを土台に、ローカルにしか無い「最後の同期より後の変更」を差し戻す。
+   ＝ 打ったばかりのメモが、届く前の古いリモートで塗り潰されるのを防ぐ。 */
+function mergeRemote(remote){
+  const out = Object.assign(blank(), remote);
+  if(!Array.isArray(out.items)) out.items = [];
+  const byId = new Map(out.items.map(x=>[x.id, x]));
+  (db.items||[]).forEach(lx=>{
+    const rx = byId.get(lx.id);
+    if(!rx){
+      /* リモートに無い：同期後に作った物だけ戻す（前から在って消えた物＝他端末での削除は尊重） */
+      if((lx.updated||lx.ts||0) > syncedAt) out.items.push(lx);
+      return;
+    }
+    if((lx.updated||0) > (rx.updated||0)){
+      rx.title = lx.title; rx.status = lx.status; rx.updated = lx.updated;
+      if(lx.doneAt) rx.doneAt = lx.doneAt; else delete rx.doneAt;
+    }
+    if(!Array.isArray(rx.notes)) rx.notes = [];
+    const nById = new Map(rx.notes.map(n=>[n.id, n]));
+    (lx.notes||[]).forEach(ln=>{
+      const rn = nById.get(ln.id);
+      if(!rn){
+        if((ln.updated||ln.ts||0) > syncedAt) rx.notes.push(ln);
+        return;
+      }
+      if((ln.updated||0) > (rn.updated||0)){ rn.head = ln.head; rn.body = ln.body; rn.updated = ln.updated; }
+    });
+    rx.notes.sort((a,b)=>(a.ts||0)-(b.ts||0));   // 作った順に整える
+  });
+  return out;
+}
+/* 中身だけを比べるための正規化文字列。
+   保存先が jsonb（＝Postgres がキーの順番を並べ替える型）なので、
+   素の JSON.stringify では同じ中身でも別物に見えてしまう。 */
+function canon(v){
+  if(Array.isArray(v)) return '['+v.map(canon).join(',')+']';
+  if(v && typeof v==='object'){
+    return '{'+Object.keys(v).filter(k=>k!=='rev'&&k!=='by').sort()
+      .map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
+  }
+  return JSON.stringify(v);
+}
+/* 受け取ったリモートを画面へ反映する（取り込み口はここ1つに統一） */
+function applyRemote(remote){
+  const merged = mergeRemote(remote);
+  migrate(merged);                  // 旧形式の変換は比較の前に済ませる（比較がずれないように）
+  const mySig = canon(db), mergedSig = canon(merged), remSig = canon(remote);
+  if(mergedSig !== mySig){          // 画面の中身が変わる時だけ差し替える
+    snapshot(mergedSig === remSig ? 'remote' : 'merge');
+    db = merged;
+    localStorage.setItem(KEY, JSON.stringify(db));
+    if(sheetOpen){ pendingRender = true; } else { render(); }
+  }
+  if(mergedSig !== remSig){ save(); }              // クラウドが古い → こちらの分を返す
+  else { pendingSave = false; markSynced(); }
 }
 async function loadRemote(){
   if(!sb){ online=false; renderSync(); return; }
   const { data, error } = await sb.from(STATE_TABLE).select('state').eq('id', STATE_ID).maybeSingle();
   if(error){ online=false; renderSync(); return; }
   online = true;
-  if(data && data.state && typeof data.state==='object'){
-    db = Object.assign(blank(), data.state);   // リモート優先
-    migrate();
-    localStorage.setItem(KEY, JSON.stringify(db));
-    render();
+  if(data && data.state && typeof data.state==='object' && Array.isArray(data.state.items)){
+    applyRemote(data.state);
   } else {
     // リモートにまだ行が無い → 今あるローカルを種として上げる
     if(db.items.length) save();
@@ -478,14 +571,11 @@ function subscribeRealtime(){
   sb.channel('sashizu-rt')
     .on('postgres_changes', { event:'*', schema:'public', table:STATE_TABLE, filter:'id=eq.'+STATE_ID },
       (payload)=>{
-        const incoming = JSON.stringify((payload.new && payload.new.state) || {});
-        if(incoming === lastPushed) return;     // 自分の書き込みのエコー
-        if(payload.new && payload.new.state){
-          db = Object.assign(blank(), payload.new.state);
-          migrate();
-          localStorage.setItem(KEY, JSON.stringify(db));
-          if(sheetOpen){ pendingRender = true; } else { render(); }
-        }
+        const st = payload.new && payload.new.state;
+        if(!st || !Array.isArray(st.items)) return;
+        /* 自分が今さっき送った物のエコーは無視（jsonbはキー順が変わるので文字列比較では判定できない） */
+        if(st.by === DEV_ID && (st.rev||0) <= (db.rev||0)) return;
+        applyRemote(st);
       })
     .subscribe();
 }
@@ -729,7 +819,25 @@ edOverlay.addEventListener('click', e=>{ if(e.target===edOverlay) closeSheets();
 const ntOverlay = document.getElementById('ntOverlay');
 const ntTitle = document.getElementById('ntTitle');
 const ntBody = document.getElementById('ntBody');
-ntBody.addEventListener('input', ()=>autoGrow(ntBody));
+/* 打ちかけのメモも下書き保存する。保存前に画面が落ちても、同じメモを開けば戻る。 */
+const NDRAFT_KEY = 'sashizu_note_draft_v1';
+function saveNoteDraft(){
+  try{
+    const h=ntTitle.value, b=ntBody.value;
+    if(!sheetItemId || (!h && !b)){ localStorage.removeItem(NDRAFT_KEY); return; }
+    localStorage.setItem(NDRAFT_KEY, JSON.stringify({ item:sheetItemId, note:sheetNoteId||'', h, b }));
+  }catch(e){}
+}
+function clearNoteDraft(){ try{ localStorage.removeItem(NDRAFT_KEY); }catch(e){} }
+function readNoteDraft(itemId, noteId){
+  try{
+    const d = JSON.parse(localStorage.getItem(NDRAFT_KEY)||'null');
+    if(d && d.item===itemId && (d.note||'')===(noteId||'')) return d;
+  }catch(e){}
+  return null;
+}
+ntTitle.addEventListener('input', saveNoteDraft);
+ntBody.addEventListener('input', ()=>{ autoGrow(ntBody); saveNoteDraft(); });
 
 /* ===================== リスト入力ショートカット =====================
    指示テキスト欄で Markdown 風の箇条書きを楽に打てるように。
@@ -787,6 +895,11 @@ function openNoteSheet(itemId, noteId){
   document.getElementById('ntDelete').style.display = n ? '' : 'none';
   ntTitle.value = n ? n.head : '';
   ntBody.value = n ? n.body : '';
+  const d = readNoteDraft(itemId, noteId);   // 打ちかけが残っていれば戻す
+  if(d && (d.h !== ntTitle.value || d.b !== ntBody.value)){
+    ntTitle.value = d.h || ''; ntBody.value = d.b || '';
+    setTimeout(()=>toast('打ちかけのメモを戻しました'), 250);
+  }
   ntOverlay.classList.add('show');
   setTimeout(()=>{ autoGrow(ntBody); if(!n) ntBody.focus(); }, 0);
 }
@@ -806,12 +919,14 @@ document.getElementById('ntSave').onclick = ()=>{
   }
   x.updated = Date.now();
   recalc(x); save();
+  clearNoteDraft();
   closeSheets();
   toast(editing ? '保存しました' : 'メモを追加しました');
 };
 document.getElementById('ntDelete').onclick = ()=>{
   const x = findItem(sheetItemId);
   const nid = sheetNoteId;
+  clearNoteDraft();
   closeSheets();
   if(!x || !nid) return;
   const n = findNote(x, nid); if(!n) return;
@@ -821,7 +936,8 @@ document.getElementById('ntDelete').onclick = ()=>{
     x.notes.splice(Math.min(idx,x.notes.length),0,n); recalc(x); save(); render();
   });
 };
-document.getElementById('ntCancel').onclick = closeSheets;
+/* 「キャンセル」は打ちかけを捨てる。背景タップ（誤タップ）は捨てずに残す。 */
+document.getElementById('ntCancel').onclick = ()=>{ clearNoteDraft(); closeSheets(); };
 ntOverlay.addEventListener('click', e=>{ if(e.target===ntOverlay) closeSheets(); });
 
 function closeSheets(){
@@ -841,11 +957,21 @@ restoreDraft();
 renderSync();
 loadRemote();
 subscribeRealtime();
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) loadRemote(); });
+/* 画面を離れる時は、350msの待ちを飛ばして今すぐ送る（iOSは裏に回るとタイマーが止まるため）。
+   戻ってきた時は取り込む。未送信が残っていれば mergeRemote が差し戻すので消えない。 */
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ if(pendingSave) push(); }
+  else loadRemote();
+});
+window.addEventListener('pagehide', ()=>{ if(pendingSave) push(); });
 /* 通信が復活したら自動で繋ぎ直す（手動リロード不要でオフライン表示を解消） */
-window.addEventListener('online', ()=>{ loadRemote(); });
-/* オフラインの間だけ、20秒ごとに静かに再接続を試す */
-setInterval(()=>{ if(sb && online!==true && (navigator.onLine!==false)) loadRemote(); }, 20000);
+window.addEventListener('online', ()=>{ if(pendingSave) push(); loadRemote(); });
+/* 20秒ごと：未送信が残っていれば送り直し、オフライン表示なら繋ぎ直す */
+setInterval(()=>{
+  if(!sb || navigator.onLine===false) return;
+  if(pendingSave) push();
+  else if(online!==true) loadRemote();
+}, 20000);
 </script>
 <!-- tsumiki-back-button -->
 <style>
