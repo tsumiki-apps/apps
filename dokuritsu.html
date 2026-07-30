@@ -59,7 +59,11 @@
   .topbar{
     position:sticky; top:0; z-index:20; background:color-mix(in srgb, var(--paper) 88%, transparent);
     backdrop-filter:saturate(1.3) blur(10px); -webkit-backdrop-filter:saturate(1.3) blur(10px);
-    border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 12px) 18px 12px;
+    border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 12px) 0 12px;
+  }
+  /* ヘッダーの中身は本文と同じ幅・同じ左右余白に揃える */
+  .topbar .inner{
+    max-width:560px; margin:0 auto; padding:0 16px;
     display:flex; align-items:center; gap:10px;
   }
   .brand{display:flex; align-items:center; gap:10px; min-width:0;}
@@ -75,11 +79,57 @@
   .iconbtn{
     width:34px; height:34px; flex:none; border:1px solid var(--line); background:var(--surface);
     border-radius:9px; color:var(--ink-mid); display:grid; place-items:center; cursor:pointer;
+    text-decoration:none; padding:0;
   }
   .iconbtn:active{transform:scale(.94);}
   .iconbtn.on{color:var(--accent); border-color:var(--accent); background:var(--accent-wash);}
   .sync-dot{width:8px; height:8px; border-radius:50%; background:var(--ink-soft); flex:none;}
   .sync-dot.ok{background:var(--good);} .sync-dot.off{background:var(--accent);}
+
+  /* ---------- メニュー（三本線 → 引き出し） ----------
+     z-index は戻るボタン（#tsumikiEdge=999 / #tsumikiPeek=1001）より上。
+     開いている間は左端エッジスワイプ（戻る）を覆って誤爆を防ぐ。 */
+  .menu-mask{
+    position:fixed; inset:0; background:rgba(24,19,10,.42); z-index:1010;
+    opacity:0; pointer-events:none; transition:opacity .22s;
+  }
+  .menu-mask.show{opacity:1; pointer-events:auto;}
+  .drawer{
+    position:fixed; top:0; left:0; bottom:0; width:min(80vw,286px); z-index:1011;
+    background:var(--surface); border-right:1px solid var(--line);
+    box-shadow:0 0 44px -10px rgba(24,19,10,.4);
+    transform:translateX(-101%); transition:transform .26s cubic-bezier(.22,.61,.36,1);
+    padding:calc(env(safe-area-inset-top) + 14px) 12px calc(env(safe-area-inset-bottom) + 14px);
+    display:flex; flex-direction:column; gap:12px; overflow-y:auto; overscroll-behavior:contain;
+  }
+  .drawer.show{transform:none;}
+  .dr-head{display:flex; align-items:center; gap:9px; padding:2px 8px 12px; border-bottom:1px solid var(--line);}
+  .dr-head .cube{
+    width:18px; height:18px; flex:none;
+    background:
+      linear-gradient(var(--accent),var(--accent)) left top/7px 7px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) right top/7px 7px no-repeat,
+      linear-gradient(var(--accent-2),var(--accent-2)) center bottom/7px 7px no-repeat;
+  }
+  .dr-head b{font-family:var(--serif); font-weight:600; font-size:.98rem; letter-spacing:.02em;}
+  .dr-nav{display:grid; gap:3px;}
+  .dr-item{
+    display:flex; align-items:center; gap:11px; padding:12px 11px; border-radius:12px;
+    text-decoration:none; color:var(--ink); font-size:.95rem; font-weight:700; line-height:1.35;
+  }
+  .dr-item svg{
+    width:19px; height:19px; flex:none; color:var(--ink-soft);
+    stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;
+  }
+  .dr-item:active{background:var(--surface-2);}
+  .dr-item.current{background:var(--accent-wash); color:var(--accent-2);}
+  .dr-item.current svg{color:var(--accent-2);}
+  .dr-item.soon{color:var(--ink-soft); font-weight:600;}
+  .dr-item .soon-tag{
+    margin-left:auto; flex:none; font-size:.66rem; font-weight:700; letter-spacing:.04em;
+    color:var(--ink-soft); border:1px solid var(--line-2); border-radius:99px; padding:2px 7px;
+  }
+  .dr-note{margin-top:auto; padding:12px 10px 0; font-size:.72rem; color:var(--ink-soft); line-height:1.5;}
 
   /* ---------- tabs / layout ---------- */
   main{max-width:560px; margin:0 auto; padding:16px 16px calc(env(safe-area-inset-bottom) + 40px); display:grid; gap:15px;}
@@ -98,13 +148,27 @@
   .label{font-size:.74rem; font-weight:700; letter-spacing:.06em; color:var(--accent-2); text-transform:uppercase;}
 
   @media (min-width:1080px){
-    main{max-width:1180px; grid-template-columns:1fr 1fr; align-items:start; gap:18px; padding-top:22px;}
+    main{
+      max-width:1180px; grid-template-columns:minmax(0,1.06fr) minmax(0,.94fr);
+      align-items:start; gap:22px; padding-top:22px;
+    }
+    .topbar .inner{max-width:1180px;}
     .tabs{display:none;}
     .page{display:grid !important;}
+    /* 右カラム（卒業まで）は短く終わるので、左を読み進めても付いてくる */
+    #pageGrad{
+      position:sticky; top:82px; align-self:start;
+      max-height:calc(100vh - 100px); overflow-y:auto; overscroll-behavior:contain;
+      padding:2px 3px 4px 0; scrollbar-width:thin;
+    }
+    #pageGrad::-webkit-scrollbar{width:7px;}
+    #pageGrad::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:99px;}
+    #pageGrad::-webkit-scrollbar-track{background:transparent;}
   }
   /* サブディスプレイ（iPad mini 縦置き等）：縦長の広め画面はタブなしで縦積み常時表示 */
   @media (min-width:600px) and (max-width:1079px) and (orientation:portrait){
     main{max-width:660px;}
+    .topbar .inner{max-width:660px;}
     .tabs{display:none;}
     .page{display:grid !important;}
   }
@@ -115,7 +179,7 @@
   .bar.good i{background:linear-gradient(90deg,var(--good),#3f6a44);}
 
   /* ---------- week card ---------- */
-  .week-top{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:4px;}
+  .week-top{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:4px 10px; margin-bottom:4px;}
   .week-range{font-size:.78rem; color:var(--ink-soft);}
   .week-pct{display:flex; align-items:baseline; gap:8px; margin:8px 0 8px;}
   .week-pct .big{font-family:var(--serif); font-weight:600; font-size:2rem; line-height:1;}
@@ -151,20 +215,24 @@
   .task .dec:active{transform:scale(.92);}
   .task .dec[disabled]{opacity:.35; pointer-events:none;}
 
-  /* ---------- 枝分かれAction（タスク直下の小さな階段） ---------- */
-  .taskwrap{display:grid; gap:7px;}
-  .acts{display:grid; gap:5px; margin-left:16px;}
+  /* ---------- 枝分かれAction（タスク直下に縦ラインでぶら下げる） ---------- */
+  .taskwrap{display:grid; gap:0;}
+  .acts{
+    display:grid; gap:2px; margin:6px 0 0 14px; padding:2px 0 2px 11px;
+    border-left:2px solid var(--line);
+  }
   .act{
-    display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:10px;
-    background:var(--surface); border:1px dashed var(--line-2); cursor:pointer;
+    display:flex; align-items:center; gap:8px; padding:7px 6px; border-radius:10px;
+    background:transparent; border:1px solid transparent; cursor:pointer;
     -webkit-user-select:none; user-select:none; transition:background .15s, border-color .15s;
   }
+  @media (hover:hover){ .act:hover{background:var(--surface-2);} }
   .act:active{transform:scale(.99);}
   .act .adot{
     width:20px; height:20px; flex:none; border:1.5px solid var(--line-2); border-radius:50%;
     display:grid; place-items:center; color:transparent; background:var(--surface); transition:.15s;
   }
-  .act.done{border-style:solid; border-color:var(--good); background:var(--good-wash);}
+  .act.done{border-color:var(--good); background:var(--good-wash);}
   .act.done .adot{background:var(--good); border-color:transparent; color:#fff;}
   .act .atext{flex:1; min-width:0; font-size:.88rem; line-height:1.4; color:var(--ink); word-break:break-word;}
   .act.done .atext{color:var(--ink-soft); text-decoration:line-through; text-decoration-color:var(--line-2);}
@@ -175,18 +243,35 @@
   .act .amemo.has{color:var(--accent-2); opacity:1;}
   .act .amemo:active{transform:scale(.9);}
   .anote{
-    display:block; margin-left:30px; padding:1px 10px 3px; font-size:.8rem; line-height:1.5;
-    color:var(--ink-soft); white-space:pre-wrap; word-break:break-word;
-    border-left:2px solid var(--line-2); cursor:pointer;
+    display:block; margin:-1px 0 5px 34px; padding:0 6px 0 0; font-size:.8rem; line-height:1.5;
+    color:var(--ink-soft); white-space:pre-wrap; word-break:break-word; cursor:pointer;
   }
-  .anote-ed{display:grid; gap:8px; margin-left:30px; padding:2px 0 4px;}
+  .anote-ed{display:grid; gap:8px; margin-left:34px; padding:2px 0 6px;}
   .anote-ed textarea{
     width:100%; border:1.5px solid var(--accent); background:var(--surface); border-radius:10px;
     padding:9px 12px; font-size:16px; color:var(--ink); font-family:var(--sans); resize:none; line-height:1.5;
   }
   .anote-ed .row{display:flex; gap:8px; justify-content:flex-end;}
   .btn.sm{flex:none; padding:9px 16px; font-size:.88rem; border-radius:10px;}
-  .aprog{font-size:.72rem; color:var(--ink-soft); font-weight:700;}
+  .aprog{font-size:.72rem; color:var(--ink-soft); font-weight:700; letter-spacing:.04em; padding:0 0 3px 9px;}
+
+  /* ---------- 別アプリへの導線カード ---------- */
+  .linkcard{
+    display:flex; align-items:center; gap:13px; text-decoration:none; color:inherit;
+    background:var(--surface); border:1px solid var(--line); border-radius:16px;
+    box-shadow:var(--shadow); padding:13px 15px; cursor:pointer;
+    transition:border-color .18s, background .18s;
+  }
+  @media (hover:hover){ .linkcard:hover{border-color:var(--accent); background:var(--accent-wash);} }
+  .linkcard:active{transform:scale(.99);}
+  .linkcard .lc-ico{
+    width:38px; height:38px; flex:none; border-radius:12px; background:var(--accent-wash);
+    color:var(--accent-2); display:grid; place-items:center;
+  }
+  .linkcard .lc-t{flex:1; min-width:0;}
+  .linkcard .lc-t b{display:block; font-size:.96rem; line-height:1.35;}
+  .linkcard .lc-t span{display:block; font-size:.78rem; color:var(--ink-soft); line-height:1.4; margin-top:1px;}
+  .linkcard .lc-go{flex:none; color:var(--ink-soft); font-size:1.05rem; line-height:1;}
 
   .empty-week{display:grid; gap:12px; justify-items:center; text-align:center; padding:8px 0 2px;}
   .empty-week .em{font-size:2rem;}
@@ -290,15 +375,20 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="cube"></span><h1>独立ロードマップ</h1></div>
-    <span class="spacer"></span>
-    <span class="sync-dot" id="syncDot" title="同期状態"></span>
-    <button class="iconbtn" id="notifyBtn" aria-label="振り返り通知">
-      <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-    </button>
-    <button class="iconbtn" id="themeBtn" aria-label="表示切替">
-      <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round"><path d="M19 13.5A7 7 0 1 1 10.5 5a5.5 5.5 0 0 0 8.5 8.5z"/></svg>
-    </button>
+    <div class="inner">
+      <button class="iconbtn" id="menuBtn" aria-label="メニュー" aria-expanded="false" aria-controls="drawer">
+        <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+      </button>
+      <div class="brand"><span class="cube"></span><h1>独立ロードマップ</h1></div>
+      <span class="spacer"></span>
+      <span class="sync-dot" id="syncDot" title="同期状態"></span>
+      <button class="iconbtn" id="notifyBtn" aria-label="振り返り通知">
+        <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      </button>
+      <button class="iconbtn" id="themeBtn" aria-label="表示切替">
+        <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round"><path d="M19 13.5A7 7 0 1 1 10.5 5a5.5 5.5 0 0 0 8.5 8.5z"/></svg>
+      </button>
+    </div>
   </header>
 
   <main>
@@ -309,6 +399,31 @@
     <section class="page active" id="pageWeek"></section>
     <section class="page" id="pageGrad"></section>
   </main>
+
+  <div class="menu-mask" id="menuMask"></div>
+  <aside class="drawer" id="drawer" aria-label="メニュー" aria-hidden="true">
+    <div class="dr-head"><span class="cube"></span><b>独立ロードマップ</b></div>
+    <nav class="dr-nav">
+      <span class="dr-item current" aria-current="page">
+        <svg viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4.8h12l-2 3.1 2 3.1H5"/></svg>
+        独立ロードマップ
+      </span>
+      <a class="dr-item" href="koekake.html">
+        <svg viewBox="0 0 24 24"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.2"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 4.6a3.2 3.2 0 0 1 0 6.2"/></svg>
+        声かけメモ
+      </a>
+      <span class="dr-item soon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.3 2"/></svg>
+        時給計算ツール<span class="soon-tag">準備中</span>
+      </span>
+      <span class="dr-item soon">
+        <svg viewBox="0 0 24 24"><path d="M4.5 5.4A2.4 2.4 0 0 1 6.9 3H19v14H6.9a2.4 2.4 0 0 0-2.4 2.4z"/><path d="M4.5 19.4A2.4 2.4 0 0 1 6.9 17H19v4H6.9a2.4 2.4 0 0 1-2.4-2.4z"/></svg>
+        学んだこと<span class="soon-tag">準備中</span>
+      </span>
+    </nav>
+    <div class="dr-note">「準備中」の2つは、これから中身を決めていくところ。</div>
+  </aside>
+
   <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -506,7 +621,7 @@ function renderWeekPage(){
       let actsH='';
       if(acts.length){
         const aDone=acts.filter(a=>a.done).length;
-        actsH=`<div class="acts"><span class="aprog tnum">└ 枝分かれ ${aDone}/${acts.length}</span>`+acts.map(a=>{
+        actsH=`<div class="acts"><span class="aprog tnum">枝分かれ ${aDone}/${acts.length}</span>`+acts.map(a=>{
           let s=`<span class="act ${a.done?'done':''}" data-act="act-toggle" data-tid="${t.id}" data-aid="${a.id}" role="button" tabindex="0" aria-label="${esc(a.text)}${a.done?'（済）':''}">
             <span class="adot"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4 4 10-10"/></svg></span>
             <span class="atext">${esc(a.text)}</span>
@@ -561,7 +676,11 @@ function renderWeekPage(){
   }
 
   /* 声かけメモ（別アプリ）への導線 */
-  h+=`<div style="text-align:center;"><a class="edit-link" href="koekake.html">🤝 声かけメモを開く ›</a></div>`;
+  h+=`<a class="linkcard" href="koekake.html">
+    <span class="lc-ico"><svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.2"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 4.6a3.2 3.2 0 0 1 0 6.2"/></svg></span>
+    <span class="lc-t"><b>声かけメモ</b><span>ピックアップ → 仮説 → 文章 を書きためる</span></span>
+    <span class="lc-go">›</span>
+  </a>`;
 
   pageWeek.innerHTML=h;
 }
@@ -843,6 +962,25 @@ document.querySelector('main').addEventListener('input', e=>{
   else if(e.target.id==='rvNext'){ autoGrow(e.target); draft.next=e.target.value; }
   else if(e.target.id==='mGoal'){ draft.goal=e.target.value; }
 });
+
+/* ===================== メニュー（引き出し） ===================== */
+(function(){
+  const btn=document.getElementById('menuBtn');
+  const dr=document.getElementById('drawer');
+  const mask=document.getElementById('menuMask');
+  function setOpen(on){
+    dr.classList.toggle('show', on);
+    mask.classList.toggle('show', on);
+    dr.setAttribute('aria-hidden', on?'false':'true');
+    btn.setAttribute('aria-expanded', on?'true':'false');
+    document.body.style.overflow = on ? 'hidden' : '';
+    if(on){ const f=dr.querySelector('a.dr-item'); if(f) f.focus({preventScroll:true}); }
+  }
+  btn.addEventListener('click', ()=> setOpen(!dr.classList.contains('show')));
+  mask.addEventListener('click', ()=> setOpen(false));
+  dr.addEventListener('click', e=>{ if(e.target.closest('.dr-item.current, .dr-item.soon')) setOpen(false); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && dr.classList.contains('show')) setOpen(false); });
+})();
 
 /* ===================== タブ ===================== */
 document.getElementById('tabs').addEventListener('click', e=>{

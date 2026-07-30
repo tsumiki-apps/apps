@@ -76,6 +76,51 @@
   .sync-dot{width:8px; height:8px; border-radius:50%; background:var(--ink-soft); flex:none;}
   .sync-dot.ok{background:var(--good);} .sync-dot.off{background:var(--accent);}
 
+  /* ---------- メニュー（三本線 → 引き出し） ----------
+     z-index は戻るボタン（#tsumikiEdge=999 / #tsumikiPeek=1001）より上。
+     開いている間は左端エッジスワイプ（戻る）を覆って誤爆を防ぐ。 */
+  .menu-mask{
+    position:fixed; inset:0; background:rgba(24,19,10,.42); z-index:1010;
+    opacity:0; pointer-events:none; transition:opacity .22s;
+  }
+  .menu-mask.show{opacity:1; pointer-events:auto;}
+  .drawer{
+    position:fixed; top:0; left:0; bottom:0; width:min(80vw,286px); z-index:1011;
+    background:var(--surface); border-right:1px solid var(--line);
+    box-shadow:0 0 44px -10px rgba(24,19,10,.4);
+    transform:translateX(-101%); transition:transform .26s cubic-bezier(.22,.61,.36,1);
+    padding:calc(env(safe-area-inset-top) + 14px) 12px calc(env(safe-area-inset-bottom) + 14px);
+    display:flex; flex-direction:column; gap:12px; overflow-y:auto; overscroll-behavior:contain;
+  }
+  .drawer.show{transform:none;}
+  .dr-head{display:flex; align-items:center; gap:9px; padding:2px 8px 12px; border-bottom:1px solid var(--line);}
+  .dr-head .cube{
+    width:18px; height:18px; flex:none;
+    background:
+      linear-gradient(var(--accent),var(--accent)) left top/7px 7px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) right top/7px 7px no-repeat,
+      linear-gradient(var(--accent-2),var(--accent-2)) center bottom/7px 7px no-repeat;
+  }
+  .dr-head b{font-family:var(--serif); font-weight:600; font-size:.98rem; letter-spacing:.02em;}
+  .dr-nav{display:grid; gap:3px;}
+  .dr-item{
+    display:flex; align-items:center; gap:11px; padding:12px 11px; border-radius:12px;
+    text-decoration:none; color:var(--ink); font-size:.95rem; font-weight:700; line-height:1.35;
+  }
+  .dr-item svg{
+    width:19px; height:19px; flex:none; color:var(--ink-soft);
+    stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;
+  }
+  .dr-item:active{background:var(--surface-2);}
+  .dr-item.current{background:var(--accent-wash); color:var(--accent-2);}
+  .dr-item.current svg{color:var(--accent-2);}
+  .dr-item.soon{color:var(--ink-soft); font-weight:600;}
+  .dr-item .soon-tag{
+    margin-left:auto; flex:none; font-size:.66rem; font-weight:700; letter-spacing:.04em;
+    color:var(--ink-soft); border:1px solid var(--line-2); border-radius:99px; padding:2px 7px;
+  }
+  .dr-note{margin-top:auto; padding:12px 10px 0; font-size:.72rem; color:var(--ink-soft); line-height:1.5;}
+
   /* ---------- layout ---------- */
   main{max-width:600px; margin:0 auto; padding:16px 16px calc(env(safe-area-inset-bottom) + 40px); display:grid; gap:15px;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); padding:18px 19px;}
@@ -182,6 +227,9 @@
 </head>
 <body>
   <header class="topbar">
+    <button class="iconbtn" id="menuBtn" aria-label="メニュー" aria-expanded="false" aria-controls="drawer">
+      <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+    </button>
     <div class="brand"><span class="cube"></span><h1>声かけメモ</h1></div>
     <span class="spacer"></span>
     <span class="sync-dot" id="syncDot" title="同期状態"></span>
@@ -191,6 +239,31 @@
   </header>
 
   <main id="page"></main>
+
+  <div class="menu-mask" id="menuMask"></div>
+  <aside class="drawer" id="drawer" aria-label="メニュー" aria-hidden="true">
+    <div class="dr-head"><span class="cube"></span><b>独立ロードマップ</b></div>
+    <nav class="dr-nav">
+      <a class="dr-item" href="dokuritsu.html">
+        <svg viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4.8h12l-2 3.1 2 3.1H5"/></svg>
+        独立ロードマップ
+      </a>
+      <span class="dr-item current" aria-current="page">
+        <svg viewBox="0 0 24 24"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.2"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 4.6a3.2 3.2 0 0 1 0 6.2"/></svg>
+        声かけメモ
+      </span>
+      <span class="dr-item soon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.3 2"/></svg>
+        時給計算ツール<span class="soon-tag">準備中</span>
+      </span>
+      <span class="dr-item soon">
+        <svg viewBox="0 0 24 24"><path d="M4.5 5.4A2.4 2.4 0 0 1 6.9 3H19v14H6.9a2.4 2.4 0 0 0-2.4 2.4z"/><path d="M4.5 19.4A2.4 2.4 0 0 1 6.9 17H19v4H6.9a2.4 2.4 0 0 1-2.4-2.4z"/></svg>
+        学んだこと<span class="soon-tag">準備中</span>
+      </span>
+    </nav>
+    <div class="dr-note">「準備中」の2つは、これから中身を決めていくところ。</div>
+  </aside>
+
   <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -511,6 +584,25 @@ document.getElementById('themeBtn').addEventListener('click', ()=>{
 });
 
 /* ===================== 起動 ===================== */
+/* ===================== メニュー（引き出し） ===================== */
+(function(){
+  const btn=document.getElementById('menuBtn');
+  const dr=document.getElementById('drawer');
+  const mask=document.getElementById('menuMask');
+  function setOpen(on){
+    dr.classList.toggle('show', on);
+    mask.classList.toggle('show', on);
+    dr.setAttribute('aria-hidden', on?'false':'true');
+    btn.setAttribute('aria-expanded', on?'true':'false');
+    document.body.style.overflow = on ? 'hidden' : '';
+    if(on){ const f=dr.querySelector('a.dr-item'); if(f) f.focus({preventScroll:true}); }
+  }
+  btn.addEventListener('click', ()=> setOpen(!dr.classList.contains('show')));
+  mask.addEventListener('click', ()=> setOpen(false));
+  dr.addEventListener('click', e=>{ if(e.target.closest('.dr-item.current, .dr-item.soon')) setOpen(false); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && dr.classList.contains('show')) setOpen(false); });
+})();
+
 loadLocal();
 render();
 if(sb){ loadRemote(); subscribeRealtime(); }
