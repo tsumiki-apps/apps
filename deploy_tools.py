@@ -28,15 +28,31 @@ TOOLS = {
     # name: build=ビルドコマンド（不要なら省略） / artifact=配布する成果物HTML /
     #       out=配布ファイル名 / icon=apple-touch-icon / title=ホーム画面名 /
     #       license=プロダクトキーゲートのapp名（有料ツールのみ・不要なら省略）
-    'kouban': {
+    # mazeiro/dakoku 等の単一HTMLはここに載せない：本体は ~/tsumiki-tools/ を直接編集して
+    # git push する運用（2026-07-23決定）。制作物側に開発ソースを持たない。
+
+    # 香盤メーカー（鍵つき）。2026-07-27にライセンス一本化し、無料版 kouban.html は廃止。
+    # 香盤はこの kouban-pro（license='kouban'）へ一本化。購入者にURL＋キーを配布。
+    'kouban-pro': {
         'build': ['npm', '--prefix', str(SEISAKU / 'Kouban'), 'run', 'build'],
         'artifact': SEISAKU / 'Kouban' / 'dist' / 'index.html',
-        'out': 'kouban.html',
+        'out': 'kouban-pro.html',
         'icon': SEISAKU / 'icons' / 'icon-kouban.png',
         'title': '香盤メーカー',
+        'license': 'kouban',
     },
-    # mazeiro はここに載せない：本体は ~/tsumiki-tools/mazeiro.html を直接編集して
-    # git push する運用（2026-07-23決定）。制作物側に開発ソースを持たない。
+
+    # てっぱりボード（鍵つき）。（社名） お客様様向けに 2026-07-31 新規作成。
+    # 香盤メーカーと役割が違う：こちらは「その日どの場の稽古ができるか」専用。
+    # 公演データ（役24・場面23・稽古日26・NG）は本体に同梱している。
+    'teppari': {
+        'build': ['npm', '--prefix', str(SEISAKU / 'Teppari'), 'run', 'build'],
+        'artifact': SEISAKU / 'Teppari' / 'dist' / 'index.html',
+        'out': 'teppari-board.html',
+        'icon': SEISAKU / 'icons' / 'icon-teppari.png',
+        'title': 'てっぱりボード',
+        'license': 'teppari',
+    },
 }
 DEST = Path.home() / 'tsumiki-tools'
 
