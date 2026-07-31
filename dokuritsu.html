@@ -156,9 +156,18 @@
   body.tool-on .tabs{display:none !important;}
   body.tool-on .page{display:none !important;}
   body.tool-on{overflow:hidden;}
-  #backBtn{display:none;}
-  body.tool-on #backBtn{display:grid;}
   body.tool-on #notifyBtn, body.tool-on #syncDot{display:none;}
+  /* 道具を開いている間だけ、左端スワイプでロードマップへ戻る（見えるボタンは置かない） */
+  #toolEdge{display:none; position:fixed; top:0; bottom:0; left:0; width:22px; z-index:1000;}
+  body.tool-on #toolEdge{display:block;}
+  #toolPeek{
+    position:fixed; top:50%; left:0; z-index:1002; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:var(--surface); border:1px solid var(--line); border-radius:50%;
+    box-shadow:0 6px 20px rgba(24,19,10,.28); color:var(--accent-2);
+    font-size:24px; font-weight:600; line-height:1; font-family:var(--sans);
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
   .label{font-size:.74rem; font-weight:700; letter-spacing:.06em; color:var(--accent-2); text-transform:uppercase;}
 
   @media (min-width:1080px){
@@ -378,9 +387,6 @@
 <body>
   <header class="topbar">
     <div class="inner">
-      <button class="iconbtn" id="backBtn" aria-label="独立ロードマップに戻る">
-        <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M15 5l-7 7 7 7"/></svg>
-      </button>
       <button class="iconbtn" id="menuBtn" aria-label="メニュー" aria-expanded="false" aria-controls="drawer">
         <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
       </button>
@@ -428,6 +434,9 @@
       </button>
     </nav>
   </aside>
+
+  <div id="toolEdge"></div>
+  <div id="toolPeek">‹</div>
 
   <div id="toast"></div>
 
@@ -1073,8 +1082,39 @@ function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'no
     else if((location.hash||'') !== (activeTool?'#'+activeTool:'')) history.pushState(null,'',url);
   }
 }
-/* ヘッダーの「‹」は、道具をどれだけ行き来していても必ずロードマップへ戻る */
-document.getElementById('backBtn').addEventListener('click', ()=> openTool(''));
+/* 道具を開いている間の「左端から右へスワイプ＝ロードマップへ戻る」。
+   つみきトップへ戻るスワイプ（#tsumikiEdge）より手前に置き、道具→ロードマップ→つみき の順で戻れるようにする。 */
+(function(){
+  const edge=document.getElementById('toolEdge'), peek=document.getElementById('toolPeek');
+  let sx=0, sy=0, prog=0, dragging=false, W=innerWidth, TRIGGER=Math.min(120, W*0.32);
+  addEventListener('resize', ()=>{ W=innerWidth; TRIGGER=Math.min(120, W*0.32); });
+  function reset(){
+    dragging=false; prog=0;
+    peek.style.transition='transform .25s ease, opacity .25s ease';
+    peek.style.transform='translateX(-70px) scale(.8)'; peek.style.opacity=0;
+  }
+  edge.addEventListener('touchstart', e=>{
+    const t=e.touches[0]; if(t.clientX>26) return;
+    sx=t.clientX; sy=t.clientY; prog=0; dragging=true; peek.style.transition='none';
+  }, {passive:true});
+  addEventListener('touchmove', e=>{
+    if(!dragging) return;
+    const t=e.touches[0]; let dx=t.clientX-sx; const dy=t.clientY-sy;
+    if(Math.abs(dy)>Math.abs(dx)+12){ reset(); return; }
+    if(dx<0) dx=0;
+    prog=Math.min(dx/TRIGGER, 1);
+    peek.style.transform='translateX('+(-70+prog*82)+'px) scale('+(0.8+prog*0.2)+')';
+    peek.style.opacity=prog;
+    if(dx>6 && e.cancelable) e.preventDefault();
+  }, {passive:false});
+  function end(){
+    if(!dragging) return;
+    dragging=false;
+    if(prog>=0.999){ reset(); openTool(''); } else reset();
+  }
+  addEventListener('touchend', end, {passive:true});
+  addEventListener('touchcancel', end, {passive:true});
+})();
 window.addEventListener('popstate', ()=>{
   const id=(location.hash||'').replace('#','');
   openTool(TOOLS[id]?id:'', 'none');
