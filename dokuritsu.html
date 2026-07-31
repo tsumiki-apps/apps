@@ -254,6 +254,12 @@
   .anote-ed .row{display:flex; gap:8px; justify-content:flex-end;}
   .btn.sm{flex:none; padding:9px 16px; font-size:.88rem; border-radius:10px;}
   .aprog{font-size:.72rem; color:var(--ink-soft); font-weight:700; letter-spacing:.04em; padding:0 0 3px 9px;}
+  .aprog.full{color:var(--good);}
+  .autochip{
+    flex:none; align-self:flex-start; font-size:.66rem; font-weight:700; letter-spacing:.03em;
+    color:var(--good); background:var(--good-wash); border:1px solid var(--good);
+    border-radius:999px; padding:2px 7px; line-height:1.4; white-space:nowrap;
+  }
 
   .empty-week{display:grid; gap:12px; justify-items:center; text-align:center; padding:8px 0 2px;}
   .empty-week .em{font-size:2rem;}
@@ -472,6 +478,8 @@ function migrate(){
       if(typeof t.text!=='string') t.text='';
       t.target=Math.max(1, Math.floor(+t.target||1));
       t.count=Math.min(Math.max(0, Math.floor(+t.count||0)), t.target);
+      t.autoDone=!!t.autoDone;
+      t.autoPrev=Math.min(Math.max(0, Math.floor(+t.autoPrev||0)), t.target);
       if(!Array.isArray(t.actions)) t.actions=[];
       t.actions=t.actions.filter(a=>a && typeof a.text==='string' && a.text);
       t.actions.forEach(a=>{ if(!a.id) a.id=uid(); a.done=!!a.done; if(typeof a.note!=='string') a.note=''; });
@@ -542,6 +550,23 @@ function weekStats(w){
   (w.tasks||[]).forEach(t=>{ done+=Math.min(t.count,t.target); total+=t.target; });
   return { done, total, pct: total ? Math.round(done/total*100) : 0 };
 }
+/* 枝分かれAction が全部おわったら、元のタスクも自動で「達成」にする。
+   自動で達成にした分だけは、枝分かれを外したときに元のカウントへ戻す（手動達成には触れない）。
+   戻り値: 'done'（自動達成した）/ 'undone'（自動達成を取り消した）/ null（変化なし） */
+function syncAutoDone(t){
+  const acts=t.actions||[];
+  if(!acts.length){ t.autoDone=false; return null; }
+  if(acts.every(a=>a.done)){
+    if(t.count>=t.target) return null;      // すでに手動で達成済みなら触らない
+    t.autoPrev=t.count; t.count=t.target; t.autoDone=true;
+    return 'done';
+  }
+  if(t.autoDone){
+    t.count=Math.min(Math.max(0, t.autoPrev||0), t.target); t.autoDone=false;
+    return 'undone';
+  }
+  return null;
+}
 function prevWeekWithTasks(){
   const cur=weekKey();
   const keys=Object.keys(db.weeks).filter(k=>k<cur && (db.weeks[k].tasks||[]).length).sort();
@@ -602,7 +627,8 @@ function renderWeekPage(){
       let actsH='';
       if(acts.length){
         const aDone=acts.filter(a=>a.done).length;
-        actsH=`<div class="acts"><span class="aprog tnum">枝分かれ ${aDone}/${acts.length}</span>`+acts.map(a=>{
+        const aAll=aDone===acts.length;
+        actsH=`<div class="acts"><span class="aprog tnum ${aAll?'full':''}">枝分かれ ${aDone}/${acts.length}${aAll?' ・完了':''}</span>`+acts.map(a=>{
           let s=`<span class="act ${a.done?'done':''}" data-act="act-toggle" data-tid="${t.id}" data-aid="${a.id}" role="button" tabindex="0" aria-label="${esc(a.text)}${a.done?'（済）':''}">
             <span class="adot"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4 4 10-10"/></svg></span>
             <span class="atext">${esc(a.text)}</span>
@@ -621,7 +647,7 @@ function renderWeekPage(){
       }
       h+=`<div class="taskwrap"><div class="task ${cls}" data-act="inc" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.text)} ${t.count}/${t.target}">
         <span class="tick">${tick}</span>
-        <span class="tbody"><span class="ttext">${esc(t.text)}</span>${t.target>1?`<span class="bar tbar ${full?'good':''}"><i style="width:${pct}%"></i></span>`:''}</span>
+        <span class="tbody"><span class="ttext">${esc(t.text)}</span>${t.autoDone?'<span class="autochip">枝分かれ完了で自動達成</span>':''}${t.target>1?`<span class="bar tbar ${full?'good':''}"><i style="width:${pct}%"></i></span>`:''}</span>
         ${t.target>1?`<span class="tcount tnum">${t.count}/${t.target}</span>`:''}
         <button class="dec" data-act="dec" data-id="${t.id}" ${t.count===0?'disabled':''} aria-label="1つ戻す">−</button>
       </div>${actsH}</div>`;
@@ -826,8 +852,11 @@ document.querySelector('main').addEventListener('click', e=>{
     const t=w.tasks.find(x=>x.id===btn.dataset.tid); if(!t) return;
     const a=(t.actions||[]).find(x=>x.id===btn.dataset.aid); if(!a) return;
     a.done=!a.done;
+    const r=syncAutoDone(t);
     save(); render();
-    if(a.done && t.actions.every(x=>x.done)) toast('枝分かれ全部クリア！本体を進めよう');
+    if(r==='done') toast('枝分かれ全部クリア！「'+t.text+'」を達成にしました');
+    else if(r==='undone') toast('枝分かれを外したので「'+t.text+'」の自動達成を取り消しました');
+    else if(a.done && t.actions.every(x=>x.done)) toast('枝分かれ全部クリア！');
     return;
   }
 
@@ -838,6 +867,7 @@ document.querySelector('main').addEventListener('click', e=>{
     const t=w.tasks.find(x=>x.id===btn.dataset.id); if(!t) return;
     if(act==='inc'){ if(t.count>=t.target) return; t.count++; }
     else { e.stopPropagation(); if(t.count<=0) return; t.count--; }
+    t.autoDone=false;   // 手で数えたら自動達成の管理から外す（枝分かれを外しても巻き戻さない）
     save(); render();
     if(act==='inc' && t.count>=t.target) toast('「'+t.text+'」達成！');
     return;
@@ -871,7 +901,11 @@ document.querySelector('main').addEventListener('click', e=>{
         if(m){ used.add(m.id); return {id:m.id, text:line, done:!!m.done, note:m.note||''}; }
         return {id:uid(), text:line, done:false, note:''};
       });
-      return {id:t.id, text:t.text.trim(), target, count:Math.min(t.count||0, target), actions};
+      const o=orig.find(x=>x.id===t.id)||{};
+      const nt={id:t.id, text:t.text.trim(), target, count:Math.min(t.count||0, target), actions,
+                autoDone:!!o.autoDone, autoPrev:Math.min(Math.max(0, Math.floor(+o.autoPrev||0)), target)};
+      syncAutoDone(nt);   // 編集で枝分かれが全部済みになった／崩れた場合もここで合わせる
+      return nt;
     }).filter(t=>t.text);
     mode=null; draft=null; save(); render();
     toast('今週の目標を保存しました');
