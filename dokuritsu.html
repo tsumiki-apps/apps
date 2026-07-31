@@ -116,6 +116,7 @@
   .dr-item{
     display:flex; align-items:center; gap:11px; padding:12px 11px; border-radius:12px;
     text-decoration:none; color:var(--ink); font-size:.95rem; font-weight:700; line-height:1.35;
+    width:100%; text-align:left; background:transparent; border:none; font-family:var(--sans); cursor:pointer;
   }
   .dr-item svg{
     width:19px; height:19px; flex:none; color:var(--ink-soft);
@@ -145,6 +146,19 @@
   .page{display:none; gap:15px; min-width:0;}
   .page.active{display:grid;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); padding:18px 19px;}
+
+  /* ---------- 道具箱（別ページに飛ばず、この画面の中で開く） ---------- */
+  #toolPane{display:none; grid-column:1/-1;}
+  .tool-frame{display:none; width:100%; border:0; background:var(--paper);}
+  .tool-frame.active{display:block;}
+  body.tool-on #toolPane{display:block;}
+  body.tool-on main{max-width:none; padding:0; grid-template-columns:1fr; gap:0;}
+  body.tool-on .tabs{display:none !important;}
+  body.tool-on .page{display:none !important;}
+  body.tool-on{overflow:hidden;}
+  #backBtn{display:none;}
+  body.tool-on #backBtn{display:grid;}
+  body.tool-on #notifyBtn, body.tool-on #syncDot{display:none;}
   .label{font-size:.74rem; font-weight:700; letter-spacing:.06em; color:var(--accent-2); text-transform:uppercase;}
 
   @media (min-width:1080px){
@@ -364,10 +378,13 @@
 <body>
   <header class="topbar">
     <div class="inner">
+      <button class="iconbtn" id="backBtn" aria-label="独立ロードマップに戻る">
+        <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
       <button class="iconbtn" id="menuBtn" aria-label="メニュー" aria-expanded="false" aria-controls="drawer">
         <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
       </button>
-      <div class="brand"><span class="cube"></span><h1>独立ロードマップ</h1></div>
+      <div class="brand"><span class="cube"></span><h1 id="appTitle">独立ロードマップ</h1></div>
       <span class="spacer"></span>
       <span class="sync-dot" id="syncDot" title="同期状態"></span>
       <button class="iconbtn" id="notifyBtn" aria-label="振り返り通知">
@@ -386,28 +403,29 @@
     </nav>
     <section class="page active" id="pageWeek"></section>
     <section class="page" id="pageGrad"></section>
+    <section id="toolPane"></section>
   </main>
 
   <div class="menu-mask" id="menuMask"></div>
   <aside class="drawer" id="drawer" aria-label="メニュー" aria-hidden="true">
     <div class="dr-head"><span class="cube"></span><b>独立の道具箱</b></div>
     <nav class="dr-nav">
-      <span class="dr-item current" aria-current="page">
+      <button class="dr-item current" type="button" data-tool="" aria-current="page">
         <svg viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4.8h12l-2 3.1 2 3.1H5"/></svg>
         独立ロードマップ
-      </span>
-      <a class="dr-item" href="koekake.html">
+      </button>
+      <button class="dr-item" type="button" data-tool="koekake">
         <svg viewBox="0 0 24 24"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.2"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 4.6a3.2 3.2 0 0 1 0 6.2"/></svg>
         声かけメモ
-      </a>
-      <a class="dr-item" href="jikyu.html">
+      </button>
+      <button class="dr-item" type="button" data-tool="jikyu">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.3 2"/></svg>
         時給計算
-      </a>
-      <a class="dr-item" href="manabi.html">
+      </button>
+      <button class="dr-item" type="button" data-tool="manabi">
         <svg viewBox="0 0 24 24"><path d="M4.5 5.4A2.4 2.4 0 0 1 6.9 3H19v14H6.9a2.4 2.4 0 0 0-2.4 2.4z"/><path d="M4.5 19.4A2.4 2.4 0 0 1 6.9 17H19v4H6.9a2.4 2.4 0 0 1-2.4-2.4z"/></svg>
         学んだこと
-      </a>
+      </button>
     </nav>
   </aside>
 
@@ -984,11 +1002,15 @@ document.querySelector('main').addEventListener('input', e=>{
     dr.setAttribute('aria-hidden', on?'false':'true');
     btn.setAttribute('aria-expanded', on?'true':'false');
     document.body.style.overflow = on ? 'hidden' : '';
-    if(on){ const f=dr.querySelector('a.dr-item'); if(f) f.focus({preventScroll:true}); }
+    if(on){ const f=dr.querySelector('.dr-item'); if(f) f.focus({preventScroll:true}); }
   }
   btn.addEventListener('click', ()=> setOpen(!dr.classList.contains('show')));
   mask.addEventListener('click', ()=> setOpen(false));
-  dr.addEventListener('click', e=>{ if(e.target.closest('.dr-item.current, .dr-item.soon')) setOpen(false); });
+  dr.addEventListener('click', e=>{
+    const it=e.target.closest('.dr-item'); if(!it) return;
+    setOpen(false);
+    if(it.hasAttribute('data-tool')) openTool(it.dataset.tool);
+  });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && dr.classList.contains('show')) setOpen(false); });
 })();
 
@@ -1000,6 +1022,64 @@ document.getElementById('tabs').addEventListener('click', e=>{
   document.getElementById('pageWeek').classList.toggle('active', activeTab==='week');
   document.getElementById('pageGrad').classList.toggle('active', activeTab==='grad');
 });
+
+/* ===================== 道具箱（別ページに飛ばず、この画面の中で開く） =====================
+   声かけメモ・時給計算・学んだことは、それぞれ独立したHTML（＝別々の保存先・同期先）のまま、
+   この画面の中に <iframe> で読み込んで表示する。ページ遷移が起きないので「別サイトに飛んだ」
+   感じにならず、一度開いた道具は入力途中のままタブのように行き来できる。 */
+const TOOLS = {
+  koekake:{ title:'声かけメモ', src:'koekake.html' },
+  jikyu  :{ title:'時給計算',   src:'jikyu.html'   },
+  manabi :{ title:'学んだこと', src:'manabi.html'  },
+};
+let activeTool = '';
+
+function currentTheme(){ return document.documentElement.getAttribute('data-theme') || ''; }
+function sizeToolFrames(){
+  const h=document.querySelector('.topbar').offsetHeight;
+  document.querySelectorAll('.tool-frame').forEach(f=>{ f.style.height='calc(100dvh - '+h+'px)'; });
+}
+function postToTool(f){ try{ f.contentWindow.postMessage({type:'tsumiki-embed-theme', theme:currentTheme()}, '*'); }catch(e){} }
+function broadcastTheme(){ document.querySelectorAll('.tool-frame').forEach(postToTool); }
+
+function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'none' */
+  const t=TOOLS[id]||null;
+  activeTool = t ? id : '';
+  document.body.classList.toggle('tool-on', !!t);
+  document.getElementById('appTitle').textContent = t ? t.title : '独立ロードマップ';
+  document.querySelectorAll('.dr-item[data-tool]').forEach(x=>{
+    const on = (x.dataset.tool||'') === activeTool;
+    x.classList.toggle('current', on);
+    if(on) x.setAttribute('aria-current','page'); else x.removeAttribute('aria-current');
+  });
+  const pane=document.getElementById('toolPane');
+  if(t){
+    let f=pane.querySelector('.tool-frame[data-tool="'+id+'"]');
+    if(!f){   /* 初回だけ読み込む。2回目からは開いたままのものを見せる */
+      f=document.createElement('iframe');
+      f.className='tool-frame'; f.dataset.tool=id; f.title=t.title;
+      f.src=t.src+'?embed=1'+(currentTheme()?'&theme='+currentTheme():'');
+      f.addEventListener('load', ()=>postToTool(f));
+      pane.appendChild(f);
+    }
+    pane.querySelectorAll('.tool-frame').forEach(x=>x.classList.toggle('active', x===f));
+    sizeToolFrames();
+    window.scrollTo(0,0);
+  }
+  /* URLの #jikyu などを合わせる → 端末の「戻る」でロードマップへ帰れる */
+  if(histMode!=='none'){
+    const url = activeTool ? '#'+activeTool : location.pathname+location.search;
+    if(histMode==='replace') history.replaceState(null,'',url);
+    else if((location.hash||'') !== (activeTool?'#'+activeTool:'')) history.pushState(null,'',url);
+  }
+}
+/* ヘッダーの「‹」は、道具をどれだけ行き来していても必ずロードマップへ戻る */
+document.getElementById('backBtn').addEventListener('click', ()=> openTool(''));
+window.addEventListener('popstate', ()=>{
+  const id=(location.hash||'').replace('#','');
+  openTool(TOOLS[id]?id:'', 'none');
+});
+window.addEventListener('resize', ()=>{ if(activeTool) sizeToolFrames(); });
 
 /* ===================== 金曜の振り返り通知 ===================== */
 function notifyEnabled(){ return localStorage.getItem(NKEY)==='1' && ('Notification' in window) && Notification.permission==='granted'; }
@@ -1047,12 +1127,15 @@ document.getElementById('themeBtn').addEventListener('click', ()=>{
   const cur=document.documentElement.getAttribute('data-theme');
   const isDark = cur ? cur==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   const next=isDark?'light':'dark'; applyTheme(next); localStorage.setItem('tsumiki_roadmap_theme', next);
+  broadcastTheme();   /* 開いている道具（iframe）の表示も一緒に切り替える */
 });
 
 /* ===================== 起動 ===================== */
 loadLocal();
 render();
 checkNotify();
+/* 直リンク（#jikyu など）で開かれたときも、飛ばずにこの画面の中で開く */
+(function(){ const id=(location.hash||'').replace('#',''); if(TOOLS[id]) openTool(id,'replace'); })();
 if(sb){ loadRemote(); subscribeRealtime(); }
 </script>
 <!-- tsumiki-back-button -->
