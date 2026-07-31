@@ -288,9 +288,11 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .amz-order-item .product{font-size:13px;font-weight:500;word-break:break-word}
 .amz-order-item .meta{font-size:11px;color:var(--sub);margin-top:3px}
 .amz-order-item .amt{font-size:14px;font-weight:600;white-space:nowrap}
-.amz-order-item .link-info{grid-column:1/-1;font-size:11px;padding:5px 8px;background:#fff;border-radius:6px;display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px}
+.amz-order-item .link-info{grid-column:1/-1;font-size:11px;padding:5px 8px;background:#fff;border-radius:6px;display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px;flex-wrap:wrap}
 .amz-order-item .link-info.unlinked{color:var(--sub)}
 .amz-order-item .link-info.linked-info{color:var(--blue)}
+.amz-order-item .loans-strip{grid-column:1/-1;margin-top:2px}
+.amz-order-item .amz-actions{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
 .muted{color:var(--sub);font-size:11px}
 @media(max-width:480px){.cat-row .name{flex:0 0 90px;font-size:12px}.top-tab{font-size:12px;padding:8px 4px}}
 .sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);background:rgba(120,120,128,.12);padding:4px 10px;border-radius:999px;margin:-4px 0 14px}
@@ -367,7 +369,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
   <!-- Amazonタブ -->
   <div class="tab-content" id="tab-amazon">
     <div class="card" style="padding:12px 14px">
-      <div style="font-size:12px;line-height:1.6;opacity:.85">📦 Amazon注文は<strong>ブックマークレット</strong>で取り込みます。取りこぼしは下の「＋手動追加」で補えます。</div>
+      <div style="font-size:12px;line-height:1.6;opacity:.85">📦 Amazon注文は<strong>ブックマークレット</strong>で取り込みます。取りこぼしは下の「＋手動追加」で補えます。<br>人のために買ったものは、その注文の「🤝 立て替えに送る」から台帳に登録できます（商品名で残るので、あとで何か分かります）。</div>
     </div>
     <div class="card empty-state" id="amazonEmpty" style="display:none">
       <div class="es-ic">📦</div>
@@ -388,6 +390,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
         <button class="filter-btn active" data-amz-filter="all">すべて</button>
         <button class="filter-btn" data-amz-filter="unlinked">未紐付け</button>
         <button class="filter-btn" data-amz-filter="linked">紐付け済み</button>
+        <button class="filter-btn" data-amz-filter="loaned">🤝 立て替えあり</button>
       </div>
       <div class="amz-order-list" id="amazonOrdersList"></div>
     </div>
@@ -596,7 +599,7 @@ const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
 let data={months:{},amazonOrders:[],loans:[],payments:[],installments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{},deletedInstallmentIds:{}};
-let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,instEditingId:null,instTargetTxId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set()};
+let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanFromAmzTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,instEditingId:null,instTargetTxId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set()};
 
 function load(){
   try{
@@ -706,7 +709,7 @@ function mergeState(a,b){
 function stateSig(d){
   if(!d)return '';
   const tx=[];allTxArr(d).forEach(t=>tx.push(t.id+':'+(t.cycleOverride||'')+':'+(t.linkedAmazonId||'')+':'+((t.note||'').replace(/:/g,';'))+':'+((t.category||'').replace(/:/g,';'))));tx.sort();
-  const ln=(d.loans||[]).map(l=>l.id+':'+l.amount+':'+(l.personName||'')).sort();
+  const ln=(d.loans||[]).map(l=>l.id+':'+l.amount+':'+(l.personName||'')+':'+(l.txId||'')+':'+(l.amazonId||'')).sort();
   const pm=(d.payments||[]).map(p=>p.id+':'+p.amount).sort();
   const az=(d.amazonOrders||[]).map(o=>o.id).sort();
   const ip=(d.installments||[]).map(p=>[p.id,p.txId||'',p.principal,p.fee,p.count,p.startCycle,p.monthly||''].join(':')).sort();
@@ -1046,7 +1049,7 @@ function autoLinkAmazon(eligibleIds){
       const c={t,o:cands[0],n:cands.length,dist:Math.abs(daysBetween(t.date,cands[0].orderDate))};
       if(!best||c.n<best.n||(c.n===best.n&&c.dist<best.dist))best=c;
     });
-    if(best){best.t.linkedAmazonId=best.o.id;linked.add(best.o.id);changed=true;newLinks++;}
+    if(best){best.t.linkedAmazonId=best.o.id;syncAmazonLoanTx(best.o.id,best.t.id);linked.add(best.o.id);changed=true;newLinks++;}
   }
   return newLinks; // 今回新たに紐付けた件数（同期後の保存判定に使う）
 }
@@ -1174,6 +1177,20 @@ function allCycleKeys(){
 }
 function getLoansForTx(txId){return data.loans.filter(l=>l.txId===txId);}
 function getLoanTotalForTx(txId){return getLoansForTx(txId).reduce((s,l)=>s+l.amount,0);}
+// Amazon注文1件に対する立て替え。「注文から送ったもの(amazonId)」＋「同じ請求をクレカ明細側から立替したもの」を
+// まとめて1つの買い物として扱う（Amazonタブと明細タブで同じ立て替えが見える）
+function getLoansForAmazon(orderId){
+  const tx=findTxLinkedToAmazon(orderId);
+  return data.loans.filter(l=>l.amazonId===orderId||(tx&&!l.amazonId&&l.txId===tx.id));
+}
+function getLoanTotalForAmazon(orderId){return getLoansForAmazon(orderId).reduce((s,l)=>s+l.amount,0);}
+// 立て替え1件に対応するAmazon注文（注文から送った＝amazonId／明細から送った＝その明細の紐付け先）
+function amazonForLoan(l){
+  if(!l)return null;
+  if(l.amazonId){const o=data.amazonOrders.find(x=>x.id===l.amazonId);if(o)return o;}
+  if(l.txId){const t=findTx(l.txId);if(t&&t.linkedAmazonId)return data.amazonOrders.find(x=>x.id===t.linkedAmazonId)||null;}
+  return null;
+}
 function getPaymentsForLoan(loanId){return data.payments.filter(p=>p.loanId===loanId);}
 function getPaidAmount(loanId){return getPaymentsForLoan(loanId).reduce((s,p)=>s+p.amount,0);}
 function getRemaining(l){return l.amount-getPaidAmount(l.id);}
@@ -1764,6 +1781,15 @@ function shortenAmazonProduct(name){
   if(short.length<=2)return short.join(' / ');
   return short.slice(0,2).join(' / ')+' 他'+(short.length-2)+'件';
 }
+// 幅で切らずノイズだけ落とした商品名。明細書のように「折り返して全部見せたい」場所で使う
+function cleanAmazonProduct(name){
+  const raw=String(name||'');
+  if(!raw.trim())return raw;
+  const cleaned=raw.split(' / ').map(x=>shortenOneAmazonItem(x.trim())).filter(Boolean);
+  if(!cleaned.length)return raw;
+  if(cleaned.length<=3)return cleaned.join(' / ');
+  return cleaned.slice(0,3).join(' / ')+' 他'+(cleaned.length-3)+'件';
+}
 
 function toggleTxExpand(id){
   if(state.expandedTxIds.has(id))state.expandedTxIds.delete(id);
@@ -1989,16 +2015,34 @@ function renderAmazonTab(){
     const l=findTxLinkedToAmazon(o.id);
     if(state.currentAmzFilter==='linked')return!!l;
     if(state.currentAmzFilter==='unlinked')return!l;
+    if(state.currentAmzFilter==='loaned')return getLoansForAmazon(o.id).length>0;
     return true;
   }).sort((a,b)=>b.orderDate.localeCompare(a.orderDate));
   const listEl=document.getElementById('amazonOrdersList');
   if(f.length===0){listEl.innerHTML='<div class="empty">該当する注文がありません</div>';return;}
   listEl.innerHTML=f.map(o=>{
     const lt=findTxLinkedToAmazon(o.id);
+    // この注文に紐づく立て替え（注文から送った分＋紐付いた明細から送った分）
+    const loans=getLoansForAmazon(o.id);
+    const lsum=loans.reduce((s,l)=>s+l.amount,0);
+    const selfAmt=o.amount-lsum;
+    const fullyLoaned=lsum>=o.amount&&lsum>0;
+    const chips=loans.map(l=>{
+      const paid=getRemaining(l)<=0;
+      return `<span class="loan-chip ${paid?'collected':''}">${paid?'✓':'🤝'} ${escapeHtml(l.personName)} ¥${l.amount.toLocaleString()}</span>`;
+    }).join('');
+    const strip=loans.length
+      ?`<div class="loans-strip">${chips}${(lsum>0&&selfAmt>0)?`<span class="self-chip">自分: ¥${selfAmt.toLocaleString()}</span>`:''}${fullyLoaned?`<span class="self-chip" style="background:var(--soft-pink)">全額立て替え</span>`:''}</div>`
+      :'';
     return `<div class="amz-order-item ${lt?'linked':''}">
       <div><div class="product" title="${escapeHtml(o.productName)}">${escapeHtml(shortenAmazonProduct(o.productName))}</div><div class="meta">${o.orderDate}${o.deliveryTo?' ／ '+escapeHtml(o.deliveryTo):''}${o.memo?' ／ '+escapeHtml(o.memo):''}</div></div>
       <div class="amt">¥${o.amount.toLocaleString()}</div>
+      ${strip}
       <div class="link-info ${lt?'linked-info':'unlinked'}">${lt?'🔗 紐付け済み: '+lt.date:'未紐付け'}<button class="btn-mini" onclick="openManualAmazonModal(null,'${o.id}')">編集</button></div>
+      <div class="amz-actions">
+        <button class="btn-mini primary" onclick="openLoanFromAmazonModal('${o.id}')">${loans.length?'+ 立て替えを追加':'🤝 立て替えに送る'}</button>
+        ${loans.length?`<button class="btn-mini" onclick="switchTab('loans')">台帳で見る</button>`:''}
+      </div>
     </div>`;
   }).join('');
 }
@@ -2011,7 +2055,7 @@ function renderLoansTab(){
   document.getElementById('loanOutstandingTotal').textContent='¥'+out.toLocaleString();
   document.getElementById('loanCollectedTotal').textContent='¥'+col.toLocaleString();
   const wrap=document.getElementById('loansByPerson');
-  if(stats.length===0){wrap.innerHTML='<div class="card empty-state"><div class="es-ic">🤝</div><div class="es-title">立て替えはまだありません</div><div class="es-sub">明細から「立て替えに送る」か、上の「＋ 立て替えを手動で追加」で登録できます。</div></div>';return;}
+  if(stats.length===0){wrap.innerHTML='<div class="card empty-state"><div class="es-ic">🤝</div><div class="es-title">立て替えはまだありません</div><div class="es-sub">クレカ明細やAmazon注文から「立て替えに送る」か、上の「＋ 立て替えを手動で追加」で登録できます。</div></div>';return;}
   wrap.innerHTML=stats.map(s=>renderPersonCard(s)).join('');
 }
 
@@ -2037,13 +2081,15 @@ function renderLoanItem(l){
   const pct=Math.min(100,(paid/l.amount)*100);
   const expanded=state.expandedLoanIds.has(l.id);
   const payments=getPaymentsForLoan(l.id).sort((a,b)=>b.date.localeCompare(a.date));
-  const src=l.txId?'💳 クレカ明細から':'✋ 手動追加';
+  const src=l.amazonId?'📦 Amazon注文から':(l.txId?'💳 クレカ明細から':'✋ 手動追加');
+  const az=amazonForLoan(l);
+  const dname=az?shortenAmazonProduct(az.productName):(l.description||'(内容なし)');
   const pHtml=payments.length===0
     ?'<div class="muted" style="padding:6px 0">回収レコードなし</div>'
     :payments.map(p=>`<div class="payment-row"><div><div>${p.date}</div>${p.memo?`<div class="info">${escapeHtml(p.memo)}</div>`:''}</div><div class="amt">¥${p.amount.toLocaleString()}</div><button class="btn-mini danger" onclick="deletePayment('${p.id}')">削除</button></div>`).join('');
   return `<div class="loan-item ${full?'fully-paid':''} ${expanded?'expanded':''}">
     <div class="loan-item-head" onclick="toggleLoanExpand('${l.id}')">
-      <div><div class="loan-desc">${escapeHtml(l.description||'(内容なし)')}</div><div class="loan-meta">${l.date} ／ ${src}${l.memo?' ／ '+escapeHtml(l.memo):''}</div></div>
+      <div><div class="loan-desc" title="${escapeHtml(az?az.productName:(l.description||''))}">${escapeHtml(dname)}</div><div class="loan-meta">${l.date} ／ ${src}${l.memo?' ／ '+escapeHtml(l.memo):''}</div></div>
       <div class="loan-amt">¥${l.amount.toLocaleString()}<div style="font-size:10px;color:${full?'var(--green)':'var(--orange)'}">${full?'✓ 完済':'残¥'+rem.toLocaleString()}</div></div>
     </div>
     <div class="loan-progress"><div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div><div>${pct.toFixed(0)}%</div></div>
@@ -2062,12 +2108,33 @@ function togglePerson(n){if(state.expandedPersonNames.has(n))state.expandedPerso
 function toggleLoanExpand(id){if(state.expandedLoanIds.has(id))state.expandedLoanIds.delete(id);else state.expandedLoanIds.add(id);renderLoansTab();}
 
 // モーダル: 立て替え化
+// 対象は「クレカ明細」か「Amazon注文」の2種類。どちらでも同じモーダル・同じ計算で扱えるよう共通の形に直す。
+function loanTargetInfo(){
+  if(state.loanFromAmzTarget){
+    const o=data.amazonOrders.find(x=>x.id===state.loanFromAmzTarget);if(!o)return null;
+    const tx=findTxLinkedToAmazon(o.id);
+    return {kind:'amazon',amazonId:o.id,txId:tx?tx.id:null,amount:o.amount,date:o.orderDate,
+            description:o.productName,label:'📦 '+shortenAmazonProduct(o.productName),assigned:getLoanTotalForAmazon(o.id)};
+  }
+  const t=findTx(state.loanFromTxTarget);if(!t)return null;
+  return {kind:'tx',amazonId:null,txId:t.id,amount:t.amount,date:t.date,
+          description:t.description,label:t.description,assigned:getLoanTotalForTx(t.id)};
+}
 function openLoanFromTxModal(txId){
-  const t=findTx(txId);if(!t)return;
-  state.loanFromTxTarget=txId;
-  const lt=getLoanTotalForTx(txId);
-  const rem=t.amount-lt;
-  document.getElementById('loanFromTxSub').textContent=`${t.description} ／ ${t.date} ／ ¥${t.amount.toLocaleString()}（未割当 ¥${rem.toLocaleString()}）`;
+  if(!findTx(txId))return;
+  state.loanFromTxTarget=txId;state.loanFromAmzTarget=null;
+  openLoanModalForTarget();
+}
+// Amazonタブから：注文をそのまま立て替えに送る（紐付いた明細があればその明細の立替として登録される）
+function openLoanFromAmazonModal(orderId){
+  if(!data.amazonOrders.some(o=>o.id===orderId))return;
+  state.loanFromAmzTarget=orderId;state.loanFromTxTarget=null;
+  openLoanModalForTarget();
+}
+function openLoanModalForTarget(){
+  const inf=loanTargetInfo();if(!inf)return;
+  const rem=inf.amount-inf.assigned;
+  document.getElementById('loanFromTxSub').textContent=`${inf.label} ／ ${inf.date} ／ ¥${inf.amount.toLocaleString()}（未割当 ¥${rem.toLocaleString()}）`;
   document.getElementById('loanPersonName').value='';
   document.getElementById('loanAmount').value=rem>0?rem:'';
   document.getElementById('loanMemo').value='';
@@ -2079,7 +2146,7 @@ function openLoanFromTxModal(txId){
   document.getElementById('loanFromTxModal').classList.add('show');
   setTimeout(()=>document.getElementById('loanPersonName').focus(),100);
 }
-function closeLoanFromTxModal(){document.getElementById('loanFromTxModal').classList.remove('show');state.loanFromTxTarget=null;}
+function closeLoanFromTxModal(){document.getElementById('loanFromTxModal').classList.remove('show');state.loanFromTxTarget=null;state.loanFromAmzTarget=null;}
 
 // 立替モード切替（1人 / 割り勘）
 function setLoanMode(m){
@@ -2114,31 +2181,32 @@ function splitShares(total,others,includeSelf){
 }
 function renderSplitPreview(){
   const el=document.getElementById('splitPreview');if(!el)return;
-  const t=findTx(state.loanFromTxTarget);if(!t){el.innerHTML='';return;}
+  const inf=loanTargetInfo();if(!inf){el.innerHTML='';return;}
   const others=state.splitNames.length;
   const includeSelf=document.getElementById('splitIncludeSelf').checked;
   const count=others+(includeSelf?1:0);
   if(others===0){el.innerHTML='相手を追加すると、1人あたりの金額を計算します。';return;}
-  const shares=splitShares(t.amount,others,includeSelf);
+  const shares=splitShares(inf.amount,others,includeSelf);
   const allSame=shares.every(s=>s===shares[0]);
-  const yourShare=includeSelf?(t.amount-shares.reduce((a,b)=>a+b,0)):0;
+  const yourShare=includeSelf?(inf.amount-shares.reduce((a,b)=>a+b,0)):0;
   let line=allSame?`相手1人あたり <b>¥${(shares[0]||0).toLocaleString()}</b>`:state.splitNames.map((nm,i)=>`${escapeHtml(nm)} ¥${shares[i].toLocaleString()}`).join(' ／ ');
-  el.innerHTML=`¥${t.amount.toLocaleString()} を <b>${count}人</b>で割り勘<br>${line}<br>`+
+  el.innerHTML=`¥${inf.amount.toLocaleString()} を <b>${count}人</b>で割り勘<br>${line}<br>`+
     (includeSelf?`あなた（こうだい）の負担：¥${yourShare.toLocaleString()}`:'あなたは全額回収（負担なし）');
 }
 
 function saveLoanFromTx(){
-  const t=findTx(state.loanFromTxTarget);if(!t)return;
+  const inf=loanTargetInfo();if(!inf)return;
+  const src=inf.amazonId?{amazonId:inf.amazonId}:{};   // Amazon注文から送った印（明細書で商品名を出すのに使う）
   if(state.loanMode==='split'){
     const others=state.splitNames.slice();
     if(others.length===0){alert('割り勘する相手を1人以上追加してください');return;}
     const includeSelf=document.getElementById('splitIncludeSelf').checked;
     const memo=document.getElementById('splitMemo').value.trim();
-    const shares=splitShares(t.amount,others.length,includeSelf);
+    const shares=splitShares(inf.amount,others.length,includeSelf);
     const count=others.length+(includeSelf?1:0);
     const gid='sp_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
     others.forEach((name,i)=>{
-      data.loans.push({id:'ln_'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5),txId:t.id,personName:name,amount:shares[i],date:t.date,description:t.description,memo,createdAt:Date.now(),splitTotal:t.amount,splitCount:count,splitMembers:others.slice(),splitIncludesSelf:includeSelf,splitGroupId:gid});
+      data.loans.push({id:'ln_'+Date.now().toString(36)+i.toString(36)+Math.random().toString(36).slice(2,5),txId:inf.txId,...src,personName:name,amount:shares[i],date:inf.date,description:inf.description,memo,createdAt:Date.now(),splitTotal:inf.amount,splitCount:count,splitMembers:others.slice(),splitIncludesSelf:includeSelf,splitGroupId:gid});
       addPersonName(name);
     });
     save();closeLoanFromTxModal();render();
@@ -2149,9 +2217,9 @@ function saveLoanFromTx(){
   const memo=document.getElementById('loanMemo').value.trim();
   if(!name){alert('相手の名前を入力してください');return;}
   if(isNaN(amount)||amount<=0){alert('金額を入力してください');return;}
-  const ex=getLoanTotalForTx(t.id);
-  if(ex+amount>t.amount){if(!confirm(`既存¥${ex.toLocaleString()} + 今回¥${amount.toLocaleString()} が取引金額¥${t.amount.toLocaleString()}を超えます。続行しますか？`))return;}
-  data.loans.push({id:'ln_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),txId:t.id,personName:name,amount,date:t.date,description:t.description,memo,createdAt:Date.now(),splitTotal:t.amount});
+  const ex=inf.assigned;
+  if(ex+amount>inf.amount){if(!confirm(`既存¥${ex.toLocaleString()} + 今回¥${amount.toLocaleString()} が${inf.kind==='amazon'?'注文金額':'取引金額'}¥${inf.amount.toLocaleString()}を超えます。続行しますか？`))return;}
+  data.loans.push({id:'ln_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),txId:inf.txId,...src,personName:name,amount,date:inf.date,description:inf.description,memo,createdAt:Date.now(),splitTotal:inf.amount});
   addPersonName(name);save();closeLoanFromTxModal();render();
 }
 
@@ -2230,7 +2298,21 @@ function getChargeContext(l){
       includesSelf=tot<original;
     }else{members=[l.personName];includesSelf=false;}
   }
-  return {original,members,includesSelf,count:members.length+(includesSelf?1:0)};
+  // Amazonが紐付いていれば、明細書には店名(アマゾン…)ではなく商品名と注文金額を出す
+  return {original,members,includesSelf,count:members.length+(includesSelf?1:0),az:amazonForLoan(l)};
+}
+// 文字列を最大maxLines行に折り返す（日本語は文字単位。入りきらない分は末尾…）
+function wrapText(c,str,maxW,maxLines){
+  const chars=[...String(str||'')];
+  const lines=[];let cur='';
+  for(let i=0;i<chars.length;i++){
+    const ch=chars[i];
+    if(c.measureText(cur+ch).width<=maxW){cur+=ch;continue;}
+    if(lines.length+1>=maxLines)return lines.concat([ellipsisText(c,cur+chars.slice(i).join(''),maxW)]);
+    lines.push(cur);cur=ch;
+  }
+  lines.push(cur);
+  return lines.length?lines:[''];
 }
 function membersLabel(ctx){const a=ctx.members.slice();if(ctx.includesSelf)a.push('こうだい');return a.join('・');}
 function openReceiptModal(name){
@@ -2264,14 +2346,26 @@ function buildReceiptCanvas(name,items){
   const FONT="'Hiragino Maru Gothic ProN','Hiragino Sans','Zen Maru Gothic',sans-serif";
   // 各明細の下段テキスト（元の金額／割る人／メモ）を先に組み立て、高さを可変にする
   const subLH=29;
+  // 品目名の折り返し幅を測るための計測用コンテキスト（実際の描画は下のcanvasで行う）
+  const mc=document.createElement('canvas').getContext('2d');
+  mc.font=`600 26px ${FONT}`;
+  const NAME_W=CW-170, nameLH=32;
   const rows=items.map(it=>{
     const ctx=getChargeContext(it.loan);
+    const az=ctx.az;
     const memo=(it.loan.memo||'').trim();
-    const subs=['この支払いの元の金額 ¥'+ctx.original.toLocaleString()+'（'+it.date+'）'];
+    // Amazon紐付きは「商品名＋その注文の金額」を出す（相手が見て何か分かるようにする）
+    const name=az?cleanAmazonProduct(az.productName):displayMerchantName(it.loan.description||'(内容なし)');
+    const nameLines=wrapText(mc,name,NAME_W,az?2:1);
+    const baseAmt=az?az.amount:ctx.original;
+    const baseDate=(az&&az.orderDate)?az.orderDate:it.date;
+    const subs=[(az?'この注文の金額 ¥':'この支払いの元の金額 ¥')+baseAmt.toLocaleString()+'（'+baseDate+'）'];
+    if(az&&az.amount!==ctx.original)subs.push('カードの請求額 ¥'+ctx.original.toLocaleString()+'（この請求に含まれています）');
     if(ctx.count>1)subs.push(ctx.count+'人で割り勘：'+membersLabel(ctx));
     if(memo)subs.push('メモ：'+memo);
-    const h=46+subs.length*subLH+18;
-    return {it,subs,h};
+    const nameH=46+(nameLines.length-1)*nameLH;
+    const h=nameH+subs.length*subLH+18;
+    return {it,subs,h,nameLines,nameH};
   });
   const itemsH=rows.reduce((s,r)=>s+r.h,0);
   const topPad=56,eyebrowH=30,titleH=54,dateH=32,gap1=24,secH=40,afterItems=10,totalH=86,gap2=30,acctH=184,gap3=22,footH=28,botPad=48;
@@ -2289,9 +2383,9 @@ function buildReceiptCanvas(name,items){
   const total=items.reduce((s,it)=>s+it.amount,0);
   rows.forEach(r=>{
     c.textAlign='left';c.fillStyle=INK;c.font=`600 26px ${FONT}`;
-    c.fillText(ellipsisText(c,displayMerchantName(r.it.loan.description||'(内容なし)'),CW-170),ML,y+28);
+    r.nameLines.forEach((ln,i)=>c.fillText(ln,ML,y+28+i*nameLH));
     c.textAlign='right';c.fillStyle=ACCENT;c.font=`700 30px ${FONT}`;c.fillText('¥'+r.it.amount.toLocaleString(),W-MR,y+29);
-    let sy=y+46+22;
+    let sy=y+r.nameH+22;
     c.textAlign='left';c.fillStyle=SUB;c.font=`400 19px ${FONT}`;
     r.subs.forEach(t=>{c.fillText(ellipsisText(c,t,CW),ML,sy);sy+=subLH;});
     c.strokeStyle=LINE;c.beginPath();c.moveTo(ML,y+r.h-9.5);c.lineTo(W-MR,y+r.h-9.5);c.stroke();y+=r.h;
@@ -2315,7 +2409,8 @@ function openPaymentModal(loanId){
   const l=data.loans.find(x=>x.id===loanId);if(!l)return;
   state.paymentTargetLoanId=loanId;
   const rem=getRemaining(l);
-  document.getElementById('paymentSub').textContent=`${l.personName} ／ ${l.description||''} ／ 残¥${rem.toLocaleString()}`;
+  const azp=amazonForLoan(l);
+  document.getElementById('paymentSub').textContent=`${l.personName} ／ ${azp?shortenAmazonProduct(azp.productName):(l.description||'')} ／ 残¥${rem.toLocaleString()}`;
   document.getElementById('paymentDate').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   document.getElementById('paymentAmount').value=rem;
   document.getElementById('paymentMemo').value='';
@@ -2385,8 +2480,10 @@ function saveManualAmazon(){
 function deleteCurrentAmazon(){
   if(!state.editingAmazonId)return;
   const id=state.editingAmazonId;closeManualAmazonModal();
-  openConfirmModal('注文の削除','このAmazon注文を削除しますか？\n紐付きも解除されます。',()=>{
+  const hasLoan=data.loans.some(l=>l.amazonId===id);
+  openConfirmModal('注文の削除','このAmazon注文を削除しますか？\n紐付きも解除されます。'+(hasLoan?'\n※この注文から作った立て替えは台帳に残ります。':''),()=>{
     Object.values(data.months).forEach(m=>m.transactions.forEach(t=>{if(t.linkedAmazonId===id)delete t.linkedAmazonId;}));
+    syncAmazonLoanTx(id,null);
     data.deletedAmazonIds[id]=Date.now();
     data.amazonOrders=data.amazonOrders.filter(o=>o.id!==id);
     save();render();
@@ -2396,15 +2493,27 @@ function deleteCurrentAmazon(){
 function clearAmazonData(){
   const n=data.amazonOrders.length;
   if(!n){alert('削除するAmazon取込データがありません。');return;}
-  openConfirmModal('Amazon取込データを全削除',`登録済みの${n}件のAmazon注文をすべて削除しますか？\n各クレカ明細との紐付けも解除されます。\nこの操作は取り消せません。`,()=>{
+  openConfirmModal('Amazon取込データを全削除',`登録済みの${n}件のAmazon注文をすべて削除しますか？\n各クレカ明細との紐付けも解除されます。\n※注文から作った立て替えは台帳に残ります。\nこの操作は取り消せません。`,()=>{
     Object.values(data.months).forEach(m=>m.transactions.forEach(t=>{if(t.linkedAmazonId)delete t.linkedAmazonId;}));
+    data.amazonOrders.forEach(o=>syncAmazonLoanTx(o.id,null));
     const now=Date.now();data.amazonOrders.forEach(o=>{data.deletedAmazonIds[o.id]=now;});
     data.amazonOrders=[];
     save();render();
   });
 }
-function linkAmazon(txId,orderId){const t=findTx(txId);if(!t)return;t.linkedAmazonId=orderId;save();render();}
-function unlinkAmazon(txId){const t=findTx(txId);if(!t)return;delete t.linkedAmazonId;save();render();}
+// Amazon注文から作った立て替えを、注文↔クレカ明細の紐付け状態に追従させる。
+// 紐付いたら立て替えにもその明細のidを入れる＝明細タブの「自分の負担」から正しく引かれる（二重計上を防ぐ）。
+function syncAmazonLoanTx(orderId,txId){
+  let changed=false;
+  data.loans.forEach(l=>{
+    if(l.amazonId!==orderId)return;
+    const next=txId||null;
+    if((l.txId||null)!==next){l.txId=next;changed=true;}
+  });
+  return changed;
+}
+function linkAmazon(txId,orderId){const t=findTx(txId);if(!t)return;t.linkedAmazonId=orderId;syncAmazonLoanTx(orderId,txId);save();render();}
+function unlinkAmazon(txId){const t=findTx(txId);if(!t)return;const oid=t.linkedAmazonId;delete t.linkedAmazonId;if(oid)syncAmazonLoanTx(oid,null);save();render();}
 
 // データ引き継ぎ
 function exportData(){
