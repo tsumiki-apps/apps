@@ -1191,6 +1191,20 @@ function amazonForLoan(l){
   if(l.txId){const t=findTx(l.txId);if(t&&t.linkedAmazonId)return data.amazonOrders.find(x=>x.id===t.linkedAmazonId)||null;}
   return null;
 }
+// 立て替えの品目名を出すときの唯一の判定（台帳・回収・明細書ぜんぶここを通す）。
+//  ① Amazonが紐付いていれば商品名（宣伝文句・容量・数量などのノイズを落とす）
+//  ② クレカ明細から作ったものは明細タブと同じ店名整形（ブランド正規化・末尾の都道府県除去・文字化け補正）
+//  ③ 手で入力した内容はそのまま（自分の言葉を勝手に削らない）
+// full=true は明細書用（幅で切らずに折り返して見せる）、false は一覧用（短縮）
+function loanDisplayName(l,full){
+  const az=amazonForLoan(l);
+  const raw=(az&&az.productName)?az.productName:(l.description||'');
+  if(!raw.trim())return '(内容なし)';
+  if(az||l.amazonId)return full?cleanAmazonProduct(raw):shortenAmazonProduct(raw);
+  return l.txId?displayMerchantName(raw):raw;
+}
+// ホバー/長押しで見せる元の文字列（整形前）
+function loanRawName(l){const az=amazonForLoan(l);return (az&&az.productName)?az.productName:(l.description||'');}
 function getPaymentsForLoan(loanId){return data.payments.filter(p=>p.loanId===loanId);}
 function getPaidAmount(loanId){return getPaymentsForLoan(loanId).reduce((s,p)=>s+p.amount,0);}
 function getRemaining(l){return l.amount-getPaidAmount(l.id);}
@@ -2082,14 +2096,13 @@ function renderLoanItem(l){
   const expanded=state.expandedLoanIds.has(l.id);
   const payments=getPaymentsForLoan(l.id).sort((a,b)=>b.date.localeCompare(a.date));
   const src=l.amazonId?'📦 Amazon注文から':(l.txId?'💳 クレカ明細から':'✋ 手動追加');
-  const az=amazonForLoan(l);
-  const dname=az?shortenAmazonProduct(az.productName):(l.description||'(内容なし)');
+  const dname=loanDisplayName(l);
   const pHtml=payments.length===0
     ?'<div class="muted" style="padding:6px 0">回収レコードなし</div>'
     :payments.map(p=>`<div class="payment-row"><div><div>${p.date}</div>${p.memo?`<div class="info">${escapeHtml(p.memo)}</div>`:''}</div><div class="amt">¥${p.amount.toLocaleString()}</div><button class="btn-mini danger" onclick="deletePayment('${p.id}')">削除</button></div>`).join('');
   return `<div class="loan-item ${full?'fully-paid':''} ${expanded?'expanded':''}">
     <div class="loan-item-head" onclick="toggleLoanExpand('${l.id}')">
-      <div><div class="loan-desc" title="${escapeHtml(az?az.productName:(l.description||''))}">${escapeHtml(dname)}</div><div class="loan-meta">${l.date} ／ ${src}${l.memo?' ／ '+escapeHtml(l.memo):''}</div></div>
+      <div><div class="loan-desc" title="${escapeHtml(loanRawName(l))}">${escapeHtml(dname)}</div><div class="loan-meta">${l.date} ／ ${src}${l.memo?' ／ '+escapeHtml(l.memo):''}</div></div>
       <div class="loan-amt">¥${l.amount.toLocaleString()}<div style="font-size:10px;color:${full?'var(--green)':'var(--orange)'}">${full?'✓ 完済':'残¥'+rem.toLocaleString()}</div></div>
     </div>
     <div class="loan-progress"><div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div><div>${pct.toFixed(0)}%</div></div>
@@ -2354,8 +2367,8 @@ function buildReceiptCanvas(name,items){
     const ctx=getChargeContext(it.loan);
     const az=ctx.az;
     const memo=(it.loan.memo||'').trim();
-    // Amazon紐付きは「商品名＋その注文の金額」を出す（相手が見て何か分かるようにする）
-    const name=az?cleanAmazonProduct(az.productName):displayMerchantName(it.loan.description||'(内容なし)');
+    // 名前は loanDisplayName に一本化（Amazon紐付き＝商品名／クレカ明細＝整形した店名／手動＝そのまま）
+    const name=loanDisplayName(it.loan,true);
     const nameLines=wrapText(mc,name,NAME_W,az?2:1);
     const baseAmt=az?az.amount:ctx.original;
     const baseDate=(az&&az.orderDate)?az.orderDate:it.date;
@@ -2409,8 +2422,7 @@ function openPaymentModal(loanId){
   const l=data.loans.find(x=>x.id===loanId);if(!l)return;
   state.paymentTargetLoanId=loanId;
   const rem=getRemaining(l);
-  const azp=amazonForLoan(l);
-  document.getElementById('paymentSub').textContent=`${l.personName} ／ ${azp?shortenAmazonProduct(azp.productName):(l.description||'')} ／ 残¥${rem.toLocaleString()}`;
+  document.getElementById('paymentSub').textContent=`${l.personName} ／ ${loanDisplayName(l)} ／ 残¥${rem.toLocaleString()}`;
   document.getElementById('paymentDate').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   document.getElementById('paymentAmount').value=rem;
   document.getElementById('paymentMemo').value='';
