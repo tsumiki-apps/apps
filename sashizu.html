@@ -245,6 +245,25 @@
   }
 
   footer { text-align: center; color: var(--ghost); font-size: 11px; padding: 26px 0 8px; }
+
+  /* ===== 復旧シート（保険から拾い戻す） ===== */
+  .rescue-btn {
+    border: none; background: none; cursor: pointer; font: inherit;
+    font-size: 12px; font-weight: 600; color: var(--sub); padding: 8px 14px; margin-bottom: 4px;
+  }
+  .rc-lead, .rc-none { font-size: 12.5px; color: var(--sub); line-height: 1.75; margin-bottom: 12px; text-align: center; }
+  .rc-lead .rc-note, .rc-none .rc-note { display: block; color: var(--ghost); font-size: 11.5px; margin-top: 4px; }
+  .rc-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px; margin-bottom: 8px; cursor: pointer;
+  }
+  .rc-row input { width: 20px; height: 20px; margin: 1px 0 0; flex: none; accent-color: var(--text); }
+  .rc-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .rc-kind { font-size: 10.5px; font-weight: 700; color: var(--ghost); }
+  .rc-title { font-size: 14.5px; font-weight: 700; word-break: break-word; }
+  .rc-sub { font-size: 12.5px; color: var(--sub); word-break: break-word; }
+  .rc-at { font-size: 11px; color: var(--ghost); }
 </style>
 </head>
 <body>
@@ -269,7 +288,10 @@
 
   <div id="doneWrap"></div>
 
-  <footer>tsumiki-apps.github.io</footer>
+  <footer>
+    <button class="rescue-btn" id="rescueBtn">🛟 消えたメモを探す</button>
+    <div>tsumiki-apps.github.io</div>
+  </footer>
 </div>
 
 <!-- ステータス選択シート -->
@@ -314,6 +336,16 @@
       <button class="save" id="ntSave">保存</button>
     </div>
     <button class="sheet-cancel" id="ntCancel">キャンセル</button>
+  </div>
+</div>
+
+<!-- 復旧シート（この端末に残っている保険から拾い戻す） -->
+<div class="overlay" id="rcOverlay">
+  <div class="sheet">
+    <h2>🛟 消えたメモを探す</h2>
+    <div id="rcBody"></div>
+    <div class="sheet-btns"><button class="save" id="rcRestore">選んだものを戻す</button></div>
+    <button class="sheet-cancel" id="rcCancel">閉じる</button>
   </div>
 </div>
 
@@ -465,12 +497,17 @@ function markSynced(t){
 /* 取りこぼし保険：クラウドの状態を当てる直前のローカルを数世代残す。
    何かが消えた時に、ここから中身を拾い出して戻せる。 */
 function snapshot(reason){
-  try{
-    const arr = JSON.parse(localStorage.getItem(BAK_KEY) || '[]');
-    arr.push({ at:Date.now(), reason:reason||'', state:db });
-    while(arr.length > 8) arr.shift();
-    localStorage.setItem(BAK_KEY, JSON.stringify(arr));
-  }catch(e){}
+  let arr = [];
+  try{ arr = JSON.parse(localStorage.getItem(BAK_KEY) || '[]'); }catch(e){ arr = []; }
+  if(!Array.isArray(arr)) arr = [];
+  arr.push({ at:Date.now(), reason:reason||'', state:deepCopy(db) });
+  while(arr.length > 20) arr.shift();
+  /* 容量オーバーで丸ごと保存できない時は、古い世代を捨てて入るところまで残す
+     （ここで諦めると「保険が1件も無い」状態になってしまう） */
+  while(arr.length){
+    try{ localStorage.setItem(BAK_KEY, JSON.stringify(arr)); return; }
+    catch(e){ arr.shift(); }
+  }
 }
 
 let saveTimer=null;
@@ -497,17 +534,21 @@ async function push(){
   }
   renderSync();
 }
+/* 中身を丸ごと複製する。Object.assign は中の配列・オブジェクトを「共有」してしまうので、
+   これを使わないと土台にしたリモートまで一緒に書き換わる（＝比較が壊れて未送信分が消える）。 */
+function deepCopy(v){ try{ return JSON.parse(JSON.stringify(v)); }catch(e){ return v; } }
 /* リモートを土台に、ローカルにしか無い「最後の同期より後の変更」を差し戻す。
-   ＝ 打ったばかりのメモが、届く前の古いリモートで塗り潰されるのを防ぐ。 */
+   ＝ 打ったばかりのメモが、届く前の古いリモートで塗り潰されるのを防ぐ。
+   ★ remote は呼び出し元で「比較の基準」として使うので、絶対に触らない（複製してから組み立てる）。 */
 function mergeRemote(remote){
-  const out = Object.assign(blank(), remote);
+  const out = Object.assign(blank(), deepCopy(remote));
   if(!Array.isArray(out.items)) out.items = [];
   const byId = new Map(out.items.map(x=>[x.id, x]));
   (db.items||[]).forEach(lx=>{
     const rx = byId.get(lx.id);
     if(!rx){
       /* リモートに無い：同期後に作った物だけ戻す（前から在って消えた物＝他端末での削除は尊重） */
-      if((lx.updated||lx.ts||0) > syncedAt) out.items.push(lx);
+      if((lx.updated||lx.ts||0) > syncedAt) out.items.push(deepCopy(lx));
       return;
     }
     if((lx.updated||0) > (rx.updated||0)){
@@ -519,7 +560,7 @@ function mergeRemote(remote){
     (lx.notes||[]).forEach(ln=>{
       const rn = nById.get(ln.id);
       if(!rn){
-        if((ln.updated||ln.ts||0) > syncedAt) rx.notes.push(ln);
+        if((ln.updated||ln.ts||0) > syncedAt) rx.notes.push(deepCopy(ln));
         return;
       }
       if((ln.updated||0) > (rn.updated||0)){ rn.head = ln.head; rn.body = ln.body; rn.updated = ln.updated; }
@@ -541,9 +582,10 @@ function canon(v){
 }
 /* 受け取ったリモートを画面へ反映する（取り込み口はここ1つに統一） */
 function applyRemote(remote){
+  const remSig = canon(remote);     // ★ マージより先に採る（後で採ると、万一触られていた時に気づけない）
   const merged = mergeRemote(remote);
   migrate(merged);                  // 旧形式の変換は比較の前に済ませる（比較がずれないように）
-  const mySig = canon(db), mergedSig = canon(merged), remSig = canon(remote);
+  const mySig = canon(db), mergedSig = canon(merged);
   if(mergedSig !== mySig){          // 画面の中身が変わる時だけ差し替える
     snapshot(mergedSig === remSig ? 'remote' : 'merge');
     db = merged;
@@ -944,10 +986,117 @@ function closeSheets(){
   stOverlay.classList.remove('show');
   edOverlay.classList.remove('show');
   ntOverlay.classList.remove('show');
+  rcOverlay.classList.remove('show');
   sheetItemId = null; sheetNoteId = null; sheetOpen = false;
   if(pendingRender){ pendingRender=false; }
   render();
 }
+
+/* ===================== 復旧シート =====================
+   クラウドの状態を当てる直前に取ってある snapshot（最大20世代）と今の画面を突き合わせ、
+   「保険には在るのに今は無い」ことづて／メモを拾い戻せるようにする。
+   ★ 保険は端末ごとに別（localStorage）。消えた端末で開く必要がある。 */
+const rcOverlay = document.getElementById('rcOverlay');
+let rcFound = { items:[], notes:[] };
+function readBackups(){
+  try{ const a = JSON.parse(localStorage.getItem(BAK_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function findLost(){
+  const nowItems = new Map((db.items||[]).map(x=>[x.id, x]));
+  const lostItems = new Map(), lostNotes = new Map();
+  readBackups().forEach(bk=>{
+    const st = bk && bk.state;
+    if(!st || !Array.isArray(st.items)) return;
+    st.items.forEach(bx=>{
+      const cur = nowItems.get(bx.id);
+      if(!cur){                                   // ことづてごと消えている
+        const prev = lostItems.get(bx.id);
+        if(!prev || (bx.updated||bx.ts||0) >= (prev.item.updated||prev.item.ts||0)){
+          lostItems.set(bx.id, { item:bx, at:bk.at||0 });   // 一番新しい内容を採る
+        }
+        return;
+      }
+      const has = new Set((cur.notes||[]).map(n=>n.id));
+      (bx.notes||[]).forEach(bn=>{                // ことづては在るがメモだけ消えている
+        if(has.has(bn.id)) return;
+        const k = bx.id+'/'+bn.id, prev = lostNotes.get(k);
+        if(!prev || (bn.updated||bn.ts||0) >= (prev.note.updated||prev.note.ts||0)){
+          lostNotes.set(k, { itemId:bx.id, itemTitle:cur.title, note:bn, at:bk.at||0 });
+        }
+      });
+    });
+  });
+  return { items:[...lostItems.values()], notes:[...lostNotes.values()] };
+}
+function fmtAt(t){
+  if(!t) return '不明';
+  const d = new Date(t);
+  return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function clip(s, n){ s = String(s==null?'':s).replace(/\s+/g,' ').trim(); return s.length>n ? s.slice(0,n)+'…' : s; }
+function openRescue(){
+  rcFound = findLost();
+  const total = rcFound.items.length + rcFound.notes.length;
+  const el = document.getElementById('rcBody');
+  if(!total){
+    el.innerHTML = '<div class="rc-none">この端末の保険には、消えたことづて・メモは見つかりませんでした。'+
+      '<span class="rc-note">保険は端末ごとに別々です。iPhone・Mac それぞれで開いてみてください。</span></div>';
+  }else{
+    let html = '<div class="rc-lead">保険に残っていて、いまの一覧に無いものです。'+
+      '<span class="rc-note">自分で削除したものも混ざります。戻したいものだけ選んでください。</span></div>';
+    rcFound.items.forEach((r,i)=>{
+      const body = (r.item.notes||[]).map(n=>(n.head?'【'+n.head+'】':'')+n.body).join(' / ');
+      html += '<label class="rc-row"><input type="checkbox" data-rci="'+i+'">'+
+        '<span class="rc-txt"><span class="rc-kind">ことづて</span>'+
+        '<span class="rc-title">'+esc(r.item.title||'(無題)')+'</span>'+
+        (body ? '<span class="rc-sub">'+esc(clip(body,70))+'</span>' : '')+
+        '<span class="rc-at">メモ'+((r.item.notes||[]).length)+'件・保険 '+fmtAt(r.at)+'</span>'+
+        '</span></label>';
+    });
+    rcFound.notes.forEach((r,i)=>{
+      html += '<label class="rc-row"><input type="checkbox" data-rcn="'+i+'">'+
+        '<span class="rc-txt"><span class="rc-kind">メモ</span>'+
+        '<span class="rc-title">'+esc(r.note.head || clip(r.note.body,30) || '(無題)')+'</span>'+
+        '<span class="rc-sub">'+esc(clip(r.note.body,70))+'</span>'+
+        '<span class="rc-at">「'+esc(clip(r.itemTitle,20))+'」の中・保険 '+fmtAt(r.at)+'</span>'+
+        '</span></label>';
+    });
+    el.innerHTML = html;
+  }
+  document.getElementById('rcRestore').parentNode.style.display = total ? '' : 'none';
+  sheetOpen = true;                 // 復旧中はリアルタイム上書き描画を止める
+  rcOverlay.classList.add('show');
+}
+document.getElementById('rescueBtn').onclick = openRescue;
+document.getElementById('rcCancel').onclick = closeSheets;
+rcOverlay.addEventListener('click', e=>{ if(e.target===rcOverlay) closeSheets(); });
+document.getElementById('rcRestore').onclick = ()=>{
+  const now = Date.now();
+  let n = 0;
+  rcOverlay.querySelectorAll('[data-rci]:checked').forEach(cb=>{
+    const r = rcFound.items[parseInt(cb.dataset.rci,10)]; if(!r) return;
+    if(findItem(r.item.id)) return;               // 待っている間に戻ってきていたら二重に足さない
+    const x = deepCopy(r.item);
+    x.updated = now;                              // 「今つけた変更」にしてクラウドへ確実に送る
+    (x.notes||[]).forEach(nt=>{ nt.updated = now; });
+    db.items.push(x); n++;
+  });
+  rcOverlay.querySelectorAll('[data-rcn]:checked').forEach(cb=>{
+    const r = rcFound.notes[parseInt(cb.dataset.rcn,10)]; if(!r) return;
+    const x = findItem(r.itemId); if(!x || findNote(x, r.note.id)) return;
+    const nt = deepCopy(r.note);
+    nt.updated = now;
+    x.notes.push(nt);
+    x.notes.sort((a,b)=>(a.ts||0)-(b.ts||0));     // 作った順に戻す
+    x.updated = now; recalc(x); n++;
+  });
+  if(!n){ toast('戻すものが選ばれていません'); return; }
+  migrate();
+  save();
+  closeSheets();
+  toast(n+'件を戻しました');
+};
 
 /* ===================== 起動 ===================== */
 loadLocal();
