@@ -7,10 +7,23 @@
 <meta name="apple-mobile-web-app-title" content="みんなわり">
 <title>みんなわり — みんなの立て替えを、送金1回にまとめる</title>
 <style>
+  /* 色は tsumiki-apps.com（つみきサイト）と同じ系統。
+     紙＋墨＋朱の3本立てで、朱は書画の落款のように「小さな要素」だけに使う。
+     大きなボタンは朱ではなく墨で塗る（サイトの .cta と同じ考え方）。 */
   :root{
-    --bg:#f2f7f7; --card:#ffffff; --ink:#1d2b2b; --sub:#798c8c;
-    --line:#e2eded; --accent:#0f9e8e; --accent2:#3fc7b4; --soft:#e6f5f2;
-    --ok:#34c759; --warn:#e5484d; --radius:20px;
+    --bg:#F4F2EE;        /* 紙（背景） */
+    --card:#FBFAF7;      /* カード面 */
+    --surface:#ECE9E3;   /* 一段沈んだ面 */
+    --ink:#242321;       /* 墨（文字・主ボタン） */
+    --sub:#77736B;       /* 補助文字 */
+    --line:#D8D4CC;      /* 罫線 */
+    --ghost:#BEB9B0;     /* いちばん淡い線 */
+    --accent:#D14E26;    /* 朱（差し色・強） */
+    --soft:#F1CDBB;      /* 淡朱（選択中の面） */
+    --deep:#8E3418;      /* 淡朱の上に載せる濃い朱の文字 */
+    --ok:#6B8F71;        /* 同期中の点 */
+    --warn:#A33221;      /* 削除など取り返しのつかない操作 */
+    --radius:20px;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   [hidden]{display:none !important;}
@@ -32,14 +45,14 @@
   /* アプリのロゴ（ホーム画面アイコンと同じ線画）を画面内でも使う */
   .logoimg{width:34px; height:34px; border-radius:9px; display:block; flex:0 0 auto;}
   .hero .logoimg{width:72px; height:72px; border-radius:17px; margin:0 auto 2px;
-    box-shadow:0 8px 20px rgba(20,60,55,.18);}
+    box-shadow:0 8px 20px rgba(36,35,33,.16);}
   header h1{font-size:22px; font-weight:800; letter-spacing:-.02em; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .sync{margin-left:auto; flex:0 0 auto; display:flex; align-items:center; gap:5px;
     font-size:11px; color:var(--sub); background:var(--card); border:1px solid var(--line);
     border-radius:999px; padding:5px 10px;}
   .sync .dot{width:7px; height:7px; border-radius:50%; background:var(--ok); flex:0 0 auto;}
-  .sync .dot.off{background:#c7c7cc;} .sync .dot.busy{background:#f5a623;}
+  .sync .dot.off{background:var(--ghost);} .sync .dot.busy{background:var(--accent);}
   .backbar{display:flex; align-items:center; gap:6px; padding:16px 0 2px;}
   .backbar button{display:inline-flex; align-items:center; gap:4px; font-size:15px;
     font-weight:700; color:var(--accent); padding:6px 6px 6px 0;}
@@ -47,16 +60,19 @@
   .backbar .right button{color:var(--sub); font-size:14px; padding:6px;}
 
   /* ===== スタート画面 ===== */
-  .hero{background:linear-gradient(135deg,#d9f3ee,#c3eae3); border:1px solid #b9e4dc;
+  .hero{background:linear-gradient(160deg,var(--card),var(--surface)); border:1px solid var(--line);
     border-radius:var(--radius); padding:22px 20px; text-align:center; margin-top:4px;}
   .hero .big{font-size:40px;}
-  .hero h2{font-size:18px; font-weight:800; margin-top:6px; letter-spacing:-.01em;}
-  .hero p{font-size:13px; color:#4d7a73; margin-top:7px;}
+  /* つみきサイトと同じ「小さな英字ラベルだけ朱」の使い方 */
+  .hero .en{display:block; font-size:11px; letter-spacing:.22em; color:var(--accent);
+    font-weight:700; margin-top:12px;}
+  .hero h2{font-size:18px; font-weight:800; margin-top:5px; letter-spacing:-.01em;}
+  .hero p{font-size:13px; color:var(--sub); margin-top:7px;}
   .hero .feat{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:14px;}
-  .hero .feat span{font-size:11px; font-weight:700; background:rgba(255,255,255,.7);
-    color:#2f7268; border-radius:999px; padding:4px 10px;}
-  .cta{width:100%; margin-top:14px; background:var(--accent); color:#fff; padding:16px;
-    border-radius:16px; font-weight:800; font-size:16px; box-shadow:0 6px 18px rgba(15,158,142,.3);}
+  .hero .feat span{font-size:11px; font-weight:700; background:var(--card);
+    border:1px solid var(--line); color:var(--ink); border-radius:999px; padding:4px 10px;}
+  .cta{width:100%; margin-top:14px; background:var(--ink); color:var(--bg); padding:16px;
+    border-radius:16px; font-weight:800; font-size:16px; box-shadow:0 6px 16px rgba(36,35,33,.18);}
   .cta:active{transform:scale(.97);}
   .sectitle{font-size:13px; font-weight:700; color:var(--sub); margin:22px 4px 8px;
     display:flex; align-items:center;}
@@ -70,7 +86,7 @@
   .gcard .gi{min-width:0; flex:1;}
   .gcard .gn{display:block; font-size:16px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .gcard .gm{display:block; font-size:11px; color:var(--sub); line-height:1.4;}
-  .gcard .chev{color:#cfdedb; font-size:19px; flex:0 0 auto;}
+  .gcard .chev{color:var(--ghost); font-size:19px; flex:0 0 auto;}
   .empty{text-align:center; color:var(--sub); padding:34px 20px;}
   .empty .big{font-size:42px;} .empty p{margin-top:8px; font-size:13px;}
 
@@ -79,7 +95,7 @@
     border-radius:14px; padding:4px; margin:12px 0 4px;}
   .tabs button{flex:1; padding:9px 4px; border-radius:11px; font-size:13px; font-weight:700;
     color:var(--sub); transition:all .12s;}
-  .tabs button.on{background:var(--soft); color:var(--accent);}
+  .tabs button.on{background:var(--soft); color:var(--ink);}
 
   /* ===== サマリー ===== */
   .sums{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
@@ -103,16 +119,18 @@
   .entry .amtwrap{flex:0 0 auto; text-align:right;}
   .entry .amt{font-weight:800; font-size:16px;}
   .entry .amt small{font-size:11px; color:var(--sub); font-weight:600; display:block; margin-top:-3px;}
+  /* 朱は「選んでいる所」だけに取っておきたいので、一覧のタグは紙と墨の濃淡で分ける */
   .tag{font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px;
-    background:var(--soft); color:#0c7f72; white-space:nowrap;}
-  .tag.gray{background:#eef2f2; color:#7b8c8c;}
+    background:var(--surface); color:var(--ink); white-space:nowrap;}
+  .tag.gray{background:transparent; border:1px solid var(--line); color:var(--sub);}
 
   /* ===== 精算 ===== */
-  .banner{background:linear-gradient(135deg,#d9f3ee,#c3eae3); border:1px solid #b9e4dc;
+  .banner{background:linear-gradient(160deg,var(--card),var(--surface)); border:1px solid var(--line);
     border-radius:var(--radius); padding:18px; text-align:center; margin-top:12px;}
-  .banner.done{background:linear-gradient(135deg,#e3f7e8,#cdeed6); border-color:#bce6c8;}
-  .banner .lab{font-size:12px; color:#3f7d74; font-weight:700;}
-  .banner .big{font-size:30px; font-weight:800; letter-spacing:-.02em; margin-top:2px;}
+  .banner.done{background:linear-gradient(160deg,#FAEDE6,var(--soft)); border-color:#E4BCA8;}
+  .banner .lab{font-size:12px; color:var(--sub); font-weight:700;}
+  .banner .big{font-size:30px; font-weight:800; letter-spacing:-.02em; margin-top:2px;
+    color:var(--accent);}
   .banner .doneico{font-size:34px;}
   .trow{background:var(--card); border:1px solid var(--line); border-radius:16px;
     padding:13px 14px; margin-bottom:9px;}
@@ -126,10 +144,10 @@
   .trow .acts{display:flex; gap:7px; margin-top:11px;}
   .trow .acts button{flex:1; padding:9px 6px; border-radius:11px; font-size:13px; font-weight:700;
     border:1px solid var(--line); background:var(--bg); color:var(--ink);}
-  .trow .acts button.pp{background:#ff0033; border-color:#ff0033; color:#fff;}
-  .trow .acts button.dn{background:var(--soft); border-color:#bfe6df; color:#0c7f72;}
+  .trow .acts button.pp{background:var(--ink); border-color:var(--ink); color:var(--bg);}
+  .trow .acts button.dn{background:var(--soft); border-color:#E4BCA8; color:var(--deep);}
   .trow .acts button:active{transform:scale(.97);}
-  .mine{border-color:var(--accent2); box-shadow:0 0 0 2px rgba(63,199,180,.18);}
+  .mine{border-color:var(--accent); box-shadow:0 0 0 2px rgba(209,78,38,.15);}
 
   .bal{display:flex; align-items:center; gap:10px; background:var(--card);
     border:1px solid var(--line); border-radius:14px; padding:11px 13px; margin-bottom:8px;}
@@ -139,7 +157,7 @@
     text-overflow:ellipsis; white-space:nowrap;}
   .bal .bs{display:block; font-size:11px; color:var(--sub); line-height:1.5;}
   .bal .bv{margin-left:auto; font-weight:800; font-size:16px; flex:0 0 auto;}
-  .bv.plus{color:#0c7f72;} .bv.minus{color:var(--warn);}
+  .bv.plus{color:var(--ink);} .bv.minus{color:var(--accent);}
 
   .unitrow{display:flex; gap:6px; margin-top:14px;}
   .unitrow button{flex:1; padding:10px 2px; border-radius:12px; border:1.5px solid var(--line);
@@ -156,31 +174,31 @@
     text-overflow:ellipsis; white-space:nowrap;}
   .mrow .bs{display:block; line-height:1.5;}
   .mrow .mw{font-size:12px; color:var(--sub); font-weight:700; flex:0 0 auto;}
-  .mrow .chev{color:#cfdedb; font-size:18px; flex:0 0 auto;}
+  .mrow .chev{color:var(--ghost); font-size:18px; flex:0 0 auto;}
   .adds{display:flex; align-items:center; justify-content:center; gap:6px; width:100%;
-    padding:14px; border:1.5px dashed #cfe3df; border-radius:16px; color:var(--accent);
-    font-weight:700; font-size:14px; background:rgba(255,255,255,.5); margin-bottom:8px;}
+    padding:14px; border:1.5px dashed var(--line); border-radius:16px; color:var(--accent);
+    font-weight:700; font-size:14px; background:rgba(251,250,247,.6); margin-bottom:8px;}
   .adds:active{transform:scale(.985);}
 
   .note{background:var(--card); border:1px solid var(--line); border-radius:14px;
     padding:12px 14px; font-size:12px; color:var(--sub); margin-top:12px; line-height:1.75;}
   .note b{color:var(--ink);}
-  .ro{background:#fff4e5; border:1px solid #ffd9a8; color:#8a5a12; border-radius:14px;
+  .ro{background:#F7E7DE; border:1px solid #E4BCA8; color:var(--deep); border-radius:14px;
     padding:11px 14px; font-size:12px; font-weight:700; margin-top:12px;}
 
   /* ===== アクションバー ===== */
   .actionbar{position:fixed; left:0; right:0; bottom:0; z-index:40;
     padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);
-    background:linear-gradient(to top, var(--bg) 68%, rgba(242,247,247,0));
+    background:linear-gradient(to top, var(--bg) 68%, rgba(244,242,238,0));
     display:flex; gap:9px; max-width:560px; margin:0 auto;}
   .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
     padding:14px; border-radius:15px; font-weight:800; font-size:15px;}
-  .btn.primary{background:var(--accent); color:#fff; box-shadow:0 6px 18px rgba(15,158,142,.32);}
+  .btn.primary{background:var(--ink); color:var(--bg); box-shadow:0 6px 16px rgba(36,35,33,.2);}
   .btn.ghost{flex:0 0 auto; width:54px; background:var(--card); border:1px solid var(--line);}
   .btn:active{transform:scale(.96);}
 
   /* ===== シート ===== */
-  .ov{position:fixed; inset:0; z-index:100; background:rgba(10,40,38,.42);
+  .ov{position:fixed; inset:0; z-index:100; background:rgba(36,35,33,.38);
     display:flex; align-items:flex-end; justify-content:center; opacity:0; pointer-events:none;
     transition:opacity .2s ease; backdrop-filter:blur(2px);}
   .ov.show{opacity:1; pointer-events:auto;}
@@ -189,7 +207,7 @@
     transform:translateY(24px); transition:transform .25s cubic-bezier(.2,.8,.2,1);
     -webkit-overflow-scrolling:touch;}
   .ov.show .sheet{transform:translateY(0);}
-  .grip{width:38px; height:5px; border-radius:3px; background:#d3e2df; margin:6px auto 14px;}
+  .grip{width:38px; height:5px; border-radius:3px; background:var(--line); margin:6px auto 14px;}
   .sheet h2{font-size:19px; font-weight:800; margin-bottom:3px;}
   .sheet .sd{font-size:12px; color:var(--sub); margin-bottom:15px;}
   .field{margin-bottom:14px;}
@@ -220,7 +238,7 @@
     border:1px solid var(--line); border-radius:11px; background:var(--card); outline:none; text-align:right;}
   .mline input[type=text]{flex:1; min-width:0; padding:11px 12px; font-size:16px;
     border:1px solid var(--line); border-radius:11px; background:var(--card); outline:none;}
-  .mline .x{flex:0 0 auto; color:#c3d2d0; font-size:19px; padding:4px 6px;}
+  .mline .x{flex:0 0 auto; color:var(--ghost); font-size:19px; padding:4px 6px;}
   .itemcard{background:var(--card); border:1px solid var(--line); border-radius:14px;
     padding:11px 12px; margin-bottom:9px;}
   .itemcard .top{display:flex; gap:8px; align-items:center;}
@@ -234,7 +252,7 @@
   .sumline .v{margin-left:auto; color:var(--ink); font-size:15px;}
   .sumline .v.bad{color:var(--warn);}
   .sheetbtns{display:flex; gap:9px; margin-top:10px;}
-  .sheetbtns .save{flex:1; background:var(--accent); color:#fff; padding:15px; border-radius:14px;
+  .sheetbtns .save{flex:1; background:var(--ink); color:var(--bg); padding:15px; border-radius:14px;
     font-weight:800; font-size:16px;}
   .sheetbtns .save:active{transform:scale(.97);}
   .sheetbtns .save[disabled]{opacity:.45;}
@@ -248,7 +266,7 @@
   .hint{font-size:11px; color:var(--sub); margin-top:7px; line-height:1.7;}
 
   .toast{position:fixed; bottom:calc(env(safe-area-inset-bottom) + 96px); left:50%;
-    transform:translateX(-50%) translateY(20px); background:#1d2b2b; color:#fff;
+    transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--bg);
     padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600;
     z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; max-width:88vw; text-align:center;}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
@@ -259,9 +277,9 @@
   .panehead{display:none; align-items:center; gap:10px; margin:2px 2px 12px;}
   .panehead h3{font-size:15px; font-weight:800; letter-spacing:-.01em;}
   .panehead .pc{font-size:12px; color:var(--sub); font-weight:700;}
-  .panehead .addhere{margin-left:auto; background:var(--accent); color:#fff;
+  .panehead .addhere{margin-left:auto; background:var(--ink); color:var(--bg);
     padding:9px 15px; border-radius:12px; font-weight:800; font-size:13px;
-    box-shadow:0 4px 12px rgba(15,158,142,.28);}
+    box-shadow:0 4px 12px rgba(36,35,33,.18);}
   .panehead .addhere:active{transform:scale(.96);}
   .glist{display:block;}
 
@@ -294,7 +312,7 @@
     .grip{display:none;}
     .toast{bottom:34px;}
     @media(hover:hover){
-      .entry:hover,.mrow:hover,.gcard:hover{border-color:#c6ddd8;}
+      .entry:hover,.mrow:hover,.gcard:hover{border-color:var(--ghost);}
     }
   }
   /* ===== 大きいPC（3列に展開） ===== */
@@ -314,6 +332,7 @@
     <header><img class="logoimg" src="icons/icon-minnawari.png" alt=""><h1>みんなわり</h1></header>
     <div class="hero">
       <img class="logoimg" src="icons/icon-minnawari.png" alt="みんなわり">
+      <span class="en">SPLIT THE BILL</span>
       <h2>みんなの立て替えを、<br>いちばん少ない送金にまとめる</h2>
       <p>登録なし・URLを送るだけ。<br>広告も課金もありません。</p>
       <div class="feat">
@@ -369,7 +388,8 @@ const SB_URL = 'https://okbjqtdirrathscctyvx.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
 const SBH = {apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json'};
 const LS_RECENT = 'minnawari_recent_v1';
-const AVCOL = ['#0f9e8e','#3b93ff','#f5a623','#e5484d','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+// メンバーの色。紙と墨に馴染むよう彩度を落とした和の色で揃える
+const AVCOL = ['#D14E26','#4A5A6B','#7A6A4F','#5F7A6A','#8C5A5A','#3F5B57','#A07840','#5C5470','#7B6A78','#556B78'];
 const EMOJIS = ['🍻','✈️','🏝️','🚗','⛺️','🍲','🎂','🏠','🎿','🎡','🎤','🍜'];
 const EX_EMOJIS = ['🧾','🍚','🍺','🚕','🚄','🏨','🎟️','🛒','⛽️','🎁','☕️','💊'];
 
@@ -669,7 +689,7 @@ function setSync(){
    ============================================================ */
 function memberById(id){ return (G.state.members||[]).find(m => m.id === id); }
 function mName(id){ const m = memberById(id); return m ? m.name : '（退出）'; }
-function mCol(id){ const m = memberById(id); return m ? AVCOL[m.c % AVCOL.length] : '#b8c6c4'; }
+function mCol(id){ const m = memberById(id); return m ? AVCOL[m.c % AVCOL.length] : '#BEB9B0'; }
 function initial(name){ return (name||'?').trim().slice(0,1); }
 
 function renderStart(){
@@ -1041,7 +1061,7 @@ function sheetExpense(id){
               <div class="top">
                 <input type="text" data-n="${i}" placeholder="例）刺身盛り" maxlength="24" value="${esc(it.name)}">
                 <input type="number" data-a="${i}" inputmode="numeric" placeholder="0" value="${it.amount===''?'':it.amount}">
-                <button class="x" data-x="${i}" style="color:#c3d2d0;font-size:19px;padding:4px">×</button>
+                <button class="x" data-x="${i}" style="color:var(--ghost);font-size:19px;padding:4px">×</button>
               </div>
               <div class="chips" data-t="${i}">
                 ${s.members.map(m=>`<button class="chip sm ${(it.targets||[]).includes(m.id)?'on':''}" data-m="${esc(m.id)}">${esc(m.name)}</button>`).join('')}
