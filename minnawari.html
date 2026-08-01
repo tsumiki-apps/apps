@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-minnawari.png">
+<meta name="apple-mobile-web-app-title" content="みんなわり">
+<title>みんなわり — みんなの立て替えを、送金1回にまとめる</title>
+<style>
+  :root{
+    --bg:#f2f7f7; --card:#ffffff; --ink:#1d2b2b; --sub:#798c8c;
+    --line:#e2eded; --accent:#0f9e8e; --accent2:#3fc7b4; --soft:#e6f5f2;
+    --ok:#34c759; --warn:#e5484d; --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
+  html,body{overscroll-behavior-y:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 92px);
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:0 16px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  input,select,textarea{font-family:inherit; font-size:16px;}
+  .num{font-variant-numeric:tabular-nums;}
+
+  /* ===== ヘッダー ===== */
+  header{padding:24px 4px 10px; display:flex; align-items:center; gap:10px;}
+  header .logo{font-size:29px; line-height:1;}
+  header h1{font-size:22px; font-weight:800; letter-spacing:-.02em; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .sync{margin-left:auto; flex:0 0 auto; display:flex; align-items:center; gap:5px;
+    font-size:11px; color:var(--sub); background:var(--card); border:1px solid var(--line);
+    border-radius:999px; padding:5px 10px;}
+  .sync .dot{width:7px; height:7px; border-radius:50%; background:var(--ok); flex:0 0 auto;}
+  .sync .dot.off{background:#c7c7cc;} .sync .dot.busy{background:#f5a623;}
+  .backbar{display:flex; align-items:center; gap:6px; padding:16px 0 2px;}
+  .backbar button{display:inline-flex; align-items:center; gap:4px; font-size:15px;
+    font-weight:700; color:var(--accent); padding:6px 6px 6px 0;}
+  .backbar .right{margin-left:auto; display:flex; gap:4px;}
+  .backbar .right button{color:var(--sub); font-size:14px; padding:6px;}
+
+  /* ===== スタート画面 ===== */
+  .hero{background:linear-gradient(135deg,#d9f3ee,#c3eae3); border:1px solid #b9e4dc;
+    border-radius:var(--radius); padding:22px 20px; text-align:center; margin-top:4px;}
+  .hero .big{font-size:40px;}
+  .hero h2{font-size:18px; font-weight:800; margin-top:6px; letter-spacing:-.01em;}
+  .hero p{font-size:13px; color:#4d7a73; margin-top:7px;}
+  .hero .feat{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:14px;}
+  .hero .feat span{font-size:11px; font-weight:700; background:rgba(255,255,255,.7);
+    color:#2f7268; border-radius:999px; padding:4px 10px;}
+  .cta{width:100%; margin-top:14px; background:var(--accent); color:#fff; padding:16px;
+    border-radius:16px; font-weight:800; font-size:16px; box-shadow:0 6px 18px rgba(15,158,142,.3);}
+  .cta:active{transform:scale(.97);}
+  .sectitle{font-size:13px; font-weight:700; color:var(--sub); margin:22px 4px 8px;
+    display:flex; align-items:center;}
+  .sectitle .cnt{margin-left:auto; font-weight:600;}
+  .gcard{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:13px 14px; margin-bottom:9px;}
+  .gcard:active{transform:scale(.99);}
+  .gcard .ge{font-size:22px; width:42px; height:42px; flex:0 0 auto; border-radius:13px;
+    background:var(--bg); display:flex; align-items:center; justify-content:center;}
+  .gcard .gi{min-width:0; flex:1;}
+  .gcard .gn{display:block; font-size:16px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .gcard .gm{display:block; font-size:11px; color:var(--sub); line-height:1.4;}
+  .gcard .chev{color:#cfdedb; font-size:19px; flex:0 0 auto;}
+  .empty{text-align:center; color:var(--sub); padding:34px 20px;}
+  .empty .big{font-size:42px;} .empty p{margin-top:8px; font-size:13px;}
+
+  /* ===== タブ ===== */
+  .tabs{display:flex; gap:6px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:4px; margin:12px 0 4px;}
+  .tabs button{flex:1; padding:9px 4px; border-radius:11px; font-size:13px; font-weight:700;
+    color:var(--sub); transition:all .12s;}
+  .tabs button.on{background:var(--soft); color:var(--accent);}
+
+  /* ===== サマリー ===== */
+  .sums{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
+  .sumc{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:12px 14px;}
+  .sumc .nm{font-size:11px; color:var(--sub); font-weight:700;}
+  .sumc .vl{font-size:20px; font-weight:800; margin-top:2px; letter-spacing:-.02em;}
+  .sumc .sb{font-size:11px; color:var(--sub);}
+
+  /* ===== 明細 ===== */
+  .daygroup{font-size:12px; font-weight:700; color:var(--sub); margin:16px 4px 7px;}
+  .entry{display:flex; align-items:center; gap:11px; width:100%; min-width:100%; text-align:left;
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:11px 13px; margin-bottom:8px;}
+  .entry:active{transform:scale(.99);}
+  .entry .ce{font-size:18px; width:37px; height:37px; flex:0 0 auto; border-radius:11px;
+    background:var(--bg); display:flex; align-items:center; justify-content:center;}
+  .entry .info{min-width:0; flex:1;}
+  .entry .ti{display:block; font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .entry .me{font-size:11px; color:var(--sub); display:flex; gap:5px; align-items:center;
+    flex-wrap:wrap; margin-top:1px;}
+  .entry .amtwrap{flex:0 0 auto; text-align:right;}
+  .entry .amt{font-weight:800; font-size:16px;}
+  .entry .amt small{font-size:11px; color:var(--sub); font-weight:600; display:block; margin-top:-3px;}
+  .tag{font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px;
+    background:var(--soft); color:#0c7f72; white-space:nowrap;}
+  .tag.gray{background:#eef2f2; color:#7b8c8c;}
+
+  /* ===== 精算 ===== */
+  .banner{background:linear-gradient(135deg,#d9f3ee,#c3eae3); border:1px solid #b9e4dc;
+    border-radius:var(--radius); padding:18px; text-align:center; margin-top:12px;}
+  .banner.done{background:linear-gradient(135deg,#e3f7e8,#cdeed6); border-color:#bce6c8;}
+  .banner .lab{font-size:12px; color:#3f7d74; font-weight:700;}
+  .banner .big{font-size:30px; font-weight:800; letter-spacing:-.02em; margin-top:2px;}
+  .banner .doneico{font-size:34px;}
+  .trow{background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:13px 14px; margin-bottom:9px;}
+  .trow.paid{opacity:.5;}
+  .trow .flow{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .trow .who{font-size:15px; font-weight:700; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap;}
+  .trow .arw{color:var(--accent); font-size:15px; flex:0 0 auto;}
+  .trow .amt{margin-left:auto; font-size:19px; font-weight:800; flex:0 0 auto;}
+  .trow.paid .amt{text-decoration:line-through;}
+  .trow .acts{display:flex; gap:7px; margin-top:11px;}
+  .trow .acts button{flex:1; padding:9px 6px; border-radius:11px; font-size:13px; font-weight:700;
+    border:1px solid var(--line); background:var(--bg); color:var(--ink);}
+  .trow .acts button.pp{background:#ff0033; border-color:#ff0033; color:#fff;}
+  .trow .acts button.dn{background:var(--soft); border-color:#bfe6df; color:#0c7f72;}
+  .trow .acts button:active{transform:scale(.97);}
+  .mine{border-color:var(--accent2); box-shadow:0 0 0 2px rgba(63,199,180,.18);}
+
+  .bal{display:flex; align-items:center; gap:10px; background:var(--card);
+    border:1px solid var(--line); border-radius:14px; padding:11px 13px; margin-bottom:8px;}
+  .bal .av{width:32px; height:32px; border-radius:50%; flex:0 0 auto; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800;}
+  .bal .bn{display:block; font-size:15px; font-weight:700; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap;}
+  .bal .bs{display:block; font-size:11px; color:var(--sub); line-height:1.5;}
+  .bal .bv{margin-left:auto; font-weight:800; font-size:16px; flex:0 0 auto;}
+  .bv.plus{color:#0c7f72;} .bv.minus{color:var(--warn);}
+
+  .unitrow{display:flex; gap:6px; margin-top:14px;}
+  .unitrow button{flex:1; padding:10px 2px; border-radius:12px; border:1.5px solid var(--line);
+    background:var(--card); font-size:12px; font-weight:700; color:var(--sub);}
+  .unitrow button.on{border-color:var(--accent); background:var(--soft); color:var(--ink);}
+  .unitrow button small{display:block; font-size:10px; font-weight:600; color:var(--sub);}
+
+  /* ===== メンバー ===== */
+  .mrow{display:flex; width:100%; text-align:left; align-items:center; gap:10px; background:var(--card);
+    border:1px solid var(--line); border-radius:14px; padding:11px 13px; margin-bottom:8px;}
+  .mrow .av{width:34px; height:34px; border-radius:50%; flex:0 0 auto; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800;}
+  .mrow .mn{display:block; font-size:15px; font-weight:700; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap;}
+  .mrow .bs{display:block; line-height:1.5;}
+  .mrow .mw{font-size:12px; color:var(--sub); font-weight:700; flex:0 0 auto;}
+  .mrow .chev{color:#cfdedb; font-size:18px; flex:0 0 auto;}
+  .adds{display:flex; align-items:center; justify-content:center; gap:6px; width:100%;
+    padding:14px; border:1.5px dashed #cfe3df; border-radius:16px; color:var(--accent);
+    font-weight:700; font-size:14px; background:rgba(255,255,255,.5); margin-bottom:8px;}
+  .adds:active{transform:scale(.985);}
+
+  .note{background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:12px 14px; font-size:12px; color:var(--sub); margin-top:12px; line-height:1.75;}
+  .note b{color:var(--ink);}
+  .ro{background:#fff4e5; border:1px solid #ffd9a8; color:#8a5a12; border-radius:14px;
+    padding:11px 14px; font-size:12px; font-weight:700; margin-top:12px;}
+
+  /* ===== アクションバー ===== */
+  .actionbar{position:fixed; left:0; right:0; bottom:0; z-index:40;
+    padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);
+    background:linear-gradient(to top, var(--bg) 68%, rgba(242,247,247,0));
+    display:flex; gap:9px; max-width:560px; margin:0 auto;}
+  .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:14px; border-radius:15px; font-weight:800; font-size:15px;}
+  .btn.primary{background:var(--accent); color:#fff; box-shadow:0 6px 18px rgba(15,158,142,.32);}
+  .btn.ghost{flex:0 0 auto; width:54px; background:var(--card); border:1px solid var(--line);}
+  .btn:active{transform:scale(.96);}
+
+  /* ===== シート ===== */
+  .ov{position:fixed; inset:0; z-index:100; background:rgba(10,40,38,.42);
+    display:flex; align-items:flex-end; justify-content:center; opacity:0; pointer-events:none;
+    transition:opacity .2s ease; backdrop-filter:blur(2px);}
+  .ov.show{opacity:1; pointer-events:auto;}
+  .sheet{width:100%; max-width:560px; background:var(--bg); border-radius:24px 24px 0 0;
+    padding:8px 18px calc(env(safe-area-inset-bottom) + 20px); max-height:92vh; overflow-y:auto;
+    transform:translateY(24px); transition:transform .25s cubic-bezier(.2,.8,.2,1);
+    -webkit-overflow-scrolling:touch;}
+  .ov.show .sheet{transform:translateY(0);}
+  .grip{width:38px; height:5px; border-radius:3px; background:#d3e2df; margin:6px auto 14px;}
+  .sheet h2{font-size:19px; font-weight:800; margin-bottom:3px;}
+  .sheet .sd{font-size:12px; color:var(--sub); margin-bottom:15px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12px; font-weight:700; color:var(--sub); margin-bottom:6px;}
+  .field input[type=text],.field input[type=number],.field input[type=date],.field select,.field textarea{
+    width:100%; padding:13px 14px; border:1px solid var(--line); border-radius:13px;
+    background:var(--card); color:var(--ink); outline:none; font-size:16px;}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);}
+  .row2{display:flex; gap:9px;} .row2>*{flex:1; min-width:0;}
+  .seg{display:flex; gap:6px; flex-wrap:wrap;}
+  .seg button{flex:1; min-width:72px; padding:11px 4px; border-radius:12px; border:1.5px solid var(--line);
+    background:var(--card); font-weight:700; font-size:13px; color:var(--sub);}
+  .seg button.on{border-color:var(--accent); background:var(--soft); color:var(--ink);}
+  .chips{display:flex; flex-wrap:wrap; gap:7px;}
+  .chip{padding:9px 13px; border-radius:999px; border:1.5px solid var(--line); background:var(--card);
+    font-size:14px; font-weight:700; color:var(--sub);}
+  .chip.on{border-color:var(--accent); background:var(--soft); color:var(--ink);}
+  .chip.sm{padding:6px 11px; font-size:12px;}
+  .emojipick{display:flex; flex-wrap:wrap; gap:7px;}
+  .emojipick button{width:44px; height:44px; font-size:21px; border-radius:12px;
+    border:1.5px solid var(--line); background:var(--card);
+    display:flex; align-items:center; justify-content:center;}
+  .emojipick button.on{border-color:var(--accent); background:var(--soft);}
+  .mline{display:flex; align-items:center; gap:9px; margin-bottom:8px;}
+  .mline .nm{flex:1; min-width:0; font-size:14px; font-weight:700; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap;}
+  .mline input[type=number]{width:104px; flex:0 0 auto; padding:10px 11px; font-size:16px;
+    border:1px solid var(--line); border-radius:11px; background:var(--card); outline:none; text-align:right;}
+  .mline input[type=text]{flex:1; min-width:0; padding:11px 12px; font-size:16px;
+    border:1px solid var(--line); border-radius:11px; background:var(--card); outline:none;}
+  .mline .x{flex:0 0 auto; color:#c3d2d0; font-size:19px; padding:4px 6px;}
+  .itemcard{background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:11px 12px; margin-bottom:9px;}
+  .itemcard .top{display:flex; gap:8px; align-items:center;}
+  .itemcard .top input[type=text]{flex:1; min-width:0;}
+  .itemcard .top input[type=number]{width:98px; flex:0 0 auto; text-align:right;}
+  .itemcard .top input{padding:10px 11px; font-size:16px; border:1px solid var(--line);
+    border-radius:11px; background:var(--bg); outline:none;}
+  .itemcard .chips{margin-top:9px;}
+  .sumline{display:flex; align-items:center; font-size:13px; font-weight:700; color:var(--sub);
+    padding:4px 2px 0;}
+  .sumline .v{margin-left:auto; color:var(--ink); font-size:15px;}
+  .sumline .v.bad{color:var(--warn);}
+  .sheetbtns{display:flex; gap:9px; margin-top:10px;}
+  .sheetbtns .save{flex:1; background:var(--accent); color:#fff; padding:15px; border-radius:14px;
+    font-weight:800; font-size:16px;}
+  .sheetbtns .save:active{transform:scale(.97);}
+  .sheetbtns .save[disabled]{opacity:.45;}
+  .delbtn{width:100%; text-align:center; color:var(--warn); font-weight:700; font-size:14px;
+    padding:14px; margin-top:4px;}
+  .secbtn{width:100%; display:flex; align-items:center; justify-content:center; gap:7px;
+    background:var(--card); border:1px solid var(--line); padding:14px; border-radius:14px;
+    font-weight:700; font-size:15px; margin-bottom:9px;}
+  .secbtn:active{transform:scale(.98);}
+  .secbtn small{font-weight:600; color:var(--sub); font-size:11px;}
+  .hint{font-size:11px; color:var(--sub); margin-top:7px; line-height:1.7;}
+
+  .toast{position:fixed; bottom:calc(env(safe-area-inset-bottom) + 96px); left:50%;
+    transform:translateX(-50%) translateY(20px); background:#1d2b2b; color:#fff;
+    padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600;
+    z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; max-width:88vw; text-align:center;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ===== スタート ===== -->
+  <div id="startView">
+    <header><span class="logo">🍻</span><h1>みんなわり</h1></header>
+    <div class="hero">
+      <div class="big">🍻</div>
+      <h2>みんなの立て替えを、<br>いちばん少ない送金にまとめる</h2>
+      <p>登録なし・URLを送るだけ。<br>広告も課金もありません。</p>
+      <div class="feat">
+        <span>品目ごとに割れる</span><span>大人1・子ども0.5</span>
+        <span>同時に入力できる</span><span>PayPayへ</span>
+      </div>
+      <button class="cta" id="newGroupBtn">グループをつくる</button>
+    </div>
+    <div id="recentWrap"></div>
+  </div>
+
+  <!-- ===== グループ ===== -->
+  <div id="groupView" hidden>
+    <div class="backbar">
+      <button id="backBtn">‹ グループ一覧</button>
+      <div class="right">
+        <button id="shareBtn">🔗 共有</button>
+        <button id="setBtn">⚙️</button>
+      </div>
+    </div>
+    <header style="padding-top:6px">
+      <span class="logo" id="gEmoji">🍻</span>
+      <h1 id="gTitle">—</h1>
+      <span class="sync" id="syncBadge"><span class="dot off"></span><span id="syncTxt">読込中</span></span>
+    </header>
+    <div class="tabs">
+      <button data-tab="list" class="on">立替</button>
+      <button data-tab="settle">精算</button>
+      <button data-tab="members">メンバー</button>
+    </div>
+    <div id="body"></div>
+  </div>
+</div>
+
+<div class="actionbar" id="actionBar" hidden>
+  <button class="btn primary" id="addBtn">＋ 立替を追加</button>
+</div>
+
+<div class="ov" id="ov"></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================
+   みんなわり — グループ割り勘
+   ・グループ1つ＝Supabase の warikan_groups 1行（state を丸ごと jsonb）
+   ・URLの「#」以降にIDと編集キーを載せる（#はサーバーに送られないので漏れにくい）
+       編集できるURL … minnawari.html#g=<ID>&k=<編集キー>
+       見るだけのURL … minnawari.html#g=<ID>
+   ・書き込みは版番号つきCAS（他の人が先に書いていたら取り直して再適用）
+   ============================================================ */
+const SB_URL = 'https://okbjqtdirrathscctyvx.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+const SBH = {apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json'};
+const LS_RECENT = 'minnawari_recent_v1';
+const AVCOL = ['#0f9e8e','#3b93ff','#f5a623','#e5484d','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+const EMOJIS = ['🍻','✈️','🏝️','🚗','⛺️','🍲','🎂','🏠','🎿','🎡','🎤','🍜'];
+const EX_EMOJIS = ['🧾','🍚','🍺','🚕','🚄','🏨','🎟️','🛒','⛽️','🎁','☕️','💊'];
+
+/* ============================================================
+   計算まわり（純粋関数・UIに依存しない）
+   ============================================================ */
+
+/** 金額 total を重み ws=[{id,w}] で1円単位に分け切る（最大剰余法）。合計は必ず total と一致 */
+function splitAmount(total, ws){
+  const out = {};
+  const list = ws.filter(x=>x.w > 0);
+  if(!list.length) return out;
+  const W = list.reduce((s,x)=>s+x.w, 0);
+  if(W <= 0) return out;
+  const sign = total < 0 ? -1 : 1, T = Math.abs(Math.round(total));
+  const raw  = list.map(x => T * x.w / W);
+  const base = raw.map(r => Math.floor(r));
+  let rest = T - base.reduce((s,x)=>s+x, 0);
+  const order = raw.map((r,i)=>({i, f:r - Math.floor(r)}))
+                   .sort((a,b)=> (b.f - a.f) || (a.i - b.i));
+  for(let k=0; k<rest; k++) base[order[k % order.length].i]++;
+  list.forEach((x,i)=>{ out[x.id] = (out[x.id]||0) + base[i]*sign; });
+  return out;
+}
+
+/** 立替1件の「基準通貨（円）での総額」 */
+function expenseYen(e){
+  if(e.mode === 'items') {
+    const sum = (e.items||[]).reduce((s,it)=> s + (+it.amount||0), 0);
+    return Math.round(sum * (e.rate||1));
+  }
+  if(e.mode === 'exact'){
+    const sum = Object.values(e.shares||{}).reduce((s,n)=> s + (+n||0), 0);
+    return Math.round(sum * (e.rate||1));
+  }
+  return Math.round((+e.amount||0) * (e.rate||1));
+}
+
+/** 立替1件を、メンバーごとの負担額（円）に割り当てる */
+function owedOf(e, memberIds){
+  const alive = id => memberIds.includes(id);
+  const rate = e.rate || 1;
+  if(e.mode === 'items'){
+    const out = {};
+    (e.items||[]).forEach(it=>{
+      const tg = (it.targets||[]).filter(alive);
+      if(!tg.length) return;
+      const yen = Math.round((+it.amount||0) * rate);
+      const part = splitAmount(yen, tg.map(id=>({id, w:1})));
+      Object.entries(part).forEach(([id,v])=> out[id] = (out[id]||0) + v);
+    });
+    return out;
+  }
+  if(e.mode === 'exact'){
+    const out = {};
+    Object.entries(e.shares||{}).forEach(([id,v])=>{
+      if(alive(id) && +v) out[id] = Math.round((+v) * rate);
+    });
+    return out;
+  }
+  const yen = expenseYen(e);
+  const tg = (e.targets||[]).filter(alive);
+  if(!tg.length) return {};
+  const ws = tg.map(id => ({
+    id,
+    w: e.mode === 'ratio' ? (e.ratios && +e.ratios[id] >= 0 ? +e.ratios[id] : 1) : 1
+  }));
+  return splitAmount(yen, ws);
+}
+
+/** 全員の 払った額 / 負担すべき額 / 収支 */
+function balancesOf(state){
+  const ids = state.members.map(m=>m.id);
+  const acc = {}; ids.forEach(id => acc[id] = {id, paid:0, owed:0});
+  (state.expenses||[]).forEach(e=>{
+    const yen = expenseYen(e);
+    if(acc[e.payer]) acc[e.payer].paid += yen;
+    const owed = owedOf(e, ids);
+    Object.entries(owed).forEach(([id,v])=>{ if(acc[id]) acc[id].owed += v; });
+  });
+  return ids.map(id => ({...acc[id], bal: acc[id].paid - acc[id].owed}));
+}
+
+/** 精算単位（1/10/100/1000円）に丸める。合計0は必ず保つ */
+function roundBalances(bals, unit){
+  const out = bals.map(x=>({...x}));
+  if(!unit || unit <= 1) return out;
+  out.forEach(x => x.bal = Math.round(x.bal / unit) * unit);
+  let residual = -out.reduce((s,x)=> s + x.bal, 0);
+  let guard = 0;
+  while(residual !== 0 && guard++ < 999){
+    const step = residual > 0 ? unit : -unit;
+    let best = 0, bestErr = Infinity;
+    out.forEach((x,i)=>{
+      const err = Math.abs((x.bal + step) - bals[i].bal);
+      if(err < bestErr){ bestErr = err; best = i; }
+    });
+    out[best].bal += step;
+    residual -= step;
+  }
+  return out;
+}
+
+/** 送金回数が最小になるように「誰から誰にいくら」を組む（貪欲法） */
+function settle(bals){
+  const cred = bals.filter(x=>x.bal > 0).map(x=>({id:x.id, v:x.bal}));
+  const debt = bals.filter(x=>x.bal < 0).map(x=>({id:x.id, v:-x.bal}));
+  const out = [];
+  let guard = 0;
+  while(cred.length && debt.length && guard++ < 999){
+    cred.sort((a,b)=> b.v - a.v || (a.id<b.id?-1:1));
+    debt.sort((a,b)=> b.v - a.v || (a.id<b.id?-1:1));
+    const c = cred[0], d = debt[0];
+    const amt = Math.min(c.v, d.v);
+    if(amt > 0) out.push({from:d.id, to:c.id, amount:amt});
+    c.v -= amt; d.v -= amt;
+    if(c.v <= 0) cred.shift();
+    if(d.v <= 0) debt.shift();
+  }
+  return out;
+}
+
+/* ============================================================
+   小道具
+   ============================================================ */
+const $  = s => document.querySelector(s);
+const ALPH = 'abcdefghijkmnpqrstuvwxyz23456789';
+function rndId(n){
+  const a = new Uint8Array(n); (crypto||{}).getRandomValues ? crypto.getRandomValues(a) : a.forEach((_,i)=>a[i]=Math.random()*256);
+  return Array.from(a).map(b => ALPH[b % ALPH.length]).join('');
+}
+const uid = () => rndId(8);
+const fmt = n => (n<0?'-':'') + '¥' + Math.abs(Math.round(n)).toLocaleString('ja-JP');
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+function niceDate(s){
+  if(!s) return '日付なし';
+  const [y,m,d] = s.split('-').map(Number);
+  const w = ['日','月','火','水','木','金','土'][new Date(y, m-1, d).getDay()];
+  return `${m}月${d}日(${w})`;
+}
+let toastT = null;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(()=> t.classList.remove('show'), 2000);
+}
+async function copy(text, msg){
+  try{ await navigator.clipboard.writeText(text); toast(msg || 'コピーしました'); }
+  catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast(msg || 'コピーしました'); }catch(_){ toast('コピーできませんでした'); }
+    ta.remove();
+  }
+}
+
+/* ============================================================
+   通信（RPC経由のみ）
+   ============================================================ */
+async function rpc(fn, body){
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {method:'POST', headers:SBH, body:JSON.stringify(body)});
+  if(!r.ok) throw new Error(fn + ' ' + r.status);
+  return r.json();
+}
+const rpcCreate = (id, key, state) => rpc('warikan_create', {p_id:id, p_key:key, p_state:state});
+const rpcWrite  = (id, key, v, state) => rpc('warikan_write', {p_id:id, p_key:key, p_expect:v, p_state:state});
+async function rpcRead(id){
+  const rows = await rpc('warikan_read', {p_id:id});
+  return (rows && rows.length) ? rows[0] : null;
+}
+
+/* ============================================================
+   アプリ状態
+   ============================================================ */
+let G = null;              // {id, key, v, state, canEdit}
+let tab = 'list';
+let queue = [], flushing = false, dirty = false, online = true;
+let sbClient = null, channel = null, watchers = 1;
+
+const lsGet = (k, d) => { try{ const v = JSON.parse(localStorage.getItem(k)); return v==null ? d : v; }catch(e){ return d; } };
+const lsSet = (k, v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} };
+
+function recents(){ return lsGet(LS_RECENT, []); }
+function storedKey(id){ const r = recents().find(x => x.id === id); return r ? (r.key || '') : ''; }
+function rememberGroup(){
+  if(!G) return;
+  // 見るだけのURLで開き直したときに、前に持っていた編集キーを消さない
+  const keep = G.key || storedKey(G.id);
+  const list = recents().filter(x => x.id !== G.id);
+  list.unshift({id:G.id, key:keep, title:G.state.title, emoji:G.state.emoji, at:Date.now()});
+  lsSet(LS_RECENT, list.slice(0, 30));
+}
+function forgetGroup(id){ lsSet(LS_RECENT, recents().filter(x => x.id !== id)); }
+const cacheKey = id => 'minnawari_g_' + id;
+function saveLocal(){ if(G) lsSet(cacheKey(G.id), {v:G.v, state:G.state}); }
+const meKey = id => 'minnawari_me_' + id;
+const myId  = () => G ? lsGet(meKey(G.id), '') : '';
+const setMyId = v => { if(G) lsSet(meKey(G.id), v); };
+
+function newState(title, emoji, names){
+  return {
+    title, emoji,
+    unit: 1,               // 精算単位（1/10/100/1000円）
+    fx: false,             // 外貨を使うか
+    defMode: 'even',       // 新しい立替の初期の割り方
+    members: names.map((n,i)=> ({id: uid(), name: n, w: 1, c: i % AVCOL.length})),
+    expenses: [],
+    done: []               // 送金済みチェック
+  };
+}
+
+/* ---- 変更はすべてここを通す（楽観適用 → 版番号つきで送信 → 衝突したら再適用） ---- */
+function mutate(fn){
+  if(!G || !G.canEdit) return;
+  fn(G.state);
+  saveLocal(); render();
+  queue.push(fn);
+  flush();
+}
+async function flush(){
+  if(flushing || !queue.length || !G || !G.canEdit) return;
+  flushing = true; setSync();
+  while(queue.length){
+    const fns = queue.splice(0);
+    let ok = false;
+    try{
+      for(let i=0; i<6 && !ok; i++){
+        const remote = await rpcRead(G.id);
+        if(!remote){ throw new Error('missing'); }
+        const next = clone(remote.state);
+        fns.forEach(f => f(next));
+        const res = await rpcWrite(G.id, G.key, remote.v, next);
+        if(res > 0){
+          G.v = res; G.state = next; ok = true;
+          saveLocal(); render(); broadcast(res);
+        } else if(res === -1){
+          continue;                          // 他の人が先に更新 → 取り直して再適用
+        } else if(res === -2){
+          G.canEdit = false; toast('編集の権限がありません（見るだけのURLです）');
+          queue = []; ok = true; render();
+        } else { throw new Error('write ' + res); }
+      }
+    }catch(e){ online = false; }
+    if(!ok){ queue.unshift(...fns); dirty = true; break; }
+    dirty = false; online = true;
+  }
+  flushing = false; setSync();
+}
+setInterval(()=>{ if(G && queue.length) flush(); }, 12000);
+
+/* ---- 取り込み（他の人の変更を反映） ---- */
+async function pull(){
+  if(!G) return;
+  try{
+    const r = await rpcRead(G.id);
+    if(!r) return;
+    online = true;
+    if(r.v > G.v && !queue.length){ G.v = r.v; G.state = r.state; saveLocal(); render(); }
+  }catch(e){ online = false; setSync(); }
+}
+setInterval(()=>{ if(G && document.visibilityState === 'visible' && !queue.length) pull(); }, 9000);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible'){ pull(); flush(); } });
+
+/* ---- リアルタイム（変更の合図だけを飛ばす＝テーブルは外から見えないまま） ---- */
+function connectRealtime(){
+  try{
+    if(!window.supabase || !G) return;
+    sbClient = sbClient || window.supabase.createClient(SB_URL, SB_KEY);
+    if(channel){ try{ sbClient.removeChannel(channel); }catch(e){} channel = null; }
+    channel = sbClient.channel('warikan-' + G.id, {config:{broadcast:{self:false}, presence:{key: rndId(6)}}})
+      .on('broadcast', {event:'upd'}, ({payload})=>{ if(payload && payload.v > G.v) pull(); })
+      .on('presence', {event:'sync'}, ()=>{
+        try{ watchers = Math.max(1, Object.keys(channel.presenceState()).length); }catch(e){ watchers = 1; }
+        setSync();
+      })
+      .subscribe(st=>{ if(st === 'SUBSCRIBED'){ try{ channel.track({at:Date.now()}); }catch(e){} } });
+  }catch(e){}
+}
+function broadcast(v){
+  try{ if(channel) channel.send({type:'broadcast', event:'upd', payload:{v}}); }catch(e){}
+}
+
+function setSync(){
+  const badge = $('#syncBadge'); if(!badge || !G) return;
+  const dot = badge.querySelector('.dot'), txt = $('#syncTxt');
+  dot.className = 'dot' + (!online ? ' off' : (queue.length ? ' busy' : ''));
+  txt.textContent = !online ? 'オフライン（あとで送信）'
+                  : queue.length ? '保存中…'
+                  : watchers > 1 ? `${watchers}人が見ています`
+                  : (G.canEdit ? '同期中' : '見るだけ');
+}
+
+/* ============================================================
+   画面
+   ============================================================ */
+function memberById(id){ return (G.state.members||[]).find(m => m.id === id); }
+function mName(id){ const m = memberById(id); return m ? m.name : '（退出）'; }
+function mCol(id){ const m = memberById(id); return m ? AVCOL[m.c % AVCOL.length] : '#b8c6c4'; }
+function initial(name){ return (name||'?').trim().slice(0,1); }
+
+function renderStart(){
+  $('#startView').hidden = false;
+  $('#groupView').hidden = true;
+  $('#actionBar').hidden = true;
+  const list = recents();
+  $('#recentWrap').innerHTML = !list.length ? '' :
+    `<div class="sectitle">さいきん開いたグループ <span class="cnt">${list.length}</span></div>` +
+    list.map(g => `
+      <button class="gcard" data-open="${esc(g.id)}" data-key="${esc(g.key||'')}">
+        <span class="ge">${esc(g.emoji||'🍻')}</span>
+        <span class="gi">
+          <span class="gn">${esc(g.title||'（無題）')}</span>
+          <span class="gm">${g.key ? '編集できる' : '見るだけ'} ・ ${new Date(g.at).toLocaleDateString('ja-JP')}</span>
+        </span>
+        <span class="chev">›</span>
+      </button>`).join('');
+}
+
+function render(){
+  if(!G){ renderStart(); return; }
+  $('#startView').hidden = true;
+  $('#groupView').hidden = false;
+  $('#actionBar').hidden = !(tab === 'list' && G.canEdit);
+  $('#gEmoji').textContent = G.state.emoji || '🍻';
+  $('#gTitle').textContent = G.state.title || '（無題）';
+  document.title = (G.state.title || 'みんなわり') + ' — みんなわり';
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  setSync();
+  if(tab === 'list') renderList();
+  else if(tab === 'settle') renderSettle();
+  else renderMembers();
+}
+
+function renderList(){
+  const s = G.state, ex = (s.expenses||[]).slice().sort((a,b)=> (b.at||'').localeCompare(a.at||'') || (b.ts||0)-(a.ts||0));
+  const total = ex.reduce((t,e)=> t + expenseYen(e), 0);
+  const heads = s.members.length || 1;
+  let html = `
+    <div class="sums">
+      <div class="sumc"><div class="nm">立て替えの合計</div><div class="vl num">${fmt(total)}</div>
+        <div class="sb">${ex.length}件</div></div>
+      <div class="sumc"><div class="nm">単純にひとり</div><div class="vl num">${fmt(Math.round(total/heads))}</div>
+        <div class="sb">${heads}人で割った目安</div></div>
+    </div>`;
+  if(!G.canEdit) html += `<div class="ro">👀 見るだけのURLで開いています。追加・編集はできません。</div>`;
+  if(!ex.length){
+    html += `<div class="empty"><div class="big">🧾</div><p>まだ立替がありません。<br>下の「＋ 立替を追加」から。</p></div>`;
+  } else {
+    let day = '';
+    ex.forEach(e=>{
+      if(e.at !== day){ day = e.at; html += `<div class="daygroup">${niceDate(day)}</div>`; }
+      const yen = expenseYen(e);
+      const tgN = e.mode === 'items' ? new Set((e.items||[]).flatMap(i=>i.targets||[])).size
+                : e.mode === 'exact' ? Object.entries(e.shares||{}).filter(([,v])=>+v).length
+                : (e.targets||[]).length;
+      const modeTag = e.mode === 'items' ? '品目ごと' : e.mode === 'exact' ? '金額指定' : e.mode === 'ratio' ? '比率' : '均等';
+      const fxTag = (e.cur && e.cur !== 'JPY') ? `<span class="tag gray">${esc(e.cur)} ${(+e.amount||0).toLocaleString()}</span>` : '';
+      html += `
+        <button class="entry" data-ex="${esc(e.id)}">
+          <span class="ce">${esc(e.emoji||'🧾')}</span>
+          <span class="info">
+            <span class="ti">${esc(e.title||'（無題）')}</span>
+            <span class="me"><span class="tag">${esc(mName(e.payer))}が払った</span>
+              <span class="tag gray">${modeTag}・${tgN}人</span>${fxTag}</span>
+          </span>
+          <span class="amtwrap"><span class="amt num">${fmt(yen)}</span></span>
+        </button>`;
+    });
+  }
+  $('#body').innerHTML = html;
+}
+
+function renderSettle(){
+  const s = G.state;
+  const raw = balancesOf(s);
+  const bals = roundBalances(raw, s.unit || 1);
+  const trans = settle(bals);
+  const me = myId();
+  const doneSet = new Set(s.done || []);
+  const tkey = t => `${t.from}>${t.to}:${t.amount}`;
+
+  let html = '';
+  if(!s.expenses.length){
+    html += `<div class="empty"><div class="big">🧮</div><p>立替を入れると、<br>ここに「誰が誰にいくら」が出ます。</p></div>`;
+  } else if(!trans.length){
+    html += `<div class="banner done"><div class="doneico">🎉</div><div class="lab">ぴったり。精算は要りません</div></div>`;
+  } else {
+    html += `<div class="banner"><div class="lab">この送金だけで終わります</div>
+      <div class="big num">${trans.length}回</div></div>`;
+    html += trans.map(t=>{
+      const k = tkey(t), paid = doneSet.has(k);
+      const isMine = me && (t.from === me || t.to === me);
+      return `
+      <div class="trow ${paid?'paid':''} ${isMine?'mine':''}" style="margin-top:10px">
+        <div class="flow">
+          <span class="who">${esc(mName(t.from))}</span>
+          <span class="arw">→</span>
+          <span class="who">${esc(mName(t.to))}</span>
+          <span class="amt num">${fmt(t.amount)}</span>
+        </div>
+        <div class="acts">
+          <button data-copy="${t.amount}">金額コピー</button>
+          <button class="pp" data-paypay="1">PayPay</button>
+          ${G.canEdit ? `<button class="dn" data-done="${esc(k)}">${paid?'戻す':'送った'}</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  html += `<div class="sectitle" style="margin-top:20px">精算のきざみ</div>
+    <div class="unitrow">
+      ${[[1,'ぴったり','1円'],[10,'きっちり','10円'],[100,'ざっくり','100円'],[1000,'ばっさり','1000円']]
+        .map(([u,n,sub]) => `<button data-unit="${u}" class="${(s.unit||1)===u?'on':''}" ${G.canEdit?'':'disabled'}>${n}<small>${sub}</small></button>`).join('')}
+    </div>`;
+
+  html += `<div class="sectitle" style="margin-top:20px">ひとりずつの収支</div>`;
+  html += bals.slice().sort((a,b)=> b.bal - a.bal).map(b=>`
+    <div class="bal">
+      <span class="av" style="background:${mCol(b.id)}">${esc(initial(mName(b.id)))}</span>
+      <span style="min-width:0;flex:1">
+        <span class="bn">${esc(mName(b.id))}${me===b.id?' <span class="tag">あなた</span>':''}</span>
+        <span class="bs num">払った ${fmt(b.paid)} ／ 負担 ${fmt(b.owed)}</span>
+      </span>
+      <span class="bv num ${b.bal>0?'plus':b.bal<0?'minus':''}">${b.bal>0?'+':''}${fmt(b.bal)}</span>
+    </div>`).join('');
+
+  html += `<button class="secbtn" id="whoAmI" style="margin-top:12px">
+      🙋 あなたはどれ？<small>${me ? esc(mName(me)) : '未設定'}</small></button>`;
+
+  if((s.unit||1) > 1){
+    html += `<div class="note">「ぴったり」以外を選ぶと、きざみに合わせて数円〜数百円ずれます。
+      その差はいちばん影響の小さい人に寄せています。<b>正確に割りたいときは「ぴったり」</b>を。</div>`;
+  }
+  html += `<div class="note">送金はPayPayなどのアプリで行ってください。
+    <b>金額の自動入力はできない</b>ので、「金額コピー」→PayPayで貼り付けが最短です。</div>`;
+  $('#body').innerHTML = html;
+}
+
+function renderMembers(){
+  const s = G.state;
+  const bals = balancesOf(s);
+  const skew = s.members.some(m => (m.w ?? 1) !== 1);
+  let html = '';
+  html += s.members.map(m=>{
+    const b = bals.find(x=>x.id===m.id) || {paid:0};
+    return `<button class="mrow" data-mem="${esc(m.id)}" ${G.canEdit?'':'disabled'}>
+      <span class="av" style="background:${AVCOL[m.c % AVCOL.length]}">${esc(initial(m.name))}</span>
+      <span style="min-width:0;flex:1">
+        <span class="mn">${esc(m.name)}</span>
+        <span class="bs" style="font-size:11px;color:var(--sub)">払った ${fmt(b.paid)}</span>
+      </span>
+      <span class="mw">×${(m.w ?? 1)}</span>
+      ${G.canEdit ? '<span class="chev">›</span>' : ''}
+    </button>`;
+  }).join('');
+  if(G.canEdit) html += `<button class="adds" id="addMem">＋ メンバーを追加</button>`;
+  html += `<div class="note">
+    <b>基本の割合</b>は「大人 1 ／ 子ども 0.5 ／ お酒を飲まない人 0.7」のように決めておくと、
+    立替の割り方で「比率」を選んだとき自動で当てはまります。${skew ? '' : '<br>いまは全員 ×1（＝均等）です。'}
+  </div>`;
+  $('#body').innerHTML = html;
+}
+
+/* ============================================================
+   シート（下から出るモーダル）
+   ============================================================ */
+function openSheet(html, onMount){
+  const ov = $('#ov');
+  ov.innerHTML = `<div class="sheet"><div class="grip"></div>${html}</div>`;
+  ov.classList.add('show');
+  ov.onclick = e => { if(e.target === ov) closeSheet(); };
+  if(onMount) onMount(ov.querySelector('.sheet'));
+}
+function closeSheet(){ const ov = $('#ov'); ov.classList.remove('show'); setTimeout(()=>{ if(!ov.classList.contains('show')) ov.innerHTML=''; }, 250); }
+
+/* ---- グループを作る ---- */
+function sheetCreate(){
+  let emoji = '🍻';
+  openSheet(`
+    <h2>グループをつくる</h2>
+    <div class="sd">あとから何度でも変えられます</div>
+    <div class="field"><label>なんの集まり？</label>
+      <input type="text" id="cTitle" placeholder="例）沖縄旅行 / 8月の飲み会" maxlength="40"></div>
+    <div class="field"><label>アイコン</label>
+      <div class="emojipick" id="cEmoji">${EMOJIS.map(e=>`<button data-e="${e}" class="${e===emoji?'on':''}">${e}</button>`).join('')}</div></div>
+    <div class="field"><label>メンバー（あとで追加できます）</label>
+      <div id="cMems"></div>
+      <button class="adds" id="cAdd" style="padding:11px;margin-top:2px">＋ メンバーを増やす</button></div>
+    <div class="sheetbtns"><button class="save" id="cSave">つくる</button></div>
+    <div class="hint">できたグループのURLをLINEなどで送れば、相手は登録なしでそのまま入力できます。</div>
+  `, sheet=>{
+    const wrap = sheet.querySelector('#cMems');
+    const addRow = (val='') => {
+      const d = document.createElement('div');
+      d.className = 'mline';
+      d.innerHTML = `<input type="text" placeholder="名前" maxlength="20" value="${esc(val)}"><button class="x">×</button>`;
+      d.querySelector('.x').onclick = ()=>{ if(wrap.children.length > 1) d.remove(); };
+      wrap.appendChild(d);
+    };
+    ['', '', ''].forEach(()=> addRow());
+    wrap.querySelector('input').focus();
+    sheet.querySelector('#cAdd').onclick = ()=> addRow();
+    sheet.querySelector('#cEmoji').onclick = e=>{
+      const b = e.target.closest('button[data-e]'); if(!b) return;
+      emoji = b.dataset.e;
+      sheet.querySelectorAll('#cEmoji button').forEach(x=> x.classList.toggle('on', x === b));
+    };
+    sheet.querySelector('#cSave').onclick = async ()=>{
+      const title = sheet.querySelector('#cTitle').value.trim() || 'みんなの割り勘';
+      let names = [...wrap.querySelectorAll('input')].map(i=>i.value.trim()).filter(Boolean);
+      if(names.length < 2){ toast('メンバーを2人以上入れてください'); return; }
+      const btn = sheet.querySelector('#cSave'); btn.disabled = true; btn.textContent = 'つくっています…';
+      // createGroup が最後に「共有」シートへ差し替えるので、ここでは閉じない
+      try{ await createGroup(title, emoji, names); }
+      catch(e){ btn.disabled = false; btn.textContent = 'つくる'; toast('作れませんでした。通信を確認してください'); }
+    };
+  });
+}
+
+async function createGroup(title, emoji, names){
+  const state = newState(title, emoji, names);
+  for(let i=0; i<5; i++){
+    const id = rndId(14), key = rndId(10);
+    const res = await rpcCreate(id, key, state);
+    if(res === 1){
+      G = {id, key, v:1, state, canEdit:true};
+      setMyId('');
+      rememberGroup(); saveLocal();
+      location.hash = `g=${id}&k=${key}`;
+      tab = 'list'; connectRealtime(); render();
+      sheetShare(true);
+      return;
+    }
+    if(res !== -1) throw new Error('create ' + res);
+  }
+  throw new Error('id conflict');
+}
+
+/* ---- 立替の追加・編集 ---- */
+function sheetExpense(id){
+  const s = G.state;
+  const editing = id ? clone(s.expenses.find(e=>e.id===id)) : null;
+  const e = editing || {
+    id: uid(), title:'', emoji:'🧾', payer: (myId() || s.members[0].id),
+    amount:'', cur:'JPY', rate:1,
+    mode: s.defMode || 'even',
+    targets: s.members.map(m=>m.id),
+    ratios: {}, shares: {}, items: [{name:'', amount:'', targets:[]}],
+    at: today(), ts: Date.now()
+  };
+  if(!e.ratios) e.ratios = {};
+  s.members.forEach(m=>{ if(e.ratios[m.id] == null) e.ratios[m.id] = (m.w ?? 1); });
+
+  const MODES = [['even','均等'],['ratio','比率'],['items','品目ごと'],['exact','金額指定']];
+
+  openSheet(`
+    <h2>${editing ? '立替をなおす' : '立替を追加'}</h2>
+    <div class="sd">「誰が」「いくら」「何に」「誰で割るか」</div>
+    <div class="field"><label>何に使った？</label>
+      <div class="row2">
+        <input type="text" id="eTitle" placeholder="例）居酒屋 / 宿代" maxlength="40" value="${esc(e.title)}">
+      </div>
+      <div class="emojipick" style="margin-top:8px" id="eEmoji">
+        ${EX_EMOJIS.map(x=>`<button data-e="${x}" class="${x===e.emoji?'on':''}">${x}</button>`).join('')}</div>
+    </div>
+    <div class="field"><label>誰が払った？</label>
+      <div class="chips" id="ePayer">
+        ${s.members.map(m=>`<button class="chip" data-m="${esc(m.id)}">${esc(m.name)}</button>`).join('')}</div>
+    </div>
+    <div class="field"><label>割り方</label>
+      <div class="seg" id="eMode">${MODES.map(([k,n])=>`<button data-m="${k}">${n}</button>`).join('')}</div>
+    </div>
+    <div id="eAmountBox"></div>
+    <div id="eSplitBox"></div>
+    <div class="field"><label>日付</label><input type="date" id="eDate" value="${esc(e.at)}"></div>
+    <div class="sheetbtns"><button class="save" id="eSave">${editing ? '保存する' : '追加する'}</button></div>
+    ${editing ? '<button class="delbtn" id="eDel">この立替を削除</button>' : ''}
+  `, sheet=>{
+    const paint = ()=>{
+      sheet.querySelectorAll('#ePayer .chip').forEach(b => b.classList.toggle('on', b.dataset.m === e.payer));
+      sheet.querySelectorAll('#eMode button').forEach(b => b.classList.toggle('on', b.dataset.m === e.mode));
+      paintAmount(); paintSplit();
+    };
+    const fxRow = () => !s.fx ? '' : `
+      <div class="row2" style="margin-top:9px">
+        <div><label style="font-size:12px;font-weight:700;color:var(--sub)">通貨</label>
+          <input type="text" id="eCur" maxlength="4" placeholder="JPY" value="${esc(e.cur||'JPY')}"></div>
+        <div><label id="eRateLab" style="font-size:12px;font-weight:700;color:var(--sub)">1${esc(e.cur||'JPY')}＝何円</label>
+          <input type="number" id="eRate" inputmode="decimal" step="0.0001" value="${e.rate ?? 1}"></div>
+      </div>`;
+
+    function paintAmount(){
+      const box = sheet.querySelector('#eAmountBox');
+      if(e.mode === 'items' || e.mode === 'exact'){ box.innerHTML = s.fx ? `<div class="field">${fxRow()}</div>` : ''; }
+      else {
+        box.innerHTML = `<div class="field"><label>いくら？</label>
+          <input type="number" id="eAmt" inputmode="numeric" placeholder="0" value="${e.amount===''?'':e.amount}">
+          ${fxRow()}</div>`;
+      }
+      const amt = sheet.querySelector('#eAmt');
+      if(amt) amt.oninput = ()=>{ e.amount = amt.value; paintSplit(); };
+      const cur = sheet.querySelector('#eCur'), rate = sheet.querySelector('#eRate');
+      if(cur) cur.oninput = ()=>{
+        e.cur = cur.value.toUpperCase() || 'JPY';
+        const lab = sheet.querySelector('#eRateLab');
+        if(lab) lab.textContent = `1${e.cur}＝何円`;
+      };
+      if(rate) rate.oninput = ()=>{ e.rate = +rate.value || 1; paintSplit(); };
+    }
+
+    function chipsFor(sel, onToggle, small){
+      return s.members.map(m=>`<button class="chip ${small?'sm':''} ${sel(m.id)?'on':''}" data-m="${esc(m.id)}">${esc(m.name)}</button>`).join('');
+    }
+
+    function paintSplit(){
+      const box = sheet.querySelector('#eSplitBox');
+      const ids = s.members.map(m=>m.id);
+      if(e.mode === 'even' || e.mode === 'ratio'){
+        const preview = owedOf({...e, amount:+e.amount||0}, ids);
+        box.innerHTML = `<div class="field"><label>誰で割る？</label>
+            <div class="chips" id="eTargets">${chipsFor(id => e.targets.includes(id))}</div>
+            <div style="display:flex;gap:6px;margin-top:8px">
+              <button class="chip sm" id="tAll">全員</button><button class="chip sm" id="tNone">クリア</button></div>
+          </div>
+          ${e.mode === 'ratio' ? `<div class="field"><label>それぞれの比率（大人1・子ども0.5 など）</label>
+            ${s.members.filter(m=>e.targets.includes(m.id)).map(m=>`
+              <div class="mline"><span class="nm">${esc(m.name)}</span>
+                <input type="number" inputmode="decimal" step="0.1" min="0" data-r="${esc(m.id)}" value="${e.ratios[m.id] ?? 1}"></div>`).join('')}
+          </div>` : ''}
+          <div class="field"><label>ひとりの負担（プレビュー）</label>
+            ${s.members.filter(m=>e.targets.includes(m.id)).map(m=>`
+              <div class="mline"><span class="nm">${esc(m.name)}</span>
+                <span class="num" style="font-weight:800">${fmt(preview[m.id]||0)}</span></div>`).join('') || '<div class="hint">対象を選んでください</div>'}
+          </div>`;
+        box.querySelector('#eTargets').onclick = ev=>{
+          const b = ev.target.closest('.chip'); if(!b) return;
+          const id = b.dataset.m;
+          e.targets = e.targets.includes(id) ? e.targets.filter(x=>x!==id) : [...e.targets, id];
+          paintSplit();
+        };
+        box.querySelector('#tAll').onclick  = ()=>{ e.targets = ids.slice(); paintSplit(); };
+        box.querySelector('#tNone').onclick = ()=>{ e.targets = []; paintSplit(); };
+        box.querySelectorAll('input[data-r]').forEach(inp=>{
+          inp.oninput = ()=>{ e.ratios[inp.dataset.r] = +inp.value; paintSplit(); };
+        });
+      }
+      else if(e.mode === 'items'){
+        const sum = (e.items||[]).reduce((t,it)=> t + (+it.amount||0), 0);
+        box.innerHTML = `<div class="field"><label>品目ごとに「誰が食べたか」</label>
+          <div id="eItems">${(e.items||[]).map((it,i)=>`
+            <div class="itemcard" data-i="${i}">
+              <div class="top">
+                <input type="text" data-n="${i}" placeholder="例）刺身盛り" maxlength="24" value="${esc(it.name)}">
+                <input type="number" data-a="${i}" inputmode="numeric" placeholder="0" value="${it.amount===''?'':it.amount}">
+                <button class="x" data-x="${i}" style="color:#c3d2d0;font-size:19px;padding:4px">×</button>
+              </div>
+              <div class="chips" data-t="${i}">
+                ${s.members.map(m=>`<button class="chip sm ${(it.targets||[]).includes(m.id)?'on':''}" data-m="${esc(m.id)}">${esc(m.name)}</button>`).join('')}
+              </div>
+            </div>`).join('')}</div>
+          <button class="adds" id="itAdd" style="padding:11px">＋ 品目を増やす</button>
+          <div class="sumline">品目の合計 <span class="v num">${fmt(sum)}</span></div>
+          </div>`;
+        box.querySelectorAll('input[data-n]').forEach(i=> i.oninput = ()=>{ e.items[+i.dataset.n].name = i.value; });
+        box.querySelectorAll('input[data-a]').forEach(i=> i.oninput = ()=>{
+          e.items[+i.dataset.a].amount = i.value;
+          box.querySelector('.sumline .v').textContent = fmt((e.items||[]).reduce((t,x)=> t + (+x.amount||0), 0));
+        });
+        box.querySelectorAll('[data-x]').forEach(b=> b.onclick = ()=>{
+          if(e.items.length > 1){ e.items.splice(+b.dataset.x, 1); paintSplit(); }
+        });
+        box.querySelectorAll('[data-t]').forEach(row=> row.onclick = ev=>{
+          const b = ev.target.closest('.chip'); if(!b) return;
+          const it = e.items[+row.dataset.t], id = b.dataset.m;
+          it.targets = (it.targets||[]).includes(id) ? it.targets.filter(x=>x!==id) : [...(it.targets||[]), id];
+          b.classList.toggle('on');
+        });
+        box.querySelector('#itAdd').onclick = ()=>{
+          const last = e.items[e.items.length-1];
+          e.items.push({name:'', amount:'', targets: last ? (last.targets||[]).slice() : []});
+          paintSplit();
+        };
+      }
+      else { // exact
+        const sum = Object.values(e.shares||{}).reduce((t,v)=> t + (+v||0), 0);
+        box.innerHTML = `<div class="field"><label>それぞれの負担額を直接入れる</label>
+          ${s.members.map(m=>`<div class="mline"><span class="nm">${esc(m.name)}</span>
+            <input type="number" inputmode="numeric" data-s="${esc(m.id)}" placeholder="0" value="${e.shares[m.id]==null?'':e.shares[m.id]}"></div>`).join('')}
+          <div class="sumline">合計 <span class="v num">${fmt(sum)}</span></div></div>`;
+        box.querySelectorAll('input[data-s]').forEach(inp=> inp.oninput = ()=>{
+          e.shares[inp.dataset.s] = inp.value === '' ? '' : +inp.value;
+          box.querySelector('.sumline .v').textContent =
+            fmt(Object.values(e.shares).reduce((t,v)=> t + (+v||0), 0));
+        });
+      }
+    }
+
+    sheet.querySelector('#eTitle').oninput = ev=>{ e.title = ev.target.value; };
+    sheet.querySelector('#eDate').onchange = ev=>{ e.at = ev.target.value || today(); };
+    sheet.querySelector('#eEmoji').onclick = ev=>{
+      const b = ev.target.closest('button[data-e]'); if(!b) return;
+      e.emoji = b.dataset.e;
+      sheet.querySelectorAll('#eEmoji button').forEach(x=> x.classList.toggle('on', x === b));
+    };
+    sheet.querySelector('#ePayer').onclick = ev=>{
+      const b = ev.target.closest('.chip'); if(!b) return;
+      e.payer = b.dataset.m; paint();
+    };
+    sheet.querySelector('#eMode').onclick = ev=>{
+      const b = ev.target.closest('button'); if(!b) return;
+      e.mode = b.dataset.m; paint();
+    };
+    sheet.querySelector('#eSave').onclick = ()=>{
+      e.title = (e.title||'').trim() || '立替';
+      if(e.mode === 'items'){
+        e.items = (e.items||[]).filter(it => (+it.amount||0) > 0 && (it.targets||[]).length);
+        if(!e.items.length){ toast('品目に金額と対象者を入れてください'); return; }
+      } else if(e.mode === 'exact'){
+        const sum = Object.values(e.shares||{}).reduce((t,v)=> t + (+v||0), 0);
+        if(sum <= 0){ toast('負担額を入れてください'); return; }
+      } else {
+        if(!(+e.amount > 0)){ toast('金額を入れてください'); return; }
+        if(!e.targets.length){ toast('割る相手を選んでください'); return; }
+        e.amount = +e.amount;
+      }
+      e.rate = +e.rate || 1;
+      if(!s.fx){ e.cur = 'JPY'; e.rate = 1; }
+      const saved = clone(e);
+      mutate(st=>{
+        const i = st.expenses.findIndex(x => x.id === saved.id);
+        if(i >= 0) st.expenses[i] = saved; else st.expenses.push(saved);
+      });
+      closeSheet();
+      toast(editing ? 'なおしました' : '追加しました');
+    };
+    const del = sheet.querySelector('#eDel');
+    if(del) del.onclick = ()=>{
+      mutate(st=>{ st.expenses = st.expenses.filter(x => x.id !== e.id); });
+      closeSheet(); toast('削除しました');
+    };
+    paint();
+  });
+}
+
+/* ---- メンバー ---- */
+function sheetMember(id){
+  const s = G.state;
+  const m = id ? clone(s.members.find(x=>x.id===id)) : {id: uid(), name:'', w:1, c: s.members.length % AVCOL.length};
+  const used = id ? (s.expenses||[]).some(e => e.payer === id) : false;
+  openSheet(`
+    <h2>${id ? 'メンバーをなおす' : 'メンバーを追加'}</h2>
+    <div class="sd">名前と、基本の割合（大人1・子ども0.5 など）</div>
+    <div class="field"><label>名前</label>
+      <input type="text" id="mName" maxlength="20" placeholder="例）こうだい" value="${esc(m.name)}"></div>
+    <div class="field"><label>基本の割合</label>
+      <div class="seg" id="mW">${[1,0.7,0.5,0].map(w=>`<button data-w="${w}" class="${(m.w??1)===w?'on':''}">×${w}</button>`).join('')}</div>
+      <input type="number" id="mWn" step="0.1" min="0" value="${m.w ?? 1}" style="margin-top:9px">
+      <div class="hint">立替の割り方で「比率」を選んだとき、この数字がそのまま使われます。</div></div>
+    <div class="sheetbtns"><button class="save" id="mSave">${id ? '保存する' : '追加する'}</button></div>
+    ${id && s.members.length > 2 ? '<button class="delbtn" id="mDel">このメンバーを外す</button>' : ''}
+  `, sheet=>{
+    const nInp = sheet.querySelector('#mWn');
+    sheet.querySelector('#mW').onclick = ev=>{
+      const b = ev.target.closest('button'); if(!b) return;
+      m.w = +b.dataset.w; nInp.value = m.w;
+      sheet.querySelectorAll('#mW button').forEach(x=> x.classList.toggle('on', x === b));
+    };
+    nInp.oninput = ()=>{
+      m.w = +nInp.value || 0;
+      sheet.querySelectorAll('#mW button').forEach(x=> x.classList.toggle('on', +x.dataset.w === m.w));
+    };
+    sheet.querySelector('#mSave').onclick = ()=>{
+      const name = sheet.querySelector('#mName').value.trim();
+      if(!name){ toast('名前を入れてください'); return; }
+      const saved = {...m, name, w: +nInp.value || 0};
+      mutate(st=>{
+        const i = st.members.findIndex(x => x.id === saved.id);
+        if(i >= 0) st.members[i] = saved;
+        else { st.members.push(saved); st.expenses.forEach(e=>{ /* 既存の立替には自動で入れない */ }); }
+      });
+      closeSheet();
+    };
+    const del = sheet.querySelector('#mDel');
+    if(del) del.onclick = ()=>{
+      if(used){ toast('この人が払った立替があります。先にそちらを直してください'); return; }
+      mutate(st=>{
+        st.members = st.members.filter(x => x.id !== m.id);
+        st.expenses.forEach(e=>{
+          if(e.targets) e.targets = e.targets.filter(x => x !== m.id);
+          if(e.shares) delete e.shares[m.id];
+          if(e.items) e.items.forEach(it => it.targets = (it.targets||[]).filter(x => x !== m.id));
+        });
+      });
+      closeSheet(); toast('外しました');
+    };
+  });
+}
+
+/* ---- 共有 ---- */
+function shareUrl(withKey){
+  const base = location.origin + location.pathname;
+  return base + '#g=' + G.id + (withKey && G.key ? '&k=' + G.key : '');
+}
+function sheetShare(justCreated){
+  const edit = shareUrl(true), view = shareUrl(false);
+  openSheet(`
+    <h2>${justCreated ? 'できました 🎉' : 'このグループを共有'}</h2>
+    <div class="sd">URLを知っている人だけが開けます</div>
+    ${G.key ? '<button class="secbtn" id="sEdit">✏️ 編集できるURLをコピー<small>メンバーに渡す</small></button>' : ''}
+    <button class="secbtn" id="sView">👀 見るだけのURLをコピー<small>報告用・入力はできない</small></button>
+    ${navigator.share ? '<button class="secbtn" id="sNative">📤 そのまま送る（LINEなど）</button>' : ''}
+    <div class="note">
+      ${G.key ? `<b>ふたつのURLの違い</b><br>
+      編集できるURLは「合言葉」つきで、立替の追加や削除ができます。<br>
+      見るだけのURLは中身を読めるだけ。SNSや共有アルバムに貼るならこちら。<br>
+      どちらもURLを知っている人は誰でも開けるので、扱いにはご注意を。`
+      : `いま開いているのは<b>見るだけのURL</b>なので、編集できるURLは作れません。<br>
+      入力もしたいときは、グループを作った人から編集できるURLをもらってください。`}
+    </div>
+    <div class="hint">このURLはこの端末にも記録され、次からトップの「さいきん開いたグループ」から入れます。</div>
+  `, sheet=>{
+    const ed = sheet.querySelector('#sEdit');
+    if(ed) ed.onclick = ()=> copy(edit, '編集できるURLをコピーしました');
+    sheet.querySelector('#sView').onclick = ()=> copy(view, '見るだけのURLをコピーしました');
+    const nat = sheet.querySelector('#sNative');
+    if(nat) nat.onclick = ()=> navigator.share({title: G.state.title, text: `${G.state.title} の割り勘`, url: edit}).catch(()=>{});
+  });
+}
+
+/* ---- 設定 ---- */
+function sheetSettings(){
+  const s = G.state;
+  openSheet(`
+    <h2>グループの設定</h2>
+    <div class="sd">${G.canEdit ? '' : '見るだけのURLなので変更できません'}</div>
+    <div class="field"><label>グループ名</label>
+      <input type="text" id="stTitle" maxlength="40" value="${esc(s.title)}" ${G.canEdit?'':'disabled'}></div>
+    <div class="field"><label>アイコン</label>
+      <div class="emojipick" id="stEmoji">${EMOJIS.map(e=>`<button data-e="${e}" class="${e===s.emoji?'on':''}">${e}</button>`).join('')}</div></div>
+    <div class="field"><label>新しい立替の初期の割り方</label>
+      <div class="seg" id="stMode">
+        ${[['even','均等'],['ratio','比率']].map(([k,n])=>`<button data-m="${k}" class="${(s.defMode||'even')===k?'on':''}">${n}</button>`).join('')}</div></div>
+    <div class="field"><label>外貨</label>
+      <div class="seg" id="stFx">
+        <button data-f="0" class="${s.fx?'':'on'}">円だけ</button>
+        <button data-f="1" class="${s.fx?'on':''}">外貨も使う</button></div>
+      <div class="hint">「外貨も使う」にすると、立替ごとに通貨とレート（1通貨＝何円）を入れられます。
+        レートは自動取得せず手入力なので、旅行中の実際の換算に合わせられます。</div></div>
+    <div class="sheetbtns"><button class="save" id="stSave" ${G.canEdit?'':'disabled'}>保存する</button></div>
+    <button class="delbtn" id="stForget">この端末の履歴から消す</button>
+    <div class="hint">履歴から消してもグループ自体は残ります（URLを開けばまた入れます）。</div>
+  `, sheet=>{
+    let emoji = s.emoji, mode = s.defMode || 'even', fx = !!s.fx;
+    sheet.querySelector('#stEmoji').onclick = ev=>{
+      const b = ev.target.closest('button[data-e]'); if(!b || !G.canEdit) return;
+      emoji = b.dataset.e;
+      sheet.querySelectorAll('#stEmoji button').forEach(x=> x.classList.toggle('on', x === b));
+    };
+    sheet.querySelector('#stMode').onclick = ev=>{
+      const b = ev.target.closest('button'); if(!b || !G.canEdit) return;
+      mode = b.dataset.m;
+      sheet.querySelectorAll('#stMode button').forEach(x=> x.classList.toggle('on', x === b));
+    };
+    sheet.querySelector('#stFx').onclick = ev=>{
+      const b = ev.target.closest('button'); if(!b || !G.canEdit) return;
+      fx = b.dataset.f === '1';
+      sheet.querySelectorAll('#stFx button').forEach(x=> x.classList.toggle('on', x === b));
+    };
+    sheet.querySelector('#stSave').onclick = ()=>{
+      const title = sheet.querySelector('#stTitle').value.trim() || 'みんなの割り勘';
+      mutate(st=>{ st.title = title; st.emoji = emoji; st.defMode = mode; st.fx = fx; });
+      rememberGroup(); closeSheet(); toast('保存しました');
+    };
+    sheet.querySelector('#stForget').onclick = ()=>{
+      forgetGroup(G.id); closeSheet(); toast('履歴から消しました'); leaveGroup();
+    };
+  });
+}
+
+function sheetWhoAmI(){
+  const me = myId();
+  openSheet(`
+    <h2>あなたはどれ？</h2>
+    <div class="sd">選ぶと、精算画面であなたに関わる送金が目立ちます</div>
+    <div class="chips" id="waList">
+      ${G.state.members.map(m=>`<button class="chip ${me===m.id?'on':''}" data-m="${esc(m.id)}">${esc(m.name)}</button>`).join('')}
+    </div>
+    <div class="hint">この選択はこの端末だけに記録され、他の人には見えません。</div>
+  `, sheet=>{
+    sheet.querySelector('#waList').onclick = ev=>{
+      const b = ev.target.closest('.chip'); if(!b) return;
+      setMyId(b.dataset.m === myId() ? '' : b.dataset.m);
+      closeSheet(); render();
+    };
+  });
+}
+
+/* ============================================================
+   出入り
+   ============================================================ */
+function parseHash(){
+  const h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  return {id: h.get('g') || '', key: h.get('k') || ''};
+}
+
+async function openGroup(id, key){
+  // 見るだけのURLでも、この端末に編集キーが残っていればそのまま編集できる
+  if(!key) key = storedKey(id);
+  const cached = lsGet(cacheKey(id), null);
+  if(cached){ G = {id, key, v:cached.v, state:cached.state, canEdit: !!key}; tab = 'list'; render(); }
+  try{
+    const r = await rpcRead(id);
+    if(!r){
+      if(!cached){ toast('このグループは見つかりませんでした'); leaveGroup(); return; }
+      online = false;
+    } else {
+      G = {id, key, v:r.v, state:r.state, canEdit: !!key};
+      online = true; saveLocal();
+    }
+  }catch(e){
+    if(!cached){ toast('つながりませんでした。あとでもう一度お試しください'); leaveGroup(); return; }
+    online = false;
+  }
+  tab = 'list';
+  rememberGroup(); connectRealtime(); render();
+}
+
+function leaveGroup(){
+  if(channel && sbClient){ try{ sbClient.removeChannel(channel); }catch(e){} }
+  channel = null; G = null; queue = []; watchers = 1;
+  if(location.hash) history.replaceState(null, '', location.pathname);
+  renderStart();
+}
+
+function route(){
+  const {id, key} = parseHash();
+  if(id){ if(!G || G.id !== id || (key && G.key !== key)) openGroup(id, key); }
+  else if(G) leaveGroup();
+  else renderStart();
+}
+
+/* ---- イベント ---- */
+$('#newGroupBtn').onclick = sheetCreate;
+$('#recentWrap').onclick = e=>{
+  const b = e.target.closest('[data-open]'); if(!b) return;
+  location.hash = 'g=' + b.dataset.open + (b.dataset.key ? '&k=' + b.dataset.key : '');
+};
+$('#backBtn').onclick  = ()=> leaveGroup();
+$('#shareBtn').onclick = ()=> sheetShare(false);
+$('#setBtn').onclick   = ()=> sheetSettings();
+$('#addBtn').onclick   = ()=> sheetExpense(null);
+document.querySelector('.tabs').onclick = e=>{
+  const b = e.target.closest('button[data-tab]'); if(!b) return;
+  tab = b.dataset.tab; render();
+};
+$('#body').onclick = e=>{
+  const ex = e.target.closest('[data-ex]');
+  if(ex){ if(G.canEdit) sheetExpense(ex.dataset.ex); return; }
+  const mem = e.target.closest('[data-mem]');
+  if(mem){ sheetMember(mem.dataset.mem); return; }
+  if(e.target.closest('#addMem')){ sheetMember(null); return; }
+  if(e.target.closest('#whoAmI')){ sheetWhoAmI(); return; }
+  const cp = e.target.closest('[data-copy]');
+  if(cp){ copy(String(cp.dataset.copy), `${fmt(+cp.dataset.copy)} をコピーしました`); return; }
+  if(e.target.closest('[data-paypay]')){
+    const t = setTimeout(()=>{ location.href = 'https://paypay.ne.jp/'; }, 1200);
+    window.addEventListener('pagehide', ()=> clearTimeout(t), {once:true});
+    location.href = 'paypay://';
+    return;
+  }
+  const dn = e.target.closest('[data-done]');
+  if(dn){
+    const k = dn.dataset.done;
+    mutate(st=>{
+      st.done = st.done || [];
+      st.done = st.done.includes(k) ? st.done.filter(x=>x!==k) : [...st.done, k];
+    });
+    return;
+  }
+  const u = e.target.closest('[data-unit]');
+  if(u){ mutate(st=>{ st.unit = +u.dataset.unit; }); return; }
+};
+window.addEventListener('hashchange', route);
+window.addEventListener('online',  ()=>{ online = true; setSync(); pull(); flush(); });
+window.addEventListener('offline', ()=>{ online = false; setSync(); });
+
+route();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>

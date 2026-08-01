@@ -104,6 +104,14 @@ ICONS = {
     "yuzuwari": '<path d="M34,26 H66 V72 l-6,-5 l-6,5 l-6,-5 l-6,5 l-6,-5 V26 Z"/>'
                 '<line x1="42" y1="38" x2="58" y2="38"/>'
                 '<line x1="34" y1="52" x2="66" y2="52" stroke-dasharray="5 5"/>',
+    # みんなわり＝1枚のレシートが3人に分かれる（ゆずわり＝ふたり用と対で、こちらは大人数）
+    "minnawari": '<path d="M37,18 H63 V42 l-4.33,-3 -4.33,3 -4.33,-3 -4.33,3 -4.33,-3 -4.33,3 V18 Z"/>'
+                 '<line x1="43" y1="28" x2="57" y2="28"/>'
+                 '<path d="M50,42 V50"/>'
+                 '<path d="M50,50 L24,60"/><path d="M50,50 V60"/><path d="M50,50 L76,60"/>'
+                 '<circle cx="24" cy="66.5" r="6.5"/>'
+                 '<circle cx="50" cy="66.5" r="6.5"/>'
+                 '<circle cx="76" cy="66.5" r="6.5"/>',
     # つぎいつ？＝目覚まし時計
     "tsugi": '<circle cx="50" cy="52" r="22"/>'
              '<line x1="50" y1="52" x2="50" y2="40"/>'
@@ -292,7 +300,7 @@ SHIFT = {
     "recap": (0, -3), "recognition": (0, 3), "reflection": (0, 2),
     "sashizu": (0, 1), "seikatsu": (0, 2), "serifu": (0, -2),
     "tabinoki": (3, 2), "tasknote": (1, -2), "think": (2, -2),
-    "tsugi": (0, -4), "yuzuwari": (0, 1),
+    "tsugi": (0, -4), "yuzuwari": (0, 1), "minnawari": (0, 4),
     "dokuritsu": (0, 2), "manabi": (0, -1),
 }
 
