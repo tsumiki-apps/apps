@@ -202,7 +202,16 @@
   .bar.good i{background:linear-gradient(90deg,var(--good),#3f6a44);}
 
   /* ---------- week card ---------- */
-  .week-top{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:4px 10px; margin-bottom:4px;}
+  .week-top{display:flex; align-items:center; gap:6px; margin-bottom:4px;}
+  .week-top .wtitle{flex:1; min-width:0; display:grid; gap:2px; justify-items:center; text-align:center;}
+  .wnav{
+    width:34px; height:34px; flex:none; border:1px solid var(--line); background:var(--surface);
+    border-radius:10px; color:var(--ink-mid); font-size:1.2rem; line-height:1; cursor:pointer;
+    display:grid; place-items:center; font-family:var(--sans); padding:0;
+  }
+  .wnav:active{transform:scale(.92);}
+  .wnav[disabled]{opacity:.28; pointer-events:none;}
+  .week-jump{display:flex; justify-content:center; margin-top:3px;}
   .week-range{font-size:.78rem; color:var(--ink-soft);}
   .week-pct{display:flex; align-items:baseline; gap:8px; margin:8px 0 8px;}
   .week-pct .big{font-family:var(--serif); font-weight:600; font-size:2rem; line-height:1;}
@@ -278,11 +287,6 @@
   .btn.sm{flex:none; padding:9px 16px; font-size:.88rem; border-radius:10px;}
   .aprog{font-size:.72rem; color:var(--ink-soft); font-weight:700; letter-spacing:.04em; padding:0 0 3px 9px;}
   .aprog.full{color:var(--good);}
-  .autochip{
-    flex:none; align-self:flex-start; font-size:.66rem; font-weight:700; letter-spacing:.03em;
-    color:var(--good); background:var(--good-wash); border:1px solid var(--good);
-    border-radius:999px; padding:2px 7px; line-height:1.4; white-space:nowrap;
-  }
 
   .empty-week{display:grid; gap:12px; justify-items:center; text-align:center; padding:8px 0 2px;}
   .empty-week .em{font-size:2rem;}
@@ -290,6 +294,8 @@
   .empty-week .hint{font-size:.8rem; color:var(--ink-soft);}
   .btnrow{display:flex; gap:10px; width:100%;}
   .btn{flex:1; border-radius:12px; padding:14px; font-size:1rem; font-weight:700; font-family:var(--sans); cursor:pointer; border:1.5px solid var(--line);}
+  /* 375px幅でも2つ並んだボタンが折れないように（空の週の「コピー」「目標を決める」） */
+  .empty-week .btn{font-size:.93rem; padding:14px 8px; white-space:nowrap;}
   .btn.primary{background:linear-gradient(155deg,var(--accent),var(--accent-2)); color:#fff; border-color:transparent;}
   .btn.ghost{background:var(--surface); color:var(--ink-mid);}
   .btn:active{transform:scale(.98);}
@@ -324,7 +330,8 @@
   .editor textarea:focus, .editor input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
   .task-in-row{display:flex; align-items:center; gap:8px; margin-bottom:9px;}
   .task-in-row input[type=text]{flex:1; min-width:0;}
-  .task-in-row .num{width:74px; flex:none; text-align:center;}
+  /* input.num と書かないと、上の .editor input[type=number]{width:100%} に負けて回数欄が横いっぱいに広がる */
+  .task-in-row input.num{width:74px; flex:none; text-align:center;}
   .task-in-row .numlab{flex:none; font-size:.74rem; color:var(--ink-soft);}
   .task-in-row .rm{border:none; background:transparent; color:var(--ink-soft); font-size:1.3rem; cursor:pointer; padding:2px 6px; flex:none;}
   .editor .acts-in{margin:0 0 14px; padding:9px 12px; font-size:16px; line-height:1.5; border-style:dashed;}
@@ -486,6 +493,8 @@ let lastPushed = '';
 let mode = null;          /* null | 'tasks' | 'review' | {type:'month', ym} */
 let draft = null;
 let activeTab = 'week';
+let viewKey = null;       /* 今どの週を見ているか（日曜のISO日付）。起動時に今週へ */
+let editKey = null;       /* 編集を始めた時点の週。編集中に日付をまたいでも保存先がズレないよう固定する */
 
 function migrate(){
   const b=blank();
@@ -594,11 +603,35 @@ function syncAutoDone(t){
   }
   return null;
 }
-function prevWeekWithTasks(){
-  const cur=weekKey();
+function prevWeekWithTasks(before){
+  const cur=before||viewKey||weekKey();
   const keys=Object.keys(db.weeks).filter(k=>k<cur && (db.weeks[k].tasks||[]).length).sort();
   return keys.length ? keys[keys.length-1] : null;
 }
+/* ---- 週の行き来（先の週の目標も、あとから見返す週も、同じカードの中で切り替える） ---- */
+const WEEK_AHEAD_MAX = 8;   /* 何週先まで見に行けるか（先の目標を仕込む用） */
+function weekOffset(k){ return Math.round((parseISO(k)-parseISO(weekKey()))/864e5/7); }
+function weekLabel(k){
+  const n=weekOffset(k);
+  if(n===0) return '今週';
+  if(n===1) return '来週';
+  if(n===2) return '再来週';
+  if(n===-1) return '先週';
+  if(n===-2) return '先々週';
+  return n>0 ? n+'週後' : (-n)+'週前';
+}
+function oldestWeekKey(){
+  const cur=weekKey();
+  const keys=Object.keys(db.weeks).filter(k=>db.weeks[k].review || (db.weeks[k].tasks||[]).length).sort();
+  return (keys.length && keys[0]<cur) ? keys[0] : cur;
+}
+function clampWeek(k){
+  const min=oldestWeekKey(), max=addDays(weekKey(), WEEK_AHEAD_MAX*7);
+  if(k<min) return min;
+  if(k>max) return max;
+  return k;
+}
+function currentViewKey(){ if(!viewKey) viewKey=weekKey(); return viewKey; }
 function daysLeft(){
   const dl=db.vision.deadline||'2026-12-31';
   return Math.max(0, Math.round((parseISO(dl) - parseISO(todayISO())) / 864e5));
@@ -617,14 +650,16 @@ function renderWeekPage(){
   if(mode==='tasks'){ pageWeek.innerHTML=taskEditorHTML(); focusEnd('#tin-0'); return; }
   if(mode==='review'){ pageWeek.innerHTML=reviewEditorHTML(); const g=document.getElementById('rvGrowth'); if(g) autoGrow(g); const n=document.getElementById('rvNext'); if(n) autoGrow(n); return; }
 
-  const k=weekKey();
+  const k=currentViewKey();
   const w=getWeek(k);
   const st=weekStats(w);
   const today=parseISO(todayISO());
+  const off=weekOffset(k);
+  const lab=weekLabel(k);
   let h='';
 
-  /* 金曜バナー */
-  if(reviewBannerOn()){
+  /* 金曜バナー（今週を見ているときだけ） */
+  if(off===0 && reviewBannerOn()){
     h+=`<div class="review-banner" data-act="open-review">
       <span style="font-size:1.5rem;">🗓</span>
       <span class="rb-t"><b>金曜の振り返り</b><p>今週の目標、どうだった？ 達成・未達・成長を記録しよう。</p></span>
@@ -632,12 +667,19 @@ function renderWeekPage(){
     </div>`;
   }
 
-  /* 今週の目標カード */
+  /* 目標カード（‹ › で週を行き来できる） */
+  const canPrev = k>oldestWeekKey();
+  const canNext = weekOffset(addDays(k,7))<=WEEK_AHEAD_MAX;
   h+=`<div class="card">
     <div class="week-top">
-      <span class="label">今週の目標</span>
-      <span class="week-range tnum">${fmtMD(k)}(日) – ${fmtMD(addDays(k,6))}(土) ・ 今日 ${today.getMonth()+1}/${today.getDate()}(${WD[today.getDay()]})</span>
-    </div>`;
+      <button class="wnav" data-act="week-prev" aria-label="前の週へ" ${canPrev?'':'disabled'}>‹</button>
+      <span class="wtitle">
+        <span class="label">${lab}の目標</span>
+        <span class="week-range tnum">${fmtMD(k)}(日) – ${fmtMD(addDays(k,6))}(土)${off===0?` ・ 今日 ${today.getMonth()+1}/${today.getDate()}(${WD[today.getDay()]})`:''}</span>
+      </span>
+      <button class="wnav" data-act="week-next" aria-label="次の週へ" ${canNext?'':'disabled'}>›</button>
+    </div>
+    ${off!==0?`<div class="week-jump"><button class="edit-link" data-act="week-today">今週へ戻る</button></div>`:''}`;
 
   if(w.tasks.length){
     h+=`<div class="week-pct"><span class="big tnum">${st.pct}<span style="font-size:1.1rem;">%</span></span><span class="sub tnum">${st.done} / ${st.total}</span></div>
@@ -649,7 +691,7 @@ function renderWeekPage(){
       const pct=Math.round(Math.min(t.count,t.target)/t.target*100);
       const tick = full
         ? `<svg viewBox="0 0 24 24" style="width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4 4 10-10"/></svg>`
-        : (t.target>1 ? `<span class="tnum">${t.count}</span>` : '');
+        : (t.target>1 && t.count>0 ? `<span class="tnum">${t.count}</span>` : '');   /* 0 は書かない（空の◯のまま） */
       const acts=t.actions||[];
       let actsH='';
       if(acts.length){
@@ -674,24 +716,24 @@ function renderWeekPage(){
       }
       h+=`<div class="taskwrap"><div class="task ${cls}" data-act="inc" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.text)} ${t.count}/${t.target}">
         <span class="tick">${tick}</span>
-        <span class="tbody"><span class="ttext">${esc(t.text)}</span>${t.autoDone?'<span class="autochip">枝分かれ完了で自動達成</span>':''}${t.target>1?`<span class="bar tbar ${full?'good':''}"><i style="width:${pct}%"></i></span>`:''}</span>
+        <span class="tbody"><span class="ttext">${esc(t.text)}</span>${t.target>1?`<span class="bar tbar ${full?'good':''}"><i style="width:${pct}%"></i></span>`:''}</span>
         ${t.target>1?`<span class="tcount tnum">${t.count}/${t.target}</span>`:''}
         <button class="dec" data-act="dec" data-id="${t.id}" ${t.count===0?'disabled':''} aria-label="1つ戻す">−</button>
       </div>${actsH}</div>`;
     });
     h+=`</div>`;
-    if(st.pct>=100) h+=`<div class="week-done-msg">🎉 今週の目標 すべて達成！</div>`;
+    if(st.pct>=100) h+=`<div class="week-done-msg">🎉 ${lab}の目標 すべて達成！</div>`;
     h+=`<div class="card-foot"><button class="edit-link" data-act="edit-tasks">目標を編集</button>${w.review?'':'<button class="edit-link" data-act="open-review">振り返りを書く</button>'}</div>`;
   } else {
-    const prev=prevWeekWithTasks();
+    const prev=prevWeekWithTasks(k);
     h+=`<div class="empty-week">
       <span class="em">🧱</span>
-      <p>今週の目標がまだ決まっていません。</p>
+      <p>${lab}の目標がまだ決まっていません。</p>
       <div class="btnrow">
-        ${prev?`<button class="btn ghost" data-act="copy-prev">先週からコピー</button>`:''}
+        ${prev?`<button class="btn ghost" data-act="copy-prev">前の週をコピー</button>`:''}
         <button class="btn primary" data-act="edit-tasks">＋ 目標を決める</button>
       </div>
-      <span class="hint">Claudeとの週次セッションで決めると、ここに反映されます</span>
+      <span class="hint">${off>0?'先に決めておくと、その週になった時そのまま始められます':'Claudeとの週次セッションで決めると、ここに反映されます'}</span>
     </div>`;
   }
   h+=`</div>`;
@@ -699,10 +741,10 @@ function renderWeekPage(){
   /* 振り返り済みカード */
   if(w.review){
     const r=w.review;
-    const lab={done:'○ 達成', partial:'△ 一部達成', miss:'× 未達'}[r.result]||'記録済み';
+    const rlab={done:'○ 達成', partial:'△ 一部達成', miss:'× 未達'}[r.result]||'記録済み';
     h+=`<div class="card" data-act="open-review" style="cursor:pointer;">
       <div class="review-sum">
-        <div class="rs-head"><span class="label">今週の振り返り</span><span class="chip ${r.result}">${lab}</span><span style="margin-left:auto;font-size:.76rem;color:var(--ink-soft);">タップで編集</span></div>
+        <div class="rs-head"><span class="label">${lab}の振り返り</span><span class="chip ${r.result}">${rlab}</span><span style="margin-left:auto;font-size:.76rem;color:var(--ink-soft);">タップで編集</span></div>
         ${r.growth?`<div class="growth">🌱 ${esc(r.growth)}</div>`:''}
         ${r.next?`<div class="nextnote">→ ${esc(r.next)}</div>`:''}
       </div>
@@ -802,20 +844,22 @@ function taskEditorHTML(){
     </div>
     <textarea class="acts-in" data-i="${i}" rows="2" placeholder="枝分かれAction（1行に1つ・任意）&#10;例：送り先リストを作る">${esc(t.actsText||'')}</textarea>`;
   });
+  const ek=editKey||currentViewKey();
   return `<div class="card editor">
-    <div class="ed-field"><label>今週の目標（回数つき）＋ 枝分かれAction</label>${rows}
+    <div class="ed-field"><label>${weekLabel(ek)}の目標（${fmtMD(ek)}–${fmtMD(addDays(ek,6))}・回数つき）＋ 枝分かれAction</label>${rows}
     <button class="add-row" data-act="add-task">＋ 目標を追加</button></div>
     <div class="ed-actions"><button class="btn ghost" data-act="ed-cancel">キャンセル</button><button class="btn primary" data-act="ed-save">保存</button></div>
   </div>`;
 }
 function reviewEditorHTML(){
-  const k=weekKey(); const w=getWeek(k); const st=weekStats(w);
+  const k=editKey||currentViewKey(); const w=getWeek(k); const st=weekStats(w);
+  const lab=weekLabel(k);
   const list=(w.tasks||[]).map(t=>`・${esc(t.text)}　${t.count}/${t.target}`).join('<br>');
   const selCls=v=>draft.result===v?('sel-'+v):'';
   return `<div class="card editor">
-    <span class="label">今週の振り返り（${fmtMD(k)}–${fmtMD(addDays(k,6))}）</span>
-    <div class="rv-auto tnum" style="margin-top:10px;">${w.tasks.length?`達成度 ${st.pct}%（${st.done}/${st.total}）<br>${list}`:'今週は目標が設定されていませんでした。'}</div>
-    <div class="ed-field"><label>今週の目標は？</label>
+    <span class="label">${lab}の振り返り（${fmtMD(k)}–${fmtMD(addDays(k,6))}）</span>
+    <div class="rv-auto tnum" style="margin-top:10px;">${w.tasks.length?`達成度 ${st.pct}%（${st.done}/${st.total}）<br>${list}`:`${lab}は目標が設定されていませんでした。`}</div>
+    <div class="ed-field"><label>${lab}の目標は？</label>
       <div class="seg">
         <button class="${selCls('done')}" data-act="rv-result" data-v="done">○ 達成</button>
         <button class="${selCls('partial')}" data-act="rv-result" data-v="partial">△ 一部達成</button>
@@ -849,10 +893,18 @@ document.querySelector('main').addEventListener('click', e=>{
   const btn=e.target.closest('[data-act]'); if(!btn) return;
   const act=btn.dataset.act;
 
+  /* --- 週の行き来 --- */
+  if(act==='week-prev' || act==='week-next' || act==='week-today'){
+    viewKey = act==='week-today' ? weekKey() : clampWeek(addDays(currentViewKey(), act==='week-next'?7:-7));
+    mode=null; draft=null; editKey=null;
+    render();
+    return;
+  }
+
   /* --- 枝分かれActionのメモ --- */
   if(act==='act-note'){
     e.stopPropagation();
-    const t=getWeek(weekKey()).tasks.find(x=>x.id===btn.dataset.tid); if(!t) return;
+    const t=getWeek(currentViewKey()).tasks.find(x=>x.id===btn.dataset.tid); if(!t) return;
     const a=(t.actions||[]).find(x=>x.id===btn.dataset.aid); if(!a) return;
     draft={ note:a.note||'' };
     mode={type:'actnote', tid:btn.dataset.tid, aid:btn.dataset.aid};
@@ -863,7 +915,7 @@ document.querySelector('main').addEventListener('click', e=>{
   if(act==='anote-cancel'){ mode=null; draft=null; render(); return; }
   if(act==='anote-save'){
     const ta=document.getElementById('anoteIn'); if(ta) draft.note=ta.value;
-    const w=ensureWeek(weekKey());
+    const w=ensureWeek(currentViewKey());
     const t=w.tasks.find(x=>x.id===mode.tid);
     const a=t ? (t.actions||[]).find(x=>x.id===mode.aid) : null;
     if(a) a.note=draft.note.trim();
@@ -875,14 +927,14 @@ document.querySelector('main').addEventListener('click', e=>{
   /* --- 枝分かれActionのチェック --- */
   if(act==='act-toggle'){
     e.stopPropagation();
-    const w=ensureWeek(weekKey());
+    const w=ensureWeek(currentViewKey());
     const t=w.tasks.find(x=>x.id===btn.dataset.tid); if(!t) return;
     const a=(t.actions||[]).find(x=>x.id===btn.dataset.aid); if(!a) return;
     a.done=!a.done;
     const r=syncAutoDone(t);
     save(); render();
     if(r==='done') toast('枝分かれ全部クリア！「'+t.text+'」を達成にしました');
-    else if(r==='undone') toast('枝分かれを外したので「'+t.text+'」の自動達成を取り消しました');
+    else if(r==='undone') toast('枝分かれを外したので「'+t.text+'」を達成前に戻しました');
     else if(a.done && t.actions.every(x=>x.done)) toast('枝分かれ全部クリア！');
     return;
   }
@@ -890,7 +942,7 @@ document.querySelector('main').addEventListener('click', e=>{
   /* --- タスクのカウント --- */
   if(act==='inc' || act==='dec'){
     if(act==='inc' && e.target.closest('[data-act="dec"]')) return;
-    const k=weekKey(); const w=ensureWeek(k);
+    const k=currentViewKey(); const w=ensureWeek(k);
     const t=w.tasks.find(x=>x.id===btn.dataset.id); if(!t) return;
     if(act==='inc'){ if(t.count>=t.target) return; t.count++; }
     else { e.stopPropagation(); if(t.count<=0) return; t.count--; }
@@ -902,21 +954,24 @@ document.querySelector('main').addEventListener('click', e=>{
 
   /* --- タスク編集 --- */
   if(act==='edit-tasks'){
-    const w=getWeek(weekKey());
+    editKey=currentViewKey();
+    const w=getWeek(editKey);
     draft={ tasks: w.tasks.length ? w.tasks.map(t=>({id:t.id,text:t.text,target:t.target,count:t.count,actsText:(t.actions||[]).map(a=>a.text).join('\n')})) : [{id:uid(),text:'',target:1,count:0,actsText:''}] };
     mode='tasks'; render(); return;
   }
   if(act==='copy-prev'){
-    const pk=prevWeekWithTasks(); if(!pk) return;
+    editKey=currentViewKey();
+    const pk=prevWeekWithTasks(editKey); if(!pk) return;
     draft={ tasks: db.weeks[pk].tasks.map(t=>({id:uid(),text:t.text,target:t.target,count:0,actsText:(t.actions||[]).map(a=>a.text).join('\n')})) };
     mode='tasks'; render(); return;
   }
   if(act==='add-task'){ syncTaskDraft(); draft.tasks.push({id:uid(),text:'',target:1,count:0,actsText:''}); render(); focusEnd('#tin-'+(draft.tasks.length-1)); return; }
   if(act==='rm-task'){ syncTaskDraft(); draft.tasks.splice(+btn.dataset.i,1); render(); return; }
-  if(act==='ed-cancel'){ mode=null; draft=null; render(); return; }
+  if(act==='ed-cancel'){ mode=null; draft=null; editKey=null; render(); return; }
   if(act==='ed-save'){
     syncTaskDraft();
-    const w=ensureWeek(weekKey());
+    const ek=editKey||currentViewKey();
+    const w=ensureWeek(ek);
     const orig=w.tasks;
     w.tasks=draft.tasks.map(t=>{
       const target=Math.max(1,Math.floor(+t.target||1));
@@ -934,26 +989,28 @@ document.querySelector('main').addEventListener('click', e=>{
       syncAutoDone(nt);   // 編集で枝分かれが全部済みになった／崩れた場合もここで合わせる
       return nt;
     }).filter(t=>t.text);
-    mode=null; draft=null; save(); render();
-    toast('今週の目標を保存しました');
+    const savedLab=weekLabel(ek);
+    mode=null; draft=null; editKey=null; save(); render();
+    toast(savedLab+'の目標を保存しました');
     return;
   }
 
   /* --- 振り返り --- */
   if(act==='open-review'){
-    const w=getWeek(weekKey());
+    editKey=currentViewKey();
+    const w=getWeek(editKey);
     const r=w.review||{};
     draft={ result:r.result||'', growth:r.growth||'', next:r.next||'' };
     mode='review'; render(); return;
   }
   if(act==='rv-result'){ syncReviewDraft(); draft.result=btn.dataset.v; render(); return; }
-  if(act==='rv-cancel'){ mode=null; draft=null; render(); return; }
+  if(act==='rv-cancel'){ mode=null; draft=null; editKey=null; render(); return; }
   if(act==='rv-save'){
     syncReviewDraft();
     if(!draft.result){ toast('達成・一部達成・未達 のどれかを選んでね'); return; }
-    const w=ensureWeek(weekKey());
+    const w=ensureWeek(editKey||currentViewKey());
     w.review={ result:draft.result, growth:draft.growth.trim(), next:draft.next.trim(), at:todayISO() };
-    mode=null; draft=null; save(); render();
+    mode=null; draft=null; editKey=null; save(); render();
     toast('振り返りを保存しました 🌱');
     return;
   }
@@ -1153,12 +1210,23 @@ function checkNotify(){
   try{ new Notification('🧱 金曜の振り返り', { body:'今週の目標、どうだった？ 達成・未達・成長を記録しよう。', tag:'tsumiki-dokuritsu-review' }); }catch(e){}
 }
 
-/* 日付またぎ（サブディスプレイ常時表示）でも表示を更新 */
+/* ===================== 日付またぎ =====================
+   開きっぱなし・バックグラウンドのどちらでも、日付が変わったら表示を今日基準に作り直す。
+   「今週」を見ていたなら、日曜になった瞬間に新しい今週の目標へ自動で切り替わる
+   （先の週を覗いていた時は、そのまま覗いた週にとどまる）。 */
 let lastDay=todayISO();
-setInterval(()=>{
-  checkNotify();
-  if(todayISO()!==lastDay){ lastDay=todayISO(); if(!mode) render(); }
-}, 60000);
+function checkDayRollover(){
+  const t=todayISO();
+  if(t===lastDay) return;
+  const wasWeek=sundayOf(lastDay);
+  lastDay=t;
+  if(!viewKey || viewKey===wasWeek) viewKey=weekKey();   /* 今週を見ていた場合だけ追従（編集中の保存先=editKeyは動かさない） */
+  if(!mode) render();
+}
+setInterval(()=>{ checkDayRollover(); checkNotify(); }, 30000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ checkDayRollover(); checkNotify(); } });
+window.addEventListener('focus', ()=>{ checkDayRollover(); });
+window.addEventListener('pageshow', ()=>{ checkDayRollover(); });
 
 /* ===================== テーマ ===================== */
 function applyTheme(t){ if(t) document.documentElement.setAttribute('data-theme',t); else document.documentElement.removeAttribute('data-theme'); }
