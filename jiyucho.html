@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="apple-touch-icon" href="icons/icon-jikyu.png">
+<link rel="apple-touch-icon" href="icons/icon-jiyucho.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="時給計算">
+<meta name="apple-mobile-web-app-title" content="自由帳">
 <meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131109" media="(prefers-color-scheme: dark)">
-<title>時給計算</title>
+<title>自由帳</title>
 <style>
   :root{
     --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5; --ink:#1d1a15;
@@ -114,157 +114,102 @@
   .dr-item:active{background:var(--surface-2);}
   .dr-item.current{background:var(--accent-wash); color:var(--accent-2);}
   .dr-item.current svg{color:var(--accent-2);}
-  .dr-item.soon{color:var(--ink-soft); font-weight:600;}
-  .dr-item .soon-tag{
-    margin-left:auto; flex:none; font-size:.66rem; font-weight:700; letter-spacing:.04em;
-    color:var(--ink-soft); border:1px solid var(--line-2); border-radius:99px; padding:2px 7px;
-  }
-  .dr-note{margin-top:auto; padding:12px 10px 0; font-size:.72rem; color:var(--ink-soft); line-height:1.5;}
 
   /* ---------- layout ---------- */
   main{max-width:600px; margin:0 auto; padding:16px 16px calc(env(safe-area-inset-bottom) + 40px); display:grid; gap:15px;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); padding:18px 19px;}
   .label{font-size:.74rem; font-weight:700; letter-spacing:.06em; color:var(--accent-2); text-transform:uppercase;}
+  .note{font-size:.78rem; color:var(--ink-soft); margin:11px 2px 0; line-height:1.55;}
 
-  /* PC・タブレット幅：横をつかう。
-     案件を並べて一覧性を上げ、開いた案件だけ横いっぱいに広げて記録を見やすくする。
-     入力欄は伸ばしすぎない（金額や時刻の欄が1000px幅だと逆に使いにくいため）。 */
+  /* PC・タブレット幅：横をつかう。本文の行だけは長くなりすぎないよう文字数で止める。 */
   @media (min-width:760px) and (max-width:1079px){
     main{max-width:720px;}
   }
   @media (min-width:1080px){
     main{max-width:1180px; padding:22px 20px calc(env(safe-area-inset-bottom) + 40px); gap:18px;}
-    /* 案件カードは上の集計カードと同じ幅（1枚ずつ縦に並べる）。
-       横に並べると、集計カードだけ横長で案件カードが小さく見えて不揃いになるため。 */
-    .jlist{gap:14px;}
-    .set-row, .fee-row{max-width:440px;}   /* 金額の欄だけは伸ばさない（横に長いと逆に使いにくい） */
-    .lf{max-width:660px;}
+    .nlist{gap:14px;}
+    .n-body textarea.body{max-width:72ch;}
   }
 
-  /* ---------- サマリー ---------- */
-  .sum{display:flex; gap:8px; margin:11px 0 13px;}
-  .sum span{
-    flex:1; min-width:0; text-align:center; background:var(--surface-2); border:1px solid var(--line);
-    border-radius:11px; padding:8px 4px; font-size:.75rem; color:var(--ink-mid); font-weight:700;
-  }
-  .sum b{
-    display:block; font-family:var(--serif); line-height:1.25; color:var(--ink);
-    /* 「10時間30分」のような長い値でも3分割のタイルに収まるよう、画面幅で伸び縮みさせる */
-    font-size:clamp(1rem, 4.3vw, 1.35rem);
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  }
-  .sum span.hit{border-color:var(--good); background:var(--good-wash);}
-  .sum span.hit b{color:var(--good);}
-  .sum span.miss{border-color:var(--warn); background:var(--warn-wash);}
-  .sum span.miss b{color:var(--warn);}
-
-  .set-row{
-    display:flex; align-items:center; gap:9px; background:var(--surface-2); border:1px solid var(--line);
-    border-radius:11px; padding:9px 12px; font-size:.82rem; color:var(--ink-mid); font-weight:700;
-  }
-  .set-row input{
-    width:92px; flex:none; border:1.5px solid var(--line); background:var(--surface); border-radius:9px;
-    padding:7px 10px; font-size:16px; color:var(--ink); font-family:var(--sans); text-align:right;
-  }
-  .set-row input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
-  .set-row .unit{margin-left:auto; color:var(--ink-soft); font-weight:400;}
-  .note{font-size:.78rem; color:var(--ink-soft); margin:11px 2px 0; line-height:1.55;}
-
-  .add{display:flex; gap:8px; margin-top:13px;}
-  .add input{
+  /* ---------- 新規作成 ---------- */
+  .newbar{display:flex; gap:8px; margin-top:12px;}
+  .newbar input{
     flex:1; min-width:0; border:1.5px solid var(--line); background:var(--surface-2); border-radius:11px;
     padding:11px 13px; font-size:16px; color:var(--ink); font-family:var(--sans);
   }
-  .add input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
-  .add button{
+  .newbar input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
+  .newbar button{
     flex:none; border:none; border-radius:11px; padding:0 17px; font-weight:700; font-size:.95rem;
     font-family:var(--sans); cursor:pointer; color:#fff; background:linear-gradient(155deg,var(--accent),var(--accent-2));
   }
-  .add button:active{transform:scale(.97);}
-
-  /* ---------- 案件カード ---------- */
-  .gh{
-    display:flex; align-items:center; gap:8px; margin:0 2px 9px; font-size:.78rem;
-    font-weight:700; letter-spacing:.04em; color:var(--ink-soft);
+  .newbar button:active{transform:scale(.97);}
+  .newdate{display:flex; align-items:center; gap:9px; margin-top:9px; font-size:.78rem; color:var(--ink-mid); font-weight:700;}
+  .newdate input{
+    flex:none; border:1.5px solid var(--line); background:var(--surface-2); border-radius:10px;
+    padding:8px 11px; font-size:16px; color:var(--ink); font-family:var(--sans);
   }
-  .gh .n{font-family:var(--serif); font-size:.95rem; color:var(--ink-mid);}
-  .jlist{display:grid; gap:9px;}
-  .j-card{background:var(--surface-2); border:1.5px solid var(--line); border-radius:14px; overflow:hidden;}
-  .j-card.open{border-color:var(--accent); background:var(--surface);}
-  .j-card.st-done{opacity:.66;}
-  .j-head{display:flex; align-items:center; gap:11px; padding:13px 14px; cursor:pointer;}
-  .j-t{flex:1; min-width:0;}
-  .j-name{font-weight:700; font-size:.98rem; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .j-sub{display:block; font-size:.79rem; color:var(--ink-soft); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .j-rate{flex:none; text-align:right; line-height:1.15;}
-  .j-rate b{font-family:var(--serif); font-size:1.22rem; color:var(--ink);}
-  .j-rate span{display:block; font-size:.66rem; color:var(--ink-soft); letter-spacing:.02em;}
-  .j-rate.hit b{color:var(--good);}
-  .j-rate.miss b{color:var(--warn);}
-  .j-rate.none b{color:var(--ink-soft); font-size:1.05rem;}
+  .newdate .today{
+    margin-left:auto; border:none; background:transparent; color:var(--ink-soft); font-size:.78rem;
+    font-weight:700; font-family:var(--sans); cursor:pointer; text-decoration:underline; text-underline-offset:3px;
+  }
+
+  /* ---------- しまった分への行き来 ---------- */
+  .arcbar{display:flex; justify-content:center;}
+  .arcbar button{
+    display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:var(--surface);
+    border-radius:99px; padding:9px 16px; font-family:var(--sans); font-size:.84rem; font-weight:700;
+    color:var(--ink-mid); cursor:pointer;
+  }
+  .arcbar button:active{background:var(--surface-2);}
+  .arcbar svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+  .arc-head{display:flex; align-items:center; gap:12px;}
+  .arc-head b{font-family:var(--serif); font-weight:600; font-size:1.02rem;}
+  .arc-head button{
+    margin-left:auto; flex:none; border:none; background:transparent; font-family:var(--sans); font-size:.82rem;
+    font-weight:700; color:var(--accent-2); cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:4px 2px;
+  }
+
+  /* ---------- メモカード ---------- */
+  .nlist{display:grid; gap:10px;}
+  .n-card{background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); overflow:hidden;}
+  .n-card.open{border-color:var(--accent);}
+  .n-head{display:flex; align-items:center; gap:11px; padding:14px 16px; cursor:pointer;}
+  .n-t{flex:1; min-width:0;}
+  .n-date{display:block; font-size:.74rem; font-weight:700; color:var(--accent-2); letter-spacing:.03em;}
+  .n-title{
+    display:block; font-family:var(--serif); font-size:1.04rem; font-weight:600; margin-top:1px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .n-sub{display:block; font-size:.78rem; color:var(--ink-soft); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .caret{flex:none; color:var(--ink-soft); transition:transform .2s;}
-  .j-card.open .caret{transform:rotate(180deg);}
-  .j-body{padding:2px 14px 15px; border-top:1px solid var(--line);}
-  .j-field{margin-top:14px;}
-  .j-field > label{display:block; font-size:.75rem; font-weight:700; color:var(--ink-mid); margin:0 0 6px;}
-  .fee-row{display:flex; align-items:center; gap:9px;}
-  .fee-row input{
-    flex:1; min-width:0; border:1.5px solid var(--line); background:var(--paper); border-radius:11px;
-    padding:10px 12px; font-size:16px; color:var(--ink); font-family:var(--sans); text-align:right;
-  }
-  .fee-row input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
-  .fee-row .unit{flex:none; font-size:.82rem; color:var(--ink-soft); font-weight:700;}
+  .n-card.open .caret{transform:rotate(180deg);}
+  .n-body{padding:2px 16px 16px; border-top:1px solid var(--line);}
 
-  /* ---------- 記録 ---------- */
-  .logs-head{display:flex; align-items:baseline; gap:8px; margin:16px 0 7px;}
-  .logs-head .t{font-size:.75rem; font-weight:700; color:var(--ink-mid);}
-  .logs-head .tot{margin-left:auto; font-size:.8rem; color:var(--ink-mid); font-weight:700;}
-  .logs{display:grid; gap:6px;}
-  .log{
-    display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; column-gap:9px; row-gap:2px;
-    background:var(--paper); border:1px solid var(--line); border-radius:11px; padding:8px 9px 8px 11px;
+  .n-meta{display:flex; gap:8px; margin-top:13px;}
+  .n-meta input{
+    border:1.5px solid var(--line); background:var(--paper); border-radius:10px;
+    padding:9px 11px; font-size:16px; color:var(--ink); font-family:var(--sans); min-width:0;
   }
-  .log .d{font-size:.78rem; color:var(--ink-soft); font-weight:700; white-space:nowrap;}
-  .log .t{font-size:.85rem; font-weight:700; white-space:nowrap;}
-  .log .h{font-size:.8rem; color:var(--ink-mid); font-weight:700; white-space:nowrap;}
-  .log .x{
-    border:none; background:transparent; color:var(--ink-soft); font-size:1.1rem; line-height:1;
-    padding:4px 2px 4px 6px; cursor:pointer; font-family:var(--sans);
-  }
-  .log .m{grid-column:1/-1; font-size:.78rem; color:var(--ink-soft); word-break:break-word;}
-  .log .over{font-size:.7rem; color:var(--accent-2); font-weight:700;}
-  .logs-empty{font-size:.82rem; color:var(--ink-soft); padding:4px 2px;}
+  .n-meta input.dt{flex:none; width:9.6rem;}
+  .n-meta input.tt{flex:1;}
+  .n-meta input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
 
-  .lf{background:var(--paper); border:1.5px solid var(--accent); border-radius:12px; padding:12px; display:grid; gap:9px; margin-top:7px;}
-  .lf-row{display:flex; align-items:center; gap:8px;}
-  .lf-row > label{flex:none; width:38px; font-size:.75rem; font-weight:700; color:var(--ink-mid);}
-  .lf input[type=date], .lf input[type=time], .lf input[type=text]{
-    flex:1; min-width:0; border:1.5px solid var(--line); background:var(--surface); border-radius:10px;
-    padding:9px 11px; font-size:16px; color:var(--ink); font-family:var(--sans);
+  /* 自由に書く場所：罫線なしの白紙。改行はそのまま残る */
+  .n-body textarea.body{
+    display:block; width:100%; margin-top:10px; min-height:230px;
+    border:1.5px solid var(--line); background:var(--paper); border-radius:12px;
+    padding:13px 14px; font-size:16px; color:var(--ink); font-family:var(--sans);
+    line-height:1.75; resize:none; overflow:hidden;
   }
-  .lf input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
-  .lf .tilde{flex:none; color:var(--ink-soft); font-weight:700;}
-  .lf-live{font-size:.85rem; font-weight:700; color:var(--accent-2); text-align:center;}
-  .lf-live.bad{color:var(--warn);}
-  .lf-btns{display:grid; grid-template-columns:1fr 1.4fr; gap:8px;}
-  .lf-btns button{
-    border:1.5px solid var(--line); background:var(--surface-2); border-radius:11px; padding:11px 4px;
-    font-family:var(--sans); font-size:.9rem; font-weight:700; color:var(--ink-mid); cursor:pointer;
-  }
-  .lf-btns button.pri{border:none; color:#fff; background:linear-gradient(155deg,var(--accent),var(--accent-2));}
-  .lf-btns button:active{transform:scale(.98);}
-  .addlog{
-    width:100%; margin-top:8px; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
-    padding:11px; font-family:var(--sans); font-size:.88rem; font-weight:700; color:var(--ink-mid); cursor:pointer;
-  }
-  .addlog:active{transform:scale(.99);}
+  .n-body textarea.body:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
 
-  .j-foot{display:flex; justify-content:space-between; align-items:center; margin-top:15px;}
-  .j-foot button{
+  .n-foot{display:flex; justify-content:space-between; align-items:center; margin-top:14px;}
+  .n-foot button{
     border:none; background:transparent; font-family:var(--sans); font-size:.82rem; font-weight:700;
     color:var(--ink-soft); cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:4px 2px;
   }
-  .j-foot button.del{color:var(--warn);}
+  .n-foot button.keep{color:var(--accent-2);}
+  .n-foot button.del{color:var(--warn);}
 
   /* ---------- 空・トースト ---------- */
   .empty{display:grid; gap:12px; justify-items:center; text-align:center; padding:16px 0 2px;}
@@ -317,7 +262,7 @@
     <button class="iconbtn" id="menuBtn" aria-label="メニュー" aria-expanded="false" aria-controls="drawer">
       <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
     </button>
-    <div class="brand"><span class="cube"></span><h1>時給計算</h1></div>
+    <div class="brand"><span class="cube"></span><h1>自由帳</h1></div>
     <span class="spacer"></span>
     <span class="sync-dot" id="syncDot" title="同期状態"></span>
     <button class="iconbtn" id="themeBtn" aria-label="表示切替">
@@ -339,19 +284,19 @@
         <svg viewBox="0 0 24 24"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.2"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 4.6a3.2 3.2 0 0 1 0 6.2"/></svg>
         声かけメモ
       </a>
-      <span class="dr-item current" aria-current="page">
+      <a class="dr-item" href="dokuritsu.html#jikyu">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.3 2"/></svg>
         時給計算
-      </span>
+      </a>
       <a class="dr-item" href="dokuritsu.html#manabi">
         <svg viewBox="0 0 24 24"><path d="M4.5 5.4A2.4 2.4 0 0 1 6.9 3H19v14H6.9a2.4 2.4 0 0 0-2.4 2.4z"/><path d="M4.5 19.4A2.4 2.4 0 0 1 6.9 17H19v4H6.9a2.4 2.4 0 0 1-2.4-2.4z"/></svg>
         学んだこと
       </a>
-          <a class="dr-item" href="dokuritsu.html#jiyucho">
+      <span class="dr-item current" aria-current="page">
         <svg viewBox="0 0 24 24"><rect x="4.6" y="5.4" width="14.8" height="15" rx="2.2"/><path d="M8.2 3v4"/><path d="M12 3v4"/><path d="M15.8 3v4"/></svg>
         自由帳
-      </a>
-</nav>
+      </span>
+    </nav>
   </aside>
 
   <div id="toast"></div>
@@ -363,8 +308,8 @@ const SUPABASE_URL  = 'https://okbjqtdirrathscctyvx.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
 const sb = (window.supabase && window.supabase.createClient) ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 const STATE_TABLE = 'tsumiki_roadmap_state';
-const STATE_ID = 'kodai_jikyu_v1';          /* 独立ロードマップ・声かけメモとは別の行 */
-const KEY = 'tsumiki_jikyu_v1';
+const STATE_ID = 'kodai_jiyucho_v1';         /* ロードマップ／声かけ／時給／学んだこと とは別の行 */
+const KEY = 'tsumiki_jiyucho_v1';
 
 /* ===================== ユーティリティ ===================== */
 function uid(){ return Date.now().toString(36) + Math.floor(Math.random()*1e6).toString(36); }
@@ -374,60 +319,28 @@ function iso(d){ return d.getFullYear()+'-'+z2(d.getMonth()+1)+'-'+z2(d.getDate(
 function todayISO(){ return iso(new Date()); }
 function parseISO(s){ const [y,m,d]=String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); }
 const WD=['日','月','火','水','木','金','土'];
-function fmtMD(s){ const d=parseISO(s); return (d.getMonth()+1)+'/'+d.getDate()+'('+WD[d.getDay()]+')'; }
-function yen(n){ return Math.round(n).toLocaleString('ja-JP'); }
+function fmtDate(s){ if(!s) return '日付なし'; const d=parseISO(s); return d.getFullYear()+'/'+z2(d.getMonth()+1)+'/'+z2(d.getDate())+'（'+WD[d.getDay()]+'）'; }
+function autoGrow(el){ el.style.height='auto'; el.style.height=(el.scrollHeight+2)+'px'; }
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1700); }
 
-/* 「14:30」→ 870分。壊れていたら null */
-function toMin(t){ const m=/^(\d{1,2}):(\d{2})$/.exec(String(t||'')); if(!m) return null; const h=+m[1], mi=+m[2]; if(h>23||mi>59) return null; return h*60+mi; }
-/* 1件の長さ。終了が開始より前なら日をまたいだものとして +24時間 */
-function logMin(l){ const s=toMin(l.start), e=toMin(l.end); if(s==null||e==null) return 0; let d=e-s; if(d<0) d+=1440; return d; }
-function isOvernight(l){ const s=toMin(l.start), e=toMin(l.end); return s!=null && e!=null && e<s; }
-function fmtDur(min){
-  if(!min) return '0分';
-  const h=Math.floor(min/60), m=min%60;
-  if(!h) return m+'分';
-  return m ? h+'時間'+m+'分' : h+'時間';
-}
-/* サマリーの小さなタイル用。10時間を超えたら「10.5時間」と縮めて桁あふれを防ぐ */
-function fmtDurShort(min){
-  if(min < 600) return fmtDur(min);
-  const h=Math.floor(min/60), m=min%60;
-  return m ? h+'.'+Math.round(m/6)+'時間' : h+'時間';
-}
-/* 現在時刻を15分単位に丸める */
-function nowRounded(back){
-  const d=new Date();
-  d.setMinutes(Math.round(d.getMinutes()/15)*15, 0, 0);
-  if(back) d.setMinutes(d.getMinutes()-back);
-  return z2(d.getHours())+':'+z2(d.getMinutes());
-}
-
 /* ===================== 状態 ===================== */
-/* job = {id, name, fee:'', status:'active'|'done', createdAt, logs:[{id,date,start,end,memo}]} */
-function blank(){ return { v:1, settings:{ targetRate:'' }, jobs:[] }; }
+/* note = {id, date, title, body, archived, createdAt} */
+function blank(){ return { v:1, notes:[] }; }
 let db = blank();
 let online = null;
 let lastPushed = '';
-let openId = null;       /* 開いている案件カード（編集中はリアルタイム上書きを止める） */
-let adding = null;       /* 記録フォームを開いている案件id */
+let openId = null;        /* 開いているメモ（編集中はリアルタイム上書きを止める） */
+let showArc = false;      /* しまった分を見ているか（この端末だけの表示状態。同期しない） */
 
 function migrate(){
-  if(!db.settings || typeof db.settings!=='object') db.settings={targetRate:''};
-  if(typeof db.settings.targetRate!=='string') db.settings.targetRate = db.settings.targetRate ? String(db.settings.targetRate) : '';
-  if(!Array.isArray(db.jobs)) db.jobs=[];
-  db.jobs = db.jobs.filter(j=>j && typeof j==='object');
-  db.jobs.forEach(j=>{
-    if(!j.id) j.id=uid();
-    ['name','fee','createdAt'].forEach(k=>{ if(typeof j[k]!=='string') j[k]= j[k]==null ? '' : String(j[k]); });
-    if(!j.createdAt) j.createdAt=todayISO();
-    if(!/^(active|done)$/.test(j.status)) j.status='active';
-    if(!Array.isArray(j.logs)) j.logs=[];
-    j.logs = j.logs.filter(l=>l && typeof l==='object');
-    j.logs.forEach(l=>{
-      if(!l.id) l.id=uid();
-      ['date','start','end','memo'].forEach(k=>{ if(typeof l[k]!=='string') l[k]=''; });
-    });
+  if(!Array.isArray(db.notes)) db.notes=[];
+  db.notes = db.notes.filter(n=>n && typeof n==='object');
+  db.notes.forEach(n=>{
+    if(!n.id) n.id=uid();
+    ['date','title','body','createdAt'].forEach(k=>{ if(typeof n[k]!=='string') n[k]=''; });
+    if(!n.date) n.date=todayISO();
+    if(!n.createdAt) n.createdAt=n.date;
+    n.archived = !!n.archived;
   });
 }
 
@@ -454,12 +367,12 @@ async function loadRemote(){
     db=Object.assign(blank(), data.state); migrate();
     localStorage.setItem(KEY, JSON.stringify(db));
     if(!openId) render();
-  } else if(db.jobs.length){ save(); }
+  } else if(db.notes.length){ save(); }
   renderSync();
 }
 function subscribeRealtime(){
   if(!sb) return;
-  sb.channel('tsumiki-jikyu-rt')
+  sb.channel('tsumiki-jiyucho-rt')
     .on('postgres_changes', { event:'*', schema:'public', table:STATE_TABLE, filter:'id=eq.'+STATE_ID }, (payload)=>{
       const incoming = JSON.stringify((payload.new && payload.new.state) || {});
       if(incoming === lastPushed) return;
@@ -481,170 +394,109 @@ function renderSync(){
   else if(online===false){ dot.classList.add('off'); dot.title='オフライン'; }
 }
 
-/* ===================== 計算 ===================== */
-function job(id){ return db.jobs.find(j=>j.id===id) || null; }
-function jobMin(j){ return j.logs.reduce((a,l)=>a+logMin(l),0); }
-function feeOf(j){ const n=Number(String(j.fee).replace(/[^\d.-]/g,'')); return isFinite(n)&&n>0 ? n : 0; }
-function jobRate(j){ const min=jobMin(j), fee=feeOf(j); return (min>0 && fee>0) ? fee/(min/60) : null; }
-function targetRate(){ const n=Number(db.settings.targetRate); return isFinite(n)&&n>0 ? n : 0; }
-function rateCls(r){ const t=targetRate(); if(r==null) return 'none'; if(!t) return ''; return r>=t ? 'hit' : 'miss'; }
-function totals(){
-  let min=0, fee=0, minAll=0;
-  db.jobs.forEach(j=>{
-    const m=jobMin(j); minAll+=m;
-    if(feeOf(j)>0 && m>0){ min+=m; fee+=feeOf(j); }   /* 平均時給は「報酬も時間もある案件」だけで出す */
-  });
-  return { minAll, rate: (min>0&&fee>0) ? fee/(min/60) : null, jobs: db.jobs.length };
-}
-
 /* ===================== 描画 ===================== */
 const ICO_CARET=`<svg class="caret" viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="M6 9l6 6 6-6"/></svg>`;
-
-function sortedLogs(j){
-  return j.logs.slice().sort((a,b)=>{
+const ICO_BOX=`<svg viewBox="0 0 24 24"><path d="M3.4 7.6h17.2v11.2a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M2.6 4.4h18.8v3.2H2.6z"/><path d="M10 11.6h4"/></svg>`;
+function note(id){ return db.notes.find(n=>n.id===id) || null; }
+function liveNotes(){ return db.notes.filter(n=>!n.archived); }
+function arcNotes(){ return db.notes.filter(n=>n.archived); }
+function firstLine(s){
+  const t=String(s||'').split('\n').map(x=>x.trim()).find(x=>x) || '';
+  return t.length>40 ? t.slice(0,40)+'…' : t;
+}
+function sortNotes(list){
+  return list.slice().sort((a,b)=>{
     if(a.date!==b.date) return a.date<b.date ? 1 : -1;
-    return (toMin(a.start)||0) < (toMin(b.start)||0) ? 1 : -1;
+    return a.createdAt<b.createdAt ? 1 : -1;
   });
 }
 
-function jobCard(j){
-  const min=jobMin(j), r=jobRate(j), open=(openId===j.id);
-  const sub = feeOf(j)>0
-    ? '報酬 '+yen(feeOf(j))+'円（税別） ・ '+fmtDur(min)
-    : (min>0 ? fmtDur(min)+' ・ 報酬を入れると時給が出ます' : '報酬と時間を入れると時給が出ます');
-  let h=`<div class="j-card ${open?'open':''} ${j.status==='done'?'st-done':''}">
-    <div class="j-head" data-act="j-open" data-id="${j.id}" role="button" tabindex="0">
-      <span class="j-t"><span class="j-name">${esc(j.name)}</span><span class="j-sub">${esc(sub)}</span></span>
-      <span class="j-rate ${rateCls(r)}" data-rate="${j.id}"><b class="tnum">${r==null?'—':yen(r)}</b><span>円 / 時間</span></span>
+function noteCard(n){
+  const open=(openId===n.id);
+  const sub = firstLine(n.body) || 'まだ何も書いていません';
+  let h=`<div class="n-card ${open?'open':''}">
+    <div class="n-head" data-act="n-open" data-id="${n.id}" role="button" tabindex="0">
+      <span class="n-t">
+        <span class="n-date">${esc(fmtDate(n.date))}</span>
+        <span class="n-title">${esc(n.title||'（無題）')}</span>
+        ${open?'':`<span class="n-sub">${esc(sub)}</span>`}
+      </span>
       ${ICO_CARET}
     </div>`;
   if(!open) return h+`</div>`;
 
-  h+=`<div class="j-body">
-    <div class="j-field">
-      <label for="fee-${j.id}">報酬（税別・円）</label>
-      <div class="fee-row">
-        <input type="number" id="fee-${j.id}" data-fee="${j.id}" inputmode="numeric" placeholder="例：30000" value="${esc(j.fee)}">
-        <span class="unit">円</span>
-      </div>
+  h+=`<div class="n-body">
+    <div class="n-meta">
+      <input class="dt" type="date" data-date="${n.id}" value="${esc(n.date)}" aria-label="日付">
+      <input class="tt" type="text" data-title="${n.id}" value="${esc(n.title)}" placeholder="タイトル" aria-label="タイトル">
     </div>
-
-    <div class="logs-head"><span class="t">記録した時間</span><span class="tot" id="oTot">${fmtDur(min)}</span></div>`;
-
-  const logs=sortedLogs(j);
-  if(logs.length){
-    h+=`<div class="logs">`;
-    logs.forEach(l=>{
-      h+=`<div class="log">
-        <span class="d">${l.date?fmtMD(l.date):'—'}</span>
-        <span class="t">${esc(l.start)}<span style="color:var(--ink-soft)"> – </span>${esc(l.end)}${isOvernight(l)?'<span class="over"> 翌</span>':''}</span>
-        <span class="h">${fmtDur(logMin(l))}</span>
-        <button class="x" data-act="log-del" data-id="${j.id}" data-lid="${l.id}" aria-label="この記録を消す">×</button>
-        ${l.memo?`<span class="m">${esc(l.memo)}</span>`:''}
-      </div>`;
-    });
-    h+=`</div>`;
-  } else {
-    h+=`<div class="logs-empty">まだ記録がありません。作業や打ち合わせをした時間を足していきます。</div>`;
-  }
-
-  if(adding===j.id){
-    h+=`<div class="lf">
-      <div class="lf-row"><label for="lfDate">日付</label><input type="date" id="lfDate" value="${todayISO()}"></div>
-      <div class="lf-row">
-        <label for="lfStart">時間</label>
-        <input type="time" id="lfStart" step="300" value="${nowRounded(60)}">
-        <span class="tilde">–</span>
-        <input type="time" id="lfEnd" step="300" value="${nowRounded(0)}" aria-label="終了時刻">
-      </div>
-      <div class="lf-row"><label for="lfMemo">メモ</label><input type="text" id="lfMemo" placeholder="任意（例：打ち合わせ・実装）" autocomplete="off"></div>
-      <div class="lf-live" id="lfLive">1時間</div>
-      <div class="lf-btns">
-        <button data-act="log-cancel">やめる</button>
-        <button class="pri" data-act="log-save" data-id="${j.id}">この時間を記録する</button>
-      </div>
-    </div>`;
-  } else {
-    h+=`<button class="addlog" data-act="log-new" data-id="${j.id}">＋ 時間を記録する</button>`;
-  }
-
-  h+=`<div class="j-foot">
-      <button data-act="j-status" data-id="${j.id}">${j.status==='done'?'進行中に戻す':'この案件を完了にする'}</button>
-      <button class="del" data-act="j-del" data-id="${j.id}">削除</button>
+    <textarea class="body" data-body="${n.id}" placeholder="ここから自由に書けます">${esc(n.body)}</textarea>
+    <div class="n-foot">
+      ${ n.archived
+          ? `<button class="keep" data-act="n-unarc" data-id="${n.id}">元に戻す</button>`
+          : `<button class="keep" data-act="n-arc" data-id="${n.id}">しまう</button>` }
+      <button class="del" data-act="n-del" data-id="${n.id}">削除</button>
     </div>
   </div></div>`;
   return h;
 }
 
 function render(){
-  const st=totals(), t=targetRate();
-  const cls = st.rate==null ? '' : (t ? (st.rate>=t?'hit':'miss') : '');
   let h='';
 
-  h+=`<div class="card">
-    <span class="label">時給計算</span>
-    <div class="sum">
-      <span><b class="tnum" id="sumTime">${fmtDurShort(st.minAll)}</b>合計時間</span>
-      <span class="${cls}" id="sumRateWrap"><b class="tnum" id="sumRate">${st.rate==null?'—':yen(st.rate)}</b>平均時給(円)</span>
-      <span><b class="tnum" id="sumJobs">${st.jobs}</b>案件</span>
-    </div>
-    <div class="set-row">
-      <label for="tgt">目標時給</label>
-      <input type="number" id="tgt" inputmode="numeric" placeholder="5000" value="${esc(db.settings.targetRate)}">
-      <span class="unit">円 / 時間</span>
-    </div>
-    <div class="add">
-      <input type="text" id="jobName" placeholder="案件の名前（例：香盤メーカー／お客様さま）" autocomplete="off" enterkeyhint="done">
-      <button data-act="j-add">＋ 追加</button>
-    </div>
-    <p class="note">移動時間は入れません。その場にいて作業・打ち合わせをした時間だけを記録します。</p>
-  </div>`;
-
-  if(!db.jobs.length){
-    h+=`<div class="card"><div class="empty">
-      <span class="em">⏱</span>
-      <p>まだ案件がありません。</p>
-      <span class="hint">案件を作って報酬を入れ、かかった時間を足していくと「実質時給」が出ます</span>
-    </div></div>`;
+  if(showArc){
+    h+=`<div class="card">
+      <div class="arc-head">
+        <b>しまった分</b>
+        <button data-act="arc-off">書く画面に戻る</button>
+      </div>
+      <p class="note">片付いたメモの置き場。開いて書き足せるし、「元に戻す」でいつでも戻せます。</p>
+    </div>`;
+    const list=arcNotes();
+    if(!list.length){
+      h+=`<div class="card"><div class="empty">
+        <span class="em">🗃️</span>
+        <p>しまったメモはまだありません。</p>
+        <span class="hint">片付いたメモを開いて「しまう」を押すと、ここに入ります</span>
+      </div></div>`;
+    } else {
+      h+=`<div class="nlist">${sortNotes(list).map(noteCard).join('')}</div>`;
+    }
   } else {
-    const act=db.jobs.filter(j=>j.status==='active').sort((a,b)=>a.createdAt<b.createdAt?1:-1);
-    const dn =db.jobs.filter(j=>j.status==='done').sort((a,b)=>a.createdAt<b.createdAt?1:-1);
-    [{k:'進行中', list:act},{k:'完了', list:dn}].forEach(g=>{
-      if(!g.list.length) return;
-      h+=`<div><div class="gh">${g.k}<span class="n">${g.list.length}</span></div><div class="jlist">${g.list.map(jobCard).join('')}</div></div>`;
-    });
+    h+=`<div class="card">
+      <span class="label">自由帳</span>
+      <div class="newbar">
+        <input type="text" id="newTitle" placeholder="タイトル（例：8/1 残りタスクの分解）" autocomplete="off" enterkeyhint="done">
+        <button data-act="n-add">＋ 作る</button>
+      </div>
+      <div class="newdate">
+        <span>日付</span>
+        <input type="date" id="newDate" value="${todayISO()}" aria-label="日付">
+        <button class="today" data-act="n-today">今日に戻す</button>
+      </div>
+      <p class="note">形の決まっていない、まっさらなメモ帳。分解したタスク・考えごと・下書き、なんでもここに。</p>
+    </div>`;
+
+    const list=liveNotes();
+    if(!list.length){
+      h+=`<div class="card"><div class="empty">
+        <span class="em">📔</span>
+        <p>まだ何もありません。</p>
+        <span class="hint">タイトルを決めて作ると、まっさらなページが開きます</span>
+      </div></div>`;
+    } else {
+      h+=`<div class="nlist">${sortNotes(list).map(noteCard).join('')}</div>`;
+    }
+
+    const nArc=arcNotes().length;
+    if(nArc){
+      h+=`<div class="arcbar"><button data-act="arc-on">${ICO_BOX}しまった分を見る（${nArc}）</button></div>`;
+    }
   }
 
   document.getElementById('page').innerHTML=h;
   renderSync();
-  if(adding){ updateLive(); }
-}
-
-/* 入力のたびに数字だけを差し替える（再描画するとキーボードが閉じるため） */
-function setTxt(id, txt){ const e=document.getElementById(id); if(e) e.textContent=txt; }
-function refreshNums(){
-  const st=totals(), t=targetRate();
-  setTxt('sumTime', fmtDurShort(st.minAll));
-  setTxt('sumRate', st.rate==null?'—':yen(st.rate));
-  setTxt('sumJobs', String(st.jobs));
-  const w=document.getElementById('sumRateWrap');
-  if(w) w.className = st.rate==null ? '' : (t ? (st.rate>=t?'hit':'miss') : '');
-  /* 目標時給を変えると、閉じている案件の色も変わる。開いている/いないに関わらず全部そろえる */
-  document.querySelectorAll('[data-rate]').forEach(el=>{
-    const j=job(el.dataset.rate); if(!j) return;
-    const r=jobRate(j);
-    el.className='j-rate '+rateCls(r);
-    el.querySelector('b').textContent = r==null?'—':yen(r);
-  });
-  if(openId){ const j=job(openId); if(j) setTxt('oTot', fmtDur(jobMin(j))); }
-}
-function updateLive(){
-  const s=document.getElementById('lfStart'), e=document.getElementById('lfEnd'), live=document.getElementById('lfLive');
-  if(!s||!e||!live) return;
-  const min=logMin({start:s.value, end:e.value});
-  const over=isOvernight({start:s.value, end:e.value});
-  live.textContent = min ? fmtDur(min)+(over?'（日をまたいで計算）':'') : '開始と終了が同じ時刻です';
-  live.classList.toggle('bad', !min);
+  document.querySelectorAll('#page textarea').forEach(autoGrow);
 }
 
 /* ===================== 操作 ===================== */
@@ -652,59 +504,72 @@ document.getElementById('page').addEventListener('click', e=>{
   const b=e.target.closest('[data-act]'); if(!b) return;
   const act=b.dataset.act, id=b.dataset.id;
 
-  if(act==='j-add'){
-    const inp=document.getElementById('jobName');
-    const name=(inp.value||'').trim();
-    if(!name){ inp.focus(); return; }
-    const j={id:uid(), name, fee:'', status:'active', createdAt:todayISO(), logs:[]};
-    db.jobs.push(j); save(); inp.value='';
-    openId=j.id; adding=null; render();
+  if(act==='n-add'){
+    const ti=document.getElementById('newTitle');
+    const title=(ti.value||'').trim();
+    if(!title){ ti.focus(); return; }
+    const date=document.getElementById('newDate').value || todayISO();
+    const n={id:uid(), date, title, body:'', archived:false, createdAt:new Date().toISOString()};
+    db.notes.push(n); save();
+    openId=n.id; render();
+    const ta=document.querySelector('[data-body="'+n.id+'"]');
+    if(ta) ta.focus({preventScroll:true});
     return;
   }
-  if(act==='j-open'){ openId = (openId===id) ? null : id; adding=null; render(); return; }
-  if(act==='j-status'){ const j=job(id); if(!j) return; j.status = j.status==='done'?'active':'done'; save(); render(); return; }
-  if(act==='j-del'){
-    const j=job(id); if(!j) return;
-    if(!confirm('「'+j.name+'」を削除します。記録した時間も消えます。よろしいですか？')) return;
-    db.jobs=db.jobs.filter(x=>x.id!==id); if(openId===id) openId=null; adding=null;
-    save(); render(); toast('案件を削除しました');
+  if(act==='n-today'){ document.getElementById('newDate').value=todayISO(); return; }
+  if(act==='n-open'){ openId = (openId===id) ? null : id; render(); return; }
+  if(act==='arc-on'){ showArc=true; openId=null; render(); window.scrollTo(0,0); return; }
+  if(act==='arc-off'){ showArc=false; openId=null; render(); window.scrollTo(0,0); return; }
+
+  if(act==='n-arc'){
+    const n=note(id); if(!n) return;
+    n.archived=true; openId=null; save(); render();
+    toast('しまいました');
     return;
   }
-  if(act==='log-new'){ adding=id; render(); const d=document.getElementById('lfStart'); if(d) d.focus({preventScroll:true}); return; }
-  if(act==='log-cancel'){ adding=null; render(); return; }
-  if(act==='log-del'){
-    const j=job(id); if(!j) return;
-    j.logs=j.logs.filter(l=>l.id!==b.dataset.lid);
-    save(); render(); toast('記録を消しました');
+  if(act==='n-unarc'){
+    const n=note(id); if(!n) return;
+    n.archived=false; openId=null; save();
+    if(!arcNotes().length) showArc=false;   /* 最後の1件を戻したら、空の棚に取り残されないよう書く画面へ */
+    render();
+    toast('書く画面に戻しました');
     return;
   }
-  if(act==='log-save'){
-    const j=job(id); if(!j) return;
-    const date=document.getElementById('lfDate').value || todayISO();
-    const start=document.getElementById('lfStart').value;
-    const end=document.getElementById('lfEnd').value;
-    const memo=(document.getElementById('lfMemo').value||'').trim();
-    if(!start || !end){ toast('開始と終了の時刻を入れてください'); return; }
-    const min=logMin({start,end});
-    if(!min){ toast('開始と終了が同じ時刻です'); return; }
-    j.logs.push({id:uid(), date, start, end, memo});
-    adding=null; save(); render(); toast(fmtDur(min)+' を記録しました');
+  if(act==='n-del'){
+    const n=note(id); if(!n) return;
+    if(!confirm('「'+(n.title||'（無題）')+'」を削除します。よろしいですか？')) return;
+    db.notes=db.notes.filter(x=>x.id!==id);
+    if(openId===id) openId=null;
+    save(); render(); toast('削除しました');
     return;
   }
 });
 
+/* タイトル欄でEnter＝作る */
+document.getElementById('page').addEventListener('keydown', e=>{
+  if(e.target.id==='newTitle' && e.key==='Enter' && !e.isComposing){
+    e.preventDefault();
+    const btn=document.querySelector('[data-act="n-add"]');
+    if(btn) btn.click();
+  }
+});
+
+/* 入力中の保存（タイトル・日付・本文）。本文の改行はそのまま残す */
 document.getElementById('page').addEventListener('input', e=>{
   const el=e.target;
-  if(el.id==='tgt'){ db.settings.targetRate=el.value; save(); refreshNums(); return; }
-  if(el.dataset && el.dataset.fee){
-    const j=job(el.dataset.fee); if(!j) return;
-    j.fee=el.value; save(); refreshNums(); return;
+  if(el.tagName==='TEXTAREA') autoGrow(el);
+  if(el.dataset && el.dataset.title){
+    const n=note(el.dataset.title);
+    if(n){
+      n.title=el.value; save();
+      const card=el.closest('.n-card');
+      const t=card && card.querySelector('.n-title');
+      if(t) t.textContent = n.title || '（無題）';   /* 再描画せず見出しだけ追従（入力が途切れない） */
+    }
+    return;
   }
-  if(el.id==='lfStart' || el.id==='lfEnd'){ updateLive(); return; }
-});
-document.getElementById('page').addEventListener('keydown', e=>{
-  if(e.key!=='Enter') return;
-  if(e.target.id==='jobName'){ e.preventDefault(); document.querySelector('[data-act="j-add"]').click(); }
+  if(el.dataset && el.dataset.date){ const n=note(el.dataset.date); if(n && el.value){ n.date=el.value; save(); } return; }
+  if(el.dataset && el.dataset.body){ const n=note(el.dataset.body); if(n){ n.body=el.value; save(); } return; }
 });
 
 /* ===================== メニュー（引き出し） ===================== */
@@ -722,7 +587,7 @@ document.getElementById('page').addEventListener('keydown', e=>{
   }
   btn.addEventListener('click', ()=> setOpen(!dr.classList.contains('show')));
   mask.addEventListener('click', ()=> setOpen(false));
-  dr.addEventListener('click', e=>{ if(e.target.closest('.dr-item.current, .dr-item.soon')) setOpen(false); });
+  dr.addEventListener('click', e=>{ if(e.target.closest('.dr-item.current')) setOpen(false); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && dr.classList.contains('show')) setOpen(false); });
 })();
 
