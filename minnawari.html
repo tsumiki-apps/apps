@@ -29,6 +29,10 @@
   /* ===== ヘッダー ===== */
   header{padding:24px 4px 10px; display:flex; align-items:center; gap:10px;}
   header .logo{font-size:29px; line-height:1;}
+  /* アプリのロゴ（ホーム画面アイコンと同じ線画）を画面内でも使う */
+  .logoimg{width:34px; height:34px; border-radius:9px; display:block; flex:0 0 auto;}
+  .hero .logoimg{width:72px; height:72px; border-radius:17px; margin:0 auto 2px;
+    box-shadow:0 8px 20px rgba(20,60,55,.18);}
   header h1{font-size:22px; font-weight:800; letter-spacing:-.02em; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .sync{margin-left:auto; flex:0 0 auto; display:flex; align-items:center; gap:5px;
@@ -204,7 +208,7 @@
     font-size:14px; font-weight:700; color:var(--sub);}
   .chip.on{border-color:var(--accent); background:var(--soft); color:var(--ink);}
   .chip.sm{padding:6px 11px; font-size:12px;}
-  .emojipick{display:flex; flex-wrap:wrap; gap:7px;}
+  .emojipick{display:grid; grid-template-columns:repeat(6,44px); gap:7px; justify-content:start;}
   .emojipick button{width:44px; height:44px; font-size:21px; border-radius:12px;
     border:1.5px solid var(--line); background:var(--card);
     display:flex; align-items:center; justify-content:center;}
@@ -248,15 +252,68 @@
     padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600;
     z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; max-width:88vw; text-align:center;}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  /* ===== 3つの面。スマホは1つずつ（タブ切替）、PCは横に並べる ===== */
+  .pane{display:none;}
+  .pane.on{display:block;}
+  .panehead{display:none; align-items:center; gap:10px; margin:2px 2px 12px;}
+  .panehead h3{font-size:15px; font-weight:800; letter-spacing:-.01em;}
+  .panehead .pc{font-size:12px; color:var(--sub); font-weight:700;}
+  .panehead .addhere{margin-left:auto; background:var(--accent); color:#fff;
+    padding:9px 15px; border-radius:12px; font-weight:800; font-size:13px;
+    box-shadow:0 4px 12px rgba(15,158,142,.28);}
+  .panehead .addhere:active{transform:scale(.96);}
+  .glist{display:block;}
+
+  /* ===== PC（横幅を使い切る） ===== */
+  @media (min-width:1000px){
+    body{padding-bottom:44px;}
+    .wrap{max-width:1180px; padding:0 24px;}
+    header{padding-top:14px;}
+    header h1{font-size:26px;}
+    .tabs{display:none;}
+    .actionbar{display:none;}
+    .panehead{display:flex;}
+    .pane{display:block;}
+    #body{display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);
+      gap:24px; align-items:start;}
+    #paneList{grid-column:1; grid-row:1 / span 2;}
+    #paneSettle{grid-column:2; grid-row:1;}
+    #paneMembers{grid-column:2; grid-row:2;}
+    #startView{max-width:840px; margin:0 auto;}
+    .hero{padding:34px 28px;}
+    .hero h2{font-size:24px;}
+    .hero p{font-size:14px;}
+    .cta{max-width:340px; margin-left:auto; margin-right:auto;}
+    .glist{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+    .gcard{margin-bottom:0;}
+    .empty{padding:30px 20px;}
+    /* シートは下からではなく中央のダイアログに */
+    .ov{align-items:center;}
+    .sheet{max-width:580px; border-radius:22px; max-height:86vh; padding:22px 24px 24px;}
+    .grip{display:none;}
+    .toast{bottom:34px;}
+    @media(hover:hover){
+      .entry:hover,.mrow:hover,.gcard:hover{border-color:#c6ddd8;}
+    }
+  }
+  /* ===== 大きいPC（3列に展開） ===== */
+  @media (min-width:1400px){
+    .wrap{max-width:1460px;}
+    #body{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,.85fr);}
+    #paneList{grid-column:1; grid-row:1;}
+    #paneSettle{grid-column:2; grid-row:1;}
+    #paneMembers{grid-column:3; grid-row:1;}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <!-- ===== スタート ===== -->
   <div id="startView">
-    <header><span class="logo">🍻</span><h1>みんなわり</h1></header>
+    <header><img class="logoimg" src="icons/icon-minnawari.png" alt=""><h1>みんなわり</h1></header>
     <div class="hero">
-      <div class="big">🍻</div>
+      <img class="logoimg" src="icons/icon-minnawari.png" alt="みんなわり">
       <h2>みんなの立て替えを、<br>いちばん少ない送金にまとめる</h2>
       <p>登録なし・URLを送るだけ。<br>広告も課金もありません。</p>
       <div class="feat">
@@ -621,7 +678,8 @@ function renderStart(){
   $('#actionBar').hidden = true;
   const list = recents();
   $('#recentWrap').innerHTML = !list.length ? '' :
-    `<div class="sectitle">さいきん開いたグループ <span class="cnt">${list.length}</span></div>` +
+    `<div class="sectitle">さいきん開いたグループ <span class="cnt">${list.length}</span></div>
+     <div class="glist">` +
     list.map(g => `
       <button class="gcard" data-open="${esc(g.id)}" data-key="${esc(g.key||'')}">
         <span class="ge">${esc(g.emoji||'🍻')}</span>
@@ -630,7 +688,21 @@ function renderStart(){
           <span class="gm">${g.key ? '編集できる' : '見るだけ'} ・ ${new Date(g.at).toLocaleDateString('ja-JP')}</span>
         </span>
         <span class="chev">›</span>
-      </button>`).join('');
+      </button>`).join('') + '</div>';
+}
+
+/* スマホは1面ずつ（タブ切替）、PCは3面を横に並べる。中身は常に3つとも描いておく */
+const PANES = {list:'paneList', settle:'paneSettle', members:'paneMembers'};
+function ensurePanes(){
+  if(!document.getElementById('paneList')){
+    $('#body').innerHTML = '<section class="pane" id="paneList"></section>'
+                         + '<section class="pane" id="paneSettle"></section>'
+                         + '<section class="pane" id="paneMembers"></section>';
+  }
+}
+function paneHead(title, sub, withAdd){
+  return `<div class="panehead"><h3>${title}</h3><span class="pc">${sub||''}</span>
+    ${withAdd && G.canEdit ? '<button class="addhere" id="addHere">＋ 立替を追加</button>' : ''}</div>`;
 }
 
 function render(){
@@ -643,16 +715,16 @@ function render(){
   document.title = (G.state.title || 'みんなわり') + ' — みんなわり';
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   setSync();
-  if(tab === 'list') renderList();
-  else if(tab === 'settle') renderSettle();
-  else renderMembers();
+  ensurePanes();
+  Object.entries(PANES).forEach(([k,id])=> document.getElementById(id).classList.toggle('on', k === tab));
+  renderList(); renderSettle(); renderMembers();
 }
 
 function renderList(){
   const s = G.state, ex = (s.expenses||[]).slice().sort((a,b)=> (b.at||'').localeCompare(a.at||'') || (b.ts||0)-(a.ts||0));
   const total = ex.reduce((t,e)=> t + expenseYen(e), 0);
   const heads = s.members.length || 1;
-  let html = `
+  let html = paneHead('立替', `${ex.length}件`, true) + `
     <div class="sums">
       <div class="sumc"><div class="nm">立て替えの合計</div><div class="vl num">${fmt(total)}</div>
         <div class="sb">${ex.length}件</div></div>
@@ -661,7 +733,7 @@ function renderList(){
     </div>`;
   if(!G.canEdit) html += `<div class="ro">👀 見るだけのURLで開いています。追加・編集はできません。</div>`;
   if(!ex.length){
-    html += `<div class="empty"><div class="big">🧾</div><p>まだ立替がありません。<br>下の「＋ 立替を追加」から。</p></div>`;
+    html += `<div class="empty"><div class="big">🧾</div><p>まだ立替がありません。<br>「＋ 立替を追加」から入れてください。</p></div>`;
   } else {
     let day = '';
     ex.forEach(e=>{
@@ -684,7 +756,7 @@ function renderList(){
         </button>`;
     });
   }
-  $('#body').innerHTML = html;
+  document.getElementById('paneList').innerHTML = html;
 }
 
 function renderSettle(){
@@ -696,7 +768,7 @@ function renderSettle(){
   const doneSet = new Set(s.done || []);
   const tkey = t => `${t.from}>${t.to}:${t.amount}`;
 
-  let html = '';
+  let html = paneHead('精算', trans.length ? `送金${trans.length}回` : '');
   if(!s.expenses.length){
     html += `<div class="empty"><div class="big">🧮</div><p>立替を入れると、<br>ここに「誰が誰にいくら」が出ます。</p></div>`;
   } else if(!trans.length){
@@ -750,14 +822,14 @@ function renderSettle(){
   }
   html += `<div class="note">送金はPayPayなどのアプリで行ってください。
     <b>金額の自動入力はできない</b>ので、「金額コピー」→PayPayで貼り付けが最短です。</div>`;
-  $('#body').innerHTML = html;
+  document.getElementById('paneSettle').innerHTML = html;
 }
 
 function renderMembers(){
   const s = G.state;
   const bals = balancesOf(s);
   const skew = s.members.some(m => (m.w ?? 1) !== 1);
-  let html = '';
+  let html = paneHead('メンバー', `${s.members.length}人`);
   html += s.members.map(m=>{
     const b = bals.find(x=>x.id===m.id) || {paid:0};
     return `<button class="mrow" data-mem="${esc(m.id)}" ${G.canEdit?'':'disabled'}>
@@ -775,7 +847,7 @@ function renderMembers(){
     <b>基本の割合</b>は「大人 1 ／ 子ども 0.5 ／ お酒を飲まない人 0.7」のように決めておくと、
     立替の割り方で「比率」を選んだとき自動で当てはまります。${skew ? '' : '<br>いまは全員 ×1（＝均等）です。'}
   </div>`;
-  $('#body').innerHTML = html;
+  document.getElementById('paneMembers').innerHTML = html;
 }
 
 /* ============================================================
@@ -1275,6 +1347,7 @@ $('#body').onclick = e=>{
   if(ex){ if(G.canEdit) sheetExpense(ex.dataset.ex); return; }
   const mem = e.target.closest('[data-mem]');
   if(mem){ sheetMember(mem.dataset.mem); return; }
+  if(e.target.closest('#addHere')){ sheetExpense(null); return; }
   if(e.target.closest('#addMem')){ sheetMember(null); return; }
   if(e.target.closest('#whoAmI')){ sheetWhoAmI(); return; }
   const cp = e.target.closest('[data-copy]');
