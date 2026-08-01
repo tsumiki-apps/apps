@@ -255,6 +255,8 @@
   .lrow .l-title{flex:1; font-size:14.5px; min-width:0; word-break:break-word; line-height:1.4;}
   .lrow .l-title.done{color:var(--faint); text-decoration:line-through;}
   .lrow .l-meta{display:flex; align-items:center; gap:7px; flex:0 0 auto;}
+  /* アーカイブ表示中は「追加」系を隠す（足しても見えない場所に増えるだけなので） */
+  body.arcmode .col-add, body.arcmode .col-add-inline, body.arcmode .lgroup-add, body.arcmode .fab{display:none !important;}
   .lgroup-add{display:flex; align-items:center; gap:7px; padding:10px 16px 10px 48px; color:var(--faint); font-size:13px; border-top:1px solid var(--line);}
   .lgroup-add svg{width:15px; height:15px;}
   .lgroup-add:active{background:var(--hover);}
@@ -498,6 +500,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
     <div class="sp"></div>
+    <button class="icon-btn" id="pageArchive"></button>
     <button class="icon-btn" id="pageDelete">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
     </button>
@@ -549,6 +552,8 @@ const IC = {
   quote:'<path d="M7 7c-2 0-3 1.5-3 3.5S5.5 14 7 14M17 7c-2 0-3 1.5-3 3.5S15.5 14 17 14"/>',
   divider:'<path d="M4 12h16"/>',
   check:'<path d="M5 12l4 4L19 7"/>',
+  box:'<path d="M3 8h18v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><rect x="2" y="4" width="20" height="4" rx="1"/><path d="M10 12h4"/>',
+  unbox:'<path d="M3 8h18v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><rect x="2" y="4" width="20" height="4" rx="1"/><path d="M12 17v-5M9.5 14.5L12 12l2.5 2.5"/>',
   x:'<path d="M6 6l12 12M18 6L6 18"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   sun:'<circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8L6 18M18 6l1.8-1.8"/>',
@@ -630,12 +635,15 @@ function normalize(){
   if(!db.ui) db.ui={view:'board',theme:'auto'};
   if(!('sort' in db.ui)) db.ui.sort='manual';
   if(!('quickFilter' in db.ui)) db.ui.quickFilter=null;
+  if(!('showArchived' in db.ui)) db.ui.showArchived=false;
   const colIds = db.columns.map(c=>c.id);
   db.tasks.forEach(t=>{
     if(!t.id) t.id=uid();
     if(t.title===undefined) t.title='';
     if(!colIds.includes(t.status)) t.status=db.columns[0].id;
     if(!('priority' in t)) t.priority=null;
+    // 想定外の優先度（外部ツールからの medium 等）はラベルが undefined になるので寄せる
+    if(t.priority && !(t.priority in PRI_LABEL)) t.priority = {medium:'mid',middle:'mid',normal:'mid',none:null}[t.priority] || null;
     if(!('due' in t)) t.due=null;
     if(!Array.isArray(t.tags)) t.tags=[];
     if(!Array.isArray(t.body)) t.body=[];
@@ -770,12 +778,19 @@ function sortTasks(list){
   return arr;
 }
 
+/* アーカイブ＝「一旦しまった」カード。既定ではどのビューにも出さず、集計にも数えない。
+   「アーカイブを表示」中は、逆にアーカイブしたものだけを並べる（見返し・復帰用）。 */
+function liveTasks(){ return db.tasks.filter(t=>!t.archived); }
+function archivedCount(){ return db.tasks.filter(t=>t.archived).length; }
+
 function visibleTasks(){
   const q=(db.ui.search||'').trim().toLowerCase();
   const ft=db.ui.filterTag;
   const qf=db.ui.quickFilter;
   const wcol=waitingColId();
+  const wantArchived=!!db.ui.showArchived;
   return db.tasks.filter(t=>{
+    if(!!t.archived !== wantArchived) return false;
     if(ft && !t.tags.includes(ft)) return false;
     if(qf==='waiting' && t.status!==wcol) return false;
     if(qf==='overdue' && !isOverdue(t)) return false;
@@ -823,25 +838,32 @@ function renderViewSwitch(){
 }
 const QF_LABEL={waiting:'あなた待ち',duesoon:'期限間近',overdue:'期限切れ',claude:'Claude起票',self:'自分で作成'};
 function renderFilterNote(){
-  const el=$('#filterNote'); const ft=db.ui.filterTag; const qf=db.ui.quickFilter;
-  $('#filterBtn').classList.toggle('active', !!ft || qf==='claude' || qf==='self');
-  if(!ft && !qf){ el.style.display='none'; return; }
+  const el=$('#filterNote'); const ft=db.ui.filterTag; const qf=db.ui.quickFilter; const arc=!!db.ui.showArchived;
+  $('#filterBtn').classList.toggle('active', !!ft || qf==='claude' || qf==='self' || arc);
+  if(!ft && !qf && !arc){ el.style.display='none'; return; }
   el.style.display='flex';
   let parts='絞り込み中: ';
+  if(arc) parts+=`<span class="tagchip" style="${tagStyle('brown')}">アーカイブ</span> `;
   if(qf) parts+=`<span class="tagchip" style="${tagStyle('gray')}">${QF_LABEL[qf]||qf}</span> `;
   if(ft){ const tg=tagById(ft); if(tg) parts+=`<span class="tagchip" style="${tagStyle(tg.color)}">${esc(tg.name)}</span> `; else db.ui.filterTag=null; }
   parts+=`<span class="clr" id="clrFilter">すべて解除</span>`;
   el.innerHTML=parts;
-  $('#clrFilter').onclick=()=>{ db.ui.filterTag=null; db.ui.quickFilter=null; save(); renderView(); renderFilterNote(); };
+  $('#clrFilter').onclick=()=>{ db.ui.filterTag=null; db.ui.quickFilter=null; db.ui.showArchived=false; save(); renderView(); renderFilterNote(); };
 }
 
 function renderView(){
   const root=$('#viewRoot');
   root.className='view';
+  document.body.classList.toggle('arcmode', !!db.ui.showArchived);
   renderSummary();
   const s=db.ui.sort||'manual';
   $('#sortLabel').textContent = s==='due'?'期限順':s==='priority'?'優先度順':s==='newest'?'新しい順':s==='recent'?'最近動かした順':'並べ替え';
   $('#sortBtn').classList.toggle('active', s!=='manual');
+  if(db.ui.showArchived && !archivedCount()){
+    root.innerHTML=`<div class="empty"><div class="e-emoji">🗃️</div>
+      <div class="e-txt">アーカイブは空です。<br>詳細ページの箱アイコンで、いま追わないカードをここへしまえます。</div></div>`;
+    return;
+  }
   if(db.ui.view==='board') renderBoard(root);
   else if(db.ui.view==='list') renderList(root);
   else if(db.ui.view==='project') renderProject(root);
@@ -850,10 +872,12 @@ function renderView(){
 function renderSummary(){
   const el=$('#summary');
   if(db.ui.view==='project'){ el.innerHTML=''; return; }   // 進捗ビューは独自の集計を出すので上部サマリーは隠す
+  if(db.ui.showArchived){ el.innerHTML=''; return; }        // アーカイブ表示中は「いま追っている件数」と食い違うので隠す
   const wcol=waitingColId();
-  const wait=db.tasks.filter(t=>t.status===wcol).length;
-  const soon=db.tasks.filter(t=>isDueSoon(t)||isOverdue(t)).length;
-  const over=db.tasks.filter(t=>isOverdue(t)).length;
+  const live=liveTasks();
+  const wait=live.filter(t=>t.status===wcol).length;
+  const soon=live.filter(t=>isDueSoon(t)||isOverdue(t)).length;
+  const over=live.filter(t=>isOverdue(t)).length;
   const qf=db.ui.quickFilter;
   const chips=[
     {k:'waiting', label:'あなた待ち', n:wait, cls:'s-wait'},
@@ -944,7 +968,7 @@ function quickAdd(body, colId, addBtn){
 /* ---------- リスト ---------- */
 function renderList(root){
   const tasks=visibleTasks();
-  if(!db.tasks.length){ root.innerHTML=emptyHTML(); bindEmpty(root); return; }
+  if(!db.ui.showArchived && !liveTasks().length){ root.innerHTML=emptyHTML(); bindEmpty(root); return; }
   const wrap=document.createElement('div'); wrap.className='list';
   db.columns.forEach(col=>{
     const list=sortTasks(tasks.filter(t=>t.status===col.id));
@@ -1163,7 +1187,7 @@ function fmtLogDate(at){
   return (d.getMonth()+1)+'/'+d.getDate();
 }
 function projectStats(tagId){
-  const tasks=db.tasks.filter(t=>t.tags.includes(tagId));
+  const tasks=liveTasks().filter(t=>t.tags.includes(tagId));
   const by={}; db.columns.forEach(c=>by[c.id]=0);
   tasks.forEach(t=>{ by[t.status]=(by[t.status]||0)+1; });
   const wcol=waitingColId();
@@ -1176,9 +1200,10 @@ function projectStats(tagId){
   return {tasks, by, total:tasks.length, done, waiting, overdue, nextDue:dues[0]||null, lastUpd, openCount};
 }
 function renderProject(root){
+  const live=liveTasks();
   const projTags=db.tags.filter(tg=>{
     if(NON_PROJECT_TAGS.includes(tg.name)) return false;
-    return db.tasks.some(t=>t.tags.includes(tg.id)) || (db.projects && db.projects[tg.id]);
+    return live.some(t=>t.tags.includes(tg.id));
   });
   if(!projTags.length){
     root.innerHTML=`<div class="empty"><div class="e-emoji">📊</div>
@@ -1198,8 +1223,8 @@ function renderProject(root){
     if(a.pct!==b.pct) return a.pct-b.pct;
     return a.tg.name.localeCompare(b.tg.name,'ja');
   });
-  const doneAll=db.tasks.filter(t=>isDoneStatus(t.status)).length;
-  const allTotal=db.tasks.length;
+  const doneAll=live.filter(t=>isDoneStatus(t.status)).length;
+  const allTotal=live.length;
   const overallPct=allTotal?Math.round(doneAll/allTotal*100):0;
   const ballTotal=rows.reduce((n,r)=>n+r.s.waiting.length,0);
   const stalledCount=rows.filter(r=>r.stall>=7).length;
@@ -1419,7 +1444,14 @@ function openTask(id){
   }
   sheetOpen=true;
   renderPage();
+  renderArchiveBtn();
   $('#sheet').classList.add('show');
+}
+function renderArchiveBtn(){
+  const b=$('#pageArchive'); if(!b||!curTask) return;
+  const on=!!curTask.archived;
+  b.title = on ? 'アーカイブから戻す' : 'アーカイブする';
+  b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${on?IC.unbox:IC.box}</svg>`;
 }
 function commitNewIfNeeded(){
   if(curTask && curTask._new){
@@ -1690,7 +1722,10 @@ function toast(msg){ const el=$('#toast'); el.textContent=msg; el.classList.add(
    ============================================================ */
 function openFilter(){
   const qf=db.ui.quickFilter;
-  let html=`<div class="ps-title">起票元で絞り込み</div><div class="ps-list">`;
+  const nArc=archivedCount();
+  let html=`<div class="ps-title">アーカイブ</div><div class="ps-list">`;
+  html+=`<div class="ps-item ${db.ui.showArchived?'on':''}" data-arc="1"><div class="ic">${svg(IC.box,2)}</div>アーカイブを表示（${nArc}件）<span class="chk">${svg(IC.check,2.4)}</span></div>`;
+  html+=`</div><div class="ps-title">起票元で絞り込み</div><div class="ps-list">`;
   html+=`<div class="ps-item ${qf==='claude'?'on':''}" data-q="claude"><span class="src-dot" style="margin:0 3px"></span>Claude起票のみ<span class="chk">${svg(IC.check,2.4)}</span></div>`;
   html+=`<div class="ps-item ${qf==='self'?'on':''}" data-q="self"><div class="ic">${svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/>',2)}</div>自分で作成したもの<span class="chk">${svg(IC.check,2.4)}</span></div>`;
   html+=`</div><div class="ps-title">タグ（アプリ）で絞り込み</div><div class="ps-list">`;
@@ -1699,6 +1734,7 @@ function openFilter(){
   html+=`</div>`; openPop(html);
   $$('#popContent [data-f]').forEach(el=>el.onclick=()=>{ db.ui.filterTag=el.dataset.f||null; save(); closePop(); renderView(); renderFilterNote(); });
   $$('#popContent [data-q]').forEach(el=>el.onclick=()=>{ db.ui.quickFilter=(db.ui.quickFilter===el.dataset.q)?null:el.dataset.q; save(); closePop(); renderView(); renderFilterNote(); });
+  $$('#popContent [data-arc]').forEach(el=>el.onclick=()=>{ db.ui.showArchived=!db.ui.showArchived; save(); closePop(); renderView(); renderFilterNote(); });
 }
 function openSort(){
   const cur=db.ui.sort||'manual';
@@ -1714,6 +1750,20 @@ function openSort(){
    ============================================================ */
 $('#fab').onclick=()=>openTask(null);
 $('#pageBack').onclick=closeSheet;
+$('#pageArchive').onclick=()=>{
+  if(!curTask) return;
+  const t=curTask, was=!!t.archived;
+  t.archived = was ? undefined : true;
+  if(!t.archived) delete t.archived;
+  t.updated=Date.now();
+  commitNewIfNeeded(); save();
+  $('#sheet').classList.remove('show'); sheetOpen=false;
+  setTimeout(()=>{ curTask=null; renderView(); renderFilterNote(); },200);
+  showUndo(was?'アーカイブから戻しました':'アーカイブしました', ()=>{
+    if(was) t.archived=true; else delete t.archived;
+    t.updated=Date.now(); save(); renderView(); renderFilterNote();
+  });
+};
 $('#pageDelete').onclick=()=>{
   if(!curTask) return;
   const html=`<div class="ps-title">このタスクを削除しますか？</div><div class="ps-list">

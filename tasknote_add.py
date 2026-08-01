@@ -34,6 +34,7 @@ REST = f"https://{PROJECT_REF}.supabase.co/rest/v1/tasknote_state"
 MGMT = f"https://api.supabase.com/v1/projects/{PROJECT_REF}/database/query"
 COLORS = ["gray","brown","orange","yellow","green","blue","purple","pink","red"]
 STATUS_OK = {"waiting","todo","doing","done"}
+PRIORITY_OK = {"high","mid","low","none",""}
 
 
 def curl_json(args):
@@ -86,6 +87,9 @@ def main():
 
     if a.status not in STATUS_OK:
         sys.exit(f"status は {STATUS_OK} のいずれか")
+    # アプリ側のラベルは high/mid/low のみ。medium 等を入れるとカードに undefined と出る
+    if a.priority not in PRIORITY_OK:
+        sys.exit(f"priority は {sorted(PRIORITY_OK)} のいずれか（medium ではなく mid）")
     priority = None if a.priority in ("none","") else a.priority
     due = a.due or None
     key = a.key or ("auto-" + hashlib.md5((a.app+"|"+a.title).encode()).hexdigest()[:12])
