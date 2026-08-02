@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-akima.png">
+<meta name="apple-mobile-web-app-title" content="あきま">
+<title>あきま — 空いている時間を、そのまま貼れる文面に</title>
+<style>
+  /* 色は tsumiki-apps.com と同じ系統（紙・墨・朱）。朱は落款のように小さく使う。 */
+  :root{
+    --bg:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3;
+    --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+    --accent:#D14E26; --soft:#F1CDBB; --deep:#8E3418;
+    --ok:#6B8F71; --warn:#A33221; --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
+  html,body{overscroll-behavior-y:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 96px);
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:620px; margin:0 auto; padding:0 16px;}
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  /* iOSの自動ズーム防止に入力系は必ず16px以上 */
+  input,select,textarea{font-family:inherit; font-size:16px;}
+  .num{font-variant-numeric:tabular-nums;}
+
+  /* ===== ヘッダー ===== */
+  header{padding:24px 4px 6px; display:flex; align-items:center; gap:10px;}
+  .logoimg{width:34px; height:34px; border-radius:9px; display:block; flex:0 0 auto;}
+  header h1{font-size:22px; font-weight:800; letter-spacing:-.02em;}
+  header .sub{font-size:11px; color:var(--sub); font-weight:600; letter-spacing:.02em;}
+
+  /* ===== 取得状態のバー ===== */
+  .fetchbar{display:flex; align-items:center; gap:10px; background:var(--card);
+    border:1px solid var(--line); border-radius:14px; padding:10px 12px; margin-top:8px;}
+  .fetchbar .dot{width:8px; height:8px; border-radius:50%; background:var(--ok); flex:0 0 auto;}
+  .fetchbar .dot.old{background:#C9A227;} .fetchbar .dot.bad{background:var(--accent);}
+  .fetchbar .dot.busy{background:var(--accent); animation:blink 1s infinite;}
+  @keyframes blink{50%{opacity:.25}}
+  .fetchbar .t{flex:1; min-width:0; font-size:12px; color:var(--sub); line-height:1.45;}
+  .fetchbar .t b{display:block; color:var(--ink); font-size:13px; font-weight:700;}
+  .fetchbar button{flex:0 0 auto; font-size:13px; font-weight:700; color:var(--accent);
+    border:1px solid var(--line); border-radius:999px; padding:7px 13px; background:var(--bg);}
+  .fetchbar button:disabled{color:var(--ghost);}
+
+  .note{font-size:12px; color:var(--sub); background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:9px 12px; margin-top:8px; line-height:1.55;}
+  .note.bad{background:#FBEDE9; border-color:#EBC7BB; color:var(--deep);}
+
+  /* ===== 条件（長さ・場所・期間） ===== */
+  .sectitle{font-size:12px; font-weight:700; color:var(--sub); margin:18px 4px 7px;
+    display:flex; align-items:center; gap:6px;}
+  .sectitle .cnt{margin-left:auto; font-weight:600;}
+  .seg{display:flex; gap:6px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:4px;}
+  .seg button{flex:1; padding:10px 2px; border-radius:11px; font-size:14px; font-weight:700;
+    color:var(--sub); transition:background .12s, color .12s; white-space:nowrap;}
+  .seg button.on{background:var(--soft); color:var(--ink);}
+  .seg.small button{font-size:13px; padding:9px 2px;}
+
+  /* ===== 詳しい設定 ===== */
+  details.adv{background:var(--card); border:1px solid var(--line); border-radius:16px;
+    margin-top:12px; overflow:hidden;}
+  details.adv>summary{list-style:none; cursor:pointer; padding:13px 14px; font-size:13px;
+    font-weight:700; color:var(--sub); display:flex; align-items:center;}
+  details.adv>summary::-webkit-details-marker{display:none;}
+  details.adv>summary::after{content:'＋'; margin-left:auto; color:var(--ghost); font-size:15px;}
+  details.adv[open]>summary::after{content:'−';}
+  .advbody{padding:2px 14px 14px; border-top:1px solid var(--line);}
+  .row{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line);}
+  .row:last-child{border-bottom:none;}
+  .row .lb{flex:1; min-width:0; font-size:14px; font-weight:600;}
+  .row .lb small{display:block; font-size:11px; color:var(--sub); font-weight:500; line-height:1.45;}
+  .sw{position:relative; width:48px; height:29px; flex:0 0 auto;}
+  .sw input{position:absolute; inset:0; opacity:0; margin:0; width:100%; height:100%;}
+  .sw i{position:absolute; inset:0; background:var(--ghost); border-radius:999px; transition:background .15s;}
+  .sw i::after{content:''; position:absolute; top:3px; left:3px; width:23px; height:23px;
+    background:#fff; border-radius:50%; transition:transform .15s;}
+  .sw input:checked + i{background:var(--accent);}
+  .sw input:checked + i::after{transform:translateX(19px);}
+  select.mini{background:var(--bg); border:1px solid var(--line); border-radius:10px;
+    padding:8px 9px; font-size:16px; color:var(--ink); flex:0 0 auto;}
+  /* 選択肢が2つ並ぶ行は、375pxだと横に入らないので縦に積む */
+  .row.stack{flex-direction:column; align-items:stretch; gap:8px;}
+  .row .pair{display:flex; gap:8px;}
+  .row .pair select.mini{flex:1 1 0; min-width:0;}
+
+  /* 曜日ごとの可処分帯 */
+  .wk{display:flex; align-items:center; gap:7px; padding:7px 0; border-bottom:1px solid var(--line);}
+  .wk:last-child{border-bottom:none;}
+  .wk .d{width:32px; flex:0 0 auto; font-size:14px; font-weight:700; text-align:center;
+    border-radius:9px; padding:4px 0; background:var(--surface);}
+  .wk.off .d{color:var(--ghost);} .wk.off .times{opacity:.35;}
+  .wk .times{flex:1; display:flex; align-items:center; gap:5px; min-width:0;}
+  .wk input[type=time]{flex:1; min-width:0; background:var(--bg); border:1px solid var(--line);
+    border-radius:10px; padding:8px 6px; font-size:16px; color:var(--ink); text-align:center;}
+  .wk .sw{width:42px; height:26px;}
+  .wk .sw i::after{width:20px; height:20px;}
+  .wk .sw input:checked + i::after{transform:translateX(16px);}
+  .wkcopy{width:100%; margin-top:10px; font-size:12px; font-weight:700; color:var(--accent);
+    border:1px solid var(--line); border-radius:11px; padding:9px; background:var(--bg);}
+
+  /* 照会カレンダーのURL */
+  .feed{padding:11px 0; border-bottom:1px solid var(--line);}
+  .feed:last-child{border-bottom:none;}
+  .feed .hd{display:flex; align-items:baseline; gap:8px; font-size:14px; font-weight:700;}
+  .feed .hd em{font-style:normal; font-size:11px; color:var(--sub); font-weight:600; margin-left:auto;}
+  .feed .in{display:flex; gap:7px; margin-top:7px;}
+  .feed input{flex:1; min-width:0; background:var(--bg); border:1px solid var(--line);
+    border-radius:11px; padding:11px 12px; font-size:16px; color:var(--ink);}
+  .feed button{flex:0 0 auto; font-size:13px; font-weight:700; color:var(--bg); background:var(--ink);
+    border-radius:11px; padding:11px 14px;}
+
+  /* ===== 結果 ===== */
+  .day{margin-top:16px;}
+  .day .dh{font-size:14px; font-weight:800; margin:0 4px 7px; display:flex; align-items:baseline; gap:8px;}
+  .day .dh .sat{color:#3F6B8E;} .day .dh .sun{color:var(--accent);}
+  .day .dh small{font-size:11px; color:var(--sub); font-weight:600; margin-left:auto;}
+  .span{background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:11px 12px; margin-bottom:9px;}
+  .span .rg{font-size:11px; color:var(--sub); font-weight:700; letter-spacing:.02em;}
+  .chips{display:flex; flex-wrap:wrap; gap:7px; margin-top:8px;}
+  .chip{font-size:15px; font-weight:700; border:1px solid var(--line); background:var(--bg);
+    border-radius:11px; padding:9px 12px; color:var(--ink); transition:background .12s;}
+  .chip.on{background:var(--soft); border-color:var(--soft); color:var(--deep);}
+  .chip:active{transform:scale(.97);}
+  .empty{text-align:center; color:var(--sub); padding:38px 20px;}
+  .empty .big{font-size:40px;} .empty p{margin-top:8px; font-size:13px; line-height:1.7;}
+
+  /* ===== 下のバー ===== */
+  .actionbar{position:fixed; left:0; right:0; bottom:0; background:rgba(244,242,238,.94);
+    backdrop-filter:blur(10px); border-top:1px solid var(--line);
+    padding:10px 16px calc(env(safe-area-inset-bottom) + 10px); z-index:40;}
+  .actionbar .in{max-width:620px; margin:0 auto; display:flex; align-items:center; gap:10px;}
+  .actionbar .cn{font-size:12px; color:var(--sub); font-weight:700; flex:0 0 auto;}
+  .actionbar .cn b{display:block; font-size:15px; color:var(--ink);}
+  .actionbar .btn{flex:1; background:var(--ink); color:var(--bg); padding:14px; border-radius:14px;
+    font-weight:800; font-size:15px; box-shadow:0 6px 16px rgba(36,35,33,.18);}
+  .actionbar .btn:disabled{background:var(--ghost); box-shadow:none;}
+  .actionbar .btn:active:not(:disabled){transform:scale(.98);}
+  .actionbar .ghost{flex:0 0 auto; font-size:12px; font-weight:700; color:var(--sub);
+    border:1px solid var(--line); border-radius:11px; padding:11px 10px; background:var(--card);}
+
+  /* ===== 設定（アクセスキー）画面 ===== */
+  .hero{background:linear-gradient(160deg,var(--card),var(--surface)); border:1px solid var(--line);
+    border-radius:var(--radius); padding:24px 20px; text-align:center; margin-top:8px;}
+  .hero .big{font-size:42px;}
+  .hero .en{display:block; font-size:11px; letter-spacing:.22em; color:var(--accent);
+    font-weight:700; margin-top:12px;}
+  .hero h2{font-size:18px; font-weight:800; margin-top:5px;}
+  .hero p{font-size:13px; color:var(--sub); margin-top:8px; text-align:left; line-height:1.75;}
+  .hero input{width:100%; margin-top:14px; background:var(--bg); border:1px solid var(--line);
+    border-radius:13px; padding:14px; font-size:16px; text-align:center; letter-spacing:.04em;}
+  .cta{width:100%; margin-top:12px; background:var(--ink); color:var(--bg); padding:16px;
+    border-radius:16px; font-weight:800; font-size:16px; box-shadow:0 6px 16px rgba(36,35,33,.18);}
+  .cta:active{transform:scale(.97);}
+
+  .toast{position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 92px);
+    transform:translateX(-50%) translateY(14px); background:var(--ink); color:var(--bg);
+    padding:11px 18px; border-radius:999px; font-size:13px; font-weight:700; opacity:0;
+    pointer-events:none; transition:all .2s; z-index:60; white-space:nowrap; max-width:90vw;}
+  .toast.on{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  @media (min-width:600px){
+    .day{display:grid; grid-template-columns:120px 1fr; gap:10px; align-items:start;}
+    .day .dh{margin-top:11px; display:block;}
+    .day .dh small{display:block; margin:2px 0 0;}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <img class="logoimg" src="icons/icon-akima.png" alt="" onerror="this.style.display='none'">
+    <div>
+      <h1>あきま</h1>
+      <span class="sub">空いている時間を、そのまま貼れる文面に</span>
+    </div>
+  </header>
+
+  <!-- ===== アクセスキーの設定 ===== -->
+  <section id="setup" hidden>
+    <div class="hero">
+      <div class="big">🗓️</div>
+      <span class="en">SETUP</span>
+      <h2>アクセスキーを入れてください</h2>
+      <p>
+        シフトの「埋まっている時間だけ」を置いてあるサーバーを読むための鍵です。
+        予定の中身（件名・場所・相手）はそもそも保存していません。<br>
+        鍵はこの端末の中だけに保存され、サーバーには送信のたびに照合用として渡します。
+      </p>
+      <input id="keyIn" type="text" inputmode="latin" autocomplete="off" autocapitalize="off"
+             spellcheck="false" placeholder="アクセスキー">
+      <button class="cta" id="keySave">はじめる</button>
+    </div>
+  </section>
+
+  <!-- ===== 本体 ===== -->
+  <main id="main" hidden>
+    <div class="fetchbar">
+      <span class="dot" id="fdot"></span>
+      <div class="t"><b id="ftitle">読み込み中…</b><span id="fsub"></span></div>
+      <button id="refresh">更新</button>
+    </div>
+    <div class="note bad" id="fwarn" hidden></div>
+
+    <div class="sectitle">打ち合わせの長さ</div>
+    <div class="seg" id="segDur"></div>
+
+    <div class="sectitle">前後にあける時間（移動と支度）</div>
+    <div class="seg small" id="segBuf"></div>
+
+    <div class="sectitle">いつまで先を見るか</div>
+    <div class="seg small" id="segDays"></div>
+
+    <details class="adv">
+      <summary>詳しい設定</summary>
+      <div class="advbody">
+        <div class="row">
+          <div class="lb">シフト明けの午前は外す
+            <small>遅番・夜勤の翌朝は候補にしない</small></div>
+          <label class="sw"><input type="checkbox" id="optMorning"><i></i></label>
+        </div>
+        <div class="row stack" id="rowMorning">
+          <div class="lb">その条件<small>シフトがこの時刻以降に終わったら、次の朝の何時までを候補から外すか</small></div>
+          <div class="pair">
+            <select class="mini" id="mLate"></select>
+            <select class="mini" id="mUntil"></select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="lb">終日の予定は埋まり扱い
+            <small>切ると、公休などの終日イベントを無視して枠を出す</small></div>
+          <label class="sw"><input type="checkbox" id="optAllday"><i></i></label>
+        </div>
+        <div class="row">
+          <div class="lb">私用の予定も埋まり扱い
+            <small>切ると、仕事のシフトだけで空き枠を出す</small></div>
+          <label class="sw"><input type="checkbox" id="optPrivate"><i></i></label>
+        </div>
+        <div class="row">
+          <div class="lb">今日は何分後から<small>直前すぎる枠を候補から外す</small></div>
+          <select class="mini" id="mLead"></select>
+        </div>
+
+        <div class="sectitle" style="margin:14px 0 2px">曜日ごとの動ける時間</div>
+        <div id="weekBox"></div>
+        <button class="wkcopy" id="wkCopy">月曜の時間を、ほかの曜日にも入れる</button>
+
+        <div class="sectitle" style="margin:18px 0 2px">照会カレンダーのURL</div>
+        <div class="note">
+          期限が切れて発行し直したら、ここに貼り直してください。<br>
+          入れたURLはサーバー側にしまわれ、<b>この画面からは二度と読み出せません</b>（末尾4文字だけ表示）。
+        </div>
+        <div id="feedBox"></div>
+      </div>
+    </details>
+
+    <div id="result"></div>
+  </main>
+</div>
+
+<div class="actionbar" id="bar" hidden>
+  <div class="in">
+    <div class="cn">選んだ枠<b id="selCnt" class="num">0</b></div>
+    <button class="ghost" id="autoPick">上から3つ</button>
+    <button class="btn" id="copyBtn" disabled>文面をコピー</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   あきま — 勤務シフト（照会カレンダー）から空き枠を出す
+   ・サーバーには「開始・終了・終日か・埋まりの種類・取得元」しか無い。
+     件名や場所はEdge Functionの解析時点で捨てているので、ここにも来ない。
+   ・照会カレンダーのURLはこのファイルには一切書かない（Edge Functionのシークレット）。
+   ============================================================ */
+
+/* ==== AKIMA-CORE:BEGIN ==== 　※ここから下の閉じ括弧までは純粋関数だけ。
+   DOMにもネットワークにも触らない。akima-src/test-slots.mjs がこのブロックを
+   そのまま切り出してテストしているので、ロジックの写しを別ファイルに作らないこと。 */
+const AKIMA = (function(){
+  const JST_MS = 9 * 3600 * 1000;      // 日本標準時。夏時間が無いので固定でよい
+  const MIN = 60000;
+  const DAY = 86400000;
+  const WDJ = ['日','月','火','水','木','金','土'];
+
+  /** UTCミリ秒 → 日本時間の年月日・曜日・その日の0時からの分 */
+  function jstFields(ms){
+    const d = new Date(ms + JST_MS);
+    return { y:d.getUTCFullYear(), m:d.getUTCMonth()+1, d:d.getUTCDate(),
+             wd:d.getUTCDay(), min:d.getUTCHours()*60 + d.getUTCMinutes() };
+  }
+  /** 日本時間のその日の0時（UTCミリ秒） */
+  const jstMidnight = (y,m,d) => Date.UTC(y, m-1, d) - JST_MS;
+  function dayStartOf(ms){ const f = jstFields(ms); return jstMidnight(f.y, f.m, f.d); }
+
+  /** "09:30" → 570（分）。"24:00" も許す */
+  function hm(s){ const p = String(s).split(':'); return (+p[0]) * 60 + (+(p[1] || 0)); }
+  /** 570 → "9:30"（時は0詰めしない＝メールに貼ったとき自然） */
+  function hmText(mins){ return Math.floor(mins/60) + ':' + String(mins % 60).padStart(2,'0'); }
+
+  /** 区間の集合を、重なり・隣接をまとめて整理する */
+  function mergeSpans(spans){
+    const sorted = spans.filter(x => x.e > x.s).sort((a,b) => a.s - b.s);
+    const out = [];
+    for(const x of sorted){
+      const last = out[out.length-1];
+      if(last && x.s <= last.e) last.e = Math.max(last.e, x.e);
+      else out.push({ s:x.s, e:x.e });
+    }
+    return out;
+  }
+
+  /** base から blocks を引いた残りの区間 */
+  function subtract(base, blocks){
+    let cur = [{ s:base.s, e:base.e }];
+    for(const b of blocks){
+      const next = [];
+      for(const c of cur){
+        if(b.e <= c.s || b.s >= c.e){ next.push(c); continue; }
+        if(b.s > c.s) next.push({ s:c.s, e:b.s });
+        if(b.e < c.e) next.push({ s:b.e, e:c.e });
+      }
+      cur = next;
+      if(!cur.length) break;
+    }
+    return cur;
+  }
+
+  /**
+   * 予定 → 「ここは使えない」区間の集合。
+   *  ・時刻ありの予定は前後にバッファを付ける
+   *  ・終日は（設定次第で）その日まるごと。終日に移動時間は要らないのでバッファは付けない
+   *  ・遅番/夜勤の翌朝を外す設定なら、その朝もふさぐ
+   */
+  function buildBlocks(busy, cfg){
+    const out = [];
+    for(const b of busy){
+      if(cfg.ignoreKinds && cfg.ignoreKinds.indexOf(b.kind) >= 0) continue;
+      if(b.allDay){
+        if(cfg.allDayBusy) out.push({ s:b.startMs, e:b.endMs });
+        continue;
+      }
+      out.push({ s:b.startMs - cfg.bufferMin * MIN, e:b.endMs + cfg.bufferMin * MIN });
+    }
+
+    const mg = cfg.morning;
+    if(mg && mg.on){
+      const lateFrom = hm(mg.lateEndFrom), until = hm(mg.until);
+      for(const b of busy){
+        if(b.allDay) continue;
+        if(cfg.ignoreKinds && cfg.ignoreKinds.indexOf(b.kind) >= 0) continue;
+        if(mg.workOnly && b.kind !== 'work') continue;
+        const overnight = dayStartOf(b.startMs) !== dayStartOf(b.endMs);
+        const endMin = jstFields(b.endMs).min;
+        if(!overnight && endMin < lateFrom) continue;
+        // 「終わったあと最初に来る朝」を外す。
+        // 22:00 終わり → 翌日の朝。7:00 終わり（夜勤明け）→ その日の朝。
+        let day = dayStartOf(b.endMs);
+        if(endMin >= until) day += DAY;
+        out.push({ s:day, e:day + until * MIN });
+      }
+    }
+    return mergeSpans(out);
+  }
+
+  /**
+   * 1つの空き区間の中から、候補になる開始時刻を選ぶ。
+   * 刻みどおりに並べると先頭に固まって「夕方しか出せない」になるので、
+   * 数が多いときは区間の端から端まで均等に間引く（最初と最後は必ず残す）。
+   */
+  function startsIn(span, durationMin, snapMin, startStepMin, cap){
+    const dur = durationMin * MIN, snap = snapMin * MIN, step = Math.max(startStepMin, snapMin) * MIN;
+    const first = Math.ceil(span.s / snap) * snap;
+    const last  = Math.floor((span.e - dur) / snap) * snap;
+    if(last < first) return [];
+    const grid = [];
+    for(let t = first; t <= last; t += step) grid.push(t);
+    if(!grid.length) grid.push(first);
+    // 刻みに乗らない「いちばん遅い開始」も、直前の候補と十分離れていれば足す
+    // （9:00〜10:00 に30分枠、のようなときに 9:30 を拾うため）
+    if(grid.length < cap && last - grid[grid.length-1] >= step / 2) grid.push(last);
+    if(grid.length <= cap) return grid;
+    const out = [];
+    for(let i = 0; i < cap; i++) out.push(grid[Math.round(i * (grid.length - 1) / (cap - 1))]);
+    return [...new Set(out)];
+  }
+
+  /**
+   * 空き枠の算出（この関数が本体）。
+   * @param {object} o
+   *   nowMs, busy[{startMs,endMs,allDay,kind}], days, durationMin, bufferMin,
+   *   windows[7]{on,from,to}, allDayBusy, ignoreKinds[], morning{on,workOnly,lateEndFrom,until},
+   *   leadMin, snapMin, startStepMin, maxStartsPerSpan
+   * @returns [{dayMs, wd, m, d, spans:[{s,e,starts:[ms]}]}]
+   */
+  function computeSlots(o){
+    const snapMin = o.snapMin || 15;
+    const cap = o.maxStartsPerSpan || 4;
+    const blocks = buildBlocks(o.busy || [], {
+      bufferMin: o.bufferMin || 0,
+      allDayBusy: o.allDayBusy !== false,
+      ignoreKinds: o.ignoreKinds || [],
+      morning: o.morning,
+    });
+
+    const snap = snapMin * MIN;
+    const earliest = Math.ceil((o.nowMs + (o.leadMin || 0) * MIN) / snap) * snap;
+    const first = dayStartOf(o.nowMs);
+    const days = [];
+
+    for(let i = 0; i < o.days; i++){
+      const day = first + i * DAY;
+      const f = jstFields(day + 12 * 3600000);          // 正午で見て曜日を決める
+      const w = (o.windows || [])[f.wd];
+      if(!w || !w.on) continue;
+
+      const from = day + hm(w.from) * MIN;
+      const to   = day + hm(w.to) * MIN;
+      if(to - from < o.durationMin * MIN) continue;
+
+      const base = { s: Math.max(from, earliest), e: to };
+      if(base.e - base.s < o.durationMin * MIN) continue;
+
+      const spans = subtract(base, blocks)
+        .filter(x => x.e - x.s >= o.durationMin * MIN)
+        .map(x => ({ s:x.s, e:x.e, starts: startsIn(x, o.durationMin, snapMin, o.startStepMin || 60, cap) }))
+        .filter(x => x.starts.length);
+      if(!spans.length) continue;
+
+      days.push({ dayMs: day, wd: f.wd, y: f.y, m: f.m, d: f.d, spans });
+    }
+    return days;
+  }
+
+  /** 8/5(火) 14:00〜14:45 の形にする */
+  function fmtSlot(startMs, durationMin){
+    const day = dayStartOf(startMs);
+    const f = jstFields(startMs);
+    const s = Math.round((startMs - day) / MIN);
+    return f.m + '/' + f.d + '(' + WDJ[f.wd] + ') ' + hmText(s) + '〜' + hmText(s + durationMin);
+  }
+  /** 選んだ枠を、そのままメールに貼れる1本の文字列にする */
+  function fmtOffer(startList, durationMin, sep){
+    return startList.slice().sort((a,b) => a - b)
+      .map(t => fmtSlot(t, durationMin)).join(sep === undefined ? ' ／ ' : sep);
+  }
+  /** 「9:00〜12:00」のような区間表示 */
+  function fmtRange(span){
+    const day = dayStartOf(span.s);
+    return hmText(Math.round((span.s - day) / MIN)) + '〜' + hmText(Math.round((span.e - day) / MIN));
+  }
+
+  return { JST_MS, MIN, DAY, WDJ, jstFields, jstMidnight, dayStartOf, hm, hmText,
+           mergeSpans, subtract, buildBlocks, startsIn, computeSlots, fmtSlot, fmtOffer, fmtRange };
+})();
+/* ==== AKIMA-CORE:END ==== */
+
+
+/* ============================================================
+   ここから下は画面まわり
+   ============================================================ */
+const SB_URL = 'https://okbjqtdirrathscctyvx.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+const SBH = { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+const LS_KEY = 'akima_key_v1';
+const LS_SET = 'akima_settings_v1';
+
+const $ = id => document.getElementById(id);
+const lsGet = (k, d) => { try{ const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; }catch(e){ return d; } };
+const lsSet = (k, v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} };
+
+let KEY = '';
+let S = null;             // 設定
+let BUSY = [];            // サーバーから取ってきた埋まり時間
+let SEL = new Set();      // 選んだ枠の開始時刻
+let STATUS = [];          // 取得の記録
+let FEEDS = [];           // 照会カレンダーの登録状況（URLそのものは来ない）
+
+const DUR = [30, 45, 60, 90];
+const BUF = [{v:60, t:'対面 60分'}, {v:30, t:'30分'}, {v:15, t:'オンライン 15分'}, {v:0, t:'なし'}];
+const RANGE = [7, 14, 30];
+
+function defaults(){
+  const w = wd => ({ on:true, from:'09:00', to:'22:00' });
+  return {
+    durationMin: 45,
+    bufferMin: 60,
+    days: 14,
+    allDayBusy: true,
+    usePrivate: true,
+    leadMin: 120,
+    morning: { on:true, workOnly:true, lateEndFrom:'20:00', until:'12:00' },
+    windows: [0,1,2,3,4,5,6].map(w),
+  };
+}
+function loadSettings(){
+  const s = Object.assign(defaults(), lsGet(LS_SET, {}));
+  s.morning = Object.assign(defaults().morning, s.morning || {});
+  if(!Array.isArray(s.windows) || s.windows.length !== 7) s.windows = defaults().windows;
+  return s;
+}
+const saveSettings = () => lsSet(LS_SET, S);
+
+let toastTimer = null;
+function toast(msg){
+  const el = $('toast');
+  el.textContent = msg; el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 2200);
+}
+
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); toast('コピーしました'); return; }
+  catch(e){ /* iOSで弾かれたとき用の保険 */ }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); toast('コピーしました'); }
+  catch(e){ toast('コピーできませんでした'); }
+  ta.remove();
+}
+
+/* ---------- 通信（RPCとEdge Functionだけ。テーブルには直接触れない） ---------- */
+async function rpc(fn, body){
+  const r = await fetch(SB_URL + '/rest/v1/rpc/' + fn, { method:'POST', headers:SBH, body:JSON.stringify(body) });
+  const t = await r.text();
+  if(!r.ok) throw new Error(fn + ' ' + r.status + ' ' + t.slice(0, 160));
+  return t ? JSON.parse(t) : null;
+}
+async function callSync(){
+  const r = await fetch(SB_URL + '/functions/v1/akima-sync', {
+    method:'POST', headers:SBH, body:JSON.stringify({ key: KEY })
+  });
+  return r.json().catch(() => ({ ok:false }));
+}
+
+/* ---------- 取得 ---------- */
+async function loadBusy(){
+  const now = Date.now();
+  const from = AKIMA.dayStartOf(now) - AKIMA.DAY;
+  const to = AKIMA.dayStartOf(now) + (S.days + 2) * AKIMA.DAY;
+  const rows = await rpc('akima_read', {
+    p_key: KEY, p_from: new Date(from).toISOString(), p_to: new Date(to).toISOString()
+  });
+  BUSY = (rows || []).map(r => ({
+    startMs: Date.parse(r.start_at), endMs: Date.parse(r.end_at),
+    allDay: !!r.all_day, kind: r.kind,
+  }));
+  STATUS = await rpc('akima_status', { p_key: KEY });
+  FEEDS = await rpc('akima_feed_info', { p_key: KEY });
+}
+
+const SRC_JA = { work: '仕事のシフト', private: '私用の予定' };
+
+/** 照会カレンダーのURL欄。値は書き込むだけで、読み出しは末尾4文字の伏せ字のみ */
+function renderFeeds(){
+  const box = $('feedBox');
+  if(!box) return;
+  box.innerHTML = '';
+  for(const src of ['work', 'private']){
+    const info = (FEEDS || []).find(f => f.source === src);
+    const el = document.createElement('div');
+    el.className = 'feed';
+    el.innerHTML =
+      '<div class="hd">' + SRC_JA[src] +
+      '<em>' + (info ? '登録あり ' + info.masked + '（' + fmtAgo(Date.parse(info.updated_at)) + 'に更新）' : '未登録') + '</em></div>' +
+      '<div class="in"><input type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" ' +
+      'placeholder="https://… または webcal://…"><button>保存</button></div>';
+    const input = el.querySelector('input');
+    el.querySelector('button').onclick = async () => {
+      const v = (input.value || '').trim();
+      if(v && !/^(https|webcal):\/\//i.test(v)){ toast('https:// か webcal:// で始まるURLを入れてください'); return; }
+      try{
+        await rpc('akima_feed_set', { p_key: KEY, p_source: src, p_url: v });
+        input.value = '';
+        FEEDS = await rpc('akima_feed_info', { p_key: KEY });
+        renderFeeds();
+        toast(v ? 'URLを保存しました。「更新」で取り込めます' : 'URLの登録を消しました');
+      }catch(e){ toast('保存できませんでした'); console.error(e); }
+    };
+    box.appendChild(el);
+  }
+}
+
+function fmtAgo(ms){
+  const d = Math.floor((Date.now() - ms) / 60000);
+  if(d < 1) return 'たった今';
+  if(d < 60) return d + '分前';
+  if(d < 60 * 24) return Math.floor(d / 60) + '時間前';
+  return Math.floor(d / 1440) + '日前';
+}
+function renderStatus(busyNow){
+  const dot = $('fdot'), title = $('ftitle'), sub = $('fsub'), warn = $('fwarn');
+  if(busyNow){
+    dot.className = 'dot busy'; title.textContent = '照会カレンダーを取り直しています…'; sub.textContent = '';
+    return;
+  }
+  const list = STATUS || [];
+  if(!list.length){
+    dot.className = 'dot bad';
+    title.textContent = 'まだ一度も取り込んでいません';
+    sub.textContent = '照会カレンダーのURLを登録してから「更新」を押してください';
+    warn.hidden = true;
+    return;
+  }
+  const newest = Math.max.apply(null, list.map(s => Date.parse(s.fetched_at)));
+  const bad = list.filter(s => s.status !== 'ok');
+  const age = Date.now() - newest;
+  dot.className = 'dot' + (bad.length ? ' bad' : age > 12 * 3600000 ? ' old' : '');
+  title.textContent = 'この予定は ' + fmtAgo(newest) + ' 時点のものです';
+  sub.textContent = list.map(s => (s.source === 'work' ? '仕事' : '私用') + ' ' +
+    (s.status === 'ok' ? s.rows_count + '件' : '失敗')).join(' / ') +
+    '（配信側が更新するまで古いままになります）';
+
+  const notes = [];
+  // 「配信がここまでしか無い」日を空きと勘違いしないための注意書き
+  const cov = list.map(s => s.coverage_to ? Date.parse(s.coverage_to) : 0).filter(Boolean);
+  if(cov.length){
+    const last = Math.min.apply(null, cov);
+    const wanted = Date.now() + S.days * AKIMA.DAY;
+    if(last < wanted){
+      const f = AKIMA.jstFields(last);
+      notes.push('シフトが配信されているのは ' + f.m + '/' + f.d + ' までです。' +
+                 'それより先は「予定が無い」のではなく「まだ出ていない」だけなので、確定として使わないでください。');
+    }
+  }
+  for(const s of bad) notes.push((s.source === 'work' ? '仕事' : '私用') + 'の取得に失敗：' + (s.detail || '原因不明'));
+  for(const s of list) for(const w of (s.warnings || [])) notes.push('解析の注意：' + w);
+  warn.className = 'note' + (bad.length ? ' bad' : '');   // 配信の切れ目は「失敗」ではないので赤くしない
+  warn.hidden = !notes.length;
+  warn.textContent = notes.join('\n');
+}
+
+/* ---------- 条件のUI ---------- */
+function seg(el, items, cur, onPick){
+  el.innerHTML = '';
+  for(const it of items){
+    const b = document.createElement('button');
+    b.textContent = it.t;
+    if(it.v === cur) b.className = 'on';
+    b.onclick = () => { onPick(it.v); };
+    el.appendChild(b);
+  }
+}
+function renderControls(){
+  seg($('segDur'), DUR.map(v => ({ v, t: v + '分' })), S.durationMin,
+      v => { S.durationMin = v; SEL.clear(); saveSettings(); render(); });
+  seg($('segBuf'), BUF, S.bufferMin,
+      v => { S.bufferMin = v; SEL.clear(); saveSettings(); render(); });
+  seg($('segDays'), RANGE.map(v => ({ v, t: v + '日先まで' })), S.days,
+      v => { S.days = v; saveSettings(); refreshData(); });
+}
+
+function fillSelect(el, values, cur, label){
+  el.innerHTML = '';
+  for(const v of values){
+    const o = document.createElement('option');
+    o.value = v; o.textContent = label(v);
+    if(String(v) === String(cur)) o.selected = true;
+    el.appendChild(o);
+  }
+}
+function renderAdvanced(){
+  $('optMorning').checked = S.morning.on;
+  $('optAllday').checked = S.allDayBusy;
+  $('optPrivate').checked = S.usePrivate;
+  $('rowMorning').style.opacity = S.morning.on ? '1' : '.4';
+
+  const hours = n => Array.from({length:n}, (_, i) => i);
+  fillSelect($('mLate'), hours(24).slice(14).map(h => h + ':00'), S.morning.lateEndFrom, v => v + '以降');
+  fillSelect($('mUntil'), [9,10,11,12,13,14].map(h => h + ':00'), S.morning.until, v => '翌朝' + v + 'まで');
+  fillSelect($('mLead'), [0,30,60,120,180,360], S.leadMin,
+    v => v === 0 ? '今すぐでも可' : (v < 60 ? v + '分後から' : (v / 60) + '時間後から'));
+
+  const box = $('weekBox');
+  box.innerHTML = '';
+  for(let wd = 0; wd < 7; wd++){
+    const w = S.windows[wd];
+    const row = document.createElement('div');
+    row.className = 'wk' + (w.on ? '' : ' off');
+    row.innerHTML =
+      '<span class="d">' + AKIMA.WDJ[wd] + '</span>' +
+      '<span class="times"><input type="time" value="' + w.from + '" step="900">' +
+      '<span style="color:var(--sub);font-size:13px">〜</span>' +
+      '<input type="time" value="' + w.to + '" step="900"></span>' +
+      '<label class="sw"><input type="checkbox"' + (w.on ? ' checked' : '') + '><i></i></label>';
+    const [f, t] = row.querySelectorAll('input[type=time]');
+    f.onchange = () => { w.from = f.value || '09:00'; saveSettings(); render(); };
+    t.onchange = () => { w.to = t.value || '22:00'; saveSettings(); render(); };
+    row.querySelector('input[type=checkbox]').onchange = e => {
+      w.on = e.target.checked; saveSettings(); renderAdvanced(); render();
+    };
+    box.appendChild(row);
+  }
+  renderFeeds();
+}
+
+/* ---------- 結果 ---------- */
+function render(){
+  renderStatus(false);
+  renderControls();
+
+  const days = AKIMA.computeSlots({
+    nowMs: Date.now(),
+    busy: BUSY,
+    days: S.days,
+    durationMin: S.durationMin,
+    bufferMin: S.bufferMin,
+    windows: S.windows,
+    allDayBusy: S.allDayBusy,
+    ignoreKinds: S.usePrivate ? [] : ['private'],
+    morning: S.morning,
+    leadMin: S.leadMin,
+    snapMin: 15,
+    startStepMin: 60,
+    maxStartsPerSpan: 4,
+  });
+
+  const box = $('result');
+  box.innerHTML = '';
+
+  if(!BUSY.length && (!STATUS || !STATUS.length)){
+    box.innerHTML = '<div class="empty"><div class="big">📭</div><p>まだシフトを取り込んでいません。<br>' +
+      '照会カレンダーのURLを登録したら「更新」を押してください。</p></div>';
+  } else if(!days.length){
+    box.innerHTML = '<div class="empty"><div class="big">🈳</div><p>この条件では ' + S.days +
+      '日先まで候補がありませんでした。<br>長さを短くするか、前後にあける時間を減らしてみてください。</p></div>';
+  }
+
+  let total = 0;
+  for(const d of days){
+    const el = document.createElement('div');
+    el.className = 'day';
+    const cls = d.wd === 0 ? ' sun' : d.wd === 6 ? ' sat' : '';
+    const cnt = d.spans.reduce((a, s) => a + s.starts.length, 0);
+    total += cnt;
+    const head = document.createElement('div');
+    head.className = 'dh';
+    head.innerHTML = '<span class="' + cls.trim() + '">' + d.m + '/' + d.d + '（' + AKIMA.WDJ[d.wd] + '）</span>' +
+                     '<small>候補' + cnt + '</small>';
+    el.appendChild(head);
+
+    const list = document.createElement('div');
+    for(const sp of d.spans){
+      const c = document.createElement('div');
+      c.className = 'span';
+      const rg = document.createElement('div');
+      rg.className = 'rg';
+      rg.textContent = 'あいている ' + AKIMA.fmtRange(sp) +
+        '（' + Math.round((sp.e - sp.s) / 60000) + '分）';
+      c.appendChild(rg);
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+      for(const t of sp.starts){
+        const b = document.createElement('button');
+        b.className = 'chip' + (SEL.has(t) ? ' on' : '');
+        b.textContent = AKIMA.hmText(Math.round((t - d.dayMs) / 60000)) + '〜' +
+                        AKIMA.hmText(Math.round((t - d.dayMs) / 60000) + S.durationMin);
+        b.onclick = () => { SEL.has(t) ? SEL.delete(t) : SEL.add(t); render(); };
+        chips.appendChild(b);
+      }
+      c.appendChild(chips);
+      list.appendChild(c);
+    }
+    el.appendChild(list);
+    box.appendChild(el);
+  }
+
+  window.__akimaDays = days;   // 「上から3つ」用
+  $('bar').hidden = false;
+  $('selCnt').textContent = SEL.size;
+  $('copyBtn').disabled = SEL.size === 0;
+}
+
+/* ---------- 動き ---------- */
+async function refreshData(){
+  try{
+    await loadBusy();
+    SEL.clear();
+    render();
+    renderFeeds();     // 入力中の文字を消さないよう、再読み込みのときだけ描き直す
+  }catch(e){
+    if(String(e).indexOf('bad key') >= 0 || String(e).indexOf(' 403') >= 0){
+      localStorage.removeItem(LS_KEY);
+      toast('アクセスキーが違うようです');
+      showSetup();
+      return;
+    }
+    toast('読み込めませんでした');
+    console.error(e);
+  }
+}
+
+function showSetup(){
+  $('setup').hidden = false; $('main').hidden = true; $('bar').hidden = true;
+}
+
+function bind(){
+  $('refresh').onclick = async () => {
+    const btn = $('refresh');
+    btn.disabled = true;
+    renderStatus(true);
+    const r = await callSync().catch(() => ({ ok:false }));
+    await refreshData();
+    btn.disabled = false;
+    if(!r || !r.ok){
+      const msg = (r && r.results || []).map(x => x.error || x.skipped).filter(Boolean)[0];
+      toast(msg ? ('取得できませんでした：' + msg) : '取得できませんでした');
+    } else {
+      toast('最新にしました');
+    }
+  };
+
+  $('optMorning').onchange = e => { S.morning.on = e.target.checked; saveSettings(); renderAdvanced(); render(); };
+  $('optAllday').onchange  = e => { S.allDayBusy = e.target.checked; saveSettings(); render(); };
+  $('optPrivate').onchange = e => { S.usePrivate = e.target.checked; saveSettings(); render(); };
+  $('mLate').onchange  = e => { S.morning.lateEndFrom = e.target.value; saveSettings(); render(); };
+  $('mUntil').onchange = e => { S.morning.until = e.target.value; saveSettings(); render(); };
+  $('mLead').onchange  = e => { S.leadMin = +e.target.value; saveSettings(); render(); };
+
+  $('wkCopy').onclick = () => {
+    const src = S.windows[1];
+    S.windows = S.windows.map(() => ({ on:src.on, from:src.from, to:src.to }));
+    saveSettings(); renderAdvanced(); render();
+    toast('月曜の時間をほかの曜日にも入れました');
+  };
+
+  $('autoPick').onclick = () => {
+    SEL.clear();
+    const days = window.__akimaDays || [];
+    for(const d of days){                       // 1日1つずつ、上から3日ぶん
+      if(SEL.size >= 3) break;
+      const first = d.spans[0] && d.spans[0].starts[0];
+      if(first != null) SEL.add(first);
+    }
+    render();
+    toast(SEL.size ? SEL.size + '件を選びました' : '選べる枠がありません');
+  };
+
+  $('copyBtn').onclick = () => {
+    copyText(AKIMA.fmtOffer([...SEL], S.durationMin, ' ／ '));
+  };
+  $('copyBtn').oncontextmenu = e => {           // 長押しで改行区切り
+    e.preventDefault();
+    copyText(AKIMA.fmtOffer([...SEL], S.durationMin, '\n'));
+  };
+
+  $('keySave').onclick = () => {
+    const v = ($('keyIn').value || '').trim();
+    if(v.length < 16){ toast('キーが短いようです'); return; }
+    KEY = v; lsSet(LS_KEY, v);
+    location.hash = '';
+    start();
+  };
+  $('keyIn').onkeydown = e => { if(e.key === 'Enter') $('keySave').click(); };
+}
+
+async function start(){
+  $('setup').hidden = true; $('main').hidden = false;
+  renderAdvanced();
+  renderControls();
+  await refreshData();
+}
+
+(function init(){
+  S = loadSettings();
+  bind();
+  // #k=… で開いたらキーを取り込む（# はサーバーに送られないので履歴に残りにくい）
+  const m = /[#&]k=([0-9a-zA-Z_-]+)/.exec(location.hash || '');
+  if(m){ KEY = m[1]; lsSet(LS_KEY, KEY); history.replaceState(null, '', location.pathname); }
+  else KEY = lsGet(LS_KEY, '');
+  if(!KEY) showSetup();
+  else start();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>

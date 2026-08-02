@@ -112,6 +112,16 @@ ICONS = {
                  '<circle cx="24" cy="66.5" r="6.5"/>'
                  '<circle cx="50" cy="66.5" r="6.5"/>'
                  '<circle cx="76" cy="66.5" r="6.5"/>',
+    # あきま＝カレンダーの中に1つだけ空いている枠（点＝埋まっている日）
+    "akima": '<rect x="24" y="30" width="52" height="46" rx="6"/>'
+             '<line x1="24" y1="44" x2="76" y2="44"/>'
+             '<line x1="37" y1="24" x2="37" y2="34"/>'
+             '<line x1="63" y1="24" x2="63" y2="34"/>'
+             '<circle cx="34" cy="55.5" r="2.4" fill="#fff" stroke="none"/>'
+             '<circle cx="34" cy="66.5" r="2.4" fill="#fff" stroke="none"/>'
+             '<circle cx="66" cy="55.5" r="2.4" fill="#fff" stroke="none"/>'
+             '<circle cx="66" cy="66.5" r="2.4" fill="#fff" stroke="none"/>'
+             '<rect x="44" y="50" width="12" height="22" rx="4"/>',
     # つぎいつ？＝目覚まし時計
     "tsugi": '<circle cx="50" cy="52" r="22"/>'
              '<line x1="50" y1="52" x2="50" y2="40"/>'
