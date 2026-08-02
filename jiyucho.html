@@ -210,6 +210,18 @@
   }
   .n-foot button.keep{color:var(--accent-2);}
   .n-foot button.del{color:var(--warn);}
+  /* 削除ロック：ふだんは鍵つきの地味な見た目。外したときだけ赤く目立たせる */
+  .n-foot button.lock{
+    color:var(--ink-soft); text-decoration:none; display:inline-flex; align-items:center; gap:5px;
+  }
+  .n-foot button.lock svg{
+    width:14px; height:14px; stroke:currentColor; fill:none;
+    stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+  }
+  .n-foot button.del.armed{
+    text-decoration:none; background:var(--warn); color:#fff;
+    border-radius:999px; padding:10px 16px; font-size:.8rem;
+  }
 
   /* ---------- 空・トースト ---------- */
   .empty{display:grid; gap:12px; justify-items:center; text-align:center; padding:16px 0 2px;}
@@ -331,6 +343,9 @@ let online = null;
 let lastPushed = '';
 let openId = null;        /* 開いているメモ（編集中はリアルタイム上書きを止める） */
 let showArc = false;      /* しまった分を見ているか（この端末だけの表示状態。同期しない） */
+let unlockedId = null;    /* 削除ロックを外しているメモ（この端末だけ・同期しない・保存もしない） */
+let unlockTimer = null;
+const UNLOCK_MS = 10000;  /* 10秒たったら自動でロックに戻す */
 
 function migrate(){
   if(!Array.isArray(db.notes)) db.notes=[];
@@ -397,6 +412,22 @@ function renderSync(){
 /* ===================== 描画 ===================== */
 const ICO_CARET=`<svg class="caret" viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="M6 9l6 6 6-6"/></svg>`;
 const ICO_BOX=`<svg viewBox="0 0 24 24"><path d="M3.4 7.6h17.2v11.2a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M2.6 4.4h18.8v3.2H2.6z"/><path d="M10 11.6h4"/></svg>`;
+const ICO_LOCK=`<svg viewBox="0 0 24 24"><rect x="4.8" y="10.6" width="14.4" height="9.4" rx="2.2"/><path d="M8.2 10.6V7.7a3.8 3.8 0 0 1 7.6 0v2.9"/></svg>`;
+
+/* 削除ボタンだけを差し替える（render() を通さないので、書きかけの本文と入力位置が消えない） */
+function delBtnHTML(id, armed){
+  return armed
+    ? `<button class="del armed" data-act="n-del" data-id="${id}">本当に削除する</button>`
+    : `<button class="lock" data-act="n-unlock" data-id="${id}">${ICO_LOCK}削除はロック中</button>`;
+}
+function setDelBtn(id, armed){
+  const b=document.querySelector(`[data-act="${armed?'n-unlock':'n-del'}"][data-id="${id}"]`);
+  if(b) b.outerHTML = delBtnHTML(id, armed);
+}
+function relock(){
+  clearTimeout(unlockTimer); unlockTimer=null;
+  if(unlockedId){ setDelBtn(unlockedId, false); unlockedId=null; }
+}
 function note(id){ return db.notes.find(n=>n.id===id) || null; }
 function liveNotes(){ return db.notes.filter(n=>!n.archived); }
 function arcNotes(){ return db.notes.filter(n=>n.archived); }
@@ -435,7 +466,7 @@ function noteCard(n){
       ${ n.archived
           ? `<button class="keep" data-act="n-unarc" data-id="${n.id}">元に戻す</button>`
           : `<button class="keep" data-act="n-arc" data-id="${n.id}">しまう</button>` }
-      <button class="del" data-act="n-del" data-id="${n.id}">削除</button>
+      ${delBtnHTML(n.id, unlockedId===n.id)}
     </div>
   </div></div>`;
   return h;
@@ -517,18 +548,36 @@ document.getElementById('page').addEventListener('click', e=>{
     return;
   }
   if(act==='n-today'){ document.getElementById('newDate').value=todayISO(); return; }
-  if(act==='n-open'){ openId = (openId===id) ? null : id; render(); return; }
-  if(act==='arc-on'){ showArc=true; openId=null; render(); window.scrollTo(0,0); return; }
-  if(act==='arc-off'){ showArc=false; openId=null; render(); window.scrollTo(0,0); return; }
+  if(act==='n-open'){ relock(); openId = (openId===id) ? null : id; render(); return; }
+  if(act==='arc-on'){ relock(); showArc=true; openId=null; render(); window.scrollTo(0,0); return; }
+  if(act==='arc-off'){ relock(); showArc=false; openId=null; render(); window.scrollTo(0,0); return; }
+
+  /* 削除ロックを外す：この1件だけ・10秒だけ。ほかのメモは外れない */
+  if(act==='n-unlock'){
+    if(!note(id)) return;
+    relock();
+    unlockedId=id;
+    setDelBtn(id, true);
+    unlockTimer=setTimeout(()=>{
+      unlockTimer=null;
+      if(unlockedId!==id) return;
+      unlockedId=null; setDelBtn(id, false);
+      toast('削除ロックをかけ直しました');
+    }, UNLOCK_MS);
+    toast('10秒だけ削除できます');
+    return;
+  }
 
   if(act==='n-arc'){
     const n=note(id); if(!n) return;
+    relock();
     n.archived=true; openId=null; save(); render();
     toast('しまいました');
     return;
   }
   if(act==='n-unarc'){
     const n=note(id); if(!n) return;
+    relock();
     n.archived=false; openId=null; save();
     if(!arcNotes().length) showArc=false;   /* 最後の1件を戻したら、空の棚に取り残されないよう書く画面へ */
     render();
@@ -537,7 +586,9 @@ document.getElementById('page').addEventListener('click', e=>{
   }
   if(act==='n-del'){
     const n=note(id); if(!n) return;
-    if(!confirm('「'+(n.title||'（無題）')+'」を削除します。よろしいですか？')) return;
+    if(unlockedId!==id){ setDelBtn(id, false); toast('先に削除ロックを外してください'); return; }
+    if(!confirm('「'+(n.title||'（無題）')+'」を削除します。元に戻せません。よろしいですか？\n\n※消さずに残すなら「しまう」を使ってください。')) return;
+    relock();
     db.notes=db.notes.filter(x=>x.id!==id);
     if(openId===id) openId=null;
     save(); render(); toast('削除しました');
