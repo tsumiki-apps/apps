@@ -164,6 +164,41 @@ eq('順不同で渡しても日付順になる', AKIMA.fmtOffer([picks[2], picks
 eq('改行区切りも出せる', AKIMA.fmtOffer(picks.slice(0,2), 60, '\n'),
   '8/5(水) 14:00〜15:00\n8/7(金) 10:00〜11:00');
 
+console.log('■ 週の時間割');
+
+const cal = o => AKIMA.computeCalendar(Object.assign({
+  busy: [], fromDayMs: AKIMA.weekStart(NOW, 0), dayCount: 7, durationMin: 45, bufferMin: 60,
+  windows: win('09:00','22:00'), allDayBusy: true, ignoreKinds: [],
+  morning: { on:false, workOnly:true, lateEndFrom:'20:00', until:'12:00' },
+  earliestMs: NOW, snapMin: 15, startStepMin: 60, maxStartsPerSpan: 4,
+}, o));
+
+const wk = AKIMA.weekStart(NOW, 0);
+eq('週は月曜はじまり', AKIMA.fmtSlot(wk, 0).split(' ')[0], '8/3(月)');
+eq('前の週', AKIMA.fmtSlot(AKIMA.weekStart(NOW, -1), 0).split(' ')[0], '7/27(月)');
+eq('日曜に立っていても、その週の月曜に戻る',
+  AKIMA.fmtSlot(AKIMA.weekStart(T('2026-08-09T20:00:00+09:00'), 0), 0).split(' ')[0], '8/3(月)');
+
+eq('週表示は空きが無い日も7日ぶん返す', cal({}).days.length, 7);
+// 並びは月→日なので、平日ONだと 月火水木金=on / 土日=off
+eq('曜日OFFの日は band が null',
+  cal({ windows: win('09:00','22:00', [1,2,3,4,5]) }).days.map(d => d.band ? 'on' : 'off'),
+  ['on','on','on','on','on','off','off']);
+
+const nightBusy = [busy('2026-08-05T22:00:00+09:00','2026-08-06T07:00:00+09:00')];
+eq('日をまたぐ夜勤があると、縦軸は0:00〜24:00まで開く',
+  AKIMA.calRange(cal({ busy: nightBusy }).days, nightBusy), { lo: 0, hi: 1440 });
+eq('予定が帯の中に収まっていれば、縦軸は帯＋前後1時間',
+  AKIMA.calRange(cal({}).days, []), { lo: 8 * 60, hi: 23 * 60 });
+eq('帯の外の早朝シフトも縦軸に入る',
+  AKIMA.calRange(cal({}).days, [busy('2026-08-05T06:30:00+09:00','2026-08-05T08:00:00+09:00')]),
+  { lo: 5 * 60, hi: 23 * 60 });
+
+eq('週表示でも「使えない区間」を一緒に返す',
+  cal({ busy: [busy('2026-08-05T09:00:00+09:00','2026-08-05T18:00:00+09:00')] }).blocks
+    .map(b => AKIMA.fmtSlot(b.s, Math.round((b.e - b.s) / 60000))),
+  ['8/5(水) 8:00〜19:00']);
+
 console.log('■ 部品');
 eq('区間のマージ', AKIMA.mergeSpans([{s:10,e:20},{s:15,e:30},{s:40,e:50}]), [{s:10,e:30},{s:40,e:50}]);
 eq('区間の引き算', AKIMA.subtract({s:0,e:100}, [{s:20,e:30},{s:60,e:70}]), [{s:0,e:20},{s:30,e:60},{s:70,e:100}]);
