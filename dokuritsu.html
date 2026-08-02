@@ -285,8 +285,31 @@
   }
   .anote-ed .row{display:flex; gap:8px; justify-content:flex-end;}
   .btn.sm{flex:none; padding:9px 16px; font-size:.88rem; border-radius:10px;}
+  .ahead{display:flex; align-items:center; gap:8px;}
   .aprog{font-size:.72rem; color:var(--ink-soft); font-weight:700; letter-spacing:.04em; padding:0 0 3px 9px;}
   .aprog.full{color:var(--good);}
+  /* 済んだ枝分かれを畳む／出す小さなリンク */
+  .afold{
+    border:none; background:transparent; color:var(--ink-soft); font-family:var(--sans);
+    font-size:.72rem; font-weight:700; letter-spacing:.02em; cursor:pointer; padding:0 4px 3px;
+    text-decoration:underline; text-underline-offset:3px; white-space:nowrap;
+  }
+  .afold:active{transform:scale(.96);}
+
+  /* ---------- 完了したものは畳む（消さずに隠す） ---------- */
+  .done-fold{
+    display:flex; align-items:center; gap:9px; width:100%; margin-top:11px;
+    background:transparent; border:1.5px dashed var(--line-2); border-radius:13px; padding:11px 14px;
+    color:var(--ink-soft); font-family:var(--sans); font-size:.86rem; font-weight:700; cursor:pointer;
+  }
+  .done-fold svg{width:16px; height:16px; flex:none; color:var(--good); stroke:currentColor; fill:none; stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round;}
+  .done-fold .fcar{margin-left:auto; font-size:.9rem; transition:transform .2s;}
+  .done-fold.open{border-style:solid; border-color:var(--line); background:var(--surface-2);}
+  .done-fold.open .fcar{transform:rotate(180deg);}
+  .done-fold:active{transform:scale(.99);}
+  .done-list{margin-top:11px;}
+  @keyframes foldPop{0%{transform:scale(1);}35%{transform:scale(1.025);}100%{transform:scale(1);}}
+  .done-fold.pulse{animation:foldPop .34s ease; border-color:var(--good); color:var(--good);}
 
   .empty-week{display:grid; gap:12px; justify-items:center; text-align:center; padding:8px 0 2px;}
   .empty-week .em{font-size:2rem;}
@@ -499,6 +522,11 @@ let draft = null;
 let activeTab = 'week';
 let viewKey = null;       /* 今どの週を見ているか（日曜のISO日付）。起動時に今週へ */
 let editKey = null;       /* 編集を始めた時点の週。編集中に日付をまたいでも保存先がズレないよう固定する */
+/* ---- 「完了したものは畳む」ための表示状態（保存はしない＝いつ開いても畳んだ状態から始まる） ---- */
+let showDone = false;         /* 完了した目標のまとまりを開いているか */
+const openActs = new Set();   /* 済んだ枝分かれを開いているタスクのid */
+let foldPulse = false;        /* 今まさに完了して畳まれた時だけ、まとまりをふわっと光らせる */
+function resetFolds(){ showDone=false; openActs.clear(); }
 
 function migrate(){
   const b=blank();
@@ -520,6 +548,7 @@ function migrate(){
       t.count=Math.min(Math.max(0, Math.floor(+t.count||0)), t.target);
       t.autoDone=!!t.autoDone;
       t.autoPrev=Math.min(Math.max(0, Math.floor(+t.autoPrev||0)), t.target);
+      if(!Array.isArray(t.autoActs)) t.autoActs=[];   /* 親の達成につられて自動でチェックした枝分かれのid */
       if(!Array.isArray(t.actions)) t.actions=[];
       t.actions=t.actions.filter(a=>a && typeof a.text==='string' && a.text);
       t.actions.forEach(a=>{ if(!a.id) a.id=uid(); a.done=!!a.done; if(typeof a.note!=='string') a.note=''; });
@@ -607,6 +636,26 @@ function syncAutoDone(t){
   }
   return null;
 }
+/* 親タスク（枝元）を達成にしたら、ぶら下がっている枝分かれAction も全部チェックする。
+   自分でチェックした分と区別するため、ここで自動チェックしたidだけ t.autoActs に控えておき、
+   親を「1つ戻す」で未達成に戻したときは、その控えた分だけ外して元の状態に戻す。
+   戻り値: 自動でチェック／解除した件数 */
+function fillActs(t){
+  const acts=t.actions||[];
+  const ids=acts.filter(a=>!a.done).map(a=>a.id);
+  if(!ids.length){ t.autoActs=[]; return 0; }
+  acts.forEach(a=>{ if(ids.includes(a.id)) a.done=true; });
+  t.autoActs=ids;
+  return ids.length;
+}
+function unfillActs(t){
+  const ids=t.autoActs||[];
+  if(!ids.length) return 0;
+  let n=0;
+  (t.actions||[]).forEach(a=>{ if(ids.includes(a.id) && a.done){ a.done=false; n++; } });
+  t.autoActs=[];
+  return n;
+}
 function prevWeekWithTasks(before){
   const cur=before||viewKey||weekKey();
   const keys=Object.keys(db.weeks).filter(k=>k<cur && (db.weeks[k].tasks||[]).length).sort();
@@ -687,9 +736,9 @@ function renderWeekPage(){
 
   if(w.tasks.length){
     h+=`<div class="week-pct"><span class="big tnum">${st.pct}<span style="font-size:1.1rem;">%</span></span><span class="sub tnum">${st.done} / ${st.total}</span></div>
-    <div class="bar ${st.pct>=100?'good':''}" style="margin-bottom:15px;"><i style="width:${st.pct}%"></i></div>
-    <div class="tasks">`;
-    w.tasks.forEach(t=>{
+    <div class="bar ${st.pct>=100?'good':''}" style="margin-bottom:15px;"><i style="width:${st.pct}%"></i></div>`;
+    const taskHTML=(t)=>{
+      let h='';
       const full=t.count>=t.target;
       const cls=full?'done':(t.count>0?'some':'');
       const pct=Math.round(Math.min(t.count,t.target)/t.target*100);
@@ -701,7 +750,12 @@ function renderWeekPage(){
       if(acts.length){
         const aDone=acts.filter(a=>a.done).length;
         const aAll=aDone===acts.length;
-        actsH=`<div class="acts"><span class="aprog tnum ${aAll?'full':''}">枝分かれ ${aDone}/${acts.length}${aAll?' ・完了':''}</span>`+acts.map(a=>{
+        /* 済んだ枝分かれは畳む。「済み◯件」を押した時だけ出す（外して戻せるように） */
+        const opened=openActs.has(t.id);
+        const shown=opened ? acts : acts.filter(a=>!a.done);
+        actsH=`<div class="acts"><span class="ahead"><span class="aprog tnum ${aAll?'full':''}">枝分かれ ${aDone}/${acts.length}${aAll?' ・完了':''}</span>`
+          +(aDone?`<button class="afold" data-act="toggle-acts" data-tid="${t.id}" aria-expanded="${opened}">${opened?'済みを畳む':'済み'+aDone+'件を見る'}</button>`:'')
+          +`</span>`+shown.map(a=>{
           let s=`<span class="act ${a.done?'done':''}" data-act="act-toggle" data-tid="${t.id}" data-aid="${a.id}" role="button" tabindex="0" aria-label="${esc(a.text)}${a.done?'（済）':''}">
             <span class="adot"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4 4 10-10"/></svg></span>
             <span class="atext">${esc(a.text)}</span>
@@ -724,8 +778,20 @@ function renderWeekPage(){
         ${t.target>1?`<span class="tcount tnum">${t.count}/${t.target}</span>`:''}
         <button class="dec" data-act="dec" data-id="${t.id}" ${t.count===0?'disabled':''} aria-label="1つ戻す">−</button>
       </div>${actsH}</div>`;
-    });
-    h+=`</div>`;
+      return h;
+    };
+    /* 終わった目標は一覧から抜いて、下の「完了 ◯件」にまとめて畳む（消さない＝%も記録も残る） */
+    const openT=w.tasks.filter(t=>t.count<t.target);
+    const doneT=w.tasks.filter(t=>t.count>=t.target);
+    if(openT.length) h+=`<div class="tasks">`+openT.map(taskHTML).join('')+`</div>`;
+    if(doneT.length){
+      h+=`<button class="done-fold ${showDone?'open':''}${foldPulse?' pulse':''}" data-act="toggle-done" aria-expanded="${showDone}">
+        <svg viewBox="0 0 24 24"><path d="M5 12.5l4 4 10-10"/></svg>
+        <span>完了 ${doneT.length}件</span><span class="fcar">▾</span>
+      </button>`;
+      if(showDone) h+=`<div class="tasks done-list">`+doneT.map(taskHTML).join('')+`</div>`;
+    }
+    foldPulse=false;
     if(st.pct>=100) h+=`<div class="week-done-msg">🎉 ${lab}の目標 すべて達成！</div>`;
     h+=`<div class="card-foot"><button class="edit-link" data-act="edit-tasks">目標を編集</button>${w.review?'':'<button class="edit-link" data-act="open-review">振り返りを書く</button>'}</div>`;
   } else {
@@ -901,8 +967,18 @@ document.querySelector('main').addEventListener('click', e=>{
   if(act==='week-prev' || act==='week-next' || act==='week-today'){
     viewKey = act==='week-today' ? weekKey() : clampWeek(addDays(currentViewKey(), act==='week-next'?7:-7));
     mode=null; draft=null; editKey=null;
+    resetFolds();
     render();
     return;
+  }
+
+  /* --- 完了したものの畳み／展開（表示だけ。データは触らない） --- */
+  if(act==='toggle-done'){ showDone=!showDone; render(); return; }
+  if(act==='toggle-acts'){
+    e.stopPropagation();
+    const id=btn.dataset.tid;
+    if(openActs.has(id)) openActs.delete(id); else openActs.add(id);
+    render(); return;
   }
 
   /* --- 枝分かれActionのメモ --- */
@@ -936,6 +1012,7 @@ document.querySelector('main').addEventListener('click', e=>{
     const a=(t.actions||[]).find(x=>x.id===btn.dataset.aid); if(!a) return;
     a.done=!a.done;
     const r=syncAutoDone(t);
+    if(t.count>=t.target) foldPulse=true;   /* 完了して「完了◯件」へ畳まれる時だけ光らせる */
     save(); render();
     if(r==='done') toast('枝分かれ全部クリア！「'+t.text+'」を達成にしました');
     else if(r==='undone') toast('枝分かれを外したので「'+t.text+'」を達成前に戻しました');
@@ -948,11 +1025,22 @@ document.querySelector('main').addEventListener('click', e=>{
     if(act==='inc' && e.target.closest('[data-act="dec"]')) return;
     const k=currentViewKey(); const w=ensureWeek(k);
     const t=w.tasks.find(x=>x.id===btn.dataset.id); if(!t) return;
-    if(act==='inc'){ if(t.count>=t.target) return; t.count++; }
-    else { e.stopPropagation(); if(t.count<=0) return; t.count--; }
+    let filled=0, unfilled=0;
+    if(act==='inc'){
+      if(t.count>=t.target) return;
+      t.count++;
+      if(t.count>=t.target){ foldPulse=true; filled=fillActs(t); }   // 枝元が終わったら枝分かれも全部済みにする
+    } else {
+      e.stopPropagation();
+      if(t.count<=0) return;
+      const was=t.count>=t.target;
+      t.count--;
+      if(was && t.count<t.target) unfilled=unfillActs(t);            // 戻したら、つられてチェックした分だけ外す
+    }
     t.autoDone=false;   // 手で数えたら自動達成の管理から外す（枝分かれを外しても巻き戻さない）
     save(); render();
-    if(act==='inc' && t.count>=t.target) toast('「'+t.text+'」達成！');
+    if(act==='inc' && t.count>=t.target) toast('「'+t.text+'」達成！'+(filled?'（枝分かれ'+filled+'件もチェック）':''));
+    else if(unfilled) toast('枝分かれ'+unfilled+'件のチェックも外しました');
     return;
   }
 
@@ -988,8 +1076,10 @@ document.querySelector('main').addEventListener('click', e=>{
         return {id:uid(), text:line, done:false, note:''};
       });
       const o=orig.find(x=>x.id===t.id)||{};
+      const alive=new Set(actions.map(a=>a.id));
       const nt={id:t.id, text:t.text.trim(), target, count:Math.min(t.count||0, target), actions,
-                autoDone:!!o.autoDone, autoPrev:Math.min(Math.max(0, Math.floor(+o.autoPrev||0)), target)};
+                autoDone:!!o.autoDone, autoPrev:Math.min(Math.max(0, Math.floor(+o.autoPrev||0)), target),
+                autoActs:(o.autoActs||[]).filter(id=>alive.has(id))};
       syncAutoDone(nt);   // 編集で枝分かれが全部済みになった／崩れた場合もここで合わせる
       return nt;
     }).filter(t=>t.text);
@@ -1225,7 +1315,7 @@ function checkDayRollover(){
   if(t===lastDay) return;
   const wasWeek=sundayOf(lastDay);
   lastDay=t;
-  if(!viewKey || viewKey===wasWeek) viewKey=weekKey();   /* 今週を見ていた場合だけ追従（編集中の保存先=editKeyは動かさない） */
+  if(!viewKey || viewKey===wasWeek){ viewKey=weekKey(); resetFolds(); }   /* 今週を見ていた場合だけ追従（編集中の保存先=editKeyは動かさない） */
   if(!mode) render();
 }
 setInterval(()=>{ checkDayRollover(); checkNotify(); }, 30000);
