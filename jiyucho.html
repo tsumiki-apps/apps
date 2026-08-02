@@ -623,6 +623,57 @@ document.getElementById('page').addEventListener('input', e=>{
   if(el.dataset && el.dataset.body){ const n=note(el.dataset.body); if(n){ n.body=el.value; save(); } return; }
 });
 
+/* ===================== リスト入力ショートカット =====================
+   本文欄で Markdown 風の箇条書きを楽に打てるように。（ことづてと同じ挙動）
+   ・「-」「*」＋スペース → 「• 」箇条書きに変換、Enterで継続（空のままEnter＝解除）
+   ・「1.」＋スペース → 番号リスト、Enterで「2.」「3.」…自動採番（1) 形式もOK）
+   ・「[]」＋スペース → 「- [ ] 」チェック項目に変換、Enterで継続
+   ★keydown ではなく beforeinput で判定：iOSのソフトキーボードは keydown を
+     まともに発火せず（Space/Enterが keyCode:229 になる）効かないため。
+   ★本文は再描画のたびに作り直されるので、#page への委譲で受ける。 */
+const RE_CHECK=/^(\s*)([-*])\s+\[[ xX]?\]\s+/, RE_NUM=/^(\s*)(\d+)([.)])\s+/, RE_BUL=/^(\s*)([-*•])\s+/;
+function lineHeadStart(v,pos){ return v.lastIndexOf('\n',pos-1)+1; }
+/* Enter（改行が入る直前）：リストを継続 or 解除。処理したら true。 */
+function listContinue(ta,e){
+  if(ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadStart(v,pos), line=v.slice(start,pos);
+  let m, marker=null, cs=0;
+  if((m=line.match(RE_CHECK))){ marker=m[1]+m[2]+' [ ] '; cs=m[0].length; }
+  else if((m=line.match(RE_NUM))){ marker=m[1]+(parseInt(m[2],10)+1)+m[3]+' '; cs=m[0].length; }
+  else if((m=line.match(RE_BUL))){ marker=m[1]+m[2]+' '; cs=m[0].length; }
+  else return false;
+  if(line.slice(cs).trim()===''){ // 中身が空 → マーカーを消してリスト解除
+    e.preventDefault(); ta.value=v.slice(0,start)+v.slice(pos); ta.selectionStart=ta.selectionEnd=start; return true;
+  }
+  e.preventDefault(); const ins='\n'+marker; ta.value=v.slice(0,pos)+ins+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=pos+ins.length; return true;
+}
+/* スペースが入る直前：行頭が [] / - / * なら変換。処理したら true。 */
+function listSpace(ta,e){
+  if(ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadStart(v,pos), line=v.slice(start,pos);
+  let m, r=null;
+  if((m=line.match(/^(\s*)\[( ?)\]$/))) r=m[1]+'- [ ] ';   // [] → チェック項目
+  else if((m=line.match(/^(\s*)[-*•]$/))) r=m[1]+'• ';      // - / * → 箇条書き（•に変換）
+  else return false;
+  e.preventDefault(); ta.value=v.slice(0,start)+r+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=start+r.length; return true;
+}
+document.getElementById('page').addEventListener('beforeinput', e=>{
+  const ta=e.target;
+  if(!ta || ta.tagName!=='TEXTAREA' || !ta.dataset || !ta.dataset.body) return;
+  if(e.isComposing) return;              /* 日本語変換の確定Enter等は無視 */
+  let handled=false;
+  const t=e.inputType;
+  if(t==='insertLineBreak'||t==='insertParagraph') handled=listContinue(ta,e);
+  else if(t==='insertText'&&(e.data===' '||e.data==='　')) handled=listSpace(ta,e);
+  if(!handled) return;
+  /* preventDefault したぶん input イベントが出ないので、高さ調整と保存は自分でやる */
+  autoGrow(ta);
+  const n=note(ta.dataset.body);
+  if(n){ n.body=ta.value; save(); }
+});
+
 /* ===================== メニュー（引き出し） ===================== */
 (function(){
   const btn=document.getElementById('menuBtn');
