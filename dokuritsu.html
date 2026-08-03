@@ -418,6 +418,9 @@
   }
   .talk-wk .wk-lab .n{font-family:var(--serif); font-weight:600; font-size:1.02rem;}
   .talk-wk .wk-lab .r{font-size:.75rem; color:var(--ink-soft);}
+  /* 目標ごとのまとまり。広い画面ではこれを何列かに並べる（スマホは1列のまま） */
+  .talk-cols{display:grid; gap:11px;}
+  .talk-task{display:grid; gap:11px; align-content:start;}
   .talk-t{font-size:.8rem; font-weight:700; color:var(--ink-mid); padding:0 2px;}
   .talk-a{display:grid; gap:0; background:var(--surface); border:1px solid var(--line); border-radius:15px; padding:13px 14px 11px; box-shadow:var(--shadow);}
   .talk-a .a-name{display:flex; align-items:center; gap:8px; font-size:.9rem; line-height:1.4; margin-bottom:9px;}
@@ -446,6 +449,7 @@
     display:grid; gap:12px; max-width:640px; margin:0 auto;
     padding:16px 16px calc(env(safe-area-inset-bottom) + 48px);
   }
+  .dft-list{display:grid; gap:12px; align-items:start;}
   .dft{background:var(--surface); border:1px solid var(--line); border-radius:15px; box-shadow:var(--shadow); overflow:hidden;}
   .dft.open{border-color:var(--accent);}
   .dft-top{
@@ -587,6 +591,30 @@
   }
   #toast.show{opacity:1; transform:translate(-50%,0);}
   @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+
+  /* ---------- 広い画面での対話・下書き（#talkPane / #draftPane の定義より後ろに置く） ----------
+     どちらも縦1列だと右半分が空くので、目標ごと／下書きごとに横へ並べて画面を使い切る。 */
+  @media (min-width:600px) and (max-width:1079px) and (orientation:portrait){
+    #talkPane.active, #draftPane.active{max-width:660px;}
+  }
+  @media (min-width:1080px){
+    #talkPane.active, #draftPane.active{max-width:1180px; padding-top:22px;}
+    /* 対話は段組み（新聞と同じ流し込み）。grid だと長いラリーの隣が空いてしまう */
+    .talk-cols{display:block; columns:2; column-gap:20px;}
+    .talk-task{break-inside:avoid; margin:0 0 16px;}
+    .dft-list{grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px;}
+    .dft.open{grid-column:1/-1;}              /* 開いた下書きは横いっぱいに広げて書く */
+    .dft.open .dft-body{padding:0 18px 16px;}
+    /* 本文だけは読みやすい行長で止める（横に伸ばしすぎると目が行を追えなくなる） */
+    .dft-body input.dft-title, .dft-body textarea.dft-text{max-width:80ch;}
+    .dft-body textarea.dft-text{min-height:240px;}
+    .bub{max-width:min(88%, 520px);}
+  }
+  @media (min-width:1560px){
+    #talkPane.active, #draftPane.active{max-width:1500px;}
+    .talk-cols{columns:3;}
+    .dft-list{grid-template-columns:repeat(3,minmax(0,1fr));}
+  }
 </style>
 </head>
 <body>
@@ -1360,11 +1388,11 @@ function renderTalk(){
     return;
   }
   keys.forEach(k=>{
-    h+=`<div class="talk-wk"><div class="wk-lab"><span class="n">${weekLabel(k)}</span><span class="r tnum">${fmtMD(k)}–${fmtMD(addDays(k,6))}</span></div>`;
+    h+=`<div class="talk-wk"><div class="wk-lab"><span class="n">${weekLabel(k)}</span><span class="r tnum">${fmtMD(k)}–${fmtMD(addDays(k,6))}</span></div><div class="talk-cols">`;
     (db.weeks[k].tasks||[]).forEach(t=>{
       const acts=(t.actions||[]).filter(a=>threadOf(a).length || isEditingThread(k,t.id,a.id));
       if(!acts.length) return;
-      h+=`<div class="talk-t">${esc(t.text)}</div>`;
+      h+=`<div class="talk-task"><div class="talk-t">${esc(t.text)}</div>`;
       acts.forEach(a=>{
         h+=`<div class="talk-a">
           <div class="a-name act ${a.done?'done':''}" style="cursor:default;background:transparent;border:none;padding:0;">
@@ -1376,8 +1404,9 @@ function renderTalk(){
           ${threadHTML(a, k, t.id, {full:true})}
         </div>`;
       });
+      h+=`</div>`;
     });
-    h+=`</div>`;
+    h+=`</div></div>`;
   });
   pane.innerHTML=h;
 }
@@ -1426,6 +1455,7 @@ function renderDrafts(){
     pane.innerHTML=h;
     return;
   }
+  h+=`<div class="dft-list">`;
   list.forEach(d=>{
     const open = openDraft===d.id;
     h+=`<div class="dft ${open?'open':''}">
@@ -1446,6 +1476,7 @@ function renderDrafts(){
       </div>`:''}
     </div>`;
   });
+  h+=`</div>`;
   pane.innerHTML=h;
   const ta=pane.querySelector('.dft-text'); if(ta) autoGrow(ta);
 }
