@@ -83,6 +83,12 @@
   }
   .iconbtn:active{transform:scale(.94);}
   .iconbtn.on{color:var(--accent); border-color:var(--accent); background:var(--accent-wash);}
+  /* 三本線の右上の点＝対話に新着（未読）がある合図 */
+  #menuBtn{position:relative;}
+  #menuBtn.has-new::after{
+    content:""; position:absolute; top:-3px; right:-3px; width:9px; height:9px; border-radius:50%;
+    background:var(--accent); border:2px solid var(--surface);
+  }
   .sync-dot{width:8px; height:8px; border-radius:50%; background:var(--ink-soft); flex:none;}
   .sync-dot.ok{background:var(--good);} .sync-dot.off{background:var(--accent);}
 
@@ -130,6 +136,13 @@
     margin-left:auto; flex:none; font-size:.66rem; font-weight:700; letter-spacing:.04em;
     color:var(--ink-soft); border:1px solid var(--line-2); border-radius:99px; padding:2px 7px;
   }
+  /* メニュー内の対話バッジ（新着 / 返信待ち） */
+  .dr-item .dr-badge{
+    margin-left:auto; flex:none; font-size:.68rem; font-weight:700; letter-spacing:.02em;
+    border-radius:99px; padding:2px 8px; white-space:nowrap;
+    background:var(--accent-wash); border:1px solid var(--accent); color:var(--accent-2);
+  }
+  .dr-item .dr-badge.wait{background:var(--surface-2); border-color:var(--line-2); color:var(--ink-mid);}
   .dr-note{margin-top:auto; padding:12px 10px 0; font-size:.72rem; color:var(--ink-soft); line-height:1.5;}
 
   /* ---------- tabs / layout ---------- */
@@ -385,17 +398,7 @@
   .tagchip.on.t-toi{background:var(--accent-wash); border-color:var(--accent-2); color:var(--accent-2);}
   .btn.sm{flex:none; padding:9px 16px; font-size:.88rem; border-radius:10px;}
 
-  /* ---------- 対話への導線（今週カードの上のバー） ---------- */
-  .talk-bar{
-    display:flex; align-items:center; gap:9px; width:100%; cursor:pointer;
-    background:var(--surface); border:1px solid var(--line); border-radius:15px; padding:12px 15px;
-    box-shadow:var(--shadow); font-family:var(--sans); color:var(--ink); text-align:left;
-  }
-  .talk-bar:active{transform:scale(.995);}
-  .talk-bar > svg{width:19px; height:19px; flex:none; color:var(--accent-2); stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
-  .talk-bar b{font-size:.94rem; flex:none;}
-  .talk-bar .tb-sub{font-size:.78rem; color:var(--ink-soft); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .talk-bar .go{margin-left:auto; flex:none; color:var(--ink-soft); font-size:1.05rem;}
+  /* ---------- 対話の見出しバッジ（対話ビューの上） ---------- */
   .tb-badge{
     flex:none; font-size:.7rem; font-weight:700; letter-spacing:.02em; padding:3px 9px; border-radius:99px;
     border:1px solid var(--line-2); color:var(--ink-mid); white-space:nowrap;
@@ -656,6 +659,7 @@
       <button class="dr-item" type="button" data-tool="talk">
         <svg viewBox="0 0 24 24"><path d="M20.5 11.4c0 3.8-3.8 6.9-8.5 6.9-1 0-2-.15-2.9-.42L4 20l1.3-3.6C4.1 15.1 3.5 13.3 3.5 11.4c0-3.8 3.8-6.9 8.5-6.9s8.5 3.1 8.5 6.9z"/></svg>
         対話
+        <span class="dr-badge" id="drTalkBadge" hidden></span>
       </button>
       <button class="dr-item" type="button" data-tool="drafts">
         <svg viewBox="0 0 24 24"><path d="M13.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h6"/><path d="M13.5 3.5 18 8v3"/><path d="M8.6 8.6h3.2"/><path d="M8.6 12.2h3.2"/><path d="M19.6 13.4a1.7 1.7 0 0 1 2.4 2.4l-5.2 5.2-3.2.8.8-3.2z"/></svg>
@@ -1017,7 +1021,19 @@ function render(){
   if(talkOpen()) renderTalk();
   /* 下書きは入力中に描き直すとカーソルが飛ぶので、書いている最中は触らない */
   if(draftsOpen() && !/^(dft-title|dft-text)$/.test((document.activeElement&&document.activeElement.className)||'')) renderDrafts();
-  renderNotifyBtn(); renderSync();
+  renderNotifyBtn(); renderSync(); renderTalkBadge();
+}
+
+/* 対話は三本線メニュー専用なので、新着はメニュー側だけで知らせる */
+function renderTalkBadge(){
+  const ts=talkStats();
+  const btn=document.getElementById('menuBtn');
+  const bg=document.getElementById('drTalkBadge');
+  if(btn) btn.classList.toggle('has-new', ts.unseen>0);
+  if(!bg) return;
+  if(ts.unseen){ bg.textContent='新着 '+ts.unseen; bg.classList.remove('wait'); bg.hidden=false; }
+  else if(ts.waiting){ bg.textContent='返信待ち '+ts.waiting; bg.classList.add('wait'); bg.hidden=false; }
+  else { bg.textContent=''; bg.hidden=true; }
 }
 
 function renderWeekPage(){
@@ -1041,18 +1057,8 @@ function renderWeekPage(){
     </div>`;
   }
 
-  /* 対話への導線（新着＝Claudeの未読の返信 / 返信待ち＝自分が書いたまま） */
-  const ts=talkStats();
-  if(ts.msgs){
-    h+=`<button class="talk-bar" data-act="open-talk" aria-label="対話をひらく${ts.unseen?'（新着 '+ts.unseen+'件）':''}">
-      <svg viewBox="0 0 24 24"><path d="M20.5 11.4c0 3.8-3.8 6.9-8.5 6.9-1 0-2-.15-2.9-.42L4 20l1.3-3.6C4.1 15.1 3.5 13.3 3.5 11.4c0-3.8 3.8-6.9 8.5-6.9s8.5 3.1 8.5 6.9z"/></svg>
-      <b>対話</b>
-      ${ts.unseen?`<span class="tb-badge new">新着 ${ts.unseen}</span>`:''}
-      ${ts.waiting?`<span class="tb-badge wait">返信待ち ${ts.waiting}</span>`:''}
-      ${(!ts.unseen&&!ts.waiting)?`<span class="tb-sub tnum">ラリー ${ts.msgs}件</span>`:''}
-      <span class="go">›</span>
-    </button>`;
-  }
+  /* 対話は三本線メニューからだけ開く（今週ページには導線を置かない）。
+     新着は menuBtn の赤い点とメニュー内のバッジで知らせる → renderTalkBadge() */
 
   /* 目標カード（‹ › で週を行き来できる） */
   const canPrev = k>oldestWeekKey();
@@ -1651,7 +1657,6 @@ document.querySelector('main').addEventListener('click', e=>{
   }
 
   /* --- ラリー（枝分かれメモの往復） --- */
-  if(act==='open-talk'){ openTool('talk'); return; }
   if(act==='talk-copy'){
     const md=talkMarkdown();
     if(navigator.clipboard && navigator.clipboard.writeText){
@@ -1958,6 +1963,7 @@ function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'no
       let seen=0; eachAct(a=>{ seen+=markSeen(a); });   /* 全部見える画面なので、開いた時点で既読にする */
       if(seen) save();
       renderTalk();
+      renderTalkBadge();   /* 開いた＝既読なので、メニュー側の新着表示も消す */
     } else {
       renderDrafts();
     }
