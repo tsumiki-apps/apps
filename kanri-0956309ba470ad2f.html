@@ -43,9 +43,41 @@
   .err{ color:var(--shu); font-size:12.5px; min-height:1.5em; margin:12px 0 0; }
 
   /* ヘッダ */
-  header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  header{ display:flex; align-items:center; gap:10px; margin-bottom:18px; }
   header h1{ font-size:18px; margin:0; }
+  header .spacer{ flex:1; }
   .hbtns{ display:flex; gap:8px; }
+  .iconbtn{ width:34px; height:34px; flex:none; padding:0; border:1px solid var(--hair);
+    background:var(--control); border-radius:9px; color:var(--muted);
+    display:grid; place-items:center; cursor:pointer; }
+  .iconbtn:active{ transform:scale(.94); }
+
+  /* ---------- メニュー（三本線 → 引き出し） ----------
+     z-index は戻るボタン（#tsumikiEdge=999 / #tsumikiPeek=1001）より上。
+     開いている間は左端エッジスワイプ（戻る）を覆って誤爆を防ぐ。 */
+  .menu-mask{ position:fixed; inset:0; background:rgba(36,35,33,.42); z-index:1010;
+    opacity:0; pointer-events:none; transition:opacity .22s; }
+  .menu-mask.show{ opacity:1; pointer-events:auto; }
+  .drawer{ position:fixed; top:0; left:0; bottom:0; width:min(80vw,286px); z-index:1011;
+    background:var(--surface); border-right:1px solid var(--hair);
+    box-shadow:0 0 44px -10px rgba(36,35,33,.4);
+    transform:translateX(-101%); transition:transform .26s cubic-bezier(.22,.61,.36,1);
+    padding:calc(env(safe-area-inset-top) + 14px) 12px calc(env(safe-area-inset-bottom) + 14px);
+    display:flex; flex-direction:column; gap:12px; overflow-y:auto; overscroll-behavior:contain; }
+  .drawer.show{ transform:none; }
+  .dr-head{ display:flex; align-items:center; gap:9px; padding:2px 8px 12px;
+    border-bottom:1px solid var(--hair); }
+  .dr-head b{ font-size:15px; }
+  .dr-nav{ display:grid; gap:3px; }
+  .dr-item{ display:flex; align-items:center; gap:11px; padding:12px 11px; border-radius:12px;
+    text-decoration:none; color:var(--ink); font-size:14.5px; font-weight:700; line-height:1.35;
+    width:100%; text-align:left; background:transparent; border:none; font-family:inherit; cursor:pointer; }
+  .dr-item svg{ width:19px; height:19px; flex:none; color:var(--ghost);
+    stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .dr-item:active{ background:var(--control); }
+  .dr-item.current{ background:var(--control); color:var(--shu); }
+  .dr-item.current svg{ color:var(--shu); }
+  .dr-note{ margin-top:auto; padding:12px 10px 0; font-size:11.5px; color:var(--muted); line-height:1.5; }
   .chip{ font-size:12px; font-weight:700; padding:8px 12px; border-radius:999px;
     background:var(--surface); border:1px solid var(--hair); color:var(--ink); }
 
@@ -142,7 +174,11 @@
 <!-- ダッシュボード -->
 <div class="wrap" id="app" hidden>
   <header>
+    <button class="iconbtn" id="menuBtn" type="button" aria-label="メニュー" aria-expanded="false" aria-controls="drawer">
+      <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+    </button>
     <h1>ライセンス管理</h1>
+    <span class="spacer"></span>
     <div class="hbtns">
       <button class="chip" id="reloadBtn">更新</button>
       <button class="chip" id="lockNow">ロック</button>
@@ -201,6 +237,23 @@
     <button class="act" id="imgDownload" type="button" style="width:100%; margin-top:10px;">ファイルとして保存</button>
   </div>
 </div>
+
+<!-- メニュー（三本線 → 引き出し） -->
+<div class="menu-mask" id="menuMask"></div>
+<aside class="drawer" id="drawer" aria-label="メニュー" aria-hidden="true">
+  <div class="dr-head"><b>つみき 管理</b></div>
+  <nav class="dr-nav">
+    <a class="dr-item current" href="#" aria-current="page">
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="10.5" width="17" height="10" rx="2.5"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3"/></svg>
+      ライセンス管理
+    </a>
+    <a class="dr-item" href="seisakubutsu-url.html">
+      <svg viewBox="0 0 24 24"><path d="M10 13.5a4 4 0 0 0 5.7.3l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7-.3l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.5-1.5"/></svg>
+      制作物URL
+    </a>
+  </nav>
+  <p class="dr-note">つみきの管理まわりのページ。<br>外部には出していません。</p>
+</aside>
 
 <div class="toast" id="toast"></div>
 
@@ -686,6 +739,33 @@
       });
     })(2);
   }
+})();
+</script>
+<script>
+/* ===== メニュー（引き出し）===== */
+(function(){
+  var btn=document.getElementById('menuBtn');
+  var dr=document.getElementById('drawer');
+  var mask=document.getElementById('menuMask');
+  function setOpen(on){
+    dr.classList.toggle('show', on);
+    mask.classList.toggle('show', on);
+    dr.setAttribute('aria-hidden', on?'false':'true');
+    btn.setAttribute('aria-expanded', on?'true':'false');
+    document.body.style.overflow = on ? 'hidden' : '';
+    if(on){ var f=dr.querySelector('.dr-item'); if(f) f.focus({preventScroll:true}); }
+  }
+  btn.addEventListener('click', function(){ setOpen(!dr.classList.contains('show')); });
+  mask.addEventListener('click', function(){ setOpen(false); });
+  /* 現在地（ライセンス管理）はページ遷移せず、メニューを閉じるだけ */
+  dr.addEventListener('click', function(e){
+    var it=e.target.closest('.dr-item'); if(!it) return;
+    if(it.classList.contains('current')) e.preventDefault();
+    setOpen(false);
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape' && dr.classList.contains('show')) setOpen(false);
+  });
 })();
 </script>
 <!-- tsumiki-back-button -->
