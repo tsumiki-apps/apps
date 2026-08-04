@@ -22,7 +22,10 @@
    動作確認 → 戻るボタン/アイコン注入 → `index.html` 追加 → commit & push まで完結し、
    **最後にまとめて報告＋公開URLを必ず貼る**。例外はユーザーが「まだ公開しないで」と明示した時のみ。
    → 詳細 `Preferences/deploy-workflow.md`
-   **⚠️ 置き場は「外部に使わせるか？」で決める（3系統）**：
+   **⚠️ 置き場は「外部に使わせるか？」で決める（4系統）**：
+   - **仕事（Apple）で同僚に使わせる → 別アカウント `teamkit-tools`＝teamkit-tools.github.io**
+     （2026-08-04追加。仕事用URLに屋号「つみき」を出さないため。`gh auth switch --user teamkit-tools`
+     で切り替え、**終わったら tsumiki-apps に戻す**。第1号＝Mentor Check）
    - **外部向け（無料公開も有料も全部）→ `~/tsumiki-tools`＝tools.tsumiki-apps.com**（戻るボタン非注入）。
    - **自分専用 → ここ（apps）＝tsumiki-apps.github.io/apps/**（戻るボタン注入）。
    - **root tsumiki-apps.com は会社の顔＝ポートフォリオ**（`~/tsumiki-portfolio`・墨シミュ・今回は現状維持）。
