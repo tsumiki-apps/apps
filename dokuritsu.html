@@ -411,6 +411,31 @@
   .act .adue.set{border-color:var(--line-2); color:var(--ink-mid); background:var(--surface-2);}
   .act .adue.today{border-color:var(--good); color:var(--good); background:var(--good-wash);}
   .act .adue.over{border-color:var(--warn); color:var(--warn); background:var(--warn-wash);}
+  /* ---------- 依頼中（Claudeにボールを渡した枝分かれ） ----------
+     予定日ボタンと同じ場所・同じ大きさに出す。押すと自分のボールに戻る。 */
+  .act .aask{
+    flex:none; height:30px; padding:0 9px; border:1px solid var(--accent); background:var(--accent-wash);
+    border-radius:8px; color:var(--accent-2); display:flex; align-items:center; gap:4px; cursor:pointer;
+    font-family:var(--sans); font-size:.72rem; font-weight:700; white-space:nowrap;
+  }
+  .act .aask svg{width:14px; height:14px;}
+  .act .aask:active{transform:scale(.92);}
+  .act.asked .atext{color:var(--ink-soft);}   /* 自分の手は離れている＝主張を弱める */
+
+  /* 書き込み欄の下の「これはClaudeへの依頼にする」 */
+  .askchip{
+    display:flex; align-items:center; gap:7px; width:100%; text-align:left; cursor:pointer;
+    border:1.5px dashed var(--line-2); background:transparent; border-radius:10px; padding:8px 10px;
+    color:var(--ink-soft); font-family:var(--sans); font-size:.76rem; font-weight:700; line-height:1.4;
+  }
+  .askchip svg{width:15px; height:15px; flex:none;}
+  .askchip:active{transform:scale(.99);}
+  .askchip.on{border-style:solid; border-color:var(--accent); background:var(--accent-wash); color:var(--accent-2);}
+
+  .done-fold.ask{color:var(--accent-2); border-color:var(--accent);}
+  .done-fold.ask svg{color:var(--accent-2);}
+  .ask-list{margin-top:11px;}
+
   .due-ed{
     display:grid; gap:9px; margin:1px 0 9px 27px; padding:11px 12px;
     background:var(--surface-2); border:1.5px solid var(--accent); border-radius:12px;
@@ -947,6 +972,7 @@ let viewKey = null;       /* 今どの週を見ているか（日曜のISO日付
 let editKey = null;       /* 編集を始めた時点の週。編集中に日付をまたいでも保存先がズレないよう固定する */
 /* ---- 「完了したものは畳む」ための表示状態（保存はしない＝いつ開いても畳んだ状態から始まる） ---- */
 let showDone = false;         /* 完了した目標のまとまりを開いているか */
+let showAsk  = false;         /* 依頼中（Claude待ち）の目標のまとまりを開いているか */
 const openActs = new Set();   /* 済んだ枝分かれを開いているタスクのid */
 const openLater = new Set();  /* 先の予定の枝分かれを開いているタスクのid */
 const openThreads = new Set();/* ラリーを全部ひらいている枝分かれのid（畳んだ時は最新の1つだけ見せる） */
@@ -956,7 +982,7 @@ let showFut = false;          /* 「この先の予定」を開いているか *
 let openDraft = null;         /* いま開いている下書きのid */
 let foldPulse = false;        /* 今まさに完了して畳まれた時だけ、まとまりをふわっと光らせる */
 function resetFolds(){
-  showDone=false; showFut=false; openGoalId=null;
+  showDone=false; showAsk=false; showFut=false; openGoalId=null;
   openActs.clear(); openLater.clear(); openThreads.clear(); openText.clear();
 }
 
@@ -1073,13 +1099,16 @@ function renderSync(){
 function weekKey(){ return sundayOf(todayISO()); }
 function getWeek(k){ return db.weeks[k] || {tasks:[], review:null}; }
 function ensureWeek(k){ if(!db.weeks[k]) db.weeks[k]={tasks:[], review:null}; return db.weeks[k]; }
-/* 達成率は「自分のボールだけ」で数える。依頼中の目標は分母からも外す
-   ＝Claudeが持っている仕事のせいで、自分の週の%が下がらないようにする。 */
+/* 達成率は「自分のボールだけ」で数える。
+   依頼中の目標は、残りぶんを分母から外す＝すでに進めた分はそのまま残しつつ、
+   Claudeが持っている仕事のせいで自分の週の%が下がらないようにする。 */
 function weekStats(w){
   let done=0, total=0, ask=0;
   (w.tasks||[]).forEach(t=>{
-    if(isTaskAsk(t)){ ask++; return; }
-    done+=Math.min(t.count,t.target); total+=t.target;
+    const d=Math.min(t.count,t.target);
+    done+=d;
+    if(isTaskAsk(t)){ ask++; total+=d; return; }   /* 自分がやった分だけを分母に */
+    total+=t.target;
   });
   return { done, total, ask, pct: total ? Math.round(done/total*100) : 0 };
 }
@@ -1218,9 +1247,9 @@ function renderWeekPage(){
       <span class="wb-t">
         <span class="n">${lab}</span>
         <span class="r tnum">${fmtMD(k)}–${fmtMD(addDays(k,6))}${off===0?` ・今日 ${today.getMonth()+1}/${today.getDate()}(${WD[today.getDay()]})`:''}</span>
-        ${w.tasks.length?`<span class="p tnum">${st.pct}% <em>${st.done}/${st.total}</em></span>`:''}
+        ${st.total?`<span class="p tnum">${st.pct}% <em>${st.done}/${st.total}</em></span>`:''}
       </span>
-      ${w.tasks.length?`<span class="bar ${st.pct>=100?'good':''}"><i style="width:${st.pct}%"></i></span>`:''}
+      ${st.total?`<span class="bar ${st.pct>=100?'good':''}"><i style="width:${st.pct}%"></i></span>`:''}
     </span>
     <button class="wnav" data-act="week-next" aria-label="次の週へ" ${canNext?'':'disabled'}>›</button>
   </div>`;
@@ -1242,11 +1271,22 @@ function renderWeekPage(){
   /* 目標：1行ずつ畳んでおき、押した目標だけ枝分かれを開く（同時に1つだけ） */
   h+=`<div class="card">`;
   if(w.tasks.length){
-    /* 終わった目標は一覧から抜いて、下の「完了 ◯件」にまとめて畳む（消さない＝%も記録も残る） */
-    const openT=w.tasks.filter(t=>t.count<t.target);
+    /* 終わった目標は一覧から抜いて、下の「完了 ◯件」にまとめて畳む（消さない＝%も記録も残る）。
+       依頼中（＝残りの枝分かれが全部Claude待ち）も同じように抜いて畳む。
+       ここに出ているのは「いま自分が動かせる目標」だけ、という状態を守るため。 */
+    const undone=w.tasks.filter(t=>t.count<t.target);
+    const openT=undone.filter(t=>!isTaskAsk(t));
+    const askT =undone.filter(t=>isTaskAsk(t));
     const doneT=w.tasks.filter(t=>t.count>=t.target);
     h+=`<span class="label">${lab}の目標${openT.length?' ・ 残り'+openT.length+'件':''}</span>`;
     if(openT.length) h+=`<div class="goals" style="margin-top:11px;">`+openT.map(t=>goalHTML(t,k)).join('')+`</div>`;
+    else if(askT.length) h+=`<div class="today-none" style="margin-top:11px;">いま自分が動かせる目標はありません。下の依頼が返ってくるのを待つだけです。</div>`;
+    if(askT.length){
+      h+=`<button class="done-fold ask ${showAsk?'open':''}" data-act="toggle-ask" aria-expanded="${showAsk}">
+        ${ICON_SEND}<span>依頼中 ${askT.length}件</span><span class="fcar">▾</span>
+      </button>`;
+      if(showAsk) h+=`<div class="goals ask-list">`+askT.map(t=>goalHTML(t,k)).join('')+`</div>`;
+    }
     if(doneT.length){
       h+=`<button class="done-fold ${showDone?'open':''}${foldPulse?' pulse':''}" data-act="toggle-done" aria-expanded="${showDone}">
         <svg viewBox="0 0 24 24"><path d="M5 12.5l4 4 10-10"/></svg>
@@ -1469,6 +1509,8 @@ function renderGradPage(){
 const ICON_BUBBLE = `<svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M20.5 11.4c0 3.8-3.8 6.9-8.5 6.9-1 0-2-.15-2.9-.42L4 20l1.3-3.6C4.1 15.1 3.5 13.3 3.5 11.4c0-3.8 3.8-6.9 8.5-6.9s8.5 3.1 8.5 6.9z"/></svg>`;
 const ICON_PENCIL = `<svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`;
 const ICON_CAL = `<svg viewBox="0 0 24 24"><rect x="3.6" y="5.2" width="16.8" height="15.2" rx="2.4"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M3.6 10h16.8"/></svg>`;
+/* 紙ヒコーキ＝Claudeに投げた（依頼中）の印 */
+const ICON_SEND = `<svg viewBox="0 0 24 24" style="width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M21 3 10.5 13.5"/><path d="M21 3l-6.8 18-3.7-7.5L3 9.8z"/></svg>`;
 
 /* 吹き出し（ラリー）ボタン。書いたことがあれば件数、まだなら鉛筆 */
 function memoBtnHTML(a, k, tid){
@@ -1484,15 +1526,22 @@ function memoBtnHTML(a, k, tid){
    opt.compact=true（トップページ）… 文は2行で畳み、ラリーは最新の1つだけ・既読は3行で切る */
 function actHTML(a, k, tid, opt){
   opt=opt||{};
-  let s=`<span class="act ${a.done?'done':''}" data-act="act-toggle" data-wk="${k}" data-tid="${tid}" data-aid="${a.id}" role="button" tabindex="0" aria-label="${esc(a.text)}${a.done?'（済）':''}">
+  /* 依頼中は「いつやるか」を出さない（自分の予定ではないので決めようがない）。
+     代わりに旗を出し、押せば自分のボールに戻せる。 */
+  const ask=isAsk(a);
+  let s=`<span class="act ${a.done?'done':''}${ask?' asked':''}" data-act="act-toggle" data-wk="${k}" data-tid="${tid}" data-aid="${a.id}" role="button" tabindex="0" aria-label="${esc(a.text)}${a.done?'（済）':''}">
     <span class="adot">${CHK_S}</span>
     <span class="atext">${opt.compact ? clampHTML(a.text, a.id, 2) : esc(a.text)}</span>
-    ${a.done?'':dueBtnHTML(a, k, tid)}
+    ${a.done?'':(ask ? askBtnHTML(a, k, tid) : dueBtnHTML(a, k, tid))}
     ${memoBtnHTML(a, k, tid)}
   </span>`;
   if(isEditingDue(k,tid,a.id)) s+=dueEditorHTML();
   s+=threadHTML(a, k, tid, {compact:!!opt.compact});
   return s;
+}
+/* 依頼中の旗。押すと自分のボールに戻す（＝今日やる・達成率に返ってくる） */
+function askBtnHTML(a, wk, tid){
+  return `<button class="aask" data-act="ask-off" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}" aria-label="依頼中（押すと自分に戻します）">${ICON_SEND}<span>依頼中</span></button>`;
 }
 function dueBtnHTML(a, wk, tid){
   const attr=`data-act="due-open" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}"`;
@@ -1548,6 +1597,9 @@ function composerHTML(){
       <button class="btn ghost sm" data-act="thr-cancel">キャンセル</button>
       <button class="btn primary sm" data-act="thr-save">${draft.mid?'保存':'書き足す'}</button>
     </span>
+    <button type="button" class="askchip ${draft.ask?'on':''}" data-act="thr-ask" aria-pressed="${draft.ask?'true':'false'}">
+      ${ICON_SEND}<span>${draft.ask?'これはClaudeへの依頼（自分の残タスクから外す）':'これはClaudeへの依頼にする'}</span>
+    </button>
   </span>`;
 }
 /* 既読ボタン。Claudeの返事で終わっている時だけ出す（＝自分が返す番のものだけ）。
@@ -1797,6 +1849,7 @@ document.querySelector('main').addEventListener('click', e=>{
 
   /* --- 完了したものの畳み／展開（表示だけ。データは触らない） --- */
   if(act==='toggle-done'){ showDone=!showDone; render(); return; }
+  if(act==='toggle-ask'){ showAsk=!showAsk; render(); return; }
   if(act==='toggle-fut'){ showFut=!showFut; render(); return; }
   /* 目標をひらく／閉じる。同時にひらくのは1つだけ＝画面が伸びない */
   if(act==='goal-toggle'){
@@ -1943,7 +1996,7 @@ document.querySelector('main').addEventListener('click', e=>{
     const mid = act==='thr-edit' ? btn.dataset.mid : null;
     const m = mid ? threadOf(a).find(x=>x.id===mid) : null;
     if(mid && !m) return;
-    draft={ text:m?m.text:'', tag:m?m.tag:'', mid:mid||null };
+    draft={ text:m?m.text:'', tag:m?m.tag:'', mid:mid||null, ask:!!a.ask };
     mode={type:'thread', wk, tid, aid};
     openThreads.add(aid);
     render();
@@ -1961,6 +2014,23 @@ document.querySelector('main').addEventListener('click', e=>{
     });
     return;
   }
+  if(act==='thr-ask'){
+    /* ここで render() すると入力欄のフォーカスが外れてキーボードが閉じるので、その場で塗り替える */
+    e.stopPropagation();
+    draft.ask=!draft.ask;
+    btn.classList.toggle('on', draft.ask);
+    btn.setAttribute('aria-pressed', draft.ask?'true':'false');
+    const lab=btn.querySelector('span');
+    if(lab) lab.textContent = draft.ask ? 'これはClaudeへの依頼（自分の残タスクから外す）' : 'これはClaudeへの依頼にする';
+    return;
+  }
+  if(act==='ask-off'){
+    e.stopPropagation();
+    const a=findAct(btn.dataset.wk, btn.dataset.tid, btn.dataset.aid); if(!a) return;
+    delete a.ask; save(); render();
+    toast('自分のボールに戻しました');
+    return;
+  }
   if(act==='thr-cancel'){ mode=null; draft=null; render(); return; }
   if(act==='thr-save'){
     const ta=thrInput(); if(ta) draft.text=ta.value;
@@ -1975,6 +2045,11 @@ document.querySelector('main').addEventListener('click', e=>{
       } else if(txt){
         a.thread=threadOf(a).concat([{ id:uid(), who:'me', text:txt, tag:draft.tag||'', at:todayISO(), seen:true }]);
       } else { mode=null; draft=null; render(); return; }
+      /* 依頼の旗はここで立てる／降ろす＝「投げた時点で自分のボールは離れる」 */
+      const was=!!a.ask;
+      if(draft.ask) a.ask=true; else delete a.ask;
+      if(!was && a.ask) msg='依頼中にしました（今日やる・達成率から外れます）';
+      else if(was && !a.ask) msg='依頼を外しました（自分のボールに戻ります）';
     }
     mode=null; draft=null; save(); render();
     toast(msg);
