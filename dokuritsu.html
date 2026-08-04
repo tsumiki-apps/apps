@@ -386,6 +386,16 @@
     padding:6px 12px; border-radius:9px;
   }
   .thr-add:active{transform:scale(.97);}
+  /* 書き足すボタンの並び。既読ボタンは右端に静かに置く（押しても「済」にはならない） */
+  .thr-foot{display:flex; align-items:center; gap:8px;}
+  .thr-foot .thr-add{flex:none;}
+  .thr-ack{
+    margin-left:auto; border:1px solid var(--line-2); background:transparent; color:var(--ink-soft);
+    font-family:var(--sans); font-size:.74rem; font-weight:700; cursor:pointer; white-space:nowrap;
+    padding:6px 11px; border-radius:9px; display:inline-flex; align-items:center; gap:4px;
+  }
+  .thr-ack:active{transform:scale(.97);}
+  .thr-ack.on{border-color:var(--good); color:var(--good); background:transparent;}
 
   /* ---------- 予定日（いつやるか決まった枝分かれは「今」から外す） ---------- */
   .act .adue{
@@ -788,8 +798,13 @@ function tagSvg(k, cls){ const t=TAGS[k]; if(!t) return ''; return `<svg viewBox
 function threadOf(a){ return Array.isArray(a && a.thread) ? a.thread : []; }
 /* Claudeの返信のうち、まだ見ていないもの */
 function unseenOf(a){ return threadOf(a).filter(m=>m.who==='ai' && !m.seen).length; }
-/* 自分が最後に書いたまま＝Claudeの返信待ち */
-function isWaiting(a){ const th=threadOf(a); return th.length>0 && th[th.length-1].who==='me'; }
+/* いちばん最後の書き込み */
+function lastMsg(a){ const th=threadOf(a); return th.length ? th[th.length-1] : null; }
+/* 既読＝「いまの最後の書き込みは、もう自分の中で片づいた」という印。
+   a.ack にその書き込みのidを持つだけ。書き足すとidが変わるので、また返信待ちに戻る。 */
+function isAcked(a){ const m=lastMsg(a); return !!(m && m.who==='me' && a.ack===m.id); }
+/* 自分が最後に書いたまま＝Claudeの返信待ち（既読を付けたものは数えない） */
+function isWaiting(a){ const m=lastMsg(a); return !!(m && m.who==='me' && a.ack!==m.id); }
 function eachAct(fn){
   Object.keys(db.weeks).forEach(k=>{
     (db.weeks[k].tasks||[]).forEach(t=>{ (t.actions||[]).forEach(a=>fn(a,t,k)); });
@@ -1503,9 +1518,17 @@ function composerHTML(){
     </span>
   </span>`;
 }
+/* 既読ボタン。自分の書き込みで終わっている時だけ出す（＝返信待ちのものだけ）。
+   押しても「済」にはしない。数えるのをやめるだけ。もう一度押すと戻る。 */
+function ackBtnHTML(a, wk, tid){
+  const m=lastMsg(a);
+  if(!m || m.who!=='me') return '';
+  const on=isAcked(a);
+  return `<button class="thr-ack ${on?'on':''}" data-act="thr-ack" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}" aria-pressed="${on?'true':'false'}">${on?CHK_S+'既読':'既読にする'}</button>`;
+}
 function bubbleHTML(m, a, wk, tid, opt){
   const cls=['bub', m.who==='me'?'me':'ai'];
-  if(opt.last && m.who==='me') cls.push('wait');          /* 自分で終わっている＝返信待ち */
+  if(opt.last && m.who==='me' && !isAcked(a)) cls.push('wait');   /* 自分で終わっている＝返信待ち（既読を付けたら実線に戻す） */
   if(m.who==='ai' && !m.seen) cls.push('unseen');
   if(opt.cut) cls.push('cut');                            /* 3行で切ってある＝押すと全部ひらく */
   const tap = opt.cut
@@ -1542,7 +1565,10 @@ function threadHTML(a, wk, tid, opt){
     h+=bubbleHTML(m, a, wk, tid, { last:m===th[th.length-1] });
   });
   if(editing && !mode.mid) h+=composerHTML();
-  else h+=`<button class="thr-add" data-act="thr-add" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}">＋ 書き足す</button>`;
+  else h+=`<span class="thr-foot">
+    <button class="thr-add" data-act="thr-add" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}">＋ 書き足す</button>
+    ${ackBtnHTML(a, wk, tid)}
+  </span>`;
   if(full && th.length>1 && opt.full!==true){
     h+=`<button class="thr-more" data-act="thr-toggle" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}">畳む</button>`;
   }
@@ -1866,6 +1892,14 @@ document.querySelector('main').addEventListener('click', e=>{
       if(a && markSeen(a)) save();
     }
     render(); return;
+  }
+  if(act==='thr-ack'){
+    e.stopPropagation();
+    const a=findAct(btn.dataset.wk, btn.dataset.tid, btn.dataset.aid); if(!a) return;
+    const m=lastMsg(a); if(!m || m.who!=='me') return;
+    if(a.ack===m.id){ delete a.ack; toast('既読を外しました（返信待ちに戻ります）'); }
+    else{ a.ack=m.id; toast('既読にしました'); }
+    save(); render(); return;
   }
   if(act==='thr-add' || act==='thr-edit'){
     e.stopPropagation();
