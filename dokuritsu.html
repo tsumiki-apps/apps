@@ -360,8 +360,7 @@
   }
   .bub.wait{border-style:dashed; border-color:var(--line-2);}
   .bub.unseen{box-shadow:0 0 0 1.5px var(--accent);}
-  .bub.ackd{opacity:.72;}   /* 既読を付けたClaudeの返事＝もう返さなくていい。少しだけ静かにする */
-  /* 既読の吹き出しはトップページでは3行で切る（未読＝Claudeの新しい返事だけ全文のまま） */
+  /* 読み終わった吹き出しはトップページでは3行で切る（未読＝Claudeの新しい返事だけ全文のまま） */
   /* 3行ぶん(1.55em×3)＋上下の余白。ai は「Claude」の1行があるのでその分を足す */
   .bub.cut{position:relative; max-height:calc(4.65em + 18px); overflow:hidden;}
   .bub.ai.cut{max-height:calc(4.65em + 37px);}
@@ -387,7 +386,7 @@
     padding:6px 12px; border-radius:9px;
   }
   .thr-add:active{transform:scale(.97);}
-  /* 書き足すボタンの並び。既読ボタンは右端に静かに置く（押しても「済」にはならない） */
+  /* 書き足すボタンの並び。既読ボタンは右端に静かに置く（押すとやりとりを片づける＝消す） */
   .thr-foot{display:flex; align-items:center; gap:8px;}
   .thr-foot .thr-add{flex:none;}
   .thr-ack{
@@ -396,7 +395,6 @@
     padding:6px 11px; border-radius:9px; display:inline-flex; align-items:center; gap:4px;
   }
   .thr-ack:active{transform:scale(.97);}
-  .thr-ack.on{border-color:var(--good); color:var(--good); background:transparent;}
 
   /* ---------- 予定日（いつやるか決まった枝分かれは「今」から外す） ---------- */
   .act .adue{
@@ -540,7 +538,7 @@
   .talk-a .thr, .talk-a .thr-ed{margin-left:0;}
   .talk-empty{display:grid; gap:10px; justify-items:center; text-align:center; padding:26px 0; color:var(--ink-soft); font-size:.9rem;}
 
-  /* ---------- 下書き（Claudeが作った文面をためておく） ---------- */
+  /* ---------- 下書き（Claudeが作った文面＋自分の考えごと。旧「自由帳」もここに統合） ---------- */
   #draftPane{display:none;}
   #draftPane.active{
     display:grid; gap:12px; max-width:640px; margin:0 auto;
@@ -558,7 +556,16 @@
   .dft-top .dft-sub{flex:1; min-width:0; font-size:.78rem; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .dft-top .fcar{flex:none; color:var(--ink-soft); font-size:.9rem; transition:transform .2s;}
   .dft.open .dft-top .fcar{transform:rotate(180deg);}
+  .dft.arc .dft-top .dft-t{color:var(--ink-mid);}
   .dft-body{padding:0 15px 14px; display:grid; gap:10px;}
+  /* 日付＋タイトル（旧・自由帳の「いつ書いたか」をそのまま引き継ぐ） */
+  .dft-meta{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .dft-meta input.dft-date{
+    flex:none; border:1.5px solid var(--line); background:var(--surface-2); border-radius:11px;
+    padding:10px 11px; font-size:16px; color:var(--ink-mid); font-family:var(--sans);
+  }
+  .dft-meta input.dft-title{flex:1; min-width:150px;}
+  .dft-top .dft-d{flex:none; font-size:.72rem; color:var(--ink-soft); font-variant-numeric:tabular-nums;}
   .dft-body input.dft-title{
     width:100%; border:1.5px solid var(--line); background:var(--surface-2); border-radius:11px;
     padding:11px 13px; font-size:16px; font-weight:700; color:var(--ink); font-family:var(--sans);
@@ -568,9 +575,21 @@
     padding:11px 13px; font-size:16px; color:var(--ink); font-family:var(--sans); line-height:1.7; resize:none;
   }
   .dft-body input:focus, .dft-body textarea:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
-  .dft-foot{display:flex; align-items:center; gap:10px;}
+  .dft-foot{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
   .dft-foot .sp{flex:1; min-width:0;}
   .dft-lab{font-size:.72rem; color:var(--ink-soft);}
+  /* しまった分（旧・自由帳の「しまう」）。消さずに棚へ移すだけ */
+  .arcbar{display:flex; justify-content:center; margin-top:2px;}
+  .arcbar button{
+    display:inline-flex; align-items:center; gap:7px; border:1.5px dashed var(--line-2);
+    background:transparent; border-radius:12px; padding:10px 16px; cursor:pointer;
+    color:var(--ink-soft); font-family:var(--sans); font-size:.84rem; font-weight:700;
+  }
+  .arcbar button svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+  .arcbar button:active{transform:scale(.98);}
+  .arc-head{display:flex; align-items:center; gap:10px;}
+  .arc-head b{font-family:var(--serif); font-weight:600; font-size:1.02rem;}
+  .arc-head .sp{flex:1;}
 
   /* ---------- 完了したものは畳む（消さずに隠す） ---------- */
   .done-fold{
@@ -681,12 +700,23 @@
   .stat-row b{font-family:var(--serif); font-size:1rem; color:var(--ink);}
 
   /* ---------- toast ---------- */
+  /* left:50% だと「右半分の幅」までしか広がれず、文が1文字ずつ折り返してしまう。
+     左右16pxの中で margin:auto に中央寄せさせて、内容ぶんの幅（max-content）を確保する。 */
   #toast{
-    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 22px); transform:translate(-50%,20px);
+    position:fixed; left:16px; right:16px; margin:0 auto; width:max-content; max-width:calc(100vw - 32px);
+    bottom:calc(env(safe-area-inset-bottom) + 22px); transform:translateY(20px);
     background:var(--ink); color:var(--paper); padding:11px 17px; border-radius:12px; font-size:.9rem;
-    display:flex; align-items:center; gap:12px; opacity:0; pointer-events:none; transition:.25s; z-index:40; max-width:90vw; box-shadow:0 10px 34px -8px rgba(0,0,0,.45);
+    display:flex; align-items:center; gap:12px; opacity:0; pointer-events:none; transition:.25s; z-index:40; box-shadow:0 10px 34px -8px rgba(0,0,0,.45);
   }
-  #toast.show{opacity:1; transform:translate(-50%,0);}
+  #toast.show{opacity:1; transform:translateY(0);}
+  /* 「取り消す」つきのトーストだけ押せるようにする（ふだんは触れない＝下のボタンを邪魔しない） */
+  #toast.act{pointer-events:auto;}
+  #toast .t-act{
+    flex:none; border:1px solid color-mix(in srgb, var(--paper) 55%, transparent); background:transparent;
+    color:var(--paper); font-family:var(--sans); font-size:.84rem; font-weight:700; cursor:pointer;
+    padding:5px 12px; border-radius:9px; white-space:nowrap;
+  }
+  #toast .t-act:active{transform:scale(.96);}
   @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 
   /* ---------- 広い画面での対話・下書き（#talkPane / #draftPane の定義より後ろに置く） ----------
@@ -771,10 +801,6 @@
         <svg viewBox="0 0 24 24"><path d="M4.5 5.4A2.4 2.4 0 0 1 6.9 3H19v14H6.9a2.4 2.4 0 0 0-2.4 2.4z"/><path d="M4.5 19.4A2.4 2.4 0 0 1 6.9 17H19v4H6.9a2.4 2.4 0 0 1-2.4-2.4z"/></svg>
         学んだこと
       </button>
-      <button class="dr-item" type="button" data-tool="jiyucho">
-        <svg viewBox="0 0 24 24"><rect x="4.6" y="5.4" width="14.8" height="15" rx="2.2"/><path d="M8.2 3v4"/><path d="M12 3v4"/><path d="M15.8 3v4"/></svg>
-        自由帳
-      </button>
     </nav>
   </aside>
 
@@ -810,7 +836,22 @@ function ymNow(){ return todayISO().slice(0,7); }
 function isDate(s){ return typeof s==='string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
 function fmtMDW(s){ const d=parseISO(s); return (d.getMonth()+1)+'/'+d.getDate()+'('+WD[d.getDay()]+')'; }
 function firstLine(s){ const t=String(s||'').trim().split('\n')[0]||''; return t.length>60 ? t.slice(0,60)+'…' : t; }
-function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1700); }
+/* トースト。act={label, fn} を渡すと「取り消す」などのボタンを添えて、消えるまでの時間を長くする */
+function toast(msg, act){
+  const t=document.getElementById('toast');
+  clearTimeout(t._t);
+  t.innerHTML='';
+  const s=document.createElement('span'); s.textContent=msg; t.appendChild(s);
+  t.classList.toggle('act', !!act);
+  if(act){
+    const b=document.createElement('button');
+    b.type='button'; b.className='t-act'; b.textContent=act.label;
+    b.addEventListener('click', ()=>{ clearTimeout(t._t); t.classList.remove('show','act'); act.fn(); });
+    t.appendChild(b);
+  }
+  t.classList.add('show');
+  t._t=setTimeout(()=>t.classList.remove('show','act'), act?6000:1700);
+}
 
 /* ===================== ラリー（枝分かれメモの往復） =====================
    1つの枝分かれAction に、自分とClaudeの吹き出しが時系列で積まれる。
@@ -826,11 +867,10 @@ function threadOf(a){ return Array.isArray(a && a.thread) ? a.thread : []; }
 function unseenOf(a){ return threadOf(a).filter(m=>m.who==='ai' && !m.seen).length; }
 /* いちばん最後の書き込み */
 function lastMsg(a){ const th=threadOf(a); return th.length ? th[th.length-1] : null; }
-/* 既読＝「Claudeの返事は読んだ。返信はいらない」という印。
-   a.ack にその返事のidを持つだけ。Claudeが新しく書けばidが変わるので、また返信待ちに戻る。 */
-function isAcked(a){ const m=lastMsg(a); return !!(m && m.who==='ai' && a.ack===m.id); }
-/* Claudeが最後に書いたまま＝自分が返す番（＝返信待ち）。既読を付けたものは数えない */
-function needsReply(a){ const m=lastMsg(a); return !!(m && m.who==='ai' && a.ack!==m.id); }
+/* 既読＝「Claudeの返事は読んだ。もう返さない」＝そのラリーごと片づける（＝消す）。
+   やりとりの中身は Obsidian 側に残るので、アプリには「まだ動いている話」だけを残す。 */
+/* Claudeが最後に書いたまま＝自分が返す番（＝返信待ち）。片づけたものは消えるので数えようがない */
+function needsReply(a){ const m=lastMsg(a); return !!(m && m.who==='ai'); }
 /* 自分が最後に書いたまま＝Claudeの返事を待っている */
 function isWaiting(a){ const m=lastMsg(a); return !!(m && m.who==='me'); }
 function eachAct(fn){
@@ -958,7 +998,10 @@ function blank(){
     },
     months:['2026-08','2026-09','2026-10','2026-11','2026-12'].map(ym=>({ym, goal:'', status:'', note:''})),
     weeks:{},          /* key = 週の始まり（日曜）のISO日付 */
-    drafts:[],         /* 下書き＝{id, title, text, at}（Claudeが作った文面の置き場） */
+    /* 下書き＝{id, title, text, at, archived, src}
+       Claudeが作った文面も、自分の考えごと（旧・自由帳）も、ここ1か所にためる */
+    drafts:[],
+    jiyuIn:false,      /* 旧・自由帳（jiyucho.html）からの引き継ぎが済んでいるか */
     settings:{ reviewHour:17 }
   };
 }
@@ -980,6 +1023,7 @@ const openText = new Set();   /* 長い文を全部出しているid（ふだん
 let openGoalId = null;        /* いま開いている目標のid。同時に1つだけ＝アコーディオン */
 let showFut = false;          /* 「この先の予定」を開いているか */
 let openDraft = null;         /* いま開いている下書きのid */
+let showArcDft = false;       /* 下書きの「しまった分」を見ているか（この端末だけの表示状態） */
 let foldPulse = false;        /* 今まさに完了して畳まれた時だけ、まとまりをふわっと光らせる */
 function resetFolds(){
   showDone=false; showAsk=false; showFut=false; openGoalId=null;
@@ -1016,6 +1060,7 @@ function migrate(){
         if(!isDate(a.due)) a.due='';
         if(!isDate(a.dueTo) || !a.due || a.dueTo<a.due) a.dueTo='';
         if(!Array.isArray(a.thread)) a.thread=[];
+        delete a.ack;   /* 旧「既読フラグ」。今の既読は“片づける（消す）”なので持たない */
         /* 旧データ：メモ1枚(note) → スレッドの最初の吹き出しとして引き継ぐ（消さない） */
         if(typeof a.note==='string' && a.note.trim() && !a.thread.length){
           a.thread=[{ id:uid(), who:'me', text:a.note.trim(), tag:'', at:'', seen:true }];
@@ -1039,7 +1084,11 @@ function migrate(){
   db.drafts.forEach(d=>{
     if(!d.id) d.id=uid();
     ['title','text','at'].forEach(k=>{ if(typeof d[k]!=='string') d[k]=''; });
+    if(!isDate(d.at)) d.at=todayISO();
+    d.archived=!!d.archived;                              /* しまった分（旧・自由帳の「しまう」） */
+    if(typeof d.src!=='string') d.src='';                 /* 取り込み元（jiyucho:<id>）。二重取り込みを防ぐ印 */
   });
+  db.jiyuIn=!!db.jiyuIn;   /* 自由帳からの引き継ぎ済みフラグ */
   if(!db.settings || typeof db.settings!=='object') db.settings=b.settings;
   /* 旧「声かけタブ」の名残を掃除（声かけメモは koekake.html に独立） */
   if('people' in db) delete db.people;
@@ -1197,7 +1246,7 @@ function render(){
   renderWeekPage(); renderGradPage();
   if(talkOpen()) renderTalk();
   /* 下書きは入力中に描き直すとカーソルが飛ぶので、書いている最中は触らない */
-  if(draftsOpen() && !/^(dft-title|dft-text)$/.test((document.activeElement&&document.activeElement.className)||'')) renderDrafts();
+  if(draftsOpen() && !/^(dft-title|dft-text|dft-date)$/.test((document.activeElement&&document.activeElement.className)||'')) renderDrafts();
   renderNotifyBtn(); renderSync(); renderTalkBadge();
 }
 
@@ -1603,18 +1652,16 @@ function composerHTML(){
   </span>`;
 }
 /* 既読ボタン。Claudeの返事で終わっている時だけ出す（＝自分が返す番のものだけ）。
-   押しても「済」にはしない。返信待ちに数えるのをやめるだけ。もう一度押すと戻る。
-   置くのは対話ページだけ（今週カードには出さない）。 */
+   押すと そのラリーを丸ごと片づける（＝消す）。枝分かれ（やること）自体は残る。
+   押した直後だけトーストの「取り消す」で戻せる。置くのは対話ページだけ（今週カードには出さない）。 */
 function ackBtnHTML(a, wk, tid){
   const m=lastMsg(a);
   if(!m || m.who!=='ai') return '';
-  const on=isAcked(a);
-  return `<button class="thr-ack ${on?'on':''}" data-act="thr-ack" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}" aria-pressed="${on?'true':'false'}">${on?CHK_S+'既読':'既読にする'}</button>`;
+  return `<button class="thr-ack" data-act="thr-ack" data-wk="${wk}" data-tid="${tid}" data-aid="${a.id}">${CHK_S}既読にして片づける</button>`;
 }
 function bubbleHTML(m, a, wk, tid, opt){
   const cls=['bub', m.who==='me'?'me':'ai'];
   if(opt.last && m.who==='me') cls.push('wait');          /* 自分で終わっている＝Claudeの返事待ち */
-  if(opt.last && m.who==='ai' && isAcked(a)) cls.push('ackd');   /* 既読を付けた返事＝もう返さなくていい */
   if(m.who==='ai' && !m.seen) cls.push('unseen');
   if(opt.cut) cls.push('cut');                            /* 3行で切ってある＝押すと全部ひらく */
   const tap = opt.cut
@@ -1628,7 +1675,7 @@ function bubbleHTML(m, a, wk, tid, opt){
   </span>`;
 }
 /* opt.full=true なら常に全部ひらく（対話ビュー用）。畳んでいる時は最新の1つだけ見せる。
-   opt.compact=true（トップページ）… 最新の1つだけ・しかも既読なら3行で切る。
+   opt.compact=true（トップページ）… 最新の1つだけ・しかも読んだあとなら3行で切る。
    未読＝Claudeの新しい返事だけは全文のまま見せる（読み逃さないため）。 */
 function threadHTML(a, wk, tid, opt){
   opt=opt||{};
@@ -1731,50 +1778,126 @@ function talkMarkdown(){
   return out;
 }
 
-/* ---------- 下書き（Claudeが作った文面の置き場） ---------- */
+/* ---------- 下書き（Claudeが作った文面＋自分の考えごと。旧「自由帳」もここに統合） ----------
+   1枚＝{id, title, text, at（日付）, archived（しまった分）}。
+   片付いたものは消さずに「しまう」で棚へ移し、必要になったら「元に戻す」で書く画面へ。 */
 function draftsOf(){ if(!Array.isArray(db.drafts)) db.drafts=[]; return db.drafts; }
 function findDraft(id){ return draftsOf().find(d=>d.id===id) || null; }
+function liveDrafts(){ return draftsOf().filter(d=>!d.archived); }
+function arcDrafts(){ return draftsOf().filter(d=>d.archived); }
+/* 新しい日付が上。同じ日は「あとから作ったもの」が上（配列の後ろほど新しいとは限らないので index で決める） */
+function sortDrafts(list){
+  return list.slice().sort((a,b)=> a.at===b.at ? 0 : (a.at<b.at ? 1 : -1));
+}
+const ICON_BOX=`<svg viewBox="0 0 24 24"><path d="M3.4 7.6h17.2v11.2a1.6 1.6 0 0 1-1.6 1.6H5a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M2.6 4.4h18.8v3.2H2.6z"/><path d="M10 11.6h4"/></svg>`;
+function draftCardHTML(d){
+  const open = openDraft===d.id;
+  return `<div class="dft ${open?'open':''} ${d.archived?'arc':''}">
+    <button class="dft-top" data-act="dft-toggle" data-id="${d.id}" aria-expanded="${open}">
+      <span class="dft-d tnum">${fmtMD(d.at)}</span>
+      <span class="dft-t">${esc(d.title||'（無題）')}</span>
+      <span class="dft-sub">${open?'':esc(firstLine(d.text)||'まだ何も書いていません')}</span>
+      <span class="fcar">▾</span>
+    </button>
+    ${open?`<div class="dft-body">
+      <div class="dft-meta">
+        <input type="date" class="dft-date" data-id="${d.id}" value="${esc(d.at)}" aria-label="日付">
+        <input type="text" class="dft-title" data-id="${d.id}" value="${esc(d.title)}" placeholder="タイトル（例：お礼のメール 8/7送信）">
+      </div>
+      <textarea class="dft-text" data-id="${d.id}" placeholder="ここから自由に書けます">${esc(d.text)}</textarea>
+      <div class="dft-foot">
+        <button class="btn ghost sm" data-act="dft-copy" data-id="${d.id}">本文をコピー</button>
+        <span class="sp"></span>
+        ${d.archived
+          ? `<button class="edit-link" data-act="dft-unarc" data-id="${d.id}">元に戻す</button>`
+          : `<button class="edit-link" data-act="dft-arc" data-id="${d.id}">しまう</button>`}
+        <button class="edit-link" data-act="dft-del" data-id="${d.id}">消す</button>
+      </div>
+    </div>`:''}
+  </div>`;
+}
 function renderDrafts(){
   const pane=document.getElementById('draftPane');
   if(!pane) return;
-  const list=draftsOf();
-  let h=`<div class="card">
+  let h='';
+  if(showArcDft){
+    const list=arcDrafts();
+    h+=`<div class="card">
+      <div class="arc-head"><b>しまった分</b><span class="sp"></span><button class="edit-link" data-act="dft-arc-off">書く画面に戻る</button></div>
+      <p class="tb-sub" style="margin:8px 0 0;">片付いた下書きの置き場。開いて書き足せるし、「元に戻す」でいつでも戻せます。</p>
+    </div>`;
+    if(!list.length){
+      h+=`<div class="talk-empty"><span style="font-size:1.8rem;">🗃️</span><p style="margin:0;">しまった下書きはまだありません。</p></div>`;
+    } else {
+      h+=`<div class="dft-list">${sortDrafts(list).map(draftCardHTML).join('')}</div>`;
+    }
+    pane.innerHTML=h;
+    const ta=pane.querySelector('.dft-text'); if(ta) autoGrow(ta);
+    return;
+  }
+
+  const list=liveDrafts(), nArc=arcDrafts().length;
+  h+=`<div class="card">
     <span class="label">下書き</span>
     <div class="talk-head" style="margin-top:9px;">
       <span class="tb-sub tnum">${list.length}件</span>
-      <span class="tb-sub">タイトルも本文も、そのまま直せます</span>
+      <span class="tb-sub">考えごと・タスクの分解・Claudeの文面、なんでもここに</span>
     </div>
     <div class="card-foot" style="margin-top:13px;"><button class="edit-link" data-act="dft-new">＋ 新しい下書き</button></div>
   </div>`;
   if(!list.length){
-    h+=`<div class="talk-empty"><span style="font-size:1.8rem;">📝</span><p style="margin:0;">まだ下書きがありません。<br>Claudeに作ってもらった文面を、ここにためておけます。</p></div>`;
-    pane.innerHTML=h;
-    return;
+    h+=`<div class="talk-empty"><span style="font-size:1.8rem;">📝</span><p style="margin:0;">まだ下書きがありません。<br>思いついたこともClaudeに作ってもらった文面も、ここにためておけます。</p></div>`;
+  } else {
+    h+=`<div class="dft-list">${sortDrafts(list).map(draftCardHTML).join('')}</div>`;
   }
-  h+=`<div class="dft-list">`;
-  list.forEach(d=>{
-    const open = openDraft===d.id;
-    h+=`<div class="dft ${open?'open':''}">
-      <button class="dft-top" data-act="dft-toggle" data-id="${d.id}" aria-expanded="${open}">
-        <span class="dft-t">${esc(d.title||'（無題）')}</span>
-        <span class="dft-sub">${open?'':esc(firstLine(d.text)||'まだ何も書いていません')}</span>
-        <span class="fcar">▾</span>
-      </button>
-      ${open?`<div class="dft-body">
-        <input type="text" class="dft-title" data-id="${d.id}" value="${esc(d.title)}" placeholder="タイトル（例：お礼のメール 8/7送信）">
-        <textarea class="dft-text" data-id="${d.id}" placeholder="本文">${esc(d.text)}</textarea>
-        <div class="dft-foot">
-          <button class="btn ghost sm" data-act="dft-copy" data-id="${d.id}">本文をコピー</button>
-          <span class="sp"></span>
-          ${d.at?`<span class="dft-lab tnum">${fmtMD(d.at)}</span>`:''}
-          <button class="edit-link" data-act="dft-del" data-id="${d.id}">消す</button>
-        </div>
-      </div>`:''}
-    </div>`;
-  });
-  h+=`</div>`;
+  if(nArc) h+=`<div class="arcbar"><button data-act="dft-arc-on">${ICON_BOX}しまった分を見る（${nArc}）</button></div>`;
   pane.innerHTML=h;
   const ta=pane.querySelector('.dft-text'); if(ta) autoGrow(ta);
+}
+
+/* ---------- 旧「自由帳」からの引き継ぎ（一度だけ） ----------
+   自由帳(jiyucho.html)は下書きに統合した。中身は同じ Supabase の別の行にあるので、
+   起動時に一度だけ読み込んで下書きへ移す。取り込み元のidを d.src に控えるので、
+   何度走っても同じメモが二重に増えることはない。 */
+const JIYU_ID='kodai_jiyucho_v1', JIYU_KEY='tsumiki_jiyucho_v1';
+function importJiyucho(notes){
+  if(!Array.isArray(notes)) return 0;
+  const have=new Set(draftsOf().map(d=>d.src).filter(Boolean));
+  let n=0;
+  notes.forEach(x=>{
+    if(!x || typeof x!=='object') return;
+    const src='jiyucho:'+(x.id||'');
+    if(have.has(src)) return;
+    const title=String(x.title||''), text=String(x.body||'');
+    if(!title.trim() && !text.trim()) return;
+    draftsOf().push({
+      id:uid(), title, text,
+      at:isDate(x.date)?x.date:todayISO(),
+      archived:!!x.archived, src
+    });
+    have.add(src); n++;
+  });
+  return n;
+}
+async function pullJiyucho(){
+  if(db.jiyuIn) return;
+  let notes=null;
+  if(sb){
+    try{
+      const { data, error } = await sb.from(STATE_TABLE).select('state').eq('id',JIYU_ID).maybeSingle();
+      if(error) return;                                  /* つながらない時は何もしない（次の起動でやり直す） */
+      notes=(data && data.state && Array.isArray(data.state.notes)) ? data.state.notes : [];
+    }catch(e){ return; }
+  } else {
+    try{ const s=localStorage.getItem(JIYU_KEY); notes=s ? (JSON.parse(s).notes||[]) : []; }catch(e){ notes=[]; }
+  }
+  const n=importJiyucho(notes);
+  db.jiyuIn=true;
+  save();
+  if(n){
+    if(draftsOpen()) renderDrafts();
+    toast('自由帳の '+n+'件を下書きに引き継ぎました');
+  }
 }
 
 /* ---------- エディタHTML ---------- */
@@ -1930,13 +2053,35 @@ document.querySelector('main').addEventListener('click', e=>{
     return;
   }
 
-  /* --- 下書き --- */
+  /* --- 下書き（旧・自由帳もここ） --- */
   if(act==='dft-new'){
-    const d={ id:uid(), title:'', text:'', at:todayISO() };
+    const d={ id:uid(), title:'', text:'', at:todayISO(), archived:false, src:'' };
     draftsOf().unshift(d);
-    openDraft=d.id;
+    showArcDft=false; openDraft=d.id;
     save(); renderDrafts();
     const t=document.querySelector('.dft-title'); if(t) t.focus();
+    return;
+  }
+  if(act==='dft-arc'){
+    const d=findDraft(btn.dataset.id); if(!d) return;
+    d.archived=true;
+    if(openDraft===d.id) openDraft=null;
+    save(); renderDrafts();
+    toast('しまいました', { label:'取り消す', fn:()=>{ d.archived=false; save(); renderDrafts(); } });
+    return;
+  }
+  if(act==='dft-unarc'){
+    const d=findDraft(btn.dataset.id); if(!d) return;
+    d.archived=false;
+    if(openDraft===d.id) openDraft=null;
+    if(!arcDrafts().length) showArcDft=false;   /* 最後の1件を戻したら、空の棚に取り残されないよう書く画面へ */
+    save(); renderDrafts();
+    toast('書く画面に戻しました');
+    return;
+  }
+  if(act==='dft-arc-on' || act==='dft-arc-off'){
+    showArcDft = act==='dft-arc-on';
+    openDraft=null; renderDrafts(); window.scrollTo(0,0);
     return;
   }
   if(act==='dft-toggle'){
@@ -1954,7 +2099,7 @@ document.querySelector('main').addEventListener('click', e=>{
   }
   if(act==='dft-del'){
     const d=findDraft(btn.dataset.id); if(!d) return;
-    if(!confirm('「'+(d.title||'（無題）')+'」を消します。よろしいですか？')) return;
+    if(!confirm('「'+(d.title||'（無題）')+'」を消します。よろしいですか？\n\n※消さずに残すなら「しまう」を使ってください。')) return;
     db.drafts=draftsOf().filter(x=>x.id!==d.id);
     if(openDraft===d.id) openDraft=null;
     save(); renderDrafts();
@@ -1981,13 +2126,23 @@ document.querySelector('main').addEventListener('click', e=>{
     }
     render(); return;
   }
+  /* 既読＝片づける。やりとりを丸ごと消して、対話ページには「まだ動いている話」だけを残す。
+     消えるのはラリーだけで、枝分かれ（やること）は残る。依頼中の旗も外す（ボールは自分に戻る）。 */
   if(act==='thr-ack'){
     e.stopPropagation();
-    const a=findAct(btn.dataset.wk, btn.dataset.tid, btn.dataset.aid); if(!a) return;
+    const wk=btn.dataset.wk, tid=btn.dataset.tid, aid=btn.dataset.aid;
+    const a=findAct(wk, tid, aid); if(!a) return;
     const m=lastMsg(a); if(!m || m.who!=='ai') return;
-    if(a.ack===m.id){ delete a.ack; toast('既読を外しました（返信待ちに戻ります）'); }
-    else{ a.ack=m.id; toast('既読にしました'); }
-    save(); render(); return;
+    const keep={ thread:a.thread, ask:!!a.ask };   /* 直後だけ戻せるように控えておく */
+    a.thread=[]; a.ask=false; delete a.ack;
+    openThreads.delete(aid);
+    save(); render();
+    toast('やりとりを片づけました', { label:'取り消す', fn:()=>{
+      const b=findAct(wk, tid, aid); if(!b) return;
+      b.thread=keep.thread; b.ask=keep.ask;
+      save(); render(); toast('戻しました');
+    }});
+    return;
   }
   if(act==='thr-add' || act==='thr-edit'){
     e.stopPropagation();
@@ -2181,6 +2336,52 @@ document.querySelector('main').addEventListener('click', e=>{
   }
 });
 
+/* ===================== 下書きの箇条書きショートカット（旧・自由帳から引き継ぎ） =====================
+   ・「-」「*」＋スペース → 「• 」箇条書きに変換、Enterで継続（空のままEnter＝解除）
+   ・「1.」＋スペース → 番号リスト、Enterで自動採番（1) 形式もOK）
+   ・「[]」＋スペース → 「- [ ] 」チェック項目に変換、Enterで継続
+   ★keydown ではなく beforeinput で判定：iOSのソフトキーボードは keydown をまともに発火しないため。 */
+const RE_CHECK=/^(\s*)([-*])\s+\[[ xX]?\]\s+/, RE_NUM=/^(\s*)(\d+)([.)])\s+/, RE_BUL=/^(\s*)([-*•])\s+/;
+function lineHeadStart(v,pos){ return v.lastIndexOf('\n',pos-1)+1; }
+function listContinue(ta,e){
+  if(ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadStart(v,pos), line=v.slice(start,pos);
+  let m, marker=null, cs=0;
+  if((m=line.match(RE_CHECK))){ marker=m[1]+m[2]+' [ ] '; cs=m[0].length; }
+  else if((m=line.match(RE_NUM))){ marker=m[1]+(parseInt(m[2],10)+1)+m[3]+' '; cs=m[0].length; }
+  else if((m=line.match(RE_BUL))){ marker=m[1]+m[2]+' '; cs=m[0].length; }
+  else return false;
+  if(line.slice(cs).trim()===''){            /* 中身が空 → マーカーを消してリスト解除 */
+    e.preventDefault(); ta.value=v.slice(0,start)+v.slice(pos); ta.selectionStart=ta.selectionEnd=start; return true;
+  }
+  e.preventDefault(); const ins='\n'+marker; ta.value=v.slice(0,pos)+ins+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=pos+ins.length; return true;
+}
+function listSpace(ta,e){
+  if(ta.selectionStart!==ta.selectionEnd) return false;
+  const v=ta.value, pos=ta.selectionStart, start=lineHeadStart(v,pos), line=v.slice(start,pos);
+  let m, r=null;
+  if((m=line.match(/^(\s*)\[( ?)\]$/))) r=m[1]+'- [ ] ';
+  else if((m=line.match(/^(\s*)[-*•]$/))) r=m[1]+'• ';
+  else return false;
+  e.preventDefault(); ta.value=v.slice(0,start)+r+v.slice(pos);
+  ta.selectionStart=ta.selectionEnd=start+r.length; return true;
+}
+document.querySelector('main').addEventListener('beforeinput', e=>{
+  const ta=e.target;
+  if(!ta || ta.tagName!=='TEXTAREA' || !ta.classList.contains('dft-text')) return;
+  if(e.isComposing) return;              /* 日本語変換の確定Enter等は無視 */
+  let handled=false;
+  const t=e.inputType;
+  if(t==='insertLineBreak'||t==='insertParagraph') handled=listContinue(ta,e);
+  else if(t==='insertText'&&(e.data===' '||e.data==='　')) handled=listSpace(ta,e);
+  if(!handled) return;
+  /* preventDefault したぶん input イベントが出ないので、高さ調整と保存は自分でやる */
+  autoGrow(ta);
+  const d=findDraft(ta.dataset.id);
+  if(d){ d.text=ta.value; save(); }
+});
+
 function syncTaskDraft(){
   document.querySelectorAll('.tin').forEach(inp=>{ const i=+inp.dataset.i; if(draft.tasks[i]) draft.tasks[i].text=inp.value; });
   document.querySelectorAll('.tnin').forEach(inp=>{ const i=+inp.dataset.i; if(draft.tasks[i]) draft.tasks[i].target=inp.value; });
@@ -2201,6 +2402,16 @@ document.querySelector('main').addEventListener('input', e=>{
       d.title=e.target.value;
       const head=e.target.closest('.dft').querySelector('.dft-t');
       if(head) head.textContent = d.title || '（無題）';
+      save();
+    }
+    return;
+  }
+  if(e.target.classList.contains('dft-date')){
+    const d=findDraft(e.target.dataset.id);
+    if(d && isDate(e.target.value)){
+      d.at=e.target.value;
+      const head=e.target.closest('.dft').querySelector('.dft-d');
+      if(head) head.textContent=fmtMD(d.at);   /* 並び替えは閉じたあと（書いている最中にカードが飛ばないように） */
       save();
     }
     return;
@@ -2266,8 +2477,11 @@ const TOOLS = {
   koekake:{ title:'声かけメモ', src:'koekake.html' },
   jikyu  :{ title:'時給計算',   src:'jikyu.html'   },
   manabi :{ title:'学んだこと', src:'manabi.html'  },
-  jiyucho:{ title:'自由帳',     src:'jiyucho.html' },
 };
+/* 旧アドレスの受け皿。自由帳は下書きに統合したので、#jiyucho で来ても下書きを開く
+   （ほかの道具の引き出しや、ホーム画面に残っているリンクを迷子にしないため） */
+const TOOL_ALIAS = { jiyucho:'drafts' };
+function toolId(id){ return TOOL_ALIAS[id] || id; }
 let activeTool = '';
 
 function currentTheme(){ return document.documentElement.getAttribute('data-theme') || ''; }
@@ -2279,6 +2493,7 @@ function postToTool(f){ try{ f.contentWindow.postMessage({type:'tsumiki-embed-th
 function broadcastTheme(){ document.querySelectorAll('.tool-frame').forEach(postToTool); }
 
 function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'none' */
+  id=toolId(id);
   const t=TOOLS[id]||null;
   activeTool = t ? id : '';
   document.body.classList.toggle('tool-on', !!t);
@@ -2364,7 +2579,7 @@ function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'no
   addEventListener('touchcancel', end, {passive:true});
 })();
 window.addEventListener('popstate', ()=>{
-  const id=(location.hash||'').replace('#','');
+  const id=toolId((location.hash||'').replace('#',''));
   openTool(TOOLS[id]?id:'', 'none');
 });
 window.addEventListener('resize', ()=>{ if(activeTool) sizeToolFrames(); });
@@ -2434,8 +2649,11 @@ loadLocal();
 render();
 checkNotify();
 /* 直リンク（#jikyu など）で開かれたときも、飛ばずにこの画面の中で開く */
-(function(){ const id=(location.hash||'').replace('#',''); if(TOOLS[id]) openTool(id,'replace'); })();
-if(sb){ loadRemote(); subscribeRealtime(); }
+(function(){ const id=toolId((location.hash||'').replace('#','')); if(TOOLS[id]) openTool(id,'replace'); })();
+/* 旧・自由帳の中身は、クラウドの中身を読み終えてから一度だけ引き継ぐ
+   （先にやると「引き継ぎ済み」の印が上書きされて、二重に増えるおそれがある） */
+if(sb){ loadRemote().then(pullJiyucho); subscribeRealtime(); }
+else { pullJiyucho(); }
 </script>
 <!-- tsumiki-back-button -->
 <style>
