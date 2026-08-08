@@ -20,7 +20,13 @@ struct YomitameApp: App {
 }
 
 struct RootView: View {
+    @AppStorage("onboardingDone") private var onboardingDone = false
+
     var body: some View {
+        if onboardingDone { tabs } else { OnboardingView() }
+    }
+
+    private var tabs: some View {
         TabView {
             ShelfView()
                 .tabItem { Label("本棚", systemImage: "books.vertical.fill") }
