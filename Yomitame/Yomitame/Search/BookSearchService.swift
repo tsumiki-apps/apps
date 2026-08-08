@@ -104,6 +104,53 @@ actor BookSearchService {
         return rank(query: q, await ndl(q))
     }
 
+    /// 総ページ数を国会図書館から取る。
+    ///
+    /// 楽天も openBD もページ数を返さない（openBD は実測 0/6 件）。
+    /// 持っているのは NDL の `dc:extent` だけで、それも**全体の約半分**にしか入っておらず、
+    /// ISBN 照会は 18秒かかることがある。なので画面はブロックせず、
+    /// 裏で取りに行って届いたら埋める。取れなければ手入力に任せる。
+    func pageCount(isbn: String) async -> Int? {
+        let digits = isbn.filter(\.isNumber)
+        guard digits.count >= 10 else { return nil }
+
+        var c = URLComponents(string: "https://ndlsearch.ndl.go.jp/api/opensearch")!
+        c.queryItems = [.init(name: "isbn", value: digits), .init(name: "cnt", value: "1")]
+        guard let url = c.url else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("Yomitame/0.1 (iOS)", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, _) = try? await session.data(for: req),
+              let xml = String(data: data, encoding: .utf8) else { return nil }
+        return Self.parseExtent(xml)
+    }
+
+    /// `103p` / `12, 318p` / `318p ; 21cm` から本文のページ数を取り出す。
+    /// `CD-ROM1枚` や `ビデオディスク 1枚` のような非書籍は弾く。
+    static func parseExtent(_ xml: String) -> Int? {
+        guard let r = xml.range(of: "<dc:extent[^>]*>([^<]+)</dc:extent>", options: .regularExpression)
+        else { return nil }
+        let raw = String(xml[r]).components(separatedBy: ">").dropFirst().first?
+            .components(separatedBy: "<").first ?? ""
+
+        // 「数字＋p」の最後の並びを採る（"12, 318p" は 318 が本文）
+        var best: Int?
+        var digits = ""
+        var previous: Character = " "
+        for ch in raw {
+            if ch.isNumber {
+                digits.append(ch)
+            } else {
+                if ch == "p", !digits.isEmpty, !previous.isLetter, let n = Int(digits), n > 0 {
+                    best = n
+                }
+                digits = ""
+            }
+            previous = ch
+        }
+        return best
+    }
+
     /// バーコード用。ISBN 直引きは 0.09秒で書影つきが返る。
     func lookup(isbn: String) async -> BookCandidate? {
         let digits = isbn.filter(\.isNumber)

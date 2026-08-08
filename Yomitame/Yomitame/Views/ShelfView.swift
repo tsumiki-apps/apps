@@ -6,7 +6,6 @@ struct ShelfView: View {
     @Query(sort: \Book.addedAt, order: .reverse) private var books: [Book]
     @Query private var sessions: [ReadingSession]
     @State private var showingAdd = false
-    @State private var reading: Book?
 
     /// コイン残高は保持せず、毎回セッションから導出する。
     /// 残高を実体で持つと、一度ずれたときに直せない（ReadTime の +0コイン問題の温床）。
@@ -39,7 +38,7 @@ struct ShelfView: View {
                 }
             }
             .sheet(isPresented: $showingAdd) { AddBookView() }
-            .fullScreenCover(item: $reading) { ReadingTimerView(book: $0) }
+            .navigationDestination(for: Book.self) { BookDetailView(book: $0) }
         }
     }
 
@@ -65,7 +64,7 @@ struct ShelfView: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 14)], spacing: 20) {
                 ForEach(books) { book in
-                    Button { reading = book } label: {
+                    NavigationLink(value: book) {
                     VStack(alignment: .leading, spacing: 6) {
                         CoverImage(url: book.coverURL, title: book.title)
                         Text(book.title)
