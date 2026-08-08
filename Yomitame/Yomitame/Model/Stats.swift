@@ -49,24 +49,29 @@ enum Stats {
         let readToday = days.contains(today)
 
         var count = 0
-        var freezes = 0
+        var usedFreezes = 0
+        var pendingFreezes = 0      // まだ「間を埋めた」と確定していない欠け
         // 今日まだ読んでいない場合は昨日から数える（今日を欠けとして扱わない）
         var cursor = readToday ? today : cal.date(byAdding: .day, value: -1, to: today)!
+        let earliest = days.min()!
 
-        while true {
+        // 読み始める前まで遡らない。フリーズは「読んだ日と読んだ日のあいだ」を
+        // 埋めるためのもので、始める前の空白に使ってしまうと初日から
+        // 「お休みを2日ぶん埋めました」と出てしまう。
+        while cursor >= earliest {
             if days.contains(cursor) {
                 count += 1
-            } else if freezes < freezesPerMonth {
-                freezes += 1                     // 1日の欠けはフリーズで埋める
+                usedFreezes += pendingFreezes    // 間を埋めたぶんだけ確定する
+                pendingFreezes = 0
             } else {
-                break
+                pendingFreezes += 1
+                if usedFreezes + pendingFreezes > freezesPerMonth { break }
             }
             guard let prev = cal.date(byAdding: .day, value: -1, to: cursor) else { break }
             cursor = prev
-            if count > 3650 { break }
         }
         // count は「実際に読んだ日」だけを数えている。フリーズで埋めた日は含まない。
-        return .init(days: count, usedFreezes: freezes, readToday: readToday)
+        return .init(days: count, usedFreezes: usedFreezes, readToday: readToday)
     }
 
     // MARK: - 期間の集計
