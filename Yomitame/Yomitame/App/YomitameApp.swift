@@ -30,6 +30,10 @@ struct RootView: View {
         TabView {
             ShelfView()
                 .tabItem { Label("本棚", systemImage: "books.vertical.fill") }
+            CalendarView()
+                .tabItem { Label("カレンダー", systemImage: "calendar") }
+            ReportView()
+                .tabItem { Label("レポート", systemImage: "chart.bar.fill") }
             StoreView()
                 .tabItem { Label("ストア", systemImage: "circle.circle.fill") }
             LockSettingsView()
