@@ -797,25 +797,58 @@ function buildBillCanvas(p){
   const mc=document.createElement('canvas').getContext('2d');
   const bank=bankLines();
 
-  // ブロック（共同ぶん／相手の個人ぶん）を先に組み立てて高さを決める
-  const rowH=46, subLH=27, itemH=38, blockPad=16;
+  // ブロックを先に組み立てて高さを決める。各ブロックの右の金額は「相手の負担額」で、
+  // 足すとお支払い合計にぴったり一致するようにする（①＋②＋③＝合計）
+  const rowH=46, subLH=27, itemH=38, noteH=26, blockPad=16;
+  const byDate=(a,b)=>(a.date||'').localeCompare(b.date||'');
+  const shareItems=p.items.filter(it=>(it.tag||'share')==='share');
+  const cardShare=shareItems.filter(it=>it.src!=='manual').sort(byDate);
+  const manShare=shareItems.filter(it=>it.src==='manual').sort(byDate);
+  const yOf=it=>it.amount-Math.round(it.amount*it.ratio/100); // 個別比率の相手負担
+  // 期間の比率でわける分は calc() と同じく「まとめて1回だけ」四捨五入する。
+  // カード側を先に計算し、手動側はその残り＝端数のズレが出ないようにする。
+  const defCardSum=cardShare.filter(it=>it.ratio==null).reduce((s,it)=>s+it.amount,0);
+  const yDefAll=c.defShare-Math.round(c.defShare*c.r/100);
+  const yDefCard=defCardSum-Math.round(defCardSum*c.r/100);
+  const yDefMan=yDefAll-yDefCard;
+  const cardCustom=cardShare.filter(it=>it.ratio!=null);
+  const manDef=manShare.filter(it=>it.ratio==null);
+  // 手動ぶんの明細ごとの負担額（最後の1件で端数を吸収して合計を合わせる）
+  let acc=0;
+  const manDefY=manDef.map((it,i)=>{
+    if(i===manDef.length-1) return yDefMan-acc;
+    const v=it.amount-Math.round(it.amount*c.r/100); acc+=v; return v;
+  });
+  const ratioNote=(it)=>yen(it.amount)+' を '+(it.ratio!=null?ratioLabel(it.ratio):'期間どおり '+ratioLabel(c.r))+' でわけた分';
+
   const blocks=[];
-  if(c.share!==0){
-    // 手動で足した共同ぶん（光熱費など・別カード払い）と、個別のわけかたを設定したものは
-    // カード明細を見ても分からないので、画像に1件ずつ出す
-    const listed=p.items.filter(it=>(it.tag||'share')==='share'&&(it.src==='manual'||it.ratio!=null))
-      .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const anyCustom=listed.some(it=>it.ratio!=null);
+  if(cardShare.length){
     const subs=[];
-    if(c.defShare!==0) subs.push('共同 '+yen(c.defShare)+' を '+nm('kodai')+' '+c.r+'％ ／ '+nm('yuzu')+' '+(100-c.r)+'％ でわけた分');
-    if(listed.length) subs.push(anyCustom?'個別にわけたもの・カード明細以外のもの':'共同の合計にふくめたもの（カード明細以外）');
-    blocks.push({label:'共同でつかった分', amount:c.yShare, items:listed, subs});
+    if(defCardSum!==0) subs.push('カードの共同 '+yen(defCardSum)+' を '+nm('kodai')+' '+c.r+'％ ／ '+nm('yuzu')+' '+(100-c.r)+'％ でわけた分');
+    if(cardCustom.length) subs.push('わけかたを個別に決めたもの');
+    blocks.push({label:'共同でつかった分（カード）',
+      amount:yDefCard+cardCustom.reduce((s,it)=>s+yOf(it),0), subs,
+      items:cardCustom.map(it=>({date:it.date,name:dispName(it),amount:yOf(it),note:ratioNote(it)}))});
+  }
+  if(manShare.length){
+    blocks.push({label:'手動で追加した分',
+      amount:yDefMan+manShare.filter(it=>it.ratio!=null).reduce((s,it)=>s+yOf(it),0),
+      subs:['カードに載らない光熱費などをこちらに足しています'],
+      items:manShare.map(it=>({date:it.date,name:dispName(it),
+        amount:(it.ratio!=null?yOf(it):manDefY[manDef.indexOf(it)]), note:ratioNote(it)}))});
   }
   if(c.yPer!==0){
-    const per=p.items.filter(it=>it.tag==='yuzu').sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    blocks.push({label:nm('yuzu')+' の個人ぶん', amount:c.yPer, subs:[], items:per});
+    const per=p.items.filter(it=>it.tag==='yuzu').sort(byDate);
+    blocks.push({label:nm('yuzu')+' の個人ぶん', amount:c.yPer, subs:[],
+      items:per.map(it=>({date:it.date,name:dispName(it),amount:it.amount,note:null}))});
   }
-  blocks.forEach(b=>{ b.h=rowH+b.subs.length*subLH+b.items.length*itemH+blockPad; });
+  // ①②③…と番号を振り、合計の見出しに「①＋②」と足し算を書いて対応を分かるようにする
+  const MARKS='①②③④⑤';
+  blocks.forEach((b,i)=>{
+    if(blocks.length>1) b.label=MARKS[i]+' '+b.label;
+    b.h=rowH+b.subs.length*subLH+b.items.reduce((s,it)=>s+itemH+(it.note?noteH:0),0)+blockPad;
+  });
+  const totalLabel='お支払い合計'+(blocks.length>1?'（'+blocks.map((b,i)=>MARKS[i]).join('＋')+'）':'');
   const blocksH=blocks.reduce((s,b)=>s+b.h,0);
 
   // 合計の下に置く補足（1行が長いと切れるので分けて2行にする）
@@ -860,18 +893,23 @@ function buildBillCanvas(p){
       g.fillText(fmtDateShort(it.date),ML+8,sy);
       g.fillStyle=INK; g.font=`400 21px ${FONT}`;
       mc.font=`400 21px ${FONT}`;
-      const nmTxt=(dispName(it)||'（無題）')+(it.ratio!=null?'（'+ratioLabel(it.ratio)+'）':'');
-      g.fillText(ellipsisText(mc,nmTxt,CW-DATE_W-8-150),ML+8+DATE_W,sy);
+      g.fillText(ellipsisText(mc,it.name||'（無題）',CW-DATE_W-8-150),ML+8+DATE_W,sy);
       g.textAlign='right'; g.font=`600 21px ${FONT}`;
       g.fillText(yen(it.amount),W-MR,sy);
       sy+=itemH;
+      if(it.note){ // 元の金額とわけかたを1行下に小さく添える
+        g.textAlign='left'; g.fillStyle=SUB; g.font=`400 18px ${FONT}`;
+        g.fillText(ellipsisText(g,it.note,CW-DATE_W-8),ML+8+DATE_W,sy-10);
+        sy+=noteH;
+      }
     });
     g.strokeStyle=LINE; g.beginPath(); g.moveTo(ML,y+b.h-9.5); g.lineTo(W-MR,y+b.h-9.5); g.stroke();
     y+=b.h;
   });
   y+=afterBlocks;
 
-  g.textAlign='left'; g.fillStyle=INK; g.font=`700 24px ${FONT}`; g.fillText('お支払い合計',ML,y+38);
+  g.textAlign='left'; g.fillStyle=INK; g.font=`700 24px ${FONT}`;
+  g.fillText(ellipsisText(g,totalLabel,CW-230),ML,y+38);
   g.textAlign='right'; g.fillStyle=ACCENT; g.font=`800 42px ${FONT}`; g.fillText(yen(c.yuzu),W-MR,y+44);
   y+=totalH;
   g.textAlign='left'; g.fillStyle=SUB; g.font=`400 19px ${FONT}`;
