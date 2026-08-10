@@ -161,6 +161,7 @@
   .seg{display:flex; gap:7px; flex-wrap:wrap;}
   .seg button{flex:1 1 auto; min-width:calc(50% - 4px); padding:12px 6px; border-radius:12px; border:1.5px solid var(--line);
     background:var(--card); font-weight:700; font-size:14px; color:var(--sub); transition:all .12s;}
+  .seg.small button{min-width:calc(33.333% - 5px); padding:11px 4px; font-size:12.5px;}
   .seg button.on{border-color:var(--accent); background:rgba(59,147,255,.10); color:var(--ink);}
   .seg button.on.share{border-color:#8a94a0; background:rgba(120,120,128,.12); color:#4a545f;}
   .seg button.on.k{border-color:var(--kodai); background:rgba(59,147,255,.12); color:#1f6fd6;}
@@ -317,22 +318,31 @@ function setSync(on){
 // 明細の tag: 'share'(共同) / 'kodai' / 'yuzu' / 'excl'(対象外)
 function curPeriod(){ return db.periods.find(p=>p.id===db.current)||db.periods[0]; }
 function ratioOf(p){ return (p.ratio==null?db.defaultRatio:p.ratio); } // こうだいの取り分%
-function calc(p){
-  let share=0, kPer=0, yPer=0, excl=0;
+// 明細ごとに it.ratio（こうだいの取り分%）を持てる。未設定なら期間の比率にしたがう。
+// overrideR はスライダー操作中のプレビュー用（保存せずに期間の比率だけ差し替える）
+function calc(p,overrideR){
+  const r=(overrideR==null?ratioOf(p):overrideR);
+  let share=0, defShare=0, kPer=0, yPer=0, excl=0, kShare=0, yShare=0;
   p.items.forEach(it=>{
     const a=it.amount;
     if(it.tag==='kodai') kPer+=a;
     else if(it.tag==='yuzu') yPer+=a;
     else if(it.tag==='excl') excl+=a;
-    else share+=a; // share
+    else{ // share
+      share+=a;
+      if(it.ratio!=null){ const k=Math.round(a*it.ratio/100); kShare+=k; yShare+=a-k; }
+      else defShare+=a;
+    }
   });
-  const r=ratioOf(p);
-  const kShare=Math.round(share*r/100);
-  const yShare=share-kShare;
+  const kDef=Math.round(defShare*r/100);
+  kShare+=kDef; yShare+=defShare-kDef;
   const kodai=kShare+kPer;
   const yuzu=yShare+yPer;
-  return {share, kPer, yPer, excl, r, kShare, yShare, kodai, yuzu, cardTotal:kodai+yuzu};
+  return {share, defShare, kPer, yPer, excl, r, kShare, yShare, kodai, yuzu, cardTotal:kodai+yuzu};
 }
+// 個別のわけかたを設定した共同明細（画像や注意書きで使う）
+function customRatioItems(p){ return p.items.filter(it=>(it.tag||'share')==='share'&&it.ratio!=null); }
+function ratioLabel(r){ return r+'：'+(100-r); }
 function yen(n){const s=n<0?'-':''; return s+'¥'+Math.abs(Math.round(n)).toLocaleString('ja-JP');}
 function nm(id){return db.names[id]||id;}
 
@@ -421,7 +431,10 @@ function renderPeriod(p){
     '<div class="rslide" style="--p:'+r+'%"><input type="range" id="ratio" min="0" max="100" step="5" value="'+r+'"></div>'+
     '<div class="rpresets" id="rpresets">'+
       [50,60,70].map(v=>'<button data-v="'+v+'" class="'+(r===v?'on':'')+'">'+v+':'+(100-v)+'</button>').join('')+
-    '</div></div>';
+    '</div>'+
+    (customRatioItems(p).length?'<div class="hint" style="text-align:left;margin-top:10px">'+
+      customRatioItems(p).length+'件は個別のわけかたを設定しています（このスライダーの影響を受けません）</div>':'')+
+    '</div>';
 
   // ミニ内訳
   html+='<div class="minibd">'+
@@ -447,7 +460,8 @@ function renderPeriod(p){
   items.forEach(it=>{
     if(it.date!==lastDay){lastDay=it.date; html+='<div class="daygroup">'+fmtDate(it.date)+'</div>';}
     const tag=it.tag||'share';
-    const tl={share:'共同',kodai:nm('kodai')+'個人',yuzu:nm('yuzu')+'個人',excl:'対象外'}[tag];
+    const tl=(tag==='share'&&it.ratio!=null) ? '共同 '+ratioLabel(it.ratio)
+      : {share:'共同',kodai:nm('kodai')+'個人',yuzu:nm('yuzu')+'個人',excl:'対象外'}[tag];
     html+='<div class="entry '+(tag==='excl'?'excl':'')+'" data-id="'+it.id+'">'+
       '<span class="tag '+(tag==='excl'?'excl':tag==='share'?'share':tag)+'">'+esc(tl)+'</span>'+
       '<div class="info"><div class="ti">'+esc(dispName(it)||'（無題）')+'</div>'+
@@ -475,18 +489,15 @@ function bindBody(p){
   document.querySelectorAll('#filters button').forEach(b=>b.onclick=()=>{ curFilter=b.dataset.f; render(); });
   document.querySelectorAll('#body .entry').forEach(el=>el.onclick=()=>openItem(p, p.items.find(x=>x.id===el.dataset.id)));
 }
-// スライダー操作中の即時プレビュー（保存はしない）
+// スライダー操作中の即時プレビュー（保存はしない）。個別のわけかたを設定した明細はそのまま。
 function liveSplit(p,v){
-  const c0={...calc(p)}; // shareはtag集計なので比率だけ差し替え
-  let share=0,kPer=0,yPer=0;
-  p.items.forEach(it=>{const a=it.amount; if(it.tag==='kodai')kPer+=a; else if(it.tag==='yuzu')yPer+=a; else if(it.tag==='excl'){} else share+=a;});
-  const kShare=Math.round(share*v/100), yShare=share-kShare;
+  const c=calc(p,v);
   const cards=document.querySelectorAll('.splitcards .pc .vl');
   const subs=document.querySelectorAll('.splitcards .pc .sb');
-  if(cards[0]) cards[0].innerHTML='<small>¥</small>'+Math.round(kShare+kPer).toLocaleString('ja-JP');
-  if(cards[1]) cards[1].innerHTML='<small>¥</small>'+Math.round(yShare+yPer).toLocaleString('ja-JP');
-  if(subs[0]) subs[0].textContent='共同'+yen(kShare)+(kPer?'＋個人'+yen(kPer):'');
-  if(subs[1]) subs[1].textContent='共同'+yen(yShare)+(yPer?'＋個人'+yen(yPer):'');
+  if(cards[0]) cards[0].innerHTML='<small>¥</small>'+Math.round(c.kodai).toLocaleString('ja-JP');
+  if(cards[1]) cards[1].innerHTML='<small>¥</small>'+Math.round(c.yuzu).toLocaleString('ja-JP');
+  if(subs[0]) subs[0].textContent='共同'+yen(c.kShare)+(c.kPer?'＋個人'+yen(c.kPer):'');
+  if(subs[1]) subs[1].textContent='共同'+yen(c.yShare)+(c.yPer?'＋個人'+yen(c.yPer):'');
 }
 
 /* ============ 日付ヘルパ ============ */
@@ -540,6 +551,19 @@ function openItem(p, existing){
       '<button data-v="yuzu" class="'+(it.tag==='yuzu'?'on y':'')+'">'+esc(nm('yuzu'))+'個人</button>'+
       '<button data-v="excl" class="'+(it.tag==='excl'?'on x':'')+'">対象外</button>'+
     '</div></div>'+
+    '<div class="field" id="iRatioField"><label>わけかた（'+esc(nm('kodai'))+'の取り分）</label>'+
+      '<div class="seg small" id="iRatio">'+
+        '<button data-v="">期間どおり '+ratioLabel(ratioOf(p))+'</button>'+
+        '<button data-v="50">50：50</button>'+
+        '<button data-v="60">60：40</button>'+
+        '<button data-v="70">70：30</button>'+
+        '<button data-v="custom">自分で決める</button>'+
+      '</div>'+
+      '<div id="iRatioNumWrap" style="margin-top:9px" hidden>'+
+        '<input type="number" inputmode="numeric" id="iRatioNum" min="0" max="100" step="5" placeholder="60">'+
+        '<div class="hint" style="text-align:left;margin-top:6px" id="iRatioNumHint"></div>'+
+      '</div>'+
+    '</div>'+
     '<div class="field"><label>日付</label><input type="date" id="iDate" value="'+(normDate(it.date)||today())+'"></div>'+
     '<div class="sheetbtns"><button class="save" id="iSave">'+(existing?'保存':'追加する')+'</button></div>'+
     (existing?'<button class="delbtn" id="iDel">この明細を削除</button>':'')
@@ -549,24 +573,63 @@ function openItem(p, existing){
     const a=ov.querySelector('#iAmt'); if(!a.value) a.focus();
   });
   let tag=it.tag||'share';
+  // わけかた：ratio=null なら期間どおり。プリセット以外の数字を使うときだけ customMode。
+  let ratio=(existing&&existing.ratio!=null)?existing.ratio:null;
+  let customMode=(ratio!=null&&[50,60,70].indexOf(ratio)<0);
+  function syncRatioUI(){
+    ov.querySelector('#iRatioField').hidden=(tag!=='share');
+    ov.querySelectorAll('#iRatio button').forEach(b=>{
+      const v=b.dataset.v;
+      const on=(v===''&&ratio==null) || (v==='custom'&&customMode)
+        || (v!==''&&v!=='custom'&&!customMode&&ratio!=null&&+v===ratio);
+      b.classList.toggle('on',on);
+    });
+    ov.querySelector('#iRatioNumWrap').hidden=!customMode;
+    if(customMode){
+      const n=ov.querySelector('#iRatioNum');
+      if(document.activeElement!==n) n.value=(ratio==null?'':ratio);
+      ov.querySelector('#iRatioNumHint').textContent=
+        (ratio==null?'':nm('kodai')+' '+ratio+'％ ／ '+nm('yuzu')+' '+(100-ratio)+'％');
+    }
+  }
   ov.querySelectorAll('#iTag button').forEach(b=>b.onclick=()=>{
     tag=b.dataset.v;
     ov.querySelectorAll('#iTag button').forEach(x=>x.classList.remove('on','share','k','y','x'));
     b.classList.add('on', {share:'share',kodai:'k',yuzu:'y',excl:'x'}[tag]);
+    syncRatioUI();
   });
+  ov.querySelectorAll('#iRatio button').forEach(b=>b.onclick=()=>{
+    const v=b.dataset.v;
+    if(v===''){ ratio=null; customMode=false; }
+    else if(v==='custom'){ customMode=true; if(ratio==null) ratio=ratioOf(p); }
+    else { ratio=+v; customMode=false; }
+    syncRatioUI();
+    if(customMode) setTimeout(()=>{const n=ov.querySelector('#iRatioNum'); if(n)n.focus();},60);
+  });
+  ov.querySelector('#iRatioNum').oninput=e=>{
+    const v=e.target.value.trim();
+    ratio=(v===''?null:Math.max(0,Math.min(100,Math.round(+v||0))));
+    ov.querySelector('#iRatioNumHint').textContent=
+      (ratio==null?'':nm('kodai')+' '+ratio+'％ ／ '+nm('yuzu')+' '+(100-ratio)+'％');
+  };
+  syncRatioUI();
   ov.querySelector('#iSave').onclick=()=>{
     const amount=Math.round(+ov.querySelector('#iAmt').value||0);
     if(amount===0){toast('金額を入力してね'); return;}
     const nameVal=ov.querySelector('#iDesc').value.trim();
     const date=ov.querySelector('#iDate').value||today();
+    const rt=(tag==='share'&&ratio!=null)?Math.max(0,Math.min(100,Math.round(ratio))):null;
     if(existing){
       existing.date=date; existing.amount=amount; existing.tag=tag;
+      if(rt==null) delete existing.ratio; else existing.ratio=rt;
       if(existing.src==='csv'){
         // 元の明細(desc)は保持し再取込のズレを防ぐ。表示名の手直しはlabelへ（自動整形と同じなら解除）
         if(nameVal && nameVal!==cleanMerchant(existing.desc)) existing.label=nameVal; else delete existing.label;
       } else { existing.desc=nameVal; delete existing.label; }
     } else {
-      curPeriod().items.push({id:uid(),src:'manual',date,desc:nameVal,amount,tag});
+      const nit={id:uid(),src:'manual',date,desc:nameVal,amount,tag};
+      if(rt!=null) nit.ratio=rt;
+      curPeriod().items.push(nit);
     }
     save(); closeSheet(); toast(existing?'保存しました':'追加しました ✓');
   };
@@ -738,12 +801,15 @@ function buildBillCanvas(p){
   const rowH=46, subLH=27, itemH=38, blockPad=16;
   const blocks=[];
   if(c.share!==0){
-    // 手動で足した共同ぶん（光熱費など・別カード払い）は、カード明細に無いので画像に1件ずつ出す
-    const manualShare=p.items.filter(it=>(it.tag||'share')==='share'&&it.src==='manual')
+    // 手動で足した共同ぶん（光熱費など・別カード払い）と、個別のわけかたを設定したものは
+    // カード明細を見ても分からないので、画像に1件ずつ出す
+    const listed=p.items.filter(it=>(it.tag||'share')==='share'&&(it.src==='manual'||it.ratio!=null))
       .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const subs=['共同の合計 '+yen(c.share)+' を '+nm('kodai')+' '+c.r+'％ ／ '+nm('yuzu')+' '+(100-c.r)+'％ でわけた分'];
-    if(manualShare.length) subs.push('共同の合計にふくめたもの（カード明細以外）');
-    blocks.push({label:'共同でつかった分', amount:c.yShare, items:manualShare, subs});
+    const anyCustom=listed.some(it=>it.ratio!=null);
+    const subs=[];
+    if(c.defShare!==0) subs.push('共同 '+yen(c.defShare)+' を '+nm('kodai')+' '+c.r+'％ ／ '+nm('yuzu')+' '+(100-c.r)+'％ でわけた分');
+    if(listed.length) subs.push(anyCustom?'個別にわけたもの・カード明細以外のもの':'共同の合計にふくめたもの（カード明細以外）');
+    blocks.push({label:'共同でつかった分', amount:c.yShare, items:listed, subs});
   }
   if(c.yPer!==0){
     const per=p.items.filter(it=>it.tag==='yuzu').sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -794,7 +860,8 @@ function buildBillCanvas(p){
       g.fillText(fmtDateShort(it.date),ML+8,sy);
       g.fillStyle=INK; g.font=`400 21px ${FONT}`;
       mc.font=`400 21px ${FONT}`;
-      g.fillText(ellipsisText(mc,dispName(it)||'（無題）',CW-DATE_W-8-150),ML+8+DATE_W,sy);
+      const nmTxt=(dispName(it)||'（無題）')+(it.ratio!=null?'（'+ratioLabel(it.ratio)+'）':'');
+      g.fillText(ellipsisText(mc,nmTxt,CW-DATE_W-8-150),ML+8+DATE_W,sy);
       g.textAlign='right'; g.font=`600 21px ${FONT}`;
       g.fillText(yen(it.amount),W-MR,sy);
       sy+=itemH;
