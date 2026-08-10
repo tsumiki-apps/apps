@@ -382,21 +382,65 @@
       var y = +m[1], mo = +m[2] + 1; if (mo > 12) { mo = 1; y++; }
       return new Date(y, mo - 1, 6);
     }
+    // 分割払い（credit.html と同じ扱い）。
+    //  ・分割に変えた元明細は、その期には請求されない＝0円として数える
+    //  ・かわりに各回ぶんを、その回が乗るサイクルへ足す
+    //  ・ただしカードが「元本分ご請求額／手数料」を明細に出している期は、それが本物の請求なので足さない
+    var INST_BILL_RE = /元本分ご請求額|元本分お支払い額|ペイフレックス手数料|分割払い手数料|分割手数料|リボ払い手数料/;
+    function cycleAdd(key, n) {
+      var m = String(key).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return key;
+      var y = +m[1], mo = +m[2] + n;
+      y += Math.floor((mo - 1) / 12); mo = ((mo - 1) % 12 + 12) % 12 + 1;
+      return y + "-" + String(mo).padStart(2, "0") + "-" + m[3];
+    }
+    // サイクルキー → その期に足すべき分割の請求額
+    function instByCycle(d) {
+      var out = {}, billed = {};
+      Object.keys(d.months || {}).forEach(function (k) {
+        billed[k] = ((d.months[k] || {}).transactions || []).some(function (t) {
+          return t.instBill === true || INST_BILL_RE.test(String(t.description || ""));
+        });
+      });
+      (d.installments || []).forEach(function (p) {
+        var total = Math.max(0, (+p.principal || 0) + (+p.fee || 0));
+        var n = Math.max(1, Math.min(60, +p.count || 1));
+        var per = (+p.monthly > 0) ? +p.monthly : Math.ceil(total / n);
+        var rest = total;
+        for (var i = 0; i < n; i++) {
+          var amt = (i === n - 1) ? rest : Math.max(0, Math.min(per, rest));
+          var k = cycleAdd(p.startCycle, i);
+          if (!billed[k]) out[k] = (out[k] || 0) + amt;
+          rest -= amt;
+        }
+      });
+      return out;
+    }
+    function instTxIds(d) {
+      var s = {};
+      (d.installments || []).forEach(function (p) { if (p.txId) s[p.txId] = true; });
+      return s;
+    }
     // サイクルごとの集計（古い順）。total=総決済額 / self=自分の実質支出 / complete=締め済みか
     function cycles(d) {
       if (!d || !d.months) return [];
       var today = new Date(); today.setHours(0, 0, 0, 0);
+      var instAdd = instByCycle(d), converted = instTxIds(d);
       return Object.keys(d.months)
         .filter(function (k) { return /^\d{4}-\d{2}-\d{2}$/.test(k); })
         .sort()
         .map(function (k) {
           var txs = (d.months[k] && d.months[k].transactions) || [];
-          var total = 0, self = 0;
+          var total = 0, loaned = 0;
           txs.forEach(function (t) {
-            var a = +t.amount || 0;
-            total += a;
-            self += Math.max(0, a - loanTotalForTx(d, t.id));
+            if (converted[t.id]) return;                       // 分割に変えた元明細はこの期に請求されない
+            total += (+t.amount || 0);
+            loaned += loanTotalForTx(d, t.id);
           });
+          total += (instAdd[k] || 0);                          // その期に乗る分割の回ぶん
+          // 自分の実質支出＝総額−立て替え分（credit.html の renderSummary と同じ式）。
+          // 明細ごとに Math.max(0,…) すると返金のマイナスが落ちて self>total になるため合計で引く
+          var self = total - loaned;
           var end = cycleEndDate(k);
           return { key: k, label: cycleLabel(k), total: total, self: self, count: txs.length, complete: end ? end < today : false };
         })

@@ -622,6 +622,7 @@ function load(){
     if(!data.deletedAmazonIds)data.deletedAmazonIds={};
     migrateToCycles();
     purgeInstallmentLedgerTx();
+    markCardInstBills();
   }catch(e){console.error(e);}
 }
 // 旧「カレンダー月（YYYY-MM）」キーの明細を、Amex締め日サイクル（YYYY-MM-07）へ再振り分け
@@ -784,6 +785,7 @@ function subscribeRealtime(){
 function refreshAfterSync(){
   const keys=Object.keys(data.months).sort();
   if(!keys.includes(state.currentMonth)) state.currentMonth=keys.length?keys[keys.length-1]:null;
+  markCardInstBills();     // 旧バージョンの端末から来た明細にも印を付け直す（何度呼んでも安全）
   autoLinkAmazonAndSave(); // ブックマークレット等で同期されてきたAmazon注文も金額一致で自動紐付け
   render();
 }
@@ -844,6 +846,8 @@ const CATEGORY_RULES=[
   {cat:'公共料金・通信',keys:['東京ガス','東京電力','ガス','電気','水道','ＮＨＫ','BIGLOBE','ＢＩＧＬＯＢＥ','ドコモ','ソフトバンク','au']},
   {cat:'電子マネー(QP)',keys:['クイックペイ','ＱＵＩＣＰａｙ','QUICPay']},
   {cat:'駅ビル・施設',keys:['アトレ','ビーンズ','グランツリー','グランベリー','ＣＯＲＥＤＯ','ルフロン','ラゾーナ']},
+  // カードが毎月出してくる分割の請求行。「その他」に埋もれるとグラフが読めなくなるので独立させる
+  {cat:'分割払い',keys:['元本分ご請求額','元本分お支払い額','ペイフレックス手数料','分割払い手数料','分割手数料','リボ払い手数料']},
 ];
 function categorize(desc){
   const d=desc.toLowerCase();
@@ -916,7 +920,7 @@ async function parseCreditCSV(file){
   }
   if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']);
   if(dIdx<0||descIdx<0||amtIdx<0){alert('CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / ')+'\n\n必要列: ご利用日 / ご利用内容(店名) / 金額\nこのヘッダをClaudeに伝えてもらえれば対応を追加します。');return null;}
-  const txs=[];const counter={};const signals=[];const suspects=[];
+  const txs=[];const counter={};const signals=[];const suspects=[];const bills=[];
   for(let i=1;i<lines.length;i++){
     const cols=parseCsvLine(lines[i]);
     if(cols.length<3)continue;
@@ -933,17 +937,21 @@ async function parseCreditCSV(file){
     // 口座振替など「支払い・引き落とし」の行は買い物でも返金でもないので明細にしない。
     // ここに当てはまらないマイナス金額（＝返金/取消）はマイナス明細として残し、支出から差し引く。
     if(PAYMENT_RE.test(desc))continue;
+    // カードが自動で出す分割の請求行（元本分＋手数料）＝本物の請求なので明細として残す。
+    // 既知の形なので「見慣れない分割」の警告には出さない
+    const isBill=isInstBillDesc(desc);
     // 上のパターンに当てはまらない「分割/リボ」を含む行＝カードが書き方を変えた可能性。取込後に知らせる
-    if(INST_SUSPECT_RE.test(desc))suspects.push({desc:desc.replace(/\s+/g,' '),amount,date});
+    if(!isBill&&INST_SUSPECT_RE.test(desc))suspects.push({desc:desc.replace(/\s+/g,' '),amount,date});
     const postDate=postIdx>=0?(cols[postIdx]||'').trim():'';
     const baseKey=date+'|'+desc+'|'+amount;           // idは利用日基準のまま（既存idを壊さない）
     counter[baseKey]=(counter[baseKey]||0)+1;
     const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
     const tx={id:'tx_'+hashStr(baseKey+sfx),date,description:desc.replace(/\s+/g,' '),amount,category:catForImport(desc)};
     if(postDate)tx.postDate=postDate;                 // 請求サイクル判定に使う（表示は利用日のまま）
+    if(isBill){tx.instBill=true;bills.push({date,postDate,amount});}
     txs.push(tx);
   }
-  return {txs,signals,suspects};
+  return {txs,signals,suspects,bills};
 }
 // 締め日固定ルール：毎月7日〜翌月6日を1サイクルとする（Amex）
 // キーはサイクル開始日のISO文字列 "YYYY-MM-07"（辞書順=時系列順でソート可）
@@ -971,7 +979,7 @@ function cycleLabel(key,withYear){
 async function handleCreditCSV(file){
   const parsed=await parseCreditCSV(file);
   if(!parsed)return;
-  const {txs,signals,suspects}=parsed;
+  const {txs,signals,suspects,bills}=parsed;
   if(txs.length===0&&signals.length===0)return;
   // 追記マージ方式：同じ明細(id一致=日付/内容/金額が同一)は既存をそのまま保持し、
   // Amazon紐付け・期間移動・立替などのユーザー情報を一切消さない。
@@ -1007,6 +1015,7 @@ async function handleCreditCSV(file){
     newSignals.push({amount:s.amount,date:s.date,postDate:s.postDate});
   });
   data.pendingInst=newSignals;
+  markCardInstBills();                                 // カードの分割請求行に印＋「分割払い」カテゴリへ
   normalizeBuckets();                                  // 確定日で請求期間を正規化（手動移動=cycleOverrideは尊重）
   autoLinkAmazon(newIds);save();flushSave();           // 自動リンクは“新規だけ”／取込は即クラウド反映（350ms待ちの欠落窓を無くす）
   if(touched.size)state.currentMonth=[...touched].sort().pop();
@@ -1018,7 +1027,9 @@ async function handleCreditCSV(file){
   const fixedLine=fixed>0?`\n請求期間を補正: ${fixed}件（確定日でカード請求どおりの期へ）`:'';
   const instLine=newSignals.length?`\n\n📆 分割払いへの切り替えが ${newSignals.length}件 見つかりました（${newSignals.map(s=>'¥'+s.amount.toLocaleString()).join(' / ')}）。\n振替の行は明細に入れていません（二重計上を防ぐため）。\n上の「分割の設定待ち」から回数と手数料を登録してください。`:'';
   const suspectLine=suspects.length?`\n\n⚠️ 分割/リボらしき見慣れない明細が ${suspects.length}件 あります。二重計上していないか確認してください:\n`+suspects.slice(0,5).map(s=>`・${s.date} ${s.desc} ¥${s.amount.toLocaleString()}`).join('\n'):'';
-  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${fixedLine}${range}${instLine}${suspectLine}\n\n※明細・立替・Amazon紐付け・手動移動は保持され、消えません。`),50);
+  const billSum=(bills||[]).reduce((s,b)=>s+b.amount,0);
+  const billLine=(bills&&bills.length)?`\n\n📆 カードが出した分割の請求が ${bills.length}件（計 ¥${billSum.toLocaleString()}）ありました。\nこれを本物の請求として数え、アプリ側の予定行はその期のぶんを取り下げています（二重計上を防ぐため）。`:'';
+  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${fixedLine}${range}${billLine}${instLine}${suspectLine}\n\n※明細・立替・Amazon紐付け・手動移動は保持され、消えません。`),50);
 }
 
 // Amazon注文の取り込みはブックマークレット(amazon-import-bookmarklet.js)経由でSupabaseへ直接追記。
@@ -1088,9 +1099,40 @@ function findTxLinkedToAmazon(orderId){
    なので取込では“明細にしない”で捨て、代わりに「分割の登録が要る」合図として使う。
    実際に毎月引かれる額（回数・手数料）はCSVに出てこないので、そこだけ手入力で補う。 */
 const INST_LEDGER_RE=/分割払い利用分|一括払いからの変更|あと分割|リボ払い利用分|ボーナス払い利用分/;
+/* カード側が毎月の分割請求を自動で明細に載せるようになった（2026-08 確認）。
+   締めの日付で、その期に払う分がこの2行で出てくる：
+     元本分ご請求額                 43,520   ← 元本の1回ぶん（分割が複数あれば合算）
+     ペイフレックス手数料（分割払い） 1,081   ← その回の手数料
+   これは“本物の請求”なので明細として残す。かわりにアプリ側で作っていた予定行（合成行）は
+   その期については取り下げる。両方数えると1回ぶんが二重計上になるため。 */
+const INST_BILL_RE=/元本分ご請求額|元本分お支払い額|ペイフレックス手数料|分割払い手数料|分割手数料|リボ払い手数料/;
 // 上記以外で「分割/リボ」を含む未知の行＝将来カードが出し方を変えた時の検知用（取込後に警告する）
 const INST_SUSPECT_RE=/分割|リボ/;
 function isInstLedgerDesc(d){return INST_LEDGER_RE.test(String(d||''));}
+function isInstBillDesc(d){return INST_BILL_RE.test(String(d||''));}
+// カードの分割請求行かどうか。取込時に付けた印を優先し、無ければ内容で判定する
+// （＝印が付く前に取り込んだ既存明細でも、データを直さずに正しく扱える）
+function isCardInstBill(t){return !!t&&(t.instBill===true||isInstBillDesc(t.description));}
+// その期に「カードが出した分割の請求行」が実在するか＝アプリの予定行を出してはいけない期
+function hasCardInstBill(cycleKey){
+  return (((data.months[cycleKey]||{}).transactions)||[]).some(isCardInstBill);
+}
+// 既存明細への後付け：カードの分割請求行に印を付け、「その他」だったカテゴリを「分割払い」へ寄せる。
+// 金額・件数は一切いじらない（表示と集計の置き場所を直すだけ）
+function markCardInstBills(){
+  let n=0;
+  Object.keys(data.months).forEach(k=>{
+    (data.months[k].transactions||[]).forEach(t=>{
+      if(!isInstBillDesc(t.description))return;
+      let touched=false;
+      if(t.instBill!==true){t.instBill=true;touched=true;}
+      if(!t.category||t.category==='その他'){t.category='分割払い';touched=true;}
+      if(touched)n++;
+    });
+  });
+  if(n>0)save();
+  return n;
+}
 // 支払い・引き落とし・入金の行（＝先月分の口座振替など）。買い物でも返金でもないので明細にしない。
 // これに当てはまらないマイナス金額は「返金/取消」とみなし、マイナス明細として残す（＝支出から差し引く）。
 const PAYMENT_RE=/口座振替|お支払い|ご入金|自動引落|口座引落|お振込|ご返済/;
@@ -1137,15 +1179,19 @@ function instSchedule(p){
   return out;
 }
 function instTotal(p){return instSchedule(p).reduce((s,x)=>s+x.amount,0);}
-// 「請求済み」＝今いるサイクルより前のサイクル分。今月分はこれから引かれるので残債に数える
-function instPaidCount(p){const cur=currentCycleKey();return instSchedule(p).filter(x=>x.cycle<cur).length;}
-function instRemaining(p){const cur=currentCycleKey();return instSchedule(p).filter(x=>x.cycle>=cur).reduce((s,x)=>s+x.amount,0);}
+// 「請求済み」＝今いるサイクルより前のサイクル分。今月分はこれから引かれるので残債に数える。
+// ただしカードが既にその期の分割請求を出していれば、今月分でも請求済みとして扱う
+function instBilled(x){const cur=currentCycleKey();return x.cycle<cur||hasCardInstBill(x.cycle);}
+function instPaidCount(p){return instSchedule(p).filter(instBilled).length;}
+function instRemaining(p){return instSchedule(p).filter(x=>!instBilled(x)).reduce((s,x)=>s+x.amount,0);}
 function instIsDone(p){return instPaidCount(p)>=instSchedule(p).length;}
 function instTotalRemaining(){return instList().reduce((s,p)=>s+instRemaining(p),0);}
 function instName(p){return (p.description||'分割払い').trim()||'分割払い';}
 // 分割の各回を「そのサイクルの明細」として合成する（data.monthsには入れない＝CSV取込のマージを汚さない）
 function instVirtualTxs(cycleKey){
   const out=[];
+  // カードが「元本分ご請求額＋手数料」を出している期は、それが本物の請求。予定行は出さない＝二重計上しない
+  if(hasCardInstBill(cycleKey))return out;
   instList().forEach(p=>{
     instSchedule(p).forEach(x=>{
       if(x.cycle!==cycleKey)return;
@@ -1628,6 +1674,8 @@ function renderTxRow(t){
 
   const amzTag=amz&&!linked?'<span class="amz-tag">未紐付け</span>':'';
   const movedTag=t.cycleOverride?'<span class="cat-tag">📅移動済</span>':'';
+  // カードが出した分割の請求行。買い物ではなく「分割の毎月ぶん」だと分かるようにする
+  const billTag=isCardInstBill(t)?'<span class="inst-tag">📆 カードの分割請求</span>':'';
   const sel=state.selectMode;
   const checked=state.selectedTxIds.has(t.id);
   if(sel){
@@ -1640,12 +1688,14 @@ function renderTxRow(t){
       <div class="tx-side"><div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div></div>
     </div>`;
   }
+  // カードの分割請求行は「買い物」ではないので、立て替え化・分割化のボタンは出さない（誤操作で二重管理になるため）
+  const isBill=isCardInstBill(t);
   const actions=`<div class="tx-actions">
         <button class="btn-mini" onclick="event.stopPropagation();openCatModal('${t.id}')">🏷 ${escapeHtml(t.category)}</button>
-        ${inst?'':`<button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>`}
+        ${(inst||isBill)?'':`<button class="btn-mini primary" onclick="event.stopPropagation();openLoanFromTxModal('${t.id}')">${loans.length>0?'+ 立て替えを追加':'立て替えに送る'}</button>`}
         ${loans.length>0?`<button class="btn-mini" onclick="event.stopPropagation();switchTab('loans')">台帳で見る</button>`:''}
         ${inst?`<button class="btn-mini primary" onclick="event.stopPropagation();openInstModal('${inst.id}')">📆 分割を編集</button>`
-              :`<button class="btn-mini" onclick="event.stopPropagation();openInstModal(null,'${t.id}')">📆 分割にする</button>`}
+              :(isBill?'':`<button class="btn-mini" onclick="event.stopPropagation();openInstModal(null,'${t.id}')">📆 分割にする</button>`)}
         <button class="btn-mini danger" onclick="event.stopPropagation();deleteTx('${t.id}')">🗑 削除</button>
       </div>`;
   // 分割に変換済みの元明細：この期に請求されないので金額は取り消し線。中身は残す（何を買ったか消さない）
@@ -1662,6 +1712,19 @@ function renderTxRow(t){
       <div class="row"><span>初回の請求</span><b>${cycleLabel(inst.startCycle,true)}</b></div>
     </div>`;
   }
+  // カードの分割請求行を開いたとき：どの買い物の何回目なのかを結びつけて見せる
+  let billHtml='';
+  if(isCardInstBill(t)){
+    const live=instList().filter(p=>instSchedule(p).some(x=>x.cycle===(t.cycleOverride||txCycle(t))));
+    const names=live.map(p=>{
+      const sch=instSchedule(p),no=sch.findIndex(x=>x.cycle===(t.cycleOverride||txCycle(t)))+1;
+      return `<div class="row"><span>${escapeHtml(displayMerchantName(instName(p)))}</span><b>${no}/${sch.length}回目</b></div>`;
+    }).join('');
+    billHtml=`<div class="inst-info">
+      <div class="label">📆 カードが出した分割の請求です（アプリ側の予定行はこの期のぶんを取り下げています）</div>
+      ${names||'<div class="row"><span>対応する分割の登録がありません</span><b>—</b></div>'}
+    </div>`;
+  }
   const instTag=inst?`<span class="inst-tag">📆 ${instSchedule(inst).length}回払いに変換</span>`:'';
   const struck=(fullyLoaned||!!inst)?'struck':'';
   const note=(t.note||'').trim();
@@ -1671,8 +1734,8 @@ function renderTxRow(t){
   return `<div class="${classes.join(' ')}" data-id="${t.id}">
     <div onclick="toggleTxExpand('${t.id}')">
       <div class="desc">${escapeHtml(displayMerchantName(t.description))}</div>
-      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${instTag}${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}${noteTag}</div>
-      ${expanded?instHtml+strip+amzHtml+noteEdit+actions:''}
+      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${instTag}${billTag}${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}${noteTag}</div>
+      ${expanded?billHtml+instHtml+strip+amzHtml+noteEdit+actions:''}
     </div>
     <div class="tx-side"><div class="amount ${struck}">¥${t.amount.toLocaleString()}</div><div class="tx-chev ${expanded?'open':''}">›</div></div>
   </div>`;
@@ -2553,7 +2616,7 @@ async function importData(file){
     if(!data.installments)data.installments=[];
     if(!data.pendingInst)data.pendingInst=[];
     if(!data.deletedInstallmentIds)data.deletedInstallmentIds={};
-    migrateToCycles();purgeInstallmentLedgerTx();save();
+    migrateToCycles();purgeInstallmentLedgerTx();markCardInstBills();save();
     const ms=Object.keys(data.months).sort();
     state.currentMonth=ms.length>0?ms[ms.length-1]:null;
     render();
