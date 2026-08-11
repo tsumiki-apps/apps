@@ -190,6 +190,29 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
 
+  // manifest は動的に返す。iOS はホーム画面から起動するとき manifest の start_url を使うので、
+  // ここにトークンを入れておかないと「ホーム画面に追加」した途端に合言葉を聞かれる
+  // （ホーム画面アプリと Safari は localStorage が別領域のため、保存済みの値も引き継がれない）。
+  if (p === '/manifest.json') {
+    if (!authed(req, url)) return json(res, 401, { error: 'unauthorized' });
+    const manifest = {
+      name: 'つみきリモート',
+      short_name: 'つみきリモート',
+      description: 'Mac の tmux セッションをスマホから見て指示する',
+      start_url: './?t=' + TOKEN,
+      scope: './',
+      display: 'standalone',
+      orientation: 'portrait',
+      background_color: '#0e0f12',
+      theme_color: '#0e0f12',
+      icons: [
+        { src: 'icon-180.png', sizes: '180x180', type: 'image/png' },
+        { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+      ],
+    };
+    return send(res, 200, JSON.stringify(manifest), 'application/manifest+json; charset=utf-8');
+  }
+
   if (!p.startsWith('/api/')) return serveStatic(res, p);
 
   if (!authed(req, url)) return json(res, 401, { error: 'unauthorized' });

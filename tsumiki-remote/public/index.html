@@ -143,9 +143,14 @@
   var LS = 'tsumiki-remote-token';
   var url = new URL(location.href);
   var token = url.searchParams.get('t') || localStorage.getItem(LS) || '';
-  if (url.searchParams.get('t')) {
+  if (token) {
     localStorage.setItem(LS, token);
-    history.replaceState(null, '', location.pathname); // URL からトークンを消す
+    // URL からトークンは消さない。消すと「ホーム画面に追加」で保存されるURLから
+    // トークンが落ち、起動しても合言葉を聞かれてしまう（iOSはホーム画面アプリと
+    // Safari で localStorage が別領域なので、保存済みの値も引き継がれない）。
+    // manifest も同じ理由でトークン付きで取りに行く（start_url を作らせるため）。
+    var mf = document.querySelector('link[rel="manifest"]');
+    if (mf) mf.href = 'manifest.json?t=' + encodeURIComponent(token);
   }
 
   var el = {
