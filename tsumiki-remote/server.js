@@ -51,6 +51,29 @@ function writeArchived(list) {
   try { fs.writeFileSync(ARCHIVE_FILE, JSON.stringify(list), { mode: 0o600 }); } catch (e) {}
 }
 
+// ---------------------------------------------------------------- 版（バージョン）
+//
+// スマホの「ホーム画面アプリ」は一度開くと開きっぱなしになる。Mac 側でアプリを
+// 直しても、開いたままの画面は古いままなので、押したボタンが古い動きをする
+// （2026-08-11：削除済みの /api/kill を呼び続けて「押しても何も起きない」になった）。
+// 中身のハッシュを「版」として配り、変わったらブラウザ側で読み込み直させる。
+const VER_FILES = [path.join(PUBLIC_DIR, 'index.html'), __filename];
+let verCache = { key: null, value: '0' };
+
+function currentVersion() {
+  let key = '';
+  for (const f of VER_FILES) {
+    try { const st = fs.statSync(f); key += `${st.mtimeMs}:${st.size}|`; }
+    catch (e) { key += 'x|'; }
+  }
+  if (key !== verCache.key) {
+    const h = crypto.createHash('sha1');
+    for (const f of VER_FILES) { try { h.update(fs.readFileSync(f)); } catch (e) {} }
+    verCache = { key, value: h.digest('hex').slice(0, 12) };
+  }
+  return verCache.value;
+}
+
 // ---------------------------------------------------------------- tmux
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
@@ -73,16 +96,21 @@ function tmux(args, { timeout = 5000 } = {}) {
 // tmux は書式出力中のタブを "_" に潰すので、区切りには使えない
 const SEP = '|::|';
 
+// 「本当に0件」と「tmux が答えなかった」は区別する。混ぜると、一時的な失敗で
+// 片付けリストを全部消してしまう（片付けたものが勝手に戻ってくる）。
+const NO_SERVER_RE = /no server running|error connecting to|no such file or directory/i;
+
 async function listSessions() {
   const r = await tmux(['list-sessions', '-F', `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}`]);
-  if (!r.ok) return []; // tmux サーバーが起動していない = セッション 0
-  return r.out
+  if (!r.ok) return { ok: NO_SERVER_RE.test(r.err), sessions: [] };
+  const sessions = r.out
     .split('\n')
     .filter(Boolean)
     .map((line) => {
       const [name, window, activity] = line.split(SEP);
       return { name, window, activity: Number(activity) || 0 };
     });
+  return { ok: true, sessions };
 }
 
 // そのセッションで動いているのが Claude Code か、素のシェルか。
@@ -394,11 +422,17 @@ const server = http.createServer(async (req, res) => {
   try {
     // 全セッションの状態一覧
     if (p === '/api/state' && req.method === 'GET') {
-      const sessions = await listSessions();
-      const alive = sessions.map((s) => s.name);
-      // 既に無くなったセッションは片付けリストからも落とす
-      let archived = readArchived().filter((n) => alive.indexOf(n) >= 0);
-      writeArchived(archived);
+      const listed = await listSessions();
+      const sessions = listed.sessions;
+      let archived = readArchived();
+      // 既に無くなったセッションは片付けリストからも落とす。
+      // 一覧が取れなかったときは触らない（消えたのか答えが返らなかっただけか分からない）。
+      // 書き込むのも中身が変わったときだけ（毎回書くと1.5秒ごとにディスクを叩く）。
+      if (listed.ok) {
+        const alive = sessions.map((s) => s.name);
+        const kept = archived.filter((n) => alive.indexOf(n) >= 0);
+        if (kept.length !== archived.length) { writeArchived(kept); archived = kept; }
+      }
       const out = [];
       for (const s of sessions.filter((x) => archived.indexOf(x.name) < 0)) {
         const text = (await captureScreen(s.name)) || '';
@@ -410,7 +444,7 @@ const server = http.createServer(async (req, res) => {
           preview: lastMeaningfulLine(text),
         });
       }
-      return json(res, 200, { sessions: out, archived, now: Date.now() });
+      return json(res, 200, { sessions: out, archived, version: currentVersion(), now: Date.now() });
     }
 
     // 1セッションの画面

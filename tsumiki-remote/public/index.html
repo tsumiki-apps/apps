@@ -356,8 +356,27 @@
       .catch(function (e) { toast('失敗: ' + e.message); });
   }
 
+  // ホーム画面アプリは一度開くと開きっぱなしになる。Mac 側でアプリを直しても
+  // 画面は古いままなので、押したボタンが古い動きをする（＝直したのに壊れて見える）。
+  // サーバーが配る「版」が変わったら、書きかけを預けて読み込み直す。
+  var DRAFT = 'tsumiki-remote-draft';
+  var seenVersion = null;
+  var reloading = false;
+
+  function checkVersion(v) {
+    if (!v || reloading) return;
+    if (seenVersion === null) { seenVersion = v; return; }
+    if (v === seenVersion) return;
+    reloading = true;
+    try { localStorage.setItem(DRAFT, el.cmd.value || ''); } catch (e) {}
+    toast('新しい版になりました。開き直します');
+    clearInterval(timer);
+    setTimeout(function () { location.reload(); }, 700);
+  }
+
   function refreshState() {
     return api('/api/state').then(function (d) {
+      checkVersion(d.version);
       sessions = d.sessions;
       archived = d.archived || [];
       if (!sessions.length) {
@@ -585,6 +604,12 @@
     if (archived.length) {
       sheetItem('片付けたものを戻す', archived.length + ' 件', function () { openArchived(); });
     }
+    // 逃げ道。版の切り替わりに気づけなかったときは、ここから手で読み込み直せる
+    sheetItem('読み込み直す', '画面を最新の版にします（版 ' + (seenVersion || '?') + '）',
+      function () {
+        try { localStorage.setItem(DRAFT, el.cmd.value || ''); } catch (e) {}
+        location.reload();
+      });
   };
 
   function openArchived() {
@@ -664,6 +689,12 @@
   }
 
   document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(true); });
+
+  // 読み込み直す前に預けた書きかけを戻す
+  try {
+    var draft = localStorage.getItem(DRAFT);
+    if (draft) { el.cmd.value = draft; localStorage.removeItem(DRAFT); }
+  } catch (e) {}
 
   if (!token) gate(true);
   tick(true);
