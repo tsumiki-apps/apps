@@ -53,31 +53,42 @@ launchctl unload ~/Library/LaunchAgents/com.tsumiki.awake.plist
 `caffeinate -ims` を常駐させてあるので、画面が消えても Mac は眠らない。
 （`-d` を付けていないので「画面は消える」。付けると画面も点いたままになる）
 
-### 3. Tailscale（外から繋ぐ）
+### 3. Tailscale（外から繋ぐ）— sudo なしで動かす
+
+公式の案内は `sudo brew services start tailscale` だが、それだと管理者権限が要る。
+**userspace-networking モード**なら一般ユーザー権限のまま動く。
 
 ```bash
-sudo brew services start tailscale
-tailscale up
+launchctl load ~/Library/LaunchAgents/com.tsumiki.tailscaled.plist
 ```
 
-`tailscale up` が出す URL でログイン（アカウント作成もここ）。そのあと:
+このモードでは OS のネットワーク層に入らない代わりに、
+**外から入ってきた接続は localhost の同じポートへ転送される**。
+今回欲しいのは「iPhone → Mac:8787」の向きだけなので、これで足りる。
+
+CLI は毎回ソケットの指定が要る（普段の `tailscale` コマンドとは別物になる）:
 
 ```bash
-tailscale serve --bg 8787
-tailscale serve status
+alias ts='tailscale --socket=$HOME/.tsumiki-remote/tailscaled.sock'
+ts status
+ts ip -4
 ```
 
-`https://<マシン名>.<テイルネット名>.ts.net/` が出る。これが外から届くURL。
+ログインは `ts up` が出す URL をブラウザで開いて認証する。
 
 サーバーは `127.0.0.1` にしか口を開けていないので、Tailscale を通した以外の経路では
 一切届かない（ルーターのポート開放も不要）。
 
+`https://…ts.net/` の名前で開きたい場合だけ、管理画面で HTTPS を有効にしたうえで
+`ts serve --bg 8787`。名前が要らなければ `http://<tailscale IP>:8787` で足りる。
+
 ### 4. iPhone 側
 
 1. App Store で **Tailscale** を入れて同じアカウントでログイン、VPN を常時ONにする
-2. Safari で `https://<マシン名>.<テイルネット名>.ts.net/?t=<トークン>` を開く
-   - トークン: `cat ~/.tsumiki-remote/token`
-   - 一度開けば端末に保存され、URLからは消える
+2. `./bin/qr.sh` が出す QR を iPhone のカメラで読む（URL にトークンが入っている）
+   - 一度開けば端末に保存され、URL からは自動的に消える
+   - 手打ちするなら `http://<tailscale IP>:8787/?t=<トークン>`（`cat ~/.tsumiki-remote/token`）
+   - **QRとURLはトークン入り。人に見せない・スクショを配らない**
 3. 共有 → **ホーム画面に追加**。以後アイコンから全画面で起動する
 
 ### 5. 通知（ntfy）
