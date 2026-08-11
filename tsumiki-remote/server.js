@@ -41,7 +41,14 @@ const CLAUDE_CMD = process.env.TSUMIKI_CLAUDE_CMD || 'claude --permission-mode b
 // 直しても、開いたままの画面は古いままなので、押したボタンが古い動きをする
 // （2026-08-11：削除済みの /api/kill を呼び続けて「押しても何も起きない」になった）。
 // 中身のハッシュを「版」として配り、変わったらブラウザ側で読み込み直させる。
-const VER_FILES = [path.join(PUBLIC_DIR, 'index.html'), __filename];
+//
+// ⚠️ 版に server.js を混ぜないこと（2026-08-12）。server.js を保存した瞬間に
+// 版が変わるが、動いているサーバーは再起動するまで古いままなので、その読み直しは
+// 何も新しくならない＝ムダに画面が切り替わるだけ。サーバー側の変更が実際に効くのは
+// 再起動したときなので、そのタイミング＝起動ごとの通し番号（BOOT）を版に混ぜる。
+// これで「画面のファイルが変わった」か「サーバーが入れ替わった」ときだけ読み直す。
+const BOOT = crypto.randomBytes(3).toString('hex');
+const VER_FILES = [path.join(PUBLIC_DIR, 'index.html')];
 let verCache = { key: null, value: '0' };
 
 function currentVersion() {
@@ -53,7 +60,7 @@ function currentVersion() {
   if (key !== verCache.key) {
     const h = crypto.createHash('sha1');
     for (const f of VER_FILES) { try { h.update(fs.readFileSync(f)); } catch (e) {} }
-    verCache = { key, value: h.digest('hex').slice(0, 12) };
+    verCache = { key, value: BOOT + '-' + h.digest('hex').slice(0, 8) };
   }
   return verCache.value;
 }
