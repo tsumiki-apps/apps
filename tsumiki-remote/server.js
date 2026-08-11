@@ -6,6 +6,7 @@
 
 const http = require('http');
 const fs = require('fs');
+const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
@@ -179,31 +180,50 @@ function pruneUploads() {
 
 // -------------------------------------------------------------- プレビュー
 
-// 制作物の置き場。ここから外は絶対に出さない
-const PREVIEW_ROOT = fs.realpathSync(path.join(os.homedir(), '制作物'));
+// やり取りの中で出力したものの置き場。実体は iCloud Drive なので、
+// アプリで見るのと iPhone のファイルアプリで見るのが同じ1か所になる。
+// ここから外は絶対に出さない。
+//
+// ⚠️ iCloud のフォルダは、同期系の fs 呼び出し（readdirSync など）が
+// 数分単位で返ってこないことがある。Node は1本のループで動いているので、
+// そこで固まるとターミナル表示もキー送信も全部止まる（実際に止めた）。
+// このフォルダを触るときは必ず非同期＋制限時間つきで扱うこと。
+const PREVIEW_ROOT = path.join(
+  os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'つみきリモート');
+fsp.mkdir(PREVIEW_ROOT, { recursive: true }).catch(() => {});
+
+// 制限時間つきで待つ。返ってこない相手を切り離すための保険。
+function within(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(label + 'が時間内に返りません')), ms); }),
+  ]);
+}
 const SKIP_DIR = /^(\.git|node_modules|\.next|dist|build|\.venv|__pycache__)$/;
 const PREVIEW_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;
 
-// 見せられるファイルを新しい順に集める（深さは3階層まで）
-function listPreviewables(limit = 200) {
+// 見せられるファイルを新しい順に集める（非同期・深さ2まで）
+async function listPreviewables(limit = 200) {
   const out = [];
-  (function walk(dir, depth) {
-    if (depth > 3 || out.length > 2000) return;
-    let entries = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+  async function walk(dir, depth) {
+    if (depth > 2 || out.length > 2000) return;
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch (e) { return; }
     for (const e of entries) {
-      if (e.name.startsWith('.') && e.name !== '.') continue;
+      if (e.name.startsWith('.')) continue;
       const full = path.join(dir, e.name);
       if (e.isDirectory()) {
-        if (!SKIP_DIR.test(e.name)) walk(full, depth + 1);
+        if (!SKIP_DIR.test(e.name)) await walk(full, depth + 1);
       } else if (PREVIEW_EXT.test(e.name)) {
         try {
-          const st = fs.statSync(full);
+          const st = await fsp.stat(full);
           out.push({ rel: path.relative(PREVIEW_ROOT, full), mtime: st.mtimeMs, size: st.size });
         } catch (e2) { /* 読めないものは飛ばす */ }
       }
     }
-  })(PREVIEW_ROOT, 0);
+  }
+  await walk(PREVIEW_ROOT, 0);
   out.sort((a, b) => b.mtime - a.mtime);
   return out.slice(0, limit);
 }
@@ -320,16 +340,18 @@ const server = http.createServer(async (req, res) => {
     catch (e) { return send(res, 400, 'bad path', 'text/plain; charset=utf-8'); }
 
     const full = path.resolve(PREVIEW_ROOT, rel);
-    let real;
-    try { real = fs.realpathSync(full); } catch (e) {
+    let real, rootReal, st;
+    try {
+      rootReal = await within(fsp.realpath(PREVIEW_ROOT), 4000, 'iCloud');
+      real = await within(fsp.realpath(full), 4000, 'iCloud');
+    } catch (e) {
       return send(res, 404, 'ありません', 'text/plain; charset=utf-8');
     }
     // シンボリックリンクを辿った先が外なら拒否する
-    if (real !== PREVIEW_ROOT && !real.startsWith(PREVIEW_ROOT + path.sep)) {
-      return send(res, 403, '制作物フォルダの外は開けません', 'text/plain; charset=utf-8');
+    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) {
+      return send(res, 403, '置き場の外は開けません', 'text/plain; charset=utf-8');
     }
-    let st;
-    try { st = fs.statSync(real); } catch (e) {
+    try { st = await within(fsp.stat(real), 4000, 'iCloud'); } catch (e) {
       return send(res, 404, 'ありません', 'text/plain; charset=utf-8');
     }
     if (st.isDirectory()) return send(res, 404, 'フォルダは開けません', 'text/plain; charset=utf-8');
@@ -427,9 +449,12 @@ const server = http.createServer(async (req, res) => {
 
     // 制作物の一覧（新しい順）
     if (p === '/api/files' && req.method === 'GET') {
-      const q = (url.searchParams.get('q') || '').toLowerCase();
-      let files = listPreviewables(400);
-      if (q) files = files.filter((f) => f.rel.toLowerCase().indexOf(q) >= 0);
+      let files;
+      try {
+        files = await within(listPreviewables(400), 4000, 'iCloud の読み込み');
+      } catch (e) {
+        return json(res, 504, { error: String(e.message) });
+      }
       return json(res, 200, { root: PREVIEW_ROOT, files: files.slice(0, 120) });
     }
 
