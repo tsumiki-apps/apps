@@ -20,11 +20,11 @@
     font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
     background:var(--paper); color:var(--ink);
     line-height:1.7; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
-    padding:calc(env(safe-area-inset-top) + 22px) 18px calc(env(safe-area-inset-bottom) + 40px);
+    padding:calc(env(safe-area-inset-top) + 14px) 18px calc(env(safe-area-inset-bottom) + 40px);
   }
   .wrap{max-width:520px; margin:0 auto;}
 
-  header{text-align:center; margin-bottom:22px;}
+  header{text-align:center; margin-bottom:16px;}
   h1{font-size:24px; font-weight:700; letter-spacing:.03em;}
   .lead{color:var(--sub); font-size:13px; margin-top:6px;}
 
@@ -42,7 +42,7 @@
   input[type=file]{display:none;}
 
   /* ---- プレビュー ---- */
-  .stage{display:flex; justify-content:center; margin-bottom:18px;}
+  .stage{display:flex; justify-content:center; margin-bottom:14px;}
   .frame{
     width:100%; background:#fff; overflow:hidden;
     box-shadow:0 10px 30px rgba(36,35,33,.13); border-radius:4px;
@@ -50,8 +50,9 @@
   .frame > *{width:100%; height:100%; object-fit:cover; display:block;}
 
   /* ---- 操作パネル ---- */
-  .panel{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 16px 18px;}
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px 16px;}
   .row{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px;}
+  .row.second{margin-top:10px;}
   .row .lb{font-size:13.5px; font-weight:700;}
   .row .val{font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums;}
   input[type=range]{
@@ -106,7 +107,7 @@
     <label class="pick" for="file">
       <span class="ic">🤍</span>
       写真か動画をえらぶ
-      <span class="sub">えらぶだけ。ふちの太さは後で変えられます</span>
+      <span class="sub">えらぶだけ。ふちの太さと角の丸みは後で変えられます</span>
     </label>
     <input type="file" id="file" accept="image/*,video/*">
     <p class="note">できあがりは、もとの写真・動画と同じ縦横比のまま（9:16はそのまま9:16）。保存ボタンで iPhone の「写真」に入れられます。</p>
@@ -125,6 +126,9 @@
         <button type="button" data-w="3.5">ふとめ</button>
         <button type="button" data-w="5.5">たっぷり</button>
       </div>
+
+      <div class="row second"><span class="lb">かどの丸み</span><span class="val" id="rv">6%</span></div>
+      <input type="range" id="r" min="0" max="24" step="1" value="6">
 
       <div class="actions">
         <button class="btn" id="save">写真に保存</button>
@@ -145,7 +149,7 @@
    ・中身は cover（はみ出した分だけごくわずかに切れる）でふちを均一に保つ
    ========================================================= */
 const el = id => document.getElementById(id);
-const KEY = 'shirofuchi_w';
+const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r';
 
 let kind = null;      // 'image' | 'video'
 let url  = null;      // objectURL
@@ -153,16 +157,25 @@ let media = null;     // <img> or <video>
 let srcW = 0, srcH = 0;
 let busy = false;
 
-/* ---------- ふちの太さ ---------- */
+/* ---------- ふちの太さ・かどの丸み ----------
+   太さ ＝ 出来上がりの「横幅」に対する％。かど ＝ 中身（写真部分）の「横幅」に対する％。
+   どちらも％なので、プレビューでも書き出しでも見た目が同じになる。 */
 let pct = parseFloat(localStorage.getItem(KEY) || '2');
 if(!(pct >= 0.5 && pct <= 8)) pct = 2;
+let rad = parseFloat(localStorage.getItem(KEY_R) || '6');
+if(!(rad >= 0 && rad <= 24)) rad = 6;
 el('w').value = pct;
+el('r').value = rad;
 
 function applyWidth(){
   el('wv').textContent = pct.toFixed(1) + '%';
+  el('rv').textContent = Math.round(rad) + '%';
   const f = el('frame');
   const px = f.offsetWidth * pct / 100;
   f.style.padding = px + 'px';
+  const inner = f.offsetWidth - px * 2;
+  const kid = f.firstElementChild;
+  if(kid) kid.style.borderRadius = (inner * rad / 100) + 'px';
   document.querySelectorAll('.steps button').forEach(b => {
     b.classList.toggle('on', Math.abs(parseFloat(b.dataset.w) - pct) < 0.05);
   });
@@ -170,6 +183,11 @@ function applyWidth(){
 el('w').addEventListener('input', e => {
   pct = parseFloat(e.target.value);
   localStorage.setItem(KEY, String(pct));
+  applyWidth();
+});
+el('r').addEventListener('input', e => {
+  rad = parseFloat(e.target.value);
+  localStorage.setItem(KEY_R, String(rad));
   applyWidth();
 });
 document.querySelectorAll('.steps button').forEach(b => {
@@ -231,7 +249,7 @@ function ready(){
   if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
   const f = el('frame');
   f.style.aspectRatio = srcW + ' / ' + srcH;
-  f.style.maxWidth = 'min(100%, calc(50vh * ' + (srcW / srcH) + '))';
+  f.style.maxWidth = 'min(100%, calc(46vh * ' + (srcW / srcH) + '))';
   f.appendChild(media);
   el('view1').classList.add('hide');
   el('view2').classList.remove('hide');
@@ -243,6 +261,20 @@ function ready(){
 }
 
 /* ---------- 描画（ふちをつける） ---------- */
+/* 角丸の四角い道すじを作る。古いSafari用に roundRect が無いときの手描きも用意 */
+function roundPath(ctx, x, y, w, h, r){
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  if(r === 0){ ctx.rect(x, y, w, h); return; }
+  if(typeof ctx.roundRect === 'function'){ ctx.roundRect(x, y, w, h, r); return; }
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x,     y + h, r);
+  ctx.arcTo(x,     y + h, x,     y,     r);
+  ctx.arcTo(x,     y,     x + w, y,     r);
+  ctx.closePath();
+}
+
 function paint(ctx, src, W, H){
   const b = Math.round(W * pct / 100);
   ctx.fillStyle = '#fff';
@@ -252,7 +284,8 @@ function paint(ctx, src, W, H){
   const s = Math.max(iw / sw, ih / sh);
   const dw = sw * s, dh = sh * s;
   ctx.save();
-  ctx.beginPath(); ctx.rect(b, b, iw, ih); ctx.clip();
+  roundPath(ctx, b, b, iw, ih, iw * rad / 100);
+  ctx.clip();
   ctx.drawImage(src, b + (iw - dw) / 2, b + (ih - dh) / 2, dw, dh);
   ctx.restore();
 }
