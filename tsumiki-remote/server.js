@@ -210,7 +210,7 @@ async function paneInfo(name) {
 // 何も書かれていなければ（素のシェル等）ホスト名やパスが入っているだけなので、
 // それらは題名とみなさずフォルダ名に落とし、最後はセッション名に戻す。
 const MACHINE = os.hostname();
-const SPINNER_RE = /^[⠀-⣿✻✽✶✳✢*·•\s]+/; // 先頭の点字スピナー等
+const SPINNER_RE = /^[⠀-⣿✻✽✶✳✢◐◑◒◓*·•\s]+/; // 先頭の点字スピナー等（◐◑◒◓＝回る半円）
 
 function titleOf(info, name) {
   let t = String(info.title || '').replace(SPINNER_RE, '').trim();
