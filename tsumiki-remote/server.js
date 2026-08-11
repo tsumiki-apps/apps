@@ -113,12 +113,33 @@ async function listSessions() {
   return { ok: true, sessions };
 }
 
-// そのセッションで動いているのが Claude Code か、素のシェルか。
+// そのセッションについて「何が動いているか」「題名」「どこ」を1回で取る。
 // ここが見えないと「AIに話しかけたつもりがシェルに打っていた」が起きる。
-async function currentCommand(name) {
-  if (!NAME_RE.test(name)) return '';
-  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
-  return r.ok ? r.out.trim() : '';
+async function paneInfo(name) {
+  const empty = { cmd: '', title: '', cwd: '' };
+  if (!NAME_RE.test(name)) return empty;
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':',
+    `#{pane_current_command}${SEP}#{pane_title}${SEP}#{pane_current_path}`]);
+  if (!r.ok) return empty;
+  const [cmd, title, cwd] = r.out.trim().split(SEP);
+  return { cmd: (cmd || '').trim(), title: (title || '').trim(), cwd: (cwd || '').trim() };
+}
+
+// 一覧に出す題名。work1 のような機械の名前ではどれがどれか分からないので、
+// Claude Code がターミナルの題名に書いている「いま何をしているか」を使う
+//   例: ⠐ つみきリモートの閉じるボタン機能を修正
+// 何も書かれていなければ（素のシェル等）ホスト名やパスが入っているだけなので、
+// それらは題名とみなさずフォルダ名に落とし、最後はセッション名に戻す。
+const MACHINE = os.hostname();
+const SPINNER_RE = /^[⠀-⣿✻✽✶✳✢*·•\s]+/; // 先頭の点字スピナー等
+
+function titleOf(info, name) {
+  let t = String(info.title || '').replace(SPINNER_RE, '').trim();
+  if (t === MACHINE || t === MACHINE.replace(/\.local$/, '') || /^\S+@\S+$/.test(t)) t = '';
+  if (/^[~/]/.test(t)) t = path.basename(t);
+  if (t === '~' || t === '/' || t === '.') t = '';
+  if (!t && info.cwd) t = path.basename(info.cwd);
+  return (t || name).slice(0, 60);
 }
 
 function kindOf(cmd) {
@@ -437,14 +458,22 @@ const server = http.createServer(async (req, res) => {
       for (const s of sessions.filter((x) => archived.indexOf(x.name) < 0)) {
         const text = (await captureScreen(s.name)) || '';
         const { status, quietMs } = judge(s.name, text);
-        const cmd = await currentCommand(s.name);
+        const info = await paneInfo(s.name);
         out.push({
           name: s.name, window: s.window, status, quietMs,
-          kind: kindOf(cmd), command: cmd,
+          kind: kindOf(info.cmd), command: info.cmd,
+          title: titleOf(info, s.name),
           preview: lastMeaningfulLine(text),
         });
       }
-      return json(res, 200, { sessions: out, archived, version: currentVersion(), now: Date.now() });
+      // 片付けたものも題名で返す（work3 だけでは何を戻すのか分からない）。
+      // 状態は見せない＝片付けたものは静かなまま、という約束は変えない。
+      const archivedOut = [];
+      for (const n of archived) archivedOut.push({ name: n, title: titleOf(await paneInfo(n), n) });
+
+      return json(res, 200, {
+        sessions: out, archived: archivedOut, version: currentVersion(), now: Date.now(),
+      });
     }
 
     // 1セッションの画面

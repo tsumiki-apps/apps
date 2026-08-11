@@ -26,10 +26,12 @@
   }
 
   header{display:flex;align-items:center;gap:8px;padding:10px 14px 8px;flex:0 0 auto;flex-wrap:nowrap}
-  header .title{font-weight:700;font-size:15px;letter-spacing:.02em;white-space:nowrap;
+  /* 一番上の一等地はアプリ名ではなく「いま見ている作業の題名」に使う。
+     アプリ名は毎回同じで情報量がない（どのアプリかはアイコンで分かっている） */
+  header .title{flex:1 1 auto;font-weight:700;font-size:15px;letter-spacing:.02em;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;min-width:0}
   header button{white-space:nowrap;flex:0 0 auto}
-  header .conn{margin-left:6px;font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px;
+  header .conn{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px;
     white-space:nowrap;flex:0 0 auto}
   /* 狭い画面では緑の点だけ残して文字は隠す（ボタンが折り返すのを防ぐ） */
   @media (max-width:430px){ header .conn .txt{display:none} }
@@ -44,7 +46,10 @@
     background:var(--panel);border:1px solid var(--line);text-align:left;color:var(--fg);
     font:inherit;font-size:12px;line-height:1.3;
   }
-  .tab .n{font-weight:700;font-size:13px}
+  /* タブは「どれに切り替えるか」の道しるべ。題名は頭だけ見えれば足りるので、
+     幅を止めて…で省く（全文はヘッダーに出る）。伸ばすと全部読めなくなる */
+  .tab .n{font-weight:700;font-size:13px;max-width:11em;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tab .st{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px;margin-top:3px}
   .tab .st::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--idle);flex:0 0 auto}
   .tab.busy .st::before{background:var(--busy);animation:pulse 1.2s ease-in-out infinite}
@@ -115,10 +120,12 @@
     border:1px solid var(--line);color:var(--fg);font-size:16px;font-family:var(--mono)}
   #gate button{padding:11px 22px;border-radius:12px;border:none;background:var(--accent);
     color:#06240f;font:inherit;font-weight:700;font-size:15px}
-  #menu{
-    margin-left:auto;padding:6px 10px;border-radius:8px;background:var(--panel);
+  #menu,#reload{
+    padding:6px 10px;border-radius:8px;background:var(--panel);
     border:1px solid var(--line);color:var(--dim);font:inherit;font-size:13px;line-height:1;
   }
+  #reload{font-size:15px}
+  #reload:active{color:var(--fg);border-color:#3b4250}
 
   #viewer{position:fixed;inset:0;z-index:40;background:var(--bg);
     display:flex;flex-direction:column;
@@ -164,9 +171,10 @@
 <body>
 
 <header>
-  <span class="title">つみきリモート</span>
-  <button id="menu" aria-label="メニュー">⋯</button>
+  <span class="title" id="title">つみきリモート</span>
   <span class="conn" id="conn"><span class="txt">接続待ち</span></span>
+  <button id="reload" aria-label="読み込み直す">↻</button>
+  <button id="menu" aria-label="メニュー">⋯</button>
 </header>
 
 <nav id="tabs"></nav>
@@ -237,6 +245,7 @@
   }
 
   var el = {
+    title: document.getElementById('title'),
     tabs: document.getElementById('tabs'),
     out: document.getElementById('out'),
     cmd: document.getElementById('cmd'),
@@ -297,7 +306,7 @@
       var b = document.createElement('button');
       b.className = 'tab ' + s.status;
       b.setAttribute('aria-selected', String(s.name === current));
-      b.innerHTML = '<div class="n">' + (i + 1) + '・' + escapeHtml(s.name) + '</div>' +
+      b.innerHTML = '<div class="n">' + (i + 1) + '・' + escapeHtml(s.title || s.name) + '</div>' +
                     '<div class="st">' + LABEL[s.status] + '</div>' +
                     '<div class="kind ' + s.kind + '">' + KIND[s.kind] + '</div>';
       b.onclick = function () { select(s.name); };
@@ -321,6 +330,9 @@
       ? 'コマンドを入力…（AIではありません）'
       : '指示を入力…';
     pickBtn.disabled = !cur;
+
+    // いま見ている作業の題名を一番上に出す（タブは頭だけなので、全文はここで読む）
+    el.title.textContent = cur ? (cur.title || cur.name) : 'つみきリモート';
   }
 
   function escapeHtml(s) {
@@ -592,8 +604,15 @@
     sheet.hidden = false;
   }
 
+  // 右上の ↻。版が変わったときは自動で読み込み直すが、
+  // 「反応がおかしい」と感じたときに自分で試せる場所が要る
+  document.getElementById('reload').onclick = function () {
+    try { localStorage.setItem(DRAFT, el.cmd.value || ''); } catch (e) {}
+    location.reload();
+  };
+
   document.getElementById('menu').onclick = function () {
-    openSheet('メニュー');
+    openSheet('メニュー ・ 版 ' + (seenVersion || '?'));
     sheetItem('制作物を見る', 'この画面の中でプレビューします',
       function () { openFileList(); });
     sheetItem('Mac の画面を消す', '蓋は開けたまま。作業は止まりません',
@@ -604,19 +623,14 @@
     if (archived.length) {
       sheetItem('片付けたものを戻す', archived.length + ' 件', function () { openArchived(); });
     }
-    // 逃げ道。版の切り替わりに気づけなかったときは、ここから手で読み込み直せる
-    sheetItem('読み込み直す', '画面を最新の版にします（版 ' + (seenVersion || '?') + '）',
-      function () {
-        try { localStorage.setItem(DRAFT, el.cmd.value || ''); } catch (e) {}
-        location.reload();
-      });
   };
 
   function openArchived() {
     openSheet('片付けたもの');
     if (!archived.length) { sheetItem('ありません', '', closeSheet); return; }
-    archived.forEach(function (name) {
-      sheetItem(name, '一覧に戻します', function () { closeSheet(); doUnarchive(name); });
+    archived.forEach(function (a) {
+      sheetItem(a.title || a.name, a.name + ' を一覧に戻します',
+        function () { closeSheet(); doUnarchive(a.name); });
     });
   }
 
