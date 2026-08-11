@@ -12,6 +12,7 @@ OUT_DIR = "icons"
 # app名: (絵文字, 上の色, 下の色)  ※縦グラデーション
 APPS = {
     "index":       ("🧱", "#3a93f0", "#0a63c9"),
+    "shirofuchi":  ("🤍", "#a9b4c4", "#5f6d82"),
     "cooking":     ("🍋", "#ffb86b", "#e8843b"),
     "credit":      ("💳", "#5a9bf0", "#2f6fd0"),
     "forecast":    ("📈", "#2fd6b0", "#00a98a"),

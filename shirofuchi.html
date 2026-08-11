@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-shirofuchi.png">
+<meta name="apple-mobile-web-app-title" content="しろふち">
+<title>しろふち — 写真と動画に、うすい白のふち</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3;
+    --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+    --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--paper); color:var(--ink);
+    line-height:1.7; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+    padding:calc(env(safe-area-inset-top) + 22px) 18px calc(env(safe-area-inset-bottom) + 40px);
+  }
+  .wrap{max-width:520px; margin:0 auto;}
+
+  header{text-align:center; margin-bottom:22px;}
+  h1{font-size:24px; font-weight:700; letter-spacing:.03em;}
+  .lead{color:var(--sub); font-size:13px; margin-top:6px;}
+
+  /* ---- さいしょの画面 ---- */
+  .pick{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    width:100%; min-height:210px; padding:26px 20px;
+    background:var(--card); border:1.5px dashed var(--line); border-radius:24px;
+    color:var(--ink); font-family:inherit; font-size:17px; font-weight:700;
+    cursor:pointer; transition:transform .15s ease, border-color .15s ease;
+  }
+  .pick:active{transform:scale(.98); border-color:var(--ghost);}
+  .pick .ic{font-size:38px; line-height:1;}
+  .pick .sub{font-size:12.5px; font-weight:400; color:var(--sub);}
+  input[type=file]{display:none;}
+
+  /* ---- プレビュー ---- */
+  .stage{display:flex; justify-content:center; margin-bottom:18px;}
+  .frame{
+    width:100%; background:#fff; overflow:hidden;
+    box-shadow:0 10px 30px rgba(36,35,33,.13); border-radius:4px;
+  }
+  .frame > *{width:100%; height:100%; object-fit:cover; display:block;}
+
+  /* ---- 操作パネル ---- */
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 16px 18px;}
+  .row{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px;}
+  .row .lb{font-size:13.5px; font-weight:700;}
+  .row .val{font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums;}
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height:34px; background:transparent; display:block;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:6px; border-radius:999px; background:var(--surface); border:1px solid var(--line);}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:28px; height:28px; border-radius:50%; margin-top:-12px;
+    background:#fff; border:1px solid var(--line); box-shadow:0 2px 6px rgba(36,35,33,.18);
+  }
+  .steps{display:flex; gap:8px; margin-top:4px;}
+  .steps button{
+    flex:1; font-family:inherit; font-size:12.5px; font-weight:500; color:var(--sub);
+    background:var(--surface); border:1px solid var(--line); border-radius:999px;
+    padding:7px 0; cursor:pointer; transition:transform .12s ease;
+  }
+  .steps button:active{transform:scale(.95);}
+  .steps button.on{background:var(--ink); border-color:var(--ink); color:#fff;}
+
+  .actions{display:flex; gap:10px; margin-top:16px;}
+  .btn{
+    flex:1; font-family:inherit; font-size:16px; font-weight:700; letter-spacing:.02em;
+    padding:15px 10px; border-radius:16px; border:1px solid var(--ink); background:var(--ink); color:#fff;
+    cursor:pointer; transition:transform .15s ease, opacity .15s ease;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn[disabled]{opacity:.55;}
+  .btn.ghost{flex:0 0 auto; background:var(--card); color:var(--sub); border-color:var(--line); font-weight:500; font-size:14px; padding:15px 18px;}
+
+  .note{font-size:12px; color:var(--sub); margin-top:12px; line-height:1.65;}
+  .bar{height:5px; border-radius:999px; background:var(--surface); overflow:hidden; margin-top:12px; display:none;}
+  .bar i{display:block; height:100%; width:0%; background:var(--ink); transition:width .2s linear;}
+
+  #toast{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 26px); transform:translateX(-50%) translateY(12px);
+    background:rgba(36,35,33,.94); color:#fff; font-size:13.5px; padding:11px 18px; border-radius:999px;
+    opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease; z-index:50; max-width:88vw; text-align:center;
+  }
+  #toast.on{opacity:1; transform:translateX(-50%) translateY(0);}
+  .hide{display:none !important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>しろふち</h1>
+    <p class="lead">写真と動画に、うすい白のふちをつけます</p>
+  </header>
+
+  <!-- さいしょ -->
+  <div id="view1">
+    <label class="pick" for="file">
+      <span class="ic">🤍</span>
+      写真か動画をえらぶ
+      <span class="sub">えらぶだけ。ふちの太さは後で変えられます</span>
+    </label>
+    <input type="file" id="file" accept="image/*,video/*">
+    <p class="note">できあがりは、もとの写真・動画と同じ縦横比のまま（9:16はそのまま9:16）。保存ボタンで iPhone の「写真」に入れられます。</p>
+  </div>
+
+  <!-- えらんだあと -->
+  <div id="view2" class="hide">
+    <div class="stage"><div class="frame" id="frame"></div></div>
+
+    <div class="panel">
+      <div class="row"><span class="lb">ふちの太さ</span><span class="val" id="wv">2.0%</span></div>
+      <input type="range" id="w" min="0.5" max="8" step="0.1" value="2">
+      <div class="steps">
+        <button type="button" data-w="1">ほそめ</button>
+        <button type="button" data-w="2">ふつう</button>
+        <button type="button" data-w="3.5">ふとめ</button>
+        <button type="button" data-w="5.5">たっぷり</button>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="save">写真に保存</button>
+        <button class="btn ghost" id="again">えらびなおす</button>
+      </div>
+      <div class="bar" id="bar"><i></i></div>
+      <p class="note" id="note"></p>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================
+   しろふち — 9:16の写真/動画に白いふちをつけて「写真」に保存する
+   ・出来上がりは元と同じ縦横比。ふちは4辺とも同じ太さ（％は横幅きじゅん）
+   ・中身は cover（はみ出した分だけごくわずかに切れる）でふちを均一に保つ
+   ========================================================= */
+const el = id => document.getElementById(id);
+const KEY = 'shirofuchi_w';
+
+let kind = null;      // 'image' | 'video'
+let url  = null;      // objectURL
+let media = null;     // <img> or <video>
+let srcW = 0, srcH = 0;
+let busy = false;
+
+/* ---------- ふちの太さ ---------- */
+let pct = parseFloat(localStorage.getItem(KEY) || '2');
+if(!(pct >= 0.5 && pct <= 8)) pct = 2;
+el('w').value = pct;
+
+function applyWidth(){
+  el('wv').textContent = pct.toFixed(1) + '%';
+  const f = el('frame');
+  const px = f.offsetWidth * pct / 100;
+  f.style.padding = px + 'px';
+  document.querySelectorAll('.steps button').forEach(b => {
+    b.classList.toggle('on', Math.abs(parseFloat(b.dataset.w) - pct) < 0.05);
+  });
+}
+el('w').addEventListener('input', e => {
+  pct = parseFloat(e.target.value);
+  localStorage.setItem(KEY, String(pct));
+  applyWidth();
+});
+document.querySelectorAll('.steps button').forEach(b => {
+  b.addEventListener('click', () => {
+    pct = parseFloat(b.dataset.w);
+    el('w').value = pct;
+    localStorage.setItem(KEY, String(pct));
+    applyWidth();
+  });
+});
+window.addEventListener('resize', applyWidth);
+
+/* ---------- ファイルをえらぶ ---------- */
+el('file').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if(f) load(f);
+  e.target.value = '';
+});
+el('again').addEventListener('click', () => { if(!busy) reset(); });
+
+function reset(){
+  if(url) URL.revokeObjectURL(url);
+  url = null; media = null; kind = null;
+  el('frame').innerHTML = '';
+  el('view2').classList.add('hide');
+  el('view1').classList.remove('hide');
+}
+
+function load(file){
+  if(url) URL.revokeObjectURL(url);
+  url = URL.createObjectURL(file);
+  kind = /^video\//.test(file.type) ? 'video' : 'image';
+  el('frame').innerHTML = '';
+  el('note').textContent = '';
+
+  if(kind === 'image'){
+    const img = new Image();
+    img.onload = () => {
+      srcW = img.naturalWidth; srcH = img.naturalHeight;
+      media = img; ready();
+    };
+    img.onerror = () => toast('この画像は読み込めませんでした');
+    img.src = url;
+  } else {
+    const v = document.createElement('video');
+    v.playsInline = true; v.setAttribute('playsinline','');
+    v.muted = true; v.loop = true; v.preload = 'auto';
+    v.onloadedmetadata = () => {
+      srcW = v.videoWidth; srcH = v.videoHeight;
+      media = v; ready();
+      v.play().catch(()=>{});
+    };
+    v.onerror = () => toast('この動画は読み込めませんでした');
+    v.src = url;
+  }
+}
+
+function ready(){
+  if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
+  const f = el('frame');
+  f.style.aspectRatio = srcW + ' / ' + srcH;
+  f.style.maxWidth = 'min(100%, calc(50vh * ' + (srcW / srcH) + '))';
+  f.appendChild(media);
+  el('view1').classList.add('hide');
+  el('view2').classList.remove('hide');
+  el('save').textContent = kind === 'video' ? '写真に保存（動画）' : '写真に保存';
+  if(kind === 'video'){
+    el('note').textContent = '動画は再生しながら書き出すので、動画の長さぶん時間がかかります。書き出し中は画面をつけたままにしてください。';
+  }
+  applyWidth();
+}
+
+/* ---------- 描画（ふちをつける） ---------- */
+function paint(ctx, src, W, H){
+  const b = Math.round(W * pct / 100);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  const iw = Math.max(1, W - b * 2), ih = Math.max(1, H - b * 2);
+  const sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight;
+  const s = Math.max(iw / sw, ih / sh);
+  const dw = sw * s, dh = sh * s;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(b, b, iw, ih); ctx.clip();
+  ctx.drawImage(src, b + (iw - dw) / 2, b + (ih - dh) / 2, dw, dh);
+  ctx.restore();
+}
+
+/* ---------- 保存 ---------- */
+el('save').addEventListener('click', () => { if(!busy) save(); });
+
+async function save(){
+  busy = true;
+  const btn = el('save');
+  const label = btn.textContent;
+  btn.disabled = true; el('again').disabled = true;
+  try{
+    if(kind === 'image'){
+      btn.textContent = 'つくっています…';
+      const blob = await makeImage();
+      await deliver(blob, stamp() + '.jpg', 'image/jpeg');
+      toast('保存しました');
+    } else {
+      const blob = await makeVideo(p => {
+        btn.textContent = 'つくっています… ' + Math.round(p * 100) + '%';
+        el('bar').querySelector('i').style.width = (p * 100) + '%';
+      });
+      const mp4 = blob.type.indexOf('mp4') >= 0;
+      await deliver(blob, stamp() + (mp4 ? '.mp4' : '.webm'), mp4 ? 'video/mp4' : 'video/webm');
+      toast(mp4 ? '保存しました' : 'この端末はmp4を作れないため、webmで書き出しました');
+    }
+  }catch(e){
+    toast((e && e.message) ? e.message : '保存できませんでした');
+  }
+  el('bar').style.display = 'none';
+  el('bar').querySelector('i').style.width = '0%';
+  btn.disabled = false; el('again').disabled = false;
+  btn.textContent = label;
+  busy = false;
+}
+
+function stamp(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return 'shirofuchi_' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+function makeImage(){
+  // iOS の canvas 上限（約16.7M画素）を超えないように縮小する
+  let W = srcW, H = srcH;
+  const maxPx = 16700000;
+  if(W * H > maxPx){ const k = Math.sqrt(maxPx / (W * H)); W = Math.round(W * k); H = Math.round(H * k); }
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  paint(c.getContext('2d'), media, W, H);
+  return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('画像を作れませんでした')), 'image/jpeg', 0.95));
+}
+
+function pickMime(){
+  if(typeof MediaRecorder === 'undefined') return null;
+  const list = ['video/mp4;codecs=avc1.640028','video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm'];
+  for(const m of list){ try{ if(MediaRecorder.isTypeSupported(m)) return m; }catch(e){} }
+  return null;
+}
+
+let audioCtx = null;
+
+function makeVideo(onProgress){
+  return new Promise(async (resolve, reject) => {
+    const v = media;
+    const mime = pickMime();
+    if(!mime || !HTMLCanvasElement.prototype.captureStream){
+      return reject(new Error('この端末では動画のふちづけに対応していません（写真は使えます）'));
+    }
+    // 書き出しサイズ（長辺1920まで・H.264のため偶数に）
+    let W = srcW, H = srcH;
+    const k = Math.min(1, 1920 / Math.max(W, H));
+    W = Math.max(2, Math.round(W * k / 2) * 2);
+    H = Math.max(2, Math.round(H * k / 2) * 2);
+
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    paint(ctx, v, W, H);
+
+    const stream = c.captureStream(30);
+
+    // 音を拾う（元の音声を録画ストリームに合流させる）
+    // createMediaElementSource は1つの<video>につき1回だけなので、要素そのものに覚えさせる
+    let audioTap = null;
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if(audioCtx.state === 'suspended') await audioCtx.resume();
+      if(!v.__srcNode) v.__srcNode = audioCtx.createMediaElementSource(v);
+      audioTap = audioCtx.createMediaStreamDestination();
+      v.__srcNode.connect(audioTap);
+      audioTap.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    }catch(e){ audioTap = null; /* 音が拾えなくても映像だけ書き出す */ }
+
+    let rec;
+    try{
+      rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond: 12000000, audioBitsPerSecond: 128000});
+    }catch(e){ return reject(new Error('この端末では動画を書き出せませんでした')); }
+
+    const chunks = [];
+    rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+
+    const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+    let stopped = false, raf = 0, timer = 0;
+    el('bar').style.display = 'block';
+
+    const finish = () => {
+      if(stopped) return; stopped = true;
+      cancelAnimationFrame(raf);
+      clearInterval(timer);
+      try{ rec.stop(); }catch(e){}
+    };
+    rec.onstop = () => {
+      stream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} });
+      if(audioTap){ try{ v.__srcNode.disconnect(audioTap); }catch(e){} }
+      v.pause();
+      v.muted = true; v.loop = true; v.currentTime = 0;
+      v.play().catch(()=>{});
+      const blob = new Blob(chunks, {type: chunks.length && chunks[0].type ? chunks[0].type : mime});
+      if(!blob.size) reject(new Error('動画を作れませんでした'));
+      else resolve(blob);
+    };
+
+    // 1フレームごとに白ふち付きで描き直す。
+    // requestVideoFrameCallback があれば動画のフレームに正確に合わせ、無ければ rAF。
+    // どちらも止まる環境の保険として、タイマーでも描き直す（＝進捗表示も兼ねる）
+    const tick = () => {
+      if(stopped) return;
+      paint(ctx, v, W, H);
+      raf = requestAnimationFrame(tick);
+    };
+    const startPainting = () => {
+      if(typeof v.requestVideoFrameCallback === 'function'){
+        const cb = () => { if(stopped) return; paint(ctx, v, W, H); v.requestVideoFrameCallback(cb); };
+        v.requestVideoFrameCallback(cb);
+      } else {
+        tick();
+      }
+      timer = setInterval(() => {
+        if(stopped) return;
+        paint(ctx, v, W, H);
+        if(dur) onProgress(Math.min(1, v.currentTime / dur));
+        if(v.ended) finish();
+      }, 120);
+    };
+
+    v.pause();
+    v.loop = false;
+    v.muted = false;
+    v.onended = finish;
+    try{ v.currentTime = 0; }catch(e){}
+    const start = () => {
+      rec.start(200);
+      startPainting();
+      v.play().then(() => {
+        // 保険：長さ＋2秒で必ず止める
+        if(dur) setTimeout(finish, (dur + 2) * 1000);
+      }).catch(err => {
+        stopped = true;
+        try{ rec.stop(); }catch(e){}
+        reject(new Error('動画を再生できませんでした'));
+      });
+    };
+    if(v.readyState >= 2) start();
+    else v.oncanplay = () => { v.oncanplay = null; start(); };
+  });
+}
+
+/* 共有シート（＝iPhoneの「写真に保存」が出るところ）へ渡す。だめならダウンロード */
+async function deliver(blob, name, type){
+  const file = new File([blob], name, {type});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file]});
+      return;
+    }catch(e){
+      if(e && e.name === 'AbortError') return;   // ユーザーが閉じただけ
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+}
+
+/* ---------- トースト ---------- */
+let tt = null;
+function toast(msg){
+  const t = el('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2600);
+}
+
+applyWidth();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
