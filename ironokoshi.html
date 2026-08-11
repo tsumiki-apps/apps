@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-ironokoshi.png">
+<meta name="apple-mobile-web-app-title" content="いろのこし">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>いろのこし</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3;
+    --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+    /* 画面のふちからの逃げ（iPhoneの丸い角・ホームバーにパネルがかからないように） */
+    --gutter:18px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--paper); color:var(--ink);
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+    height:100dvh; overflow:hidden; overscroll-behavior:none;
+    display:flex; flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + 16px)
+            calc(env(safe-area-inset-right) + var(--gutter))
+            calc(env(safe-area-inset-bottom) + 18px)
+            calc(env(safe-area-inset-left) + var(--gutter));
+  }
+  .screen{flex:1; min-height:0; display:flex; flex-direction:column; width:100%; max-width:520px; margin:0 auto;}
+  .hide{display:none !important;}
+
+  /* ---- えらぶ画面：写真をえらぶ、だけ ---- */
+  #view1{justify-content:center; align-items:center;}
+  .pick{width:min(72%,300px); aspect-ratio:1/1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:var(--card); border:1px solid var(--line); border-radius:26px;
+    transition:transform .16s ease, border-color .16s ease, background .16s ease;}
+  .pick:active{transform:scale(.965); border-color:var(--ghost); background:var(--surface);}
+  .pick svg{width:52%; height:auto; color:var(--ghost); transition:color .16s ease;}
+  .pick:active svg{color:var(--sub);}
+  input[type=file]{display:none;}
+
+  /* ---- プレビュー ---- */
+  .stage{flex:1; min-height:0; display:flex; align-items:center; justify-content:center;
+    padding-bottom:14px; position:relative;}
+  .holder{position:relative; line-height:0; box-shadow:0 12px 34px rgba(36,35,33,.15); border-radius:5px; overflow:hidden;}
+  canvas#cv{display:block; touch-action:none; border-radius:5px;}
+  /* いま拾っている場所の目印（スポイト） */
+  #ring{position:absolute; width:38px; height:38px; margin:-19px 0 0 -19px; border-radius:50%;
+    border:2px solid #fff; box-shadow:0 0 0 1.5px rgba(36,35,33,.55), 0 2px 8px rgba(0,0,0,.3);
+    pointer-events:none; opacity:0; transition:opacity .2s ease;}
+  #ring.on{opacity:1;}
+  /* ぬる／けす のときの筆の大きさ */
+  #brushRing{position:absolute; border-radius:50%; border:1.5px dashed rgba(255,255,255,.9);
+    box-shadow:0 0 0 1px rgba(36,35,33,.35); pointer-events:none; opacity:0; transition:opacity .25s ease;}
+  #brushRing.on{opacity:1;}
+
+  /* ---- 操作パネル ---- */
+  .panel{flex:0 0 auto; background:var(--card); border:1px solid var(--line);
+    border-radius:22px; padding:12px 14px 14px;}
+
+  /* モード切りかえ（スポイト／ぬる／けす） */
+  .segs{display:flex; gap:6px; background:var(--surface); border:1px solid var(--line);
+    border-radius:14px; padding:4px; margin-bottom:10px;}
+  .seg{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    font-family:inherit; font-size:11.5px; font-weight:500; color:var(--sub);
+    background:transparent; border:0; border-radius:11px; padding:7px 2px 6px; cursor:pointer;
+    transition:background .16s ease, color .16s ease;}
+  .seg svg{width:19px; height:19px; display:block;}
+  .seg.on{background:var(--card); color:var(--ink); box-shadow:0 1px 3px rgba(36,35,33,.12);}
+
+  .ctl{display:grid; grid-template-columns:24px 1fr 46px; align-items:center; gap:10px;}
+  .ctl .ic{width:24px; height:24px; color:var(--sub); display:block;}
+  .ctl .val{font-size:12px; color:var(--sub); text-align:right; font-variant-numeric:tabular-nums;}
+  /* 拾った色のまる（色の幅スライダーの左） */
+  .dot{width:22px; height:22px; border-radius:50%; background:var(--surface);
+    border:1px solid var(--line); box-shadow:inset 0 1px 2px rgba(36,35,33,.08);}
+  input[type=range]{-webkit-appearance:none; appearance:none; width:100%; height:36px; background:transparent; display:block;}
+  input[type=range]::-webkit-slider-runnable-track{height:6px; border-radius:999px; background:var(--surface); border:1px solid var(--line);}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:28px; height:28px; border-radius:50%;
+    margin-top:-12px; background:#fff; border:1px solid var(--line); box-shadow:0 2px 6px rgba(36,35,33,.18);}
+
+  .actions{display:flex; gap:10px; margin-top:8px;}
+  .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
+    font-family:inherit; font-size:16px; font-weight:700; letter-spacing:.02em;
+    padding:15px 10px; border-radius:16px; border:1px solid var(--ink); background:var(--ink); color:#fff;
+    cursor:pointer; transition:transform .15s ease, opacity .15s ease;}
+  .btn:active{transform:scale(.97);}
+  .btn[disabled]{opacity:.45;}
+  /* 書き出しずみ＝あとは押すだけの状態。もう一度おしてほしいので、そっと目立たせる */
+  .btn.ready{animation:ready 1.6s ease-in-out infinite;}
+  @keyframes ready{0%,100%{box-shadow:0 0 0 0 rgba(36,35,33,.26);} 50%{box-shadow:0 0 0 7px rgba(36,35,33,0);}}
+  .btn.ghost{flex:0 0 auto; width:54px; padding:15px 0; background:var(--card);
+    color:var(--sub); border-color:var(--line);}
+  .btn svg{width:22px; height:22px; display:block;}
+
+  #toast{position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 104px); transform:translateX(-50%) translateY(12px);
+    background:rgba(36,35,33,.94); color:#fff; font-size:13.5px; padding:11px 18px; border-radius:999px;
+    opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease; z-index:50; max-width:84vw; text-align:center;}
+  #toast.on{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<!-- えらぶ画面：写真だけ（iPhoneの写真アプリが写真に絞られた状態で開く） -->
+<div class="screen" id="view1">
+  <label class="pick" for="filePhoto">
+    <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
+         stroke-linecap="round" stroke-linejoin="round" aria-label="写真をえらぶ">
+      <rect x="18" y="18" width="64" height="64" rx="13"/>
+      <circle cx="37" cy="38" r="3.4"/>
+      <path d="M21,72 L41,50 L52,61 L79,34"/>
+    </svg>
+  </label>
+</div>
+<input type="file" id="filePhoto" accept="image/*">
+
+<!-- 編集画面：1画面ぴったり。スクロールなし -->
+<div class="screen hide" id="view2">
+  <div class="stage" id="stage">
+    <div class="holder" id="holder">
+      <canvas id="cv"></canvas>
+      <div id="ring"></div>
+      <div id="brushRing"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="segs" id="segs">
+      <button class="seg on" data-m="pick" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 3.5a2.6 2.6 0 0 1 3.7 3.7l-1.4 1.4 1 1-2.1 2.1-1-1-6.4 6.4-3.2.8.8-3.2 6.4-6.4-1-1 2.1-2.1 1 1z"/>
+        </svg><span>スポイト</span>
+      </button>
+      <button class="seg" data-m="paint" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.5 14.5 18.6 5.4a2 2 0 0 1 2.8 2.8L12.3 17"/>
+          <path d="M9.5 14.5c-1.6-.6-3.2.2-3.8 1.7-.5 1.2-1.3 1.9-2.4 2.2 1.3 1.5 3.2 2.2 4.9 1.7 1.9-.6 2.9-2.4 2.4-4.1"/>
+        </svg><span>ぬる</span>
+      </button>
+      <button class="seg" data-m="erase" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8.6 20H20"/>
+          <path d="M13.2 4.6 4.6 13.2a2 2 0 0 0 0 2.8l3.4 3.4a2 2 0 0 0 2.8 0l8.6-8.6a2 2 0 0 0 0-2.8L16 4.6a2 2 0 0 0-2.8 0z"/>
+          <path d="M9.4 8.4 15.6 14.6"/>
+        </svg><span>けす</span>
+      </button>
+    </div>
+
+    <!-- スポイトのとき -->
+    <div class="ctl" id="rowTol">
+      <span class="dot" id="chip" title="いま残している色"></span>
+      <input type="range" id="tol" min="4" max="90" step="1" value="24" aria-label="色の幅">
+      <span class="val" id="tolv">24°</span>
+    </div>
+    <div class="ctl" id="rowSat">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+        <circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8z" fill="currentColor" stroke="none"/>
+      </svg>
+      <input type="range" id="sat" min="3" max="60" step="1" value="14" aria-label="うすい色まで残す">
+      <span class="val" id="satv">14%</span>
+    </div>
+
+    <!-- ぬる／けす のとき -->
+    <div class="ctl hide" id="rowSize">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+        <circle cx="12" cy="12" r="7.6"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
+      </svg>
+      <input type="range" id="size" min="1" max="18" step="0.5" value="6" aria-label="筆のふとさ">
+      <span class="val" id="sizev">6%</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost" id="undo" aria-label="ひとつもどす" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 9h10.5a5 5 0 0 1 0 10H9"/><path d="M8 4.5 3.5 9 8 13.5"/></svg>
+      </button>
+      <button class="btn ghost" id="again" aria-label="写真をえらびなおす">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3.2" y="4.6" width="17.6" height="14.8" rx="3"/>
+          <circle cx="8.6" cy="9.8" r="1.3"/><path d="M3.6 16.6 9 11.6l3 2.9 4.4-4.2 4 3.9"/></svg>
+      </button>
+      <button class="btn" id="save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================
+   いろのこし — 写真を白黒にして、えらんだ色だけカラーで残す
+   ・スポイト：写真をタップ（なぞってもOK）＝その色を残す。色の幅・うすさで範囲を調整
+   ・ぬる／けす：はみ出しを指で手直し（ぬる＝色を戻す／けす＝白黒に戻す）
+   ・保存：iPhoneの共有シート経由で「写真に保存」。パソコンはダウンロード
+   ・実データの保存はしない（写真は端末の外に出ない。設定だけ localStorage に覚える）
+   ========================================================= */
+const el = id => document.getElementById(id);
+
+/* 編集中の作業サイズ（長辺）。プレビューとブラシはこの解像度で持ち、
+   保存のときだけ元の写真の大きさで作り直す（マスクは拡大して当てる） */
+const WORK_MAX  = 1200;
+const EXPORT_MAX_PX = 8000000;   // 保存時の上限（画素数）。iPhoneのメモリ対策
+const UNDO_MAX  = 6;
+
+let img = null, url = null;
+let W = 0, H = 0;                 // 作業サイズ
+let src = null;                   // 作業サイズの元画像 ImageData
+let out = null;                   // 表示用 ImageData（使い回し）
+let HUE = null, SAT = null, GRY = null;  // 画素ごとの 色あい / あざやかさ / 明るさ（先に計算しておく）
+let brush = null;                 // 手直し： +255=色を戻す / -255=白黒にする / 0=自動まかせ
+let undoStack = [];
+let ctx = null;
+
+let mode = 'pick';                // 'pick' | 'paint' | 'erase'
+let picked = null;                // {r,g,b,h,s}
+let tol = 24, satMin = 14, sizePct = 6;
+let busy = false;
+
+/* 設定だけ覚えておく（写真は保存しない） */
+const K = {tol:'ironokoshi_tol', sat:'ironokoshi_sat', size:'ironokoshi_size'};
+tol     = clampNum(parseFloat(localStorage.getItem(K.tol)),  4, 90, 24);
+satMin  = clampNum(parseFloat(localStorage.getItem(K.sat)),  3, 60, 14);
+sizePct = clampNum(parseFloat(localStorage.getItem(K.size)), 1, 18, 6);
+el('tol').value = tol; el('sat').value = satMin; el('size').value = sizePct;
+function clampNum(v, lo, hi, def){ return (v >= lo && v <= hi) ? v : def; }
+
+/* ---------- 写真をえらぶ ---------- */
+el('filePhoto').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if(f) load(f);
+  e.target.value = '';
+});
+el('again').addEventListener('click', () => { if(!busy) reset(); });
+
+function reset(){
+  if(url) URL.revokeObjectURL(url);
+  url = null; img = null; src = null; out = null;
+  HUE = SAT = GRY = null; brush = null; undoStack = [];
+  picked = null; setMode('pick'); disarmSave(); refreshUndo();
+  el('chip').style.background = '';
+  el('ring').classList.remove('on');
+  el('view2').classList.add('hide');
+  el('view1').classList.remove('hide');
+}
+
+function load(file){
+  if(url) URL.revokeObjectURL(url);
+  url = URL.createObjectURL(file);
+  const im = new Image();
+  im.onload = () => { img = im; prepare(); };
+  im.onerror = () => toast('この画像は読み込めませんでした');
+  im.src = url;
+}
+
+function prepare(){
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  if(!nw || !nh){ toast('サイズが読み取れませんでした'); return; }
+  const k = Math.min(1, WORK_MAX / Math.max(nw, nh));
+  W = Math.max(1, Math.round(nw * k));
+  H = Math.max(1, Math.round(nh * k));
+
+  const cv = el('cv');
+  cv.width = W; cv.height = H;
+  ctx = cv.getContext('2d', {willReadFrequently:true});
+  ctx.drawImage(img, 0, 0, W, H);
+  src = ctx.getImageData(0, 0, W, H);
+  out = ctx.createImageData(W, H);
+
+  const n = W * H;
+  HUE = new Uint8Array(n); SAT = new Uint8Array(n); GRY = new Uint8Array(n);
+  brush = new Int16Array(n);
+  undoStack = [];
+  analyze();
+
+  picked = null;
+  el('chip').style.background = '';
+  el('ring').classList.remove('on');
+  setMode('pick'); refreshUndo(); disarmSave();
+
+  el('view1').classList.add('hide');
+  el('view2').classList.remove('hide');
+  layout();
+  render();
+  toast('残したい色を、写真の上でタップ');
+}
+
+/* 画素ごとの 色あい(0-255で1周) / あざやかさ / 明るさ を先に出しておく。
+   これがあると、スライダーを動かしたときの描き直しがとても速くなる */
+function analyze(){
+  const d = src.data, n = W * H;
+  for(let i = 0, p = 0; i < n; i++, p += 4){
+    const r = d[p], g = d[p+1], b = d[p+2];
+    const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    const dl = mx - mn;
+    GRY[i] = (r * 77 + g * 150 + b * 29) >> 8;
+    SAT[i] = mx === 0 ? 0 : Math.round(dl * 255 / mx);
+    let h = 0;
+    if(dl !== 0){
+      if(mx === r)      h = ((g - b) / dl + (g < b ? 6 : 0));
+      else if(mx === g) h = ((b - r) / dl + 2);
+      else              h = ((r - g) / dl + 4);
+      h = h * (256 / 6);
+    }
+    HUE[i] = h & 255;
+  }
+}
+
+/* ---------- 大きさの計算（1画面に収める） ---------- */
+function layout(){
+  const st = el('stage'), ho = el('holder'), cv = el('cv');
+  if(!W || !st.clientWidth) return;
+  const ar = W / H;
+  const w = Math.floor(Math.min(st.clientWidth, st.clientHeight * ar));
+  ho.style.width  = w + 'px';
+  ho.style.height = Math.floor(w / ar) + 'px';
+  cv.style.width  = w + 'px';
+  cv.style.height = Math.floor(w / ar) + 'px';
+  updateBrushRing();
+}
+window.addEventListener('resize', layout);
+window.addEventListener('orientationchange', () => setTimeout(layout, 250));
+
+/* ---------- 白黒＋のこす色 を描く ---------- */
+/* 色の合う／合わないを 0〜255 のなじみ具合で返す（ふちがギザギザにならないよう少しぼかす）
+   t=色の幅 / to=ぼかしの外側。毎画素で計算しないよう、呼ぶ側で一度だけ出して渡す */
+function colorK(h, s, gy, t, to){
+  if(!picked) return 0;
+  if(gy < 18) return 0;                       // ほぼ真っ暗な所は色として扱わない
+  if(picked.s < 30) return 0;                 // 白・黒・グレーを拾ったときは「色あい」で測れない
+  if(s < satMin) return 0;
+  let d = Math.abs(h - picked.h);
+  if(d > 128) d = 256 - d;
+  if(d <= t)  return 255;
+  if(d >= to) return 0;
+  return Math.round(255 * (to - d) / (to - t));
+}
+function tolPair(){ const t = tol * 256 / 360; return [t, t * 1.35]; }
+
+/* 描き直しは1画面ぶんにまとめる（スライダーを動かしている間の描きすぎを防ぐ）。
+   ⚠️ 別のアプリに切り替えている間などは、この「次に描くよ」の予約(rAF)が
+   そのまま来ないことがある。予約の印だけ残ると画面が固まって見えるので、
+   150ミリ秒たっても来なければ、こちらから描き直す保険をかけておく */
+let raf = 0, rafT = 0;
+function render(){
+  if(raf) return;
+  raf = requestAnimationFrame(() => { raf = 0; clearTimeout(rafT); rafT = 0; draw(); });
+  clearTimeout(rafT);
+  rafT = setTimeout(() => {
+    rafT = 0;
+    if(raf){ cancelAnimationFrame(raf); raf = 0; draw(); }
+  }, 150);
+}
+function draw(){
+  const s = src.data, o = out.data, n = W * H;
+  const tp = tolPair(), t = tp[0], to = tp[1];
+  for(let i = 0, p = 0; i < n; i++, p += 4){
+    const gy = GRY[i];
+    let k = colorK(HUE[i], SAT[i], gy, t, to);
+    const bv = brush[i];
+    if(bv > 0)      k = k > bv ? k : bv;
+    else if(bv < 0){ k += bv; if(k < 0) k = 0; }
+    if(k === 255){
+      o[p] = s[p]; o[p+1] = s[p+1]; o[p+2] = s[p+2];
+    }else if(k === 0){
+      o[p] = gy; o[p+1] = gy; o[p+2] = gy;
+    }else{
+      o[p]   = gy + (s[p]   - gy) * k / 255;
+      o[p+1] = gy + (s[p+1] - gy) * k / 255;
+      o[p+2] = gy + (s[p+2] - gy) * k / 255;
+    }
+    o[p+3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+/* ---------- モード切りかえ ---------- */
+el('segs').addEventListener('click', e => {
+  const b = e.target.closest('.seg');
+  if(b) setMode(b.dataset.m);
+});
+function setMode(m){
+  mode = m;
+  [...el('segs').children].forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  const isPick = (m === 'pick');
+  el('rowTol').classList.toggle('hide', !isPick);
+  el('rowSat').classList.toggle('hide', !isPick);
+  el('rowSize').classList.toggle('hide', isPick);
+  layout();
+  if(isPick) el('brushRing').classList.remove('on');
+  else flashBrushRing();
+}
+
+/* ---------- スライダー ---------- */
+el('tol').addEventListener('input', e => {
+  tol = parseFloat(e.target.value); localStorage.setItem(K.tol, String(tol));
+  el('tolv').textContent = Math.round(tol) + '°';
+  if(pending) disarmSave();
+  render();
+});
+el('sat').addEventListener('input', e => {
+  satMin = parseFloat(e.target.value); localStorage.setItem(K.sat, String(satMin));
+  el('satv').textContent = Math.round(satMin) + '%';
+  if(pending) disarmSave();
+  render();
+});
+el('size').addEventListener('input', e => {
+  sizePct = parseFloat(e.target.value); localStorage.setItem(K.size, String(sizePct));
+  el('sizev').textContent = sizePct + '%';
+  flashBrushRing();
+});
+el('tolv').textContent  = Math.round(tol) + '°';
+el('satv').textContent  = Math.round(satMin) + '%';
+el('sizev').textContent = sizePct + '%';
+
+function radiusWork(){ return Math.max(2, W * sizePct / 100); }
+/* 筆の大きさは、真ん中に破線のまるを一瞬だけ出して見せる（出っぱなしだと写真の邪魔） */
+let brushRingT = 0;
+function flashBrushRing(){
+  updateBrushRing();
+  const br = el('brushRing');
+  br.classList.add('on');
+  clearTimeout(brushRingT);
+  brushRingT = setTimeout(() => br.classList.remove('on'), 1400);
+}
+function updateBrushRing(){
+  const br = el('brushRing'), cv = el('cv');
+  if(!W || !cv.clientWidth) return;
+  const d = radiusWork() * 2 * (cv.clientWidth / W);
+  br.style.width = d + 'px'; br.style.height = d + 'px';
+  br.style.left = '50%'; br.style.top = '50%';
+  br.style.marginLeft = (-d / 2) + 'px'; br.style.marginTop = (-d / 2) + 'px';
+}
+
+/* ---------- 写真の上の操作（スポイト／ぬる／けす） ---------- */
+const cv = el('cv');
+let drawing = false, lastX = 0, lastY = 0;
+
+cv.addEventListener('pointerdown', e => {
+  if(busy || !src) return;
+  try{ cv.setPointerCapture(e.pointerId); }catch(err){}   // 指が離れても線が続くように
+  const p = toWork(e);
+  if(mode === 'pick'){ drawing = true; pickAt(p); }
+  else{
+    el('brushRing').classList.remove('on');
+    pushUndo();
+    drawing = true; lastX = p.x; lastY = p.y;
+    stamp(p.x, p.y);
+    render();
+  }
+  e.preventDefault();
+});
+cv.addEventListener('pointermove', e => {
+  if(!drawing) return;
+  const p = toWork(e);
+  if(mode === 'pick'){ pickAt(p); }
+  else{
+    line(lastX, lastY, p.x, p.y);
+    lastX = p.x; lastY = p.y;
+    render();
+  }
+  e.preventDefault();
+});
+['pointerup','pointercancel'].forEach(t => cv.addEventListener(t, () => { drawing = false; }));
+
+function toWork(e){
+  const r = cv.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * W / r.width,
+    y: (e.clientY - r.top)  * H / r.height,
+    cx: e.clientX - r.left,
+    cy: e.clientY - r.top
+  };
+}
+
+function pickAt(p){
+  const x = Math.max(0, Math.min(W - 1, Math.round(p.x)));
+  const y = Math.max(0, Math.min(H - 1, Math.round(p.y)));
+  const i = y * W + x, q = i * 4, d = src.data;
+  picked = {r:d[q], g:d[q+1], b:d[q+2], h:HUE[i], s:SAT[i]};
+  el('chip').style.background = 'rgb(' + picked.r + ',' + picked.g + ',' + picked.b + ')';
+  const ring = el('ring');
+  ring.style.left = p.cx + 'px'; ring.style.top = p.cy + 'px';
+  ring.style.background = 'rgb(' + picked.r + ',' + picked.g + ',' + picked.b + ')';
+  ring.classList.add('on');
+  if(pending) disarmSave();
+  render();
+  // 白・黒・グレーには「色あい」が無いので、何も残せない。だまって全部白黒になると
+  // 壊れたように見えるため、その場で理由を伝える（連打しても出っぱなしにならない）
+  if(picked.s < 30 || GRY[i] < 18) toastOnce('ここは色みがうすいので残せません。はっきり色のある所を');
+}
+
+/* 筆あと。まん中はしっかり、ふちはやわらかく */
+function stamp(cx, cy){
+  const r = radiusWork(), r2 = r * r, soft = r * 0.62, soft2 = soft * soft;
+  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(W - 1, Math.ceil(cx + r));
+  const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(H - 1, Math.ceil(cy + r));
+  const sign = (mode === 'erase') ? -1 : 1;
+  for(let y = y0; y <= y1; y++){
+    const dy = y - cy, dy2 = dy * dy, row = y * W;
+    for(let x = x0; x <= x1; x++){
+      const dx = x - cx, d2 = dx * dx + dy2;
+      if(d2 > r2) continue;
+      let a = 255;
+      if(d2 > soft2){
+        const d = Math.sqrt(d2);
+        a = Math.round(255 * (r - d) / (r - soft));
+      }
+      const i = row + x, v = sign * a;
+      if(sign > 0){ if(brush[i] < v) brush[i] = v; }
+      else        { if(brush[i] > v) brush[i] = v; }
+    }
+  }
+}
+function line(x0, y0, x1, y1){
+  const dx = x1 - x0, dy = y1 - y0;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const step = Math.max(1, radiusWork() * 0.35);
+  const n = Math.ceil(dist / step);
+  for(let i = 1; i <= n; i++) stamp(x0 + dx * i / n, y0 + dy * i / n);
+  if(n === 0) stamp(x1, y1);
+}
+
+/* ---------- もどす（ぬる・けす の1操作ぶん） ---------- */
+function pushUndo(){
+  undoStack.push(new Int16Array(brush));
+  if(undoStack.length > UNDO_MAX) undoStack.shift();
+  refreshUndo();
+  if(pending) disarmSave();
+}
+el('undo').addEventListener('click', () => {
+  if(busy || !undoStack.length) return;
+  brush = undoStack.pop();
+  refreshUndo(); disarmSave(); render();
+});
+function refreshUndo(){ el('undo').disabled = undoStack.length === 0; }
+
+/* ---------- 保存 ---------- */
+el('save').addEventListener('click', () => { if(!busy) save(); });
+
+/* 書き出しずみで、まだ写真アプリに入れていないファイル。
+   ⚠️ navigator.share は「タップしてから数秒以内」でないと開けないので、
+   時間のかかる書き出しのあとは次のタップで共有シートを開く。 */
+let pending = null;
+
+async function save(){
+  const btn = el('save');
+  if(pending){ handOver(pending); return; }
+  if(!src){ return; }
+
+  busy = true;
+  btn.disabled = true; el('again').disabled = true; el('undo').disabled = true;
+  const label = btn.textContent;
+  btn.textContent = '…';
+  try{
+    const blob = await makeImage();
+    handOver(new File([blob], stamp_name() + '.jpg', {type:'image/jpeg'}));
+  }catch(e){
+    toast((e && e.message) ? e.message : '保存できませんでした');
+    btn.textContent = label;
+  }
+  btn.disabled = false; el('again').disabled = false; refreshUndo();
+  busy = false;
+}
+
+function stamp_name(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return 'ironokoshi_' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+/* 保存用に、元の写真の大きさでもう一度作り直す。
+   手直し（ぬる／けす）は作業サイズで持っているので、なめらかに拡大して当てる */
+function makeImage(){
+  let EW = img.naturalWidth, EH = img.naturalHeight;
+  if(EW * EH > EXPORT_MAX_PX){
+    const k = Math.sqrt(EXPORT_MAX_PX / (EW * EH));
+    EW = Math.round(EW * k); EH = Math.round(EH * k);
+  }
+  const c = document.createElement('canvas');
+  c.width = EW; c.height = EH;
+  const cx2 = c.getContext('2d');
+  cx2.drawImage(img, 0, 0, EW, EH);
+  const im = cx2.getImageData(0, 0, EW, EH);
+  const d = im.data;
+  const sx = W / EW, sy = H / EH;
+  const tp = tolPair(), t = tp[0], to = tp[1];
+
+  for(let y = 0; y < EH; y++){
+    // 手直しマスクを縦横になめらかに読む（バイリニア＝まわり4点の混ぜ合わせ）
+    const fy = Math.min(H - 1, y * sy), y0 = Math.floor(fy), y1 = Math.min(H - 1, y0 + 1), ty = fy - y0;
+    const r0 = y0 * W, r1 = y1 * W;
+    for(let x = 0, p = y * EW * 4; x < EW; x++, p += 4){
+      const fx = Math.min(W - 1, x * sx), x0 = Math.floor(fx), x1 = Math.min(W - 1, x0 + 1), tx = fx - x0;
+      const b00 = brush[r0 + x0], b10 = brush[r0 + x1], b01 = brush[r1 + x0], b11 = brush[r1 + x1];
+      const bv = (b00 * (1 - tx) + b10 * tx) * (1 - ty) + (b01 * (1 - tx) + b11 * tx) * ty;
+
+      const r = d[p], g = d[p+1], b = d[p+2];
+      const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+      const dl = mx - mn;
+      const gy = (r * 77 + g * 150 + b * 29) >> 8;
+      const st = mx === 0 ? 0 : Math.round(dl * 255 / mx);
+      let h = 0;
+      if(dl !== 0){
+        if(mx === r)      h = ((g - b) / dl + (g < b ? 6 : 0));
+        else if(mx === g) h = ((b - r) / dl + 2);
+        else              h = ((r - g) / dl + 4);
+        h = h * (256 / 6);
+      }
+      let k = colorK(h & 255, st, gy, t, to);
+      if(bv > 0)      k = k > bv ? k : bv;
+      else if(bv < 0){ k += bv; if(k < 0) k = 0; }
+      if(k >= 255) continue;                       // 元の色のまま
+      if(k <= 0){ d[p] = gy; d[p+1] = gy; d[p+2] = gy; continue; }
+      d[p]   = gy + (r - gy) * k / 255;
+      d[p+1] = gy + (g - gy) * k / 255;
+      d[p+2] = gy + (b - gy) * k / 255;
+    }
+  }
+  cx2.putImageData(im, 0, 0);
+  return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('画像を作れませんでした')), 'image/jpeg', 0.95));
+}
+
+/* 共有シート（＝iPhoneの「写真に保存」が出るところ）へ渡す。
+   await を挟まずに呼ぶこと。開けなかったら次のタップ用に取っておく。 */
+function armSave(file){
+  pending = file;
+  const btn = el('save');
+  btn.textContent = '写真に保存';
+  btn.classList.add('ready');
+}
+function disarmSave(){
+  pending = null;
+  const btn = el('save');
+  btn.textContent = '保存';
+  btn.classList.remove('ready');
+}
+
+function handOver(file){
+  const tries = (file.__tries || 0) + 1;
+  file.__tries = tries;
+
+  let can = false;
+  try{ can = !!(navigator.canShare && navigator.canShare({files:[file]})); }catch(e){}
+  if(can){
+    const failed = e => {
+      if(e && e.name === 'AbortError'){ armSave(file); return; }   // 共有シートを閉じただけ
+      if(tries >= 2){ download(file); return; }
+      armSave(file);
+      toast('できました。もう一度おしてください');
+    };
+    try{
+      navigator.share({files:[file]}).then(() => { disarmSave(); toast('保存しました'); }).catch(failed);
+      return;
+    }catch(e){ failed(e); return; }
+  }
+  download(file);
+}
+
+function download(file){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+  disarmSave();
+  toast('保存しました');
+}
+
+/* ---------- トースト ---------- */
+let tt = null;
+function toast(msg){
+  const t = el('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2600);
+}
+/* 同じ知らせを続けて出さない（なぞっている間ずっと出るのを防ぐ） */
+let lastOnce = 0;
+function toastOnce(msg){
+  const now = Date.now();
+  if(now - lastOnce < 3000) return;
+  lastOnce = now; toast(msg);
+}
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>

@@ -26,6 +26,7 @@ TITLES = {
     "akima":       "あきま",
     "seikyu":      "請求書",
     "shirofuchi":  "しろふち",
+    "ironokoshi":  "いろのこし",
 }
 
 VIEWPORT_RE = re.compile(r'(<meta\s+name="viewport"[^>]*>)', re.IGNORECASE)
