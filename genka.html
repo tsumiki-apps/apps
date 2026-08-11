@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="げんか">
 <meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131109" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0f0d07" media="(prefers-color-scheme: dark)">
 <title>げんか</title>
 <style>
   :root{
@@ -16,16 +16,19 @@
     --ink-mid:#5b554a; --ink-soft:#8f8877; --line:#e2ded4; --line-2:#d8d3c7;
     --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
     --good:#4c7a51; --good-wash:#dde9dd; --warn:#b0522a; --warn-wash:#f2e0d4;
+    /* 費目の色＝和の顔料（黄土・弁柄・藍・苔・鳶・紫紺）。順番に割り当てる */
+    --c1:#b07a2c; --c2:#a3523c; --c3:#4c6478; --c4:#63764e; --c5:#8a6a4e; --c6:#6a5878;
     --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
     --serif:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Songti SC",serif;
     --sans:"Hiragino Kaku Gothic ProN","Yu Gothic",YuGothic,Meiryo,sans-serif;
   }
   @media (prefers-color-scheme: dark){
     :root{
-      --paper:#131109; --surface:#1d1a12; --surface-2:#26221a; --ink:#efe8da;
-      --ink-mid:#a89e8b; --ink-soft:#7d7566; --line:#2f2b21; --line-2:#3a352a;
+      --paper:#0f0d07; --surface:#211d14; --surface-2:#2b2619; --ink:#efe8da;
+      --ink-mid:#a89e8b; --ink-soft:#847c6c; --line:#36301f; --line-2:#443d2b;
       --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
       --good:#7fae82; --good-wash:#23301f; --warn:#d9825a; --warn-wash:#39251a;
+      --c1:#d5a055; --c2:#cb7b62; --c3:#7d9bb4; --c4:#94ab79; --c5:#c0a180; --c6:#a08cb2;
       --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
     }
   }
@@ -33,12 +36,14 @@
     --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5; --ink:#1d1a15;
     --ink-mid:#5b554a; --ink-soft:#8f8877; --line:#e2ded4; --line-2:#d8d3c7;
     --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
+    --c1:#b07a2c; --c2:#a3523c; --c3:#4c6478; --c4:#63764e; --c5:#8a6a4e; --c6:#6a5878;
     --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
   }
   :root[data-theme="dark"]{
-    --paper:#131109; --surface:#1d1a12; --surface-2:#26221a; --ink:#efe8da;
-    --ink-mid:#a89e8b; --ink-soft:#7d7566; --line:#2f2b21; --line-2:#3a352a;
+    --paper:#0f0d07; --surface:#211d14; --surface-2:#2b2619; --ink:#efe8da;
+    --ink-mid:#a89e8b; --ink-soft:#847c6c; --line:#36301f; --line-2:#443d2b;
     --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+    --c1:#d5a055; --c2:#cb7b62; --c3:#7d9bb4; --c4:#94ab79; --c5:#c0a180; --c6:#a08cb2;
     --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
   }
   *{box-sizing:border-box;}
@@ -66,6 +71,17 @@
   }
   .brand h1{font-family:var(--serif); font-weight:600; font-size:1.1rem; margin:0; letter-spacing:.02em; white-space:nowrap;}
   .spacer{flex:1;}
+  /* 合計が画面の外に出たら、ここに小さく出る */
+  .mini{
+    font-family:var(--serif); font-size:1.02rem; color:var(--ink); flex:none;
+    opacity:0; transform:translateY(5px); transition:opacity .2s ease, transform .2s ease;
+    white-space:nowrap; pointer-events:none;
+  }
+  .mini.show{opacity:1; transform:none;}
+  .mini u{
+    font-family:var(--sans); font-size:.68rem; font-weight:700; color:var(--ink-soft);
+    text-decoration:none; margin-right:5px; letter-spacing:.04em;
+  }
   .sync-dot{width:8px; height:8px; border-radius:50%; background:var(--ink-soft); flex:none;}
   .sync-dot.ok{background:var(--good);} .sync-dot.off{background:var(--accent);}
 
@@ -75,65 +91,107 @@
   .label{font-size:.74rem; font-weight:700; letter-spacing:.06em; color:var(--accent-2);}
   @media (min-width:1080px){ main{max-width:860px;} }
 
-  /* ---------- 月／年の切り替え ---------- */
-  .viewseg{display:flex; gap:0; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:3px;}
-  .viewseg button{
-    flex:1; border:none; background:transparent; border-radius:9px; padding:9px 6px;
-    font-family:var(--sans); font-size:.9rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+  /* ---------- 結果カード（答えの台紙） ---------- */
+  .hero{padding:16px 19px 19px;}
+  .hero-h{display:flex; align-items:center; gap:10px;}
+  .hero-h .cap{font-size:.78rem; font-weight:700; color:var(--ink-soft); letter-spacing:.04em; min-width:0;}
+
+  /* 月／年の切り替え（主役の数字より控えめに） */
+  .viewseg{
+    margin-left:auto; flex:none; display:flex; background:var(--surface-2);
+    border:1px solid var(--line); border-radius:999px; padding:2px;
   }
-  .viewseg button.on{background:var(--surface); color:var(--accent-2); box-shadow:0 1px 3px rgba(40,32,18,.1);}
+  .viewseg button{
+    border:none; background:transparent; border-radius:999px; padding:6px 13px;
+    font-family:var(--sans); font-size:.82rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+  }
+  .viewseg button.on{background:var(--surface); color:var(--accent-2); box-shadow:0 1px 2px rgba(40,32,18,.10);}
+  .viewseg button:active, .useg button:active{transform:scale(.96);}
 
   /* ---------- 合計 ---------- */
-  .total{text-align:center; margin:16px 0 4px;}
-  .total .cap{font-size:.78rem; color:var(--ink-soft); font-weight:700;}
+  .total{margin:6px 0 0;}
   .total .big{
-    display:block; font-family:var(--serif); color:var(--ink); line-height:1.15; margin-top:4px;
-    font-size:clamp(1.9rem, 11vw, 2.9rem); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    display:block; font-family:var(--serif); color:var(--ink); line-height:1.1;
+    font-size:clamp(2.1rem, 12.5vw, 3.2rem); letter-spacing:-.01em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .total .sub{font-size:.83rem; color:var(--ink-soft); margin-top:6px;}
+  .total .sub{font-size:.83rem; color:var(--ink-soft); margin-top:5px;}
+  .total .big.zero{color:var(--line-2);}   /* まだ答えではない、と分かる薄さ */
+  @keyframes bump{from{opacity:.45; transform:translateY(2px);} to{opacity:1; transform:none;}}
+  .total .big.bump{animation:bump .26s ease-out;}
+  @media (prefers-reduced-motion: reduce){ .total .big.bump{animation:none;} }
+  .bd-empty{
+    margin:15px 0 0; padding-top:14px; border-top:1px solid var(--line);
+    font-size:.82rem; color:var(--ink-soft); line-height:1.6;
+  }
 
-  /* ---------- 内訳 ---------- */
-  .bd{display:grid; gap:10px; margin-top:16px;}
-  .bd-row .t{display:flex; align-items:baseline; gap:8px; font-size:.86rem;}
-  .bd-row .t .n{font-weight:700;}
-  .bd-row .t .p{margin-left:auto; color:var(--ink-soft); font-size:.78rem; flex:none;}
-  .bd-row .t .v{font-family:var(--serif); font-size:1rem; flex:none;}
-  .bar{height:7px; border-radius:99px; background:var(--surface-2); margin-top:5px; overflow:hidden;}
-  .bar i{display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--accent),var(--accent-2));}
+  /* ---------- 内訳（帯グラフ＋凡例） ---------- */
+  .band{
+    display:flex; height:11px; border-radius:999px; overflow:hidden;
+    background:var(--surface-2); margin:15px 0 3px;
+  }
+  .band i{display:block; height:100%;}
+  .band i + i{box-shadow:inset 1.5px 0 0 var(--surface);}   /* 隣り合う色の境目 */
+  .lg{display:grid;}
+  .lg-row{
+    display:flex; align-items:center; gap:9px;
+    padding:8px 0; border-top:1px solid var(--line);
+  }
+  .lg-row .dot{width:9px; height:9px; border-radius:3px; flex:none;}
+  .lg-row .n{
+    font-size:.87rem; font-weight:600; min-width:0; color:var(--ink-mid);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .lg-row .p{margin-left:auto; font-size:.76rem; color:var(--ink-soft); flex:none;}
+  .lg-row .v{font-family:var(--serif); font-size:1rem; flex:none; text-align:right;}
 
   /* ---------- 入力 ---------- */
-  .cat-h{display:flex; align-items:center; gap:8px; margin:0 0 11px;}
-  .cat-h h2{font-family:var(--serif); font-size:1.02rem; font-weight:600; margin:0; letter-spacing:.02em;}
-  .cat-h .csum{margin-left:auto; font-family:var(--serif); font-size:.95rem; color:var(--ink-mid);}
-  .items{display:grid; gap:9px;}
-  .item{background:var(--surface-2); border:1px solid var(--line); border-radius:13px; padding:10px 11px; display:grid; gap:8px;}
-  .item .r1{display:flex; align-items:center; gap:8px;}
+  .cat-h{display:flex; align-items:center; gap:9px; margin:0 0 11px; min-width:0;}
+  .cat-h h2{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cat-h .dot{width:9px; height:9px; border-radius:3px; flex:none;}
+  .cat-h h2{font-family:var(--serif); font-size:1.16rem; font-weight:600; margin:0; letter-spacing:.03em;}
+  .cat-h .csum{margin-left:auto; font-family:var(--serif); font-size:.88rem; color:var(--ink-soft);}
+  .cat-h .csum.zero{color:var(--line-2);}
+  /* 明細は「箱」ではなく罫線で区切る。カード＞箱＞入力欄 の三重を二重に落とす */
+  .items{display:grid;}
+  .item{padding:11px 0 12px; border-top:1px solid var(--line); display:grid; gap:8px;}
+  .items > .item:first-child{border-top:none; padding-top:1px;}
+  .item .r1{display:flex; align-items:center; gap:6px; min-width:0;}
   .item .nm{
     flex:1; min-width:0; border:none; background:transparent; padding:2px 0;
-    font-family:var(--sans); font-size:.92rem; font-weight:700; color:var(--ink);
+    font-family:var(--sans); font-size:16px; font-weight:600; color:var(--ink-mid);
   }
-  .item .nm:focus{outline:none; border-bottom:1.5px solid var(--accent);}
+  .item .nm::placeholder{font-weight:400;}
+  .item .nm:focus{outline:none; box-shadow:0 1.5px 0 var(--accent);}
   .item .del{
-    flex:none; width:26px; height:26px; border:1px solid var(--line-2); background:var(--surface);
-    border-radius:8px; color:var(--ink-soft); font-size:1rem; line-height:1; cursor:pointer; padding:0;
+    flex:none; width:40px; height:38px; margin:-4px -10px -4px 0; border:none; background:none;
+    color:var(--ink-soft); font-size:1.05rem; line-height:1; cursor:pointer; padding:0; opacity:.5;
   }
-  .item .del:active{transform:scale(.92);}
-  .item .r2{display:flex; align-items:center; gap:8px;}
-  .item .yen{flex:none; color:var(--ink-soft); font-size:.95rem;}
-  .item .amt{
-    flex:1; min-width:0; border:1.5px solid var(--line); background:var(--surface); border-radius:10px;
-    padding:9px 11px; font-size:16px; color:var(--ink); font-family:var(--sans);
+  .item .del:active{transform:scale(.88); opacity:1;}
+  .item .r2{display:flex; align-items:center; gap:8px; min-width:0;}
+  /* ¥ は欄の外に浮かせず、欄の一部にする */
+  .fld{
+    flex:1; min-width:0; display:flex; align-items:center; gap:6px;
+    background:var(--surface-2); border:1.5px solid var(--line); border-radius:10px; padding:0 11px;
+  }
+  .fld:focus-within{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-wash);}
+  .fld .yen{flex:none; color:var(--ink-soft); font-size:.95rem;}
+  .fld .amt{
+    flex:1; min-width:0; border:none; background:transparent; outline:none;
+    padding:10px 0; font-size:16px; color:var(--ink); font-family:var(--sans);
     text-align:right; font-variant-numeric:tabular-nums;
   }
-  .item .amt:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
-  .useg{flex:none; display:flex; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:2px;}
+  .useg{flex:none; display:flex; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:2px;}
   .useg button{
-    border:none; background:transparent; border-radius:8px; padding:6px 10px;
-    font-family:var(--sans); font-size:.8rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+    border:none; background:transparent; border-radius:8px; padding:7px 10px;
+    font-family:var(--sans); font-size:.79rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
   }
-  .useg button.on{background:var(--accent-wash); color:var(--accent-2);}
+  .useg button.on{
+    background:var(--surface); color:var(--accent-2);
+    box-shadow:0 1px 2px rgba(40,32,18,.10), inset 0 0 0 1px var(--line-2);
+  }
   .additem{
-    margin-top:9px; width:100%; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
+    margin-top:12px; width:100%; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
     padding:10px; font-family:var(--sans); font-size:.85rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
   }
   .additem:active{background:var(--surface-2);}
@@ -145,6 +203,12 @@
   .btn:active{transform:scale(.98);}
   .btn.ghost{background:none; color:var(--ink-mid); border:1.5px solid var(--line-2);}
   .note{font-size:.78rem; color:var(--ink-soft); margin:11px 2px 0; line-height:1.55;}
+  .linkbtn{
+    display:block; margin:-3px auto 0; padding:11px 16px; background:none; border:none;
+    font-family:var(--sans); font-size:.8rem; font-weight:700; color:var(--ink-soft);
+    text-decoration:underline; text-underline-offset:3px; cursor:pointer;
+  }
+  .linkbtn:active{color:var(--warn);}
 
   .toast{
     position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 22px); transform:translate(-50%,14px);
@@ -200,20 +264,23 @@
 <div class="topbar">
   <div class="brand"><span class="cube"></span><h1>げんか</h1></div>
   <span class="spacer"></span>
+  <span class="mini tnum" id="miniTot" aria-hidden="true"></span>
   <span class="sync-dot" id="syncDot" title="この端末に保存"></span>
 </div>
 
 <main>
 
   <!-- 結果 -->
-  <section class="card">
-    <div class="viewseg" id="viewSeg">
-      <button data-v="m" class="on">月ごと</button>
-      <button data-v="y">年ごと</button>
+  <section class="card hero">
+    <div class="hero-h">
+      <span class="cap" id="totCap">1ヶ月あたりの原価</span>
+      <div class="viewseg" id="viewSeg">
+        <button data-v="m" class="on">月</button>
+        <button data-v="y">年</button>
+      </div>
     </div>
 
     <div class="total">
-      <span class="cap" id="totCap">1ヶ月あたりの原価</span>
       <b class="big tnum" id="totBig">¥0</b>
       <div class="sub" id="totSub">1年あたり ¥0</div>
     </div>
@@ -227,12 +294,14 @@
   <!-- 書き出し -->
   <section class="card">
     <div class="label">書き出し</div>
-    <p class="note" style="margin-top:6px;">
-      印刷の画面がひらきます。プリンタの代わりに「PDFとして保存」（iPhoneは共有 → ファイルに保存）を選ぶとPDFになります。
+    <button class="btn" id="btnPdf" style="margin-top:11px;">PDFにする</button>
+    <p class="note">
+      印刷の画面がひらきます。プリンタの代わりに「PDFとして保存」（iPhoneは共有 → ファイルに保存）を選ぶと、原価表がPDFになります。
     </p>
-    <button class="btn" id="btnPdf" style="margin-top:12px;">PDFにする</button>
-    <button class="btn ghost" id="btnReset" style="margin-top:9px;">ぜんぶ空にする</button>
   </section>
+
+  <!-- 取り返しのつかない操作は、カードの外に小さく置く -->
+  <button class="linkbtn" id="btnReset">ぜんぶ空にする</button>
 
 </main>
 
@@ -494,6 +563,19 @@ const allY = () => S.cats.reduce((s,c) => s + catY(c), 0);
 
 const yen = n => '¥' + Math.round(n).toLocaleString('ja-JP');
 
+/* 費目の色。帯グラフ・凡例・入力カードの見出しで同じ色を使い、目で結べるようにする */
+const catColor = ci => 'var(--c' + (ci % 6 + 1) + ')';
+
+/* 入力欄の表示用。保存するのは rawAmt の結果＝数字だけの文字列 */
+const rawAmt = v => String(v == null ? '' : v).replace(/[^\d.]/g, '');
+function fmtAmt(v){
+  const s = rawAmt(v);
+  if(s === '') return '';
+  const [i, d] = s.split('.');
+  const head = i === '' ? '0' : Number(i).toLocaleString('ja-JP');
+  return d === undefined ? head : head + '.' + d;
+}
+
 /* ===================== 入力欄（追加・削除のときだけ描き直す） ===================== */
 function renderCats(){
   const wrap = document.getElementById('cats');
@@ -503,7 +585,8 @@ function renderCats(){
     const sec = document.createElement('section');
     sec.className = 'card';
     sec.innerHTML =
-      '<div class="cat-h"><h2></h2><span class="csum tnum" data-csum="' + ci + '"></span></div>' +
+      '<div class="cat-h"><span class="dot" style="background:' + catColor(ci) + '"></span>' +
+      '<h2></h2><span class="csum tnum" data-csum="' + ci + '"></span></div>' +
       '<div class="items"></div>' +
       '<button class="additem">＋ 項目を追加</button>';
 
@@ -530,8 +613,8 @@ function itemEl(cat, it){
       '<button class="del" aria-label="この項目を消す">×</button>' +
     '</div>' +
     '<div class="r2">' +
-      '<span class="yen">¥</span>' +
-      '<input class="amt" type="text" inputmode="decimal" placeholder="0">' +
+      '<div class="fld"><span class="yen">¥</span>' +
+        '<input class="amt" type="text" inputmode="decimal" placeholder="0"></div>' +
       '<div class="useg">' +
         '<button data-u="m">月額</button><button data-u="y">年額</button>' +
       '</div>' +
@@ -540,7 +623,7 @@ function itemEl(cat, it){
   const nm  = el.querySelector('.nm');
   const amt = el.querySelector('.amt');
   nm.value  = it.name;
-  amt.value = it.amt;
+  amt.value = fmtAmt(it.amt);
 
   const paintUnit = () => el.querySelectorAll('.useg button').forEach(b => {
     b.classList.toggle('on', b.dataset.u === it.unit);
@@ -548,7 +631,12 @@ function itemEl(cat, it){
   paintUnit();
 
   nm.addEventListener('input',  () => { it.name = nm.value; it.upd = nowISO(); save(); buildSheet(); });
-  amt.addEventListener('input', () => { it.amt = amt.value; it.upd = nowISO(); save(); recalc(); });
+
+  /* 金額は「生の数字」で持ち、手を離したときだけ 3桁区切りにして見せる。
+     入力中に整形するとカーソルが末尾に飛ぶので、そこはさわらない。 */
+  amt.addEventListener('input', () => { it.amt = rawAmt(amt.value); it.upd = nowISO(); save(); recalc(); });
+  amt.addEventListener('focus', () => { amt.value = it.amt; });
+  amt.addEventListener('blur',  () => { amt.value = fmtAmt(it.amt); });
 
   el.querySelectorAll('.useg button').forEach(b => {
     b.addEventListener('click', () => { it.unit = b.dataset.u; it.upd = nowISO(); paintUnit(); save(); recalc(); });
@@ -571,29 +659,73 @@ function recalc(){
   const isM = S.view === 'm';
 
   document.getElementById('totCap').textContent = isM ? '1ヶ月あたりの原価' : '1年あたりの原価';
-  document.getElementById('totBig').textContent = yen(isM ? m : y);
-  document.getElementById('totSub').textContent = isM ? ('1年あたり ' + yen(y)) : ('1ヶ月あたり ' + yen(m));
+
+  /* 合計が変わったら軽く現れ直す。ただし入力中は毎打鍵でちらつくので静かにしておく */
+  const bigEl = document.getElementById('totBig'), nextBig = yen(isM ? m : y);
+  if(bigEl.textContent !== nextBig && bigEl.textContent !== '' && !typing()){
+    bigEl.classList.remove('bump'); void bigEl.offsetWidth; bigEl.classList.add('bump');
+  }
+  bigEl.textContent = nextBig;
+  const sub = document.getElementById('totSub');
+  sub.textContent = isM ? ('1年あたり ' + yen(y)) : ('1ヶ月あたり ' + yen(m));
+  sub.style.visibility = (m > 0 || y > 0) ? 'visible' : 'hidden';   /* 0のとき「¥0」を二度言わない */
+
+  const mini = document.getElementById('miniTot');
+  mini.innerHTML = '<u>' + (isM ? '月' : '年') + '</u>' + yen(isM ? m : y);
 
   const total = isM ? m : y;
   const bd = document.getElementById('breakdown');
   bd.innerHTML = '';
-  S.cats.forEach(c => {
+
+  /* まだ何も入っていないとき。空の帯と「—」を並べるより、次にすることを言う */
+  if(total <= 0){
+    document.getElementById('totBig').classList.add('zero');
+    bd.innerHTML = '<p class="bd-empty">下の欄に金額を入れると、ここに内訳が出ます。</p>';
+    S.cats.forEach((c, ci) => {
+      const t = document.querySelector('[data-csum="' + ci + '"]');
+      if(t){ t.textContent = '—'; t.classList.add('zero'); }
+    });
+    buildSheet();
+    return;
+  }
+  document.getElementById('totBig').classList.remove('zero');
+
+  /* 帯グラフ＝構成比。合計に対して各費目が占める幅をそのまま並べる */
+  const band = document.createElement('div');
+  band.className = 'band';
+  S.cats.forEach((c, ci) => {
+    const v = isM ? catM(c) : catY(c);
+    if(total <= 0 || v <= 0) return;
+    const seg = document.createElement('i');
+    seg.style.width = (v / total * 100).toFixed(2) + '%';
+    seg.style.background = catColor(ci);
+    band.appendChild(seg);
+  });
+  bd.appendChild(band);
+
+  const lg = document.createElement('div');
+  lg.className = 'lg';
+  S.cats.forEach((c, ci) => {
     const v = isM ? catM(c) : catY(c);
     const p = total > 0 ? (v / total * 100) : 0;
     const row = document.createElement('div');
-    row.className = 'bd-row';
+    row.className = 'lg-row';
     row.innerHTML =
-      '<div class="t"><span class="n"></span>' +
+      '<span class="dot" style="background:' + catColor(ci) + '"></span>' +
+      '<span class="n"></span>' +
       '<span class="p tnum">' + (total > 0 ? p.toFixed(0) + '%' : '—') + '</span>' +
-      '<span class="v tnum">' + yen(v) + '</span></div>' +
-      '<div class="bar"><i style="width:' + p.toFixed(1) + '%"></i></div>';
+      '<span class="v tnum">' + yen(v) + '</span>';
     row.querySelector('.n').textContent = c.name;
-    bd.appendChild(row);
+    lg.appendChild(row);
   });
+  bd.appendChild(lg);
 
   S.cats.forEach((c, ci) => {
     const t = document.querySelector('[data-csum="' + ci + '"]');
-    if(t) t.textContent = yen(isM ? catM(c) : catY(c));
+    if(!t) return;
+    const v = isM ? catM(c) : catY(c);
+    t.textContent = v > 0 ? yen(v) : '—';
+    t.classList.toggle('zero', !(v > 0));
   });
 
   buildSheet();
@@ -667,6 +799,16 @@ function toast(msg){
   clearTimeout(toastT);
   toastT = setTimeout(() => t.classList.remove('show'), 1800);
 }
+
+/* 合計がトップバーの下に隠れたら、バーの中の小さい合計に引き継ぐ */
+(function(){
+  const big = document.getElementById('totBig');
+  const mini = document.getElementById('miniTot');
+  if(!('IntersectionObserver' in window)) return;
+  new IntersectionObserver(es => {
+    mini.classList.toggle('show', !es[0].isIntersecting);
+  }, { rootMargin: '-62px 0px 0px 0px', threshold: 0 }).observe(big);
+})();
 
 paintView();
 renderCats();
