@@ -95,7 +95,10 @@ ts ip -4
 
 1. App Store で **ntfy** を入れる
 2. トピックを購読: `cat ~/.tsumiki-remote/ntfy-topic`
-3. Claude Code が許可を求めた／作業を終えたときに通知が来る
+3. Claude Code が**こちらの返事で止まったとき**に通知が来る
+
+鳴るのは `PermissionRequest`（許可待ち）と `Notification`（入力待ち）の2つだけ。
+`Stop`（1ターンの応答完了）にも付けていたが、**返答のたびに鳴って実用にならない**ので外した。
 
 送っているのは **イベント名と tmux のセッション名だけ**。
 会話の中身・ファイル名・コマンドは外に出さない。
