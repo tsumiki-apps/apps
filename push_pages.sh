@@ -97,29 +97,37 @@ for attempt in $(seq 0 "$MAX_RETRY"); do
     die "公開が ${TIMEOUT}秒 で終わりませんでした → https://github.com/${REPO}/actions/runs/${RUN_ID}"
   fi
 
-  # 失敗の理由を見る
-  LOG=$(gh run view "${RUN_ID}" -R "${REPO}" --log-failed 2>/dev/null)
-  if ! grep -q "in progress deployment" <<<"$LOG"; then
-    printf '\033[31m✗ 公開に失敗（衝突ではない別の原因）\033[0m\n' >&2
-    grep -o '##\[error\].*' <<<"$LOG" | head -5 >&2
-    die "詳細 → https://github.com/${REPO}/actions/runs/${RUN_ID}"
-  fi
-
-  # 衝突。ただし後続 push が既に走っているなら、そちらが最新を配るのでリトライ不要
+  # 後続 push が既に走っているなら、そちらが最新を配るので任せる。
+  # （rerun はこの run の build 版＝古い中身を配ってしまうため、必ず先に見る）
   LATEST_SHA=$(gh run list -R "${REPO}" -w pages-build-deployment --limit 1 \
     --json headSha -q '.[0].headSha' 2>/dev/null)
   if [ -n "${LATEST_SHA}" ] && [ "${LATEST_SHA}" != "${SHA}" ]; then
-    ok "他の公開が後から走っています（${LATEST_SHA:0:7}）→ 古い版を配らないよう再実行はしません"
+    ok "後から別の公開が走っています（${LATEST_SHA:0:7}）→ そちらが最新を配るので再実行はしません"
     exit 0
   fi
 
-  if [ "$attempt" -ge "$MAX_RETRY" ]; then
-    die "同時公開の衝突が $MAX_RETRY 回続きました → https://github.com/${REPO}/actions/runs/${RUN_ID}"
+  # ここから先は「自分が最新なのに公開できていない」＝直さないとサイトが古いまま。
+  # 衝突の出方は2通り: ①後発が deploy で 400（failure）②先発が追い越されて cancelled
+  RERUN_ARGS="--failed"
+  if [ "$RESULT" = "cancelled" ]; then
+    info "公開が取り消されました（後発に追い越された跡）。30秒あけて再実行します"
+    RERUN_ARGS=""
+  else
+    LOG=$(gh run view "${RUN_ID}" -R "${REPO}" --log-failed 2>/dev/null)
+    if ! grep -q "in progress deployment" <<<"$LOG"; then
+      printf '\033[31m✗ 公開に失敗（衝突ではない別の原因）\033[0m\n' >&2
+      grep -o '##\[error\].*' <<<"$LOG" | head -5 >&2
+      die "詳細 → https://github.com/${REPO}/actions/runs/${RUN_ID}"
+    fi
+    info "同時公開の衝突で失敗。30秒あけて再実行します"
   fi
 
-  info "同時公開の衝突で失敗。30秒あけて再実行します"
+  if [ "$attempt" -ge "$MAX_RETRY" ]; then
+    die "公開のやり直しが $MAX_RETRY 回続けて通りませんでした → https://github.com/${REPO}/actions/runs/${RUN_ID}"
+  fi
+
   sleep 30
-  gh run rerun "${RUN_ID}" -R "${REPO}" --failed >/dev/null 2>&1 \
+  gh run rerun "${RUN_ID}" -R "${REPO}" ${RERUN_ARGS} >/dev/null 2>&1 \
     || die "再実行に失敗しました → https://github.com/${REPO}/actions/runs/${RUN_ID}"
   sleep $POLL
 done
