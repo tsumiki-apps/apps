@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-tsumiki-remote.png">
+<meta name="apple-mobile-web-app-title" content="リモート説明書">
+<title>つみきリモート 取扱説明書</title>
+<meta name="description" content="外出先のiPhoneからMacのClaude Codeを見て指示する自作アプリの取扱説明書">
+<meta name="theme-color" content="#eef0f3">
+<style>
+  html{-webkit-text-size-adjust:100%}
+  :root{
+    --bg:#eef0f3;
+    --surface:#ffffff;
+    --surface-2:#f6f7f9;
+    --line:#d8dce3;
+    --line-soft:#e6e9ee;
+    --text:#12151a;
+    --muted:#5b636f;
+    --faint:#868e9b;
+    --accent:#12924b;
+    --accent-soft:#e2f3e8;
+    --busy:#8b5cf6;
+    --busy-soft:#efe9fe;
+    --wait:#b26a00;
+    --wait-soft:#fdefd8;
+    --idle:#6b7280;
+    --idle-soft:#eceef1;
+    --term-bg:#0b0c0f;
+    --term-panel:#16181d;
+    --term-line:#262a32;
+    --term-text:#d5d9e0;
+    --term-dim:#8b93a1;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0d0e11;
+      --surface:#15171c;
+      --surface-2:#1b1e24;
+      --line:#2b303a;
+      --line-soft:#22262e;
+      --text:#e9ebef;
+      --muted:#99a1ad;
+      --faint:#767e8b;
+      --accent:#3ddc84;
+      --accent-soft:#12261a;
+      --busy:#c084fc;
+      --busy-soft:#241a34;
+      --wait:#f5a524;
+      --wait-soft:#33240c;
+      --idle:#79818e;
+      --idle-soft:#1f232a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d0e11; --surface:#15171c; --surface-2:#1b1e24; --line:#2b303a; --line-soft:#22262e;
+    --text:#e9ebef; --muted:#99a1ad; --faint:#767e8b;
+    --accent:#3ddc84; --accent-soft:#12261a;
+    --busy:#c084fc; --busy-soft:#241a34;
+    --wait:#f5a524; --wait-soft:#33240c;
+    --idle:#79818e; --idle-soft:#1f232a;
+  }
+  :root[data-theme="light"]{
+    --bg:#eef0f3; --surface:#ffffff; --surface-2:#f6f7f9; --line:#d8dce3; --line-soft:#e6e9ee;
+    --text:#12151a; --muted:#5b636f; --faint:#868e9b;
+    --accent:#12924b; --accent-soft:#e2f3e8;
+    --busy:#8b5cf6; --busy-soft:#efe9fe;
+    --wait:#b26a00; --wait-soft:#fdefd8;
+    --idle:#6b7280; --idle-soft:#eceef1;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:var(--sans);font-size:16px;line-height:1.85;
+    letter-spacing:.01em;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:56px 20px 96px;display:flex;flex-direction:column;gap:56px}
+
+  /* ---------- 見出し ---------- */
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--faint);margin:0 0 10px;
+  }
+  h1{
+    font-size:clamp(30px,6vw,42px);line-height:1.3;margin:0 0 14px;
+    letter-spacing:-.01em;text-wrap:balance;font-weight:700;
+  }
+  h2{
+    font-size:22px;line-height:1.5;margin:0;font-weight:700;letter-spacing:.005em;
+    text-wrap:balance;
+  }
+  h3{font-size:16px;margin:0;font-weight:700}
+  p{margin:0}
+  section{display:flex;flex-direction:column;gap:18px}
+  .lede{font-size:17px;color:var(--muted);line-height:1.9}
+  .sec-head{display:flex;flex-direction:column;gap:6px;
+    border-top:1px solid var(--line);padding-top:22px}
+  .sec-head .num{
+    font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--accent);
+  }
+
+  /* ---------- 状態チップ（アプリの signature 要素） ---------- */
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:2px 9px;border-radius:999px;font-size:13px;font-weight:700;
+    white-space:nowrap;line-height:1.7;vertical-align:baseline;
+  }
+  .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto}
+  .chip.busy{color:var(--busy);background:var(--busy-soft)}
+  .chip.wait{color:var(--wait);background:var(--wait-soft)}
+  .chip.idle{color:var(--idle);background:var(--idle-soft)}
+
+  /* ---------- カード ---------- */
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px;display:flex;flex-direction:column;gap:10px;
+  }
+  .cards{display:grid;gap:14px}
+  @media(min-width:640px){.cards.three{grid-template-columns:repeat(3,1fr)}}
+  .card .k{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--faint)}
+  .card p{font-size:15px;color:var(--muted);line-height:1.8}
+  .card strong{color:var(--text)}
+
+  /* ---------- 端末フレーム（アプリ画面の再現） ---------- */
+  .phone{
+    background:var(--term-bg);border:1px solid var(--term-line);border-radius:20px;
+    padding:14px;color:var(--term-text);font-size:13px;
+    max-width:340px;margin:0 auto;width:100%;
+  }
+  .phone .bar{display:flex;align-items:center;gap:8px;padding:2px 4px 12px}
+  .phone .bar .title{font-weight:700;font-size:14px;color:#e8eaed}
+  .phone .bar .conn{font-size:10px;color:var(--term-dim);display:flex;align-items:center;gap:5px}
+  .phone .bar .conn::before{content:"";width:6px;height:6px;border-radius:50%;background:#22c55e}
+  .phone .bar .hbtn{
+    font-size:10px;padding:3px 7px;border-radius:7px;background:var(--term-panel);
+    border:1px solid var(--term-line);color:var(--term-dim);
+  }
+  .phone .bar .hbtn:first-of-type{margin-left:auto}
+  .phone .tabs{display:flex;gap:8px;padding-bottom:12px;overflow-x:auto}
+  .tab{
+    flex:0 0 auto;min-width:84px;padding:8px 10px;border-radius:12px;
+    background:var(--term-panel);border:1px solid var(--term-line);text-align:left;
+  }
+  .tab .n{font-weight:700;font-size:12px;color:#e8eaed}
+  .tab .st{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--term-dim);margin-top:3px}
+  .tab .st::before{content:"";width:6px;height:6px;border-radius:50%;background:#3f4653;flex:0 0 auto}
+  .tab.busy{border-color:#3b4250}
+  .tab.busy .st{color:#c084fc}
+  .tab.busy .st::before{background:#c084fc}
+  .tab.wait{border-color:#f59e0b}
+  .tab.wait .st{color:#f59e0b}
+  .tab.wait .st::before{background:#f59e0b}
+  .tab .kindbadge{
+    margin-top:4px;font-size:9px;padding:1px 5px;border-radius:5px;display:inline-block;
+    background:#20242c;color:var(--term-dim);
+  }
+  .tab .kindbadge.ai{background:#13301f;color:#4ade80}
+  .tab .kindbadge.sh{background:#2a2320;color:#d9a86c}
+  .phone .screen{
+    background:#0b0c0f;border:1px solid var(--term-line);border-radius:12px;padding:12px;
+    font-family:var(--mono);font-size:11px;line-height:1.55;white-space:pre-wrap;
+    overflow-wrap:anywhere;color:var(--term-text);min-height:120px;
+  }
+  .phone .keys{display:flex;gap:6px;padding:12px 0 8px;overflow-x:auto}
+  .phone .keys span{
+    flex:0 0 auto;padding:5px 10px;border-radius:9px;background:var(--term-panel);
+    border:1px solid var(--term-line);font-size:11px;color:#e8eaed;font-family:var(--mono);
+  }
+  .phone .input{display:flex;gap:8px;align-items:center}
+  .phone .input .box{
+    flex:1;padding:9px 14px;border-radius:20px;background:var(--term-panel);
+    border:1px solid var(--term-line);color:var(--term-dim);font-size:13px;
+  }
+  .phone .input .send{
+    width:34px;height:34px;border-radius:50%;background:#22c55e;color:#06240f;
+    display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto;
+  }
+  .figcap{font-size:13px;color:var(--faint);text-align:center;margin-top:12px;line-height:1.7}
+
+  /* ---------- 注釈つきの図解 ---------- */
+  .annot{display:flex;flex-direction:column;gap:0}
+  .annot .row{
+    display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;
+    padding:14px 0;border-bottom:1px solid var(--line-soft);
+  }
+  .annot .row:last-child{border-bottom:0}
+  .annot .marker{
+    font-family:var(--mono);font-size:11px;font-weight:700;
+    width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent);margin-top:3px;
+  }
+  .annot .body{font-size:15px;line-height:1.8}
+  .annot .body b{display:block;margin-bottom:2px}
+  .annot .body span{color:var(--muted)}
+
+  /* ---------- 流れ（しくみ） ---------- */
+  .flow{
+    display:flex;flex-direction:column;gap:0;background:var(--surface);
+    border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  }
+  .flow .node{
+    display:grid;grid-template-columns:110px 1fr;gap:16px;align-items:baseline;
+    padding:14px 20px;border-bottom:1px solid var(--line-soft);
+  }
+  .flow .node:last-child{border-bottom:0}
+  .flow .who{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--accent)}
+  .flow .what{font-size:15px;line-height:1.8}
+  .flow .what span{color:var(--muted);font-size:14px;display:block}
+
+  /* ---------- 表 ---------- */
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:520px}
+  th,td{text-align:left;padding:13px 18px;border-bottom:1px solid var(--line-soft);vertical-align:top;line-height:1.75}
+  th{font-size:11px;font-family:var(--mono);letter-spacing:.12em;color:var(--faint);font-weight:700;white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  td code{white-space:nowrap}
+
+  /* ---------- コード ---------- */
+  code{
+    font-family:var(--mono);font-size:.88em;background:var(--surface-2);
+    border:1px solid var(--line-soft);border-radius:5px;padding:1px 5px;
+  }
+  pre{
+    margin:0;background:var(--term-bg);color:var(--term-text);border-radius:12px;
+    padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.7;
+    border:1px solid var(--term-line);
+  }
+  pre code{background:none;border:0;padding:0;font-size:inherit;color:inherit}
+
+  /* ---------- 注意書き ---------- */
+  .note{
+    border-left:3px solid var(--wait);background:var(--wait-soft);
+    border-radius:0 10px 10px 0;padding:14px 18px;font-size:14.5px;line-height:1.8;
+  }
+  .note b{color:var(--text)}
+  .note.good{border-left-color:var(--accent);background:var(--accent-soft)}
+
+  ul{margin:0;padding-left:1.25em;display:flex;flex-direction:column;gap:7px}
+  li{line-height:1.8;font-size:15.5px}
+  li::marker{color:var(--faint)}
+
+  hr{border:0;border-top:1px solid var(--line);margin:0}
+  .foot{font-size:13px;color:var(--faint);line-height:1.8;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">つみき / 自作ツール</p>
+    <h1>つみきリモート<br>取扱説明書</h1>
+    <p class="lede">
+      Mac を眠らせずに置いていき、外出先の iPhone から
+      Claude Code の様子を見て、返事だけ返す。
+      2026年8月11日に作ったものの、使い方と勘所。
+    </p>
+  </header>
+
+  <!-- ============ 何ができるようになったか ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">01</span>
+      <h2>何ができるようになったか</h2>
+    </div>
+    <p>
+      いちばん短く言うと、<b>「AIの作業を、家に置いたまま外から見守れる」</b>ようになりました。
+      これまでは Mac の前を離れた瞬間に作業が止まっていた（＝蓋を閉じると眠る、
+      止まっても気づけない）のが、離れても止まらず、止まったら手元に知らせが来ます。
+    </p>
+
+    <div class="cards three">
+      <div class="card">
+        <span class="k">BEFORE → AFTER</span>
+        <h3>離席で止まらない</h3>
+        <p>蓋を開けたまま<strong>画面だけ消えて</strong>、中身は動き続けます。眠らせない仕掛けを常駐させました。</p>
+      </div>
+      <div class="card">
+        <span class="k">BEFORE → AFTER</span>
+        <h3>待たせない</h3>
+        <p>AIが許可を求めて止まったら iPhone に通知。<strong>「はい」を押しに帰る</strong>必要がありません。</p>
+      </div>
+      <div class="card">
+        <span class="k">BEFORE → AFTER</span>
+        <h3>並べて見える</h3>
+        <p>複数の作業を同時に走らせて、<strong>どれが止まっているか一覧</strong>で分かります。</p>
+      </div>
+    </div>
+
+    <p>
+      いちばん効くのは3つめです。AIに任せる作業は「頼む → しばらく放置 → 聞かれたら答える」の
+      繰り返しなので、<b>人間の役割はだんだん「作業者」から「見守り役」に寄っていきます</b>。
+      見守り役は机の前にいる必要がありません。移動中でも、待ち時間でも務まります。
+    </p>
+  </section>
+
+  <!-- ============ 画面の見かた ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">02</span>
+      <h2>画面の見かた</h2>
+    </div>
+    <p>
+      ホーム画面のアイコンから開くと、この画面が出ます。
+      上から順に、いま繋がっているか・どの作業がどうなっているか・その中身、です。
+    </p>
+
+    <div class="phone">
+      <div class="bar">
+        <span class="title">つみきリモート</span>
+        <span class="hbtn">折り返し</span><span class="hbtn">閉じる</span>
+        <span class="conn"></span>
+      </div>
+      <div class="tabs">
+        <div class="tab wait"><div class="n">1・work1</div><div class="st">返答待ち</div><div class="kindbadge ai">Claude</div></div>
+        <div class="tab busy"><div class="n">2・work2</div><div class="st">作業中</div><div class="kindbadge ai">Claude</div></div>
+        <div class="tab"><div class="n">3・sh1</div><div class="st">待機</div><div class="kindbadge sh">シェル</div></div>
+      </div>
+      <div class="screen">⏺ Bash(git status)
+  ⎿  On branch main
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No</div>
+      <div class="keys">
+        <span>esc</span><span>⏎</span><span>↑</span><span>↓</span><span>tab</span><span>1</span><span>2</span><span>3</span>
+      </div>
+      <div class="input">
+        <div class="box">指示を入力…</div>
+        <div class="send">↑</div>
+      </div>
+    </div>
+    <p class="figcap">アプリの画面（3つの作業を同時に走らせている状態）</p>
+
+    <div class="annot">
+      <div class="row">
+        <span class="marker">1</span>
+        <span class="body"><b>上のタブ＝走っている作業の一覧</b>
+        <span>タップで中身が切り替わります。緑の <b>Claude</b> バッジが付いているものがAIとの会話、
+        オレンジの <b>シェル</b> はコマンドを打つだけの場所です。
+        右の <b>＋Claude</b> で新しい会話を、<b>＋シェル</b> でコマンド用の場所を増やせます。</span></span>
+      </div>
+      <div class="row">
+        <span class="marker">2</span>
+        <span class="body"><b>色と文字＝いまの状態</b>
+        <span>ここだけ見れば「自分が呼ばれているか」が分かります。次の表のとおりです。</span></span>
+      </div>
+      <div class="row">
+        <span class="marker">3</span>
+        <span class="body"><b>真ん中＝Mac の画面そのもの</b>
+        <span>Mac のターミナルに映っているものが、そのまま出ています。長い行は折り返して表示（右上のボタンで切替）。</span></span>
+      </div>
+      <div class="row">
+        <span class="marker">4</span>
+        <span class="body"><b>キーの並び＝よく使う操作</b>
+        <span><code>1</code><code>2</code><code>3</code> は「1. Yes / 2. No」と聞かれたときの返事用。<code>esc</code> は作業の中断です。</span></span>
+      </div>
+      <div class="row">
+        <span class="marker">5</span>
+        <span class="body"><b>下の入力欄＝指示を打つところ</b>
+        <span>日本語のまま打てます。緑のボタンで送信＝Mac 側で Enter を押したのと同じことが起きます。</span></span>
+      </div>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>状態</th><th>意味</th><th>やること</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="chip busy">作業中</span></td>
+            <td>AIが動いています（紫の点が点滅）</td>
+            <td>何もしなくて大丈夫。放っておく</td>
+          </tr>
+          <tr>
+            <td><span class="chip wait">返答待ち</span></td>
+            <td>「これ実行していい？」で止まっています（枠がオレンジ）</td>
+            <td><b>ここだけ出番</b>。<code>1</code> か <code>2</code> を押す</td>
+          </tr>
+          <tr>
+            <td><span class="chip idle">待機</span></td>
+            <td>何も動いていません</td>
+            <td>次の指示を入力するか、閉じる</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 使う流れ ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">03</span>
+      <h2>ふだんの使いかた</h2>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <span class="k">出かける前 — Mac</span>
+        <h3>仕込んで、画面だけ消す</h3>
+        <p>
+          いつもどおり Mac で Claude Code に作業を頼みます。出かけるときは、
+          <strong>Control ＋ Shift ＋ 電源ボタン</strong>。画面が消えても中身は動き続けます。
+          <strong>蓋は開けたまま</strong>にしてください（閉じると熱がこもります）。
+          電源につないでおくとなお安心です。
+        </p>
+      </div>
+      <div class="card">
+        <span class="k">外出先 — iPhone</span>
+        <h3>通知が来たら答えるだけ</h3>
+        <p>
+          <strong>「返答待ち」の通知</strong>が来たら、ホーム画面のつみきリモートを開いて、
+          オレンジ枠のタブをタップ。聞かれている内容を読んで <code>1</code>（はい）か
+          <code>2</code>（いいえ）を押します。追加の指示を打つのも自由です。
+        </p>
+      </div>
+      <div class="card">
+        <span class="k">帰ってから — Mac</span>
+        <h3>続きは同じ画面から</h3>
+        <p>
+          Mac のターミナルで <code>tmux attach -t work1</code> と打つと、
+          スマホで見ていたのと<strong>まったく同じ画面</strong>に戻れます。
+          スマホと Mac で別々のものを見ているわけではありません。
+        </p>
+      </div>
+    </div>
+
+    <div class="note good">
+      <b>覚えることは実質2つだけです。</b>
+      出かけるときは <b>Control＋Shift＋電源ボタン</b>。通知が来たら <b>1 か 2 を押す</b>。
+      あとは全部自動で常駐しています。
+    </div>
+  </section>
+
+  <!-- ============ 閉じかた ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">04</span>
+      <h2>作業場所を閉じる</h2>
+    </div>
+    <p>
+      閉じたいタブを選んで、右上の <b>閉じる</b> を押します。
+      中で動いているものごと終わるので、確認が一度出ます。
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>やりかた</th><th>手順</th></tr></thead>
+        <tbody>
+          <tr><td>アプリから</td><td>タブを選ぶ → 右上の <b>閉じる</b> → 確認でOK</td></tr>
+          <tr><td>Claude の中から</td><td><code>/exit</code> と送るとシェルに戻る。さらに <code>exit</code> で閉じる</td></tr>
+          <tr><td>シェルから</td><td><code>exit</code> と送る</td></tr>
+          <tr><td>Mac から</td><td><code>tmux kill-session -t work2</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note good">
+      <b>閉じ忘れても害はありません。</b>
+      待機中の作業場所は何も消費しないので、放っておいて大丈夫です。
+      Mac を再起動すればすべて消えます。
+    </div>
+  </section>
+
+  <!-- ============ しくみ ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">05</span>
+      <h2>どうやって届いているのか</h2>
+    </div>
+    <p>
+      「外から自宅の Mac が触れる」と聞くと不安になりますが、
+      インターネットには一切公開していません。順に追うとこうなっています。
+    </p>
+
+    <div class="flow">
+      <div class="node">
+        <span class="who">iPhone</span>
+        <span class="what">ホーム画面のアプリ
+          <span>ただのWebページです。1.5秒ごとに Mac へ「いまどう？」と聞きに行きます</span></span>
+      </div>
+      <div class="node">
+        <span class="who">↓ TAILSCALE</span>
+        <span class="what">自分の端末だけの内輪ネットワーク
+          <span>Mac と iPhone を直結する専用の通り道（＝身内だけの private な回線）。通信は暗号化され、他人はこの道に入れません</span></span>
+      </div>
+      <div class="node">
+        <span class="who">↓ MAC</span>
+        <span class="what">小さなサーバー（自作・8787番）
+          <span>自分自身にしか口を開けていないので、この通り道以外からは届きません。合言葉（トークン）も要ります</span></span>
+      </div>
+      <div class="node">
+        <span class="who">↓ TMUX</span>
+        <span class="what">閉じても消えない作業場所
+          <span>ターミナルの中に作る「畳んでもそのまま残る机」。ここに画面を保管しているので、離れても消えません</span></span>
+      </div>
+      <div class="node">
+        <span class="who">↓ CLAUDE CODE</span>
+        <span class="what">実際に作業しているAI
+          <span>その机の上で動いています。止まったら通知が飛びます</span></span>
+      </div>
+    </div>
+
+    <p>
+      つまり<b>鍵は3重</b>です。①Tailscale の内輪ネットワークに入れる端末でないと辿り着けない
+      ②サーバーは自分自身にしか口を開けていない ③合言葉がないと中身を返さない。
+      ルーターの設定を開けたりもしていません。
+    </p>
+  </section>
+
+  <!-- ============ 通知 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">06</span>
+      <h2>通知のこと</h2>
+    </div>
+    <p>
+      iPhone の <b>ntfy</b> というアプリに届きます。鳴るのは
+      <b>AIが返事を待って止まったときだけ</b>です。
+      作業が1つ終わるたびにも鳴らしていた時期がありましたが、
+      1時間で33通という有様だったのでやめました。
+    </p>
+    <div class="note">
+      <b>通知に載せているのは「作業場所の名前」と「返答待ち」の2つだけです。</b>
+      会話の中身・ファイル名・コマンドは外部に一切出していません。
+      ntfy は外部のサービスなので、そこは意図的に絞ってあります。
+      ただし<b>購読名を知られると通知は読まれます</b>。人には見せないでください。
+    </div>
+  </section>
+
+  <!-- ============ 困ったとき ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">07</span>
+      <h2>うまくいかないとき</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>症状</th><th>たぶん原因</th><th>対処</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>アプリが「つながりません」</td>
+            <td>iPhone の Tailscale が切れている</td>
+            <td>Tailscale アプリを開いてスイッチをON。ここが9割です</td>
+          </tr>
+          <tr>
+            <td>「合言葉を貼り付けて」が出る</td>
+            <td>合言葉なしのURLで開いている</td>
+            <td>ホーム画面のアイコンを一度削除 → QRから開き直して追加し直す</td>
+          </tr>
+          <tr>
+            <td>日本語で打ったら<br><code>command not found</code></td>
+            <td>シェル（コマンド用の場所）に打っている</td>
+            <td>タブの<b>緑のClaudeバッジ</b>が付いた側を選ぶ。入力欄が「コマンドを入力…」になっていたらシェルです</td>
+          </tr>
+          <tr>
+            <td>作業が消えている</td>
+            <td>Mac が再起動した</td>
+            <td>作業場所（tmux）は再起動で消えます。<code>＋</code> で作り直し</td>
+          </tr>
+          <tr>
+            <td>ずっと「作業中」のまま</td>
+            <td>画面が描き変わり続けている</td>
+            <td>起動直後によく起きます。数十秒待つと「待機」に戻ります</td>
+          </tr>
+          <tr>
+            <td>通知が来ない</td>
+            <td>iOS の通知許可がオフ</td>
+            <td>設定 → ntfy → 通知を許可</td>
+          </tr>
+          <tr>
+            <td>Mac が眠っていた</td>
+            <td>常駐が止まっている</td>
+            <td>ターミナルで <code>launchctl list | grep tsumiki</code>。3行出れば正常</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 中身 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="num">08</span>
+      <h2>中身のメモ</h2>
+    </div>
+    <p>
+      あとで自分で触るとき用の覚え書きです。ふだんは読まなくて大丈夫です。
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>常駐しているもの</th><th>役割</th></tr></thead>
+        <tbody>
+          <tr><td><code>com.tsumiki.awake</code></td><td>画面は消しても Mac を眠らせない（<code>caffeinate -ims</code>）</td></tr>
+          <tr><td><code>com.tsumiki.remote</code></td><td>アプリ本体のサーバー（8787番）</td></tr>
+          <tr><td><code>com.tsumiki.tailscaled</code></td><td>外から届く通り道。管理者権限なしで動く方式</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>3つとも Mac のログイン時に自動で立ち上がります。状態を見るのはこれです。</p>
+<pre><code>launchctl list | grep tsumiki</code></pre>
+
+    <p>スマホで読む用のQR（合言葉入り）を出し直すには、これです。</p>
+<pre><code>cd ~/制作物/tsumiki-remote &amp;&amp; ./bin/qr.sh</code></pre>
+
+    <ul>
+      <li>ソースは <code>~/制作物/tsumiki-remote/</code>。合言葉などの秘密は <code>~/.tsumiki-remote/</code> に分けてあります</li>
+      <li>眠らせない設定を一時的に解除したいときは <code>launchctl unload ~/Library/LaunchAgents/com.tsumiki.awake.plist</code></li>
+      <li>このアプリは GitHub Pages では動きません（Mac 上のサーバーが必要なため）。つみきの一覧には載せていません</li>
+    </ul>
+
+    <div class="note">
+      <b>長時間まわすときは電源につないで、蓋は開けたままで。</b>
+      閉じた状態（クラムシェル）での連続運用は熱がこもって不利です。
+      蓋を開けて画面だけ消す今のやり方は、その点で理にかなっています。
+    </div>
+  </section>
+
+  <hr>
+  <p class="foot">
+    つみきリモート — 2026年8月11日<br>
+    合言葉と通知の購読名は、この書面には載せていません。Mac の <code>~/.tsumiki-remote/</code> にあります。
+  </p>
+</div>
+
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
