@@ -88,6 +88,9 @@
     font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;flex:0 0 auto;
     display:inline-block;background:#20242c;color:var(--dim);
   }
+  /* 選ばれている札にだけ出る「まだ続きがある」印。これが無いと、もう一度
+     タップするとメニューが出ることに一生気づけない（隠し操作になる） */
+  .tab .more{margin-left:auto;padding-left:6px;color:var(--dim);font-size:12px;line-height:1;flex:0 0 auto}
   .tab .kind.claude,.tab .kind.agent{background:#13301f;color:#4ade80}
   .tab .kind.shell{background:#2a2320;color:#d9a86c}
   .tab.add{
@@ -470,8 +473,15 @@
                     '<div class="meta">' +
                       '<span class="st">' + LABEL[s.status] + '</span>' +
                       '<span class="kind ' + s.kind + '">' + KIND[s.kind] + '</span>' +
+                      (s.name === current ? '<span class="more">⋯</span>' : '') +
                     '</div>';
-      b.onclick = function () { select(s.name); };
+      // 1回目＝切り替え、選ばれている札をもう一度＝その席のメニュー。
+      // 「◯秒以内に2回」にはしない。出る/出ないが目に見えず、指の速さで
+      // 結果が変わる＝同じ操作なのに違うことが起きる、になるため（2026-08-12）
+      b.onclick = function () {
+        if (s.name === current) sessionMenu(s.name);
+        else select(s.name);
+      };
       el.tabs.appendChild(b);
     });
     var add = document.createElement('button');
@@ -829,6 +839,26 @@
     sheetBody.appendChild(head);
     sheetItem('やめる', '何もしません', function () { closeSheet(); });
     sheetItem('終わらせる', '取り消せません', function () { closeSheet(); doKill(name); });
+  }
+
+  // 選ばれている札をもう一度タップしたときのメニュー。⋯（右上）まで行かずに、
+  // いま目の前にある1件をその場で片付けるための入口。
+  // 中身は必ず「今の一覧」から引き直す（札は1.5秒ごとに作り直されるが、
+  // 押した瞬間の状態＝作業中/返答待ちで判断したい）
+  function sessionMenu(name) {
+    var s = null, i = -1;
+    sessions.forEach(function (x, k) { if (x.name === name) { s = x; i = k; } });
+    if (!s) return;
+    openSheet((i + 1) + '・' + (s.title || s.name));
+
+    var head = document.createElement('div');
+    head.className = 'sheethead';
+    head.textContent = s.name + ' ・ ' + LABEL[s.status] + ' ・ ' + KIND[s.kind];
+    sheetBody.appendChild(head);
+
+    sheetItem('片付ける（終わらせる）',
+      s.status === 'busy' ? '⚠️ いま作業中です' : '取り消せません（次の画面で確認）',
+      function () { confirmKill(s.name, s.title); });
   }
 
   // 席が埋まったときの後始末。作業中のものだけ残して、あとはまとめて終わらせる。
