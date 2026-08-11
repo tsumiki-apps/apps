@@ -128,12 +128,24 @@
     border:1px solid var(--line);color:var(--fg);font-size:16px;font-family:var(--mono)}
   #gate button{padding:11px 22px;border-radius:12px;border:none;background:var(--accent);
     color:#06240f;font:inherit;font-weight:700;font-size:15px}
-  #files,#menu{
+  #menu{
     padding:5px 9px;border-radius:8px;background:var(--panel);
     border:1px solid var(--line);color:var(--dim);font:inherit;font-size:11px;
   }
-  #files{margin-left:auto}
-  #menu{font-size:13px;line-height:1;padding:6px 10px}
+  #menu{margin-left:auto;font-size:13px;line-height:1;padding:6px 10px}
+
+  #viewer{position:fixed;inset:0;z-index:40;background:var(--bg);
+    display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  #viewer[hidden]{display:none}
+  .viewerbar{display:flex;align-items:center;gap:8px;padding:8px 10px;flex:0 0 auto}
+  .viewerbar button{
+    padding:6px 10px;border-radius:8px;background:var(--panel);
+    border:1px solid var(--line);color:var(--fg);font:inherit;font-size:12px;white-space:nowrap;
+  }
+  #viewername{flex:1 1 auto;min-width:0;font-size:11px;color:var(--dim);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+  #viewerframe{flex:1 1 auto;width:100%;border:0;background:#fff;min-height:0}
 
   #sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);
     display:flex;align-items:flex-end}
@@ -167,7 +179,6 @@
 
 <header>
   <span class="title">つみきリモート</span>
-  <button id="files">制作物</button>
   <button id="menu" aria-label="メニュー">⋯</button>
   <span class="conn" id="conn"><span class="txt">接続待ち</span></span>
 </header>
@@ -201,6 +212,15 @@
   <p>合言葉（トークン）を貼り付けてください。一度入れれば次からは不要です。</p>
   <input id="tokenInput" placeholder="token" autocapitalize="off" autocorrect="off" spellcheck="false">
   <button id="tokenSave">つなぐ</button>
+</div>
+
+<div id="viewer" hidden>
+  <div class="viewerbar">
+    <button id="viewerback">‹ もどる</button>
+    <span id="viewername"></span>
+    <button id="viewersafari">Safariで開く</button>
+  </div>
+  <iframe id="viewerframe" title="制作物のプレビュー"></iframe>
 </div>
 
 <div id="sheet" hidden>
@@ -567,6 +587,8 @@
 
   document.getElementById('menu').onclick = function () {
     openSheet('メニュー');
+    sheetItem('制作物を見る', 'この画面の中でプレビューします',
+      function () { openFileList(); });
     var wrapped = el.out.classList.contains('wrap');
     sheetItem(wrapped ? '折り返し：オン' : '折り返し：オフ', '長い行を画面幅で折り返す',
       function () { applyWrap(!wrapped); closeSheet(); }, { on: wrapped });
@@ -578,7 +600,7 @@
 
   // ---------------------------------------------------------- 制作物を見る
 
-  document.getElementById('files').onclick = function () {
+  function openFileList() {
     openSheet('制作物（新しい順）');
     var loading = document.createElement('div');
     loading.className = 'sheethead';
@@ -599,15 +621,37 @@
       sheetBody.innerHTML = '';
       sheetItem('読み込めません', e.message, closeSheet);
     });
+  }
+
+  // このアプリの中で開く。iframe は同じサーバーを見るので、
+  // 最初の1回でクッキーが配られ、CSSや画像の読み込みもそのまま通る。
+  var viewer = document.getElementById('viewer');
+  var viewerFrame = document.getElementById('viewerframe');
+  var viewerName = document.getElementById('viewername');
+  var viewerUrl = '';
+
+  function previewUrl(rel) {
+    return '/preview/' + rel.split('/').map(encodeURIComponent).join('/') +
+           '?t=' + encodeURIComponent(token);
+  }
+
+  function openPreview(rel) {
+    viewerUrl = previewUrl(rel);
+    viewerName.textContent = rel;
+    viewerFrame.src = viewerUrl;
+    viewer.hidden = false;
+  }
+
+  document.getElementById('viewerback').onclick = function () {
+    viewer.hidden = true;
+    viewerFrame.src = 'about:blank';   // 中で動いているものを止める
   };
 
-  // 別タブ（Safari）で開く。最初の1回だけURLに合言葉を載せ、
-  // サーバーがクッキーを配るので、CSSや画像の読み込みはそのまま通る。
-  function openPreview(rel) {
-    var url = '/preview/' + rel.split('/').map(encodeURIComponent).join('/') +
-              '?t=' + encodeURIComponent(token);
-    window.open(url, '_blank');
-  }
+  // iCloud に入れたい・人に渡したいときだけ Safari へ。
+  // Safari の共有ボタンから「ファイルに保存」で iCloud Drive に入る。
+  document.getElementById('viewersafari').onclick = function () {
+    if (viewerUrl) window.open(viewerUrl, '_blank');
+  };
 
   function fmtSize(n) {
     if (n < 1024) return n + 'B';
