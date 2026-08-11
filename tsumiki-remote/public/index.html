@@ -43,6 +43,25 @@
   header .conn.on::before{background:var(--accent)}
   header .conn.err::before{background:#ef4444}
 
+  /* Claude の残量。上が5時間枠、下が週枠。電池と同じで、使うほど減る。
+     ヘッダーは iPhone 390px でぎゅうぎゅうなので、普段は数字を出さず棒だけ。
+     押せば内訳（残り％とリセット時刻）をトーストで出す。
+     残り20%を切ったときだけ数字が横に出る＝知りたい時だけ情報が増える。 */
+  #usage{display:flex;align-items:center;gap:5px;padding:8px 2px;background:none;border:none}
+  #usage[hidden]{display:none}
+  #usage .bars{display:flex;flex-direction:column;gap:4px}
+  /* 溝（減った分）は黒地に沈まない明るさにする。ここが見えないと、ただの
+     横線2本＝メニューの三本線に見えてしまい、目盛りだと分からない */
+  #usage .bar{width:26px;height:3px;border-radius:2px;background:#39404d;overflow:hidden}
+  #usage .bar i{display:block;height:100%;width:0;border-radius:2px;background:var(--dim);
+    transition:width .3s,background-color .3s}
+  #usage .bar i.warn{background:var(--wait)}
+  #usage .bar i.crit{background:#ef4444}
+  #usage .bar.off{opacity:.35}
+  #usage .num{font-size:10px;color:var(--wait);font-variant-numeric:tabular-nums}
+  #usage .num.crit{color:#ef4444}
+  #usage .num[hidden]{display:none}
+
   nav{display:flex;gap:8px;padding:0 14px 10px;overflow-x:auto;flex:0 0 auto;scrollbar-width:none}
   nav::-webkit-scrollbar{display:none}
   .tab{
@@ -209,6 +228,12 @@
   .sheetbody .sub{display:block;font-size:11px;color:var(--dim);margin-top:3px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sheetbody .on{color:var(--accent)}
+  /* まとめて終わらせる前に「何が消えるか」を1件ずつ見せる。
+     数だけ出しても、押していいのか判断できない */
+  .sheetbody .killlist{display:flex;flex-direction:column;gap:2px;padding:0 8px 4px}
+  .sheetbody .killrow{font-size:12px;color:var(--dim);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sheetbody .killrow.warn{color:var(--wait)}
   .sheetcancel{
     padding:13px;border-radius:12px;background:#20242c;border:1px solid var(--line);
     color:var(--fg);font:inherit;font-size:15px;font-weight:700;
@@ -221,7 +246,10 @@
   .toast{position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);
     background:#242932;color:var(--fg);padding:8px 14px;border-radius:10px;font-size:12px;
     opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;
-    max-width:calc(100% - 20px);text-align:center}
+    max-width:calc(100% - 20px);text-align:center;white-space:pre-line;line-height:1.6;
+    /* left:50% だけだと「使える幅」が画面の半分と見なされ、長い文が細長い塊に
+       折り返される。max-content にして、上限だけ max-width で止める */
+    width:max-content}
   .toast.show{opacity:1}
 </style>
 </head>
@@ -230,6 +258,10 @@
 <header>
   <span class="title">つみきリモート</span>
   <span class="conn" id="conn"><span class="txt">接続待ち</span></span>
+  <button id="usage" hidden aria-label="Claudeの残量"><span class="bars">
+    <span class="bar" id="bar5"><i></i></span>
+    <span class="bar" id="bar7"><i></i></span>
+  </span><span class="num" id="unum" hidden></span></button>
   <button id="reload" aria-label="読み込み直す">↻</button>
   <button id="menu" aria-label="メニュー">⋯</button>
 </header>
@@ -313,12 +345,15 @@
     gate: document.getElementById('gate'),
     tokenInput: document.getElementById('tokenInput'),
     tokenSave: document.getElementById('tokenSave'),
-    toast: document.getElementById('toast')
+    toast: document.getElementById('toast'),
+    usage: document.getElementById('usage'),
+    bar5: document.getElementById('bar5'),
+    bar7: document.getElementById('bar7'),
+    unum: document.getElementById('unum')
   };
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
   var sessions = [];
-  var archived = [];
   var timer = null;
   var toastTimer = null;
 
@@ -326,11 +361,11 @@
   // 「AIに話しかけたつもりでシェルに打っていた」を防ぐための表示
   var KIND = { claude: 'Claude', agent: 'AI', shell: 'シェル', other: '実行中' };
 
-  function toast(msg) {
+  function toast(msg, ms) {
     el.toast.textContent = msg;
     el.toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, 1600);
+    toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, ms || 1600);
   }
 
   function api(path, opts) {
@@ -359,6 +394,65 @@
     el.conn.className = 'conn ' + state;
     el.conn.firstElementChild.textContent = text;
   }
+
+  // ---- Claude の残量（上の棒＝5時間枠、下の棒＝週枠）
+  //
+  // 棒は電池と同じで「残り」を塗る（使うほど短くなる）。数字は普段出さない。
+  // 残り20%を切ったものがあるときだけ、その数字を横に出す。
+
+  var usage = null;
+
+  function remOf(b) { return b ? Math.max(0, 100 - b.used) : null; }
+
+  function paintBar(bar, b) {
+    var rem = remOf(b);
+    bar.classList.toggle('off', rem === null);
+    var fill = bar.firstElementChild;
+    fill.style.width = (rem === null ? 0 : rem) + '%';
+    fill.className = rem === null ? '' : (rem <= 10 ? 'crit' : (rem <= 30 ? 'warn' : ''));
+  }
+
+  function renderUsage(u) {
+    usage = (u && (u.session || u.week)) ? u : null;
+    el.usage.hidden = !usage;
+    if (!usage) return;
+    paintBar(el.bar5, usage.session);
+    paintBar(el.bar7, usage.week);
+    // 少ない方＝先に詰まる方の数字だけ出す。両方あるときは小さい方。
+    var rems = [remOf(usage.session), remOf(usage.week)].filter(function (r) { return r !== null; });
+    var worst = Math.min.apply(null, rems);
+    el.unum.hidden = !(worst <= 20);
+    el.unum.textContent = '残' + worst + '%';
+    el.unum.className = 'num' + (worst <= 10 ? ' crit' : '');
+  }
+
+  // リセットの時刻。近いうちなら「あと◯時間◯分」、先なら日付と時刻。
+  function resetText(iso) {
+    if (!iso) return '';
+    var t = new Date(iso).getTime();
+    if (!isFinite(t)) return '';
+    var d = t - Date.now();
+    if (d <= 0) return 'まもなくリセット';
+    if (d < 24 * 3600 * 1000) {
+      var h = Math.floor(d / 3600000);
+      var m = Math.floor((d % 3600000) / 60000);
+      return 'あと' + (h ? h + '時間' : '') + m + '分';
+    }
+    var x = new Date(t);
+    return (x.getMonth() + 1) + '/' + x.getDate() + ' ' +
+      x.getHours() + ':' + String(x.getMinutes()).padStart(2, '0') + 'にリセット';
+  }
+
+  function usageLine(label, b) {
+    if (!b) return label + ' —';
+    var r = resetText(b.resetsAt);
+    return label + ' 残' + remOf(b) + '%' + (r ? '（' + r + '）' : '');
+  }
+
+  el.usage.addEventListener('click', function () {
+    if (!usage) return;
+    toast(usageLine('5時間', usage.session) + '\n' + usageLine('週', usage.week), 2800);
+  });
 
   function atBottom() {
     return el.out.scrollHeight - el.out.scrollTop - el.out.clientHeight < 40;
@@ -422,24 +516,14 @@
   }
 
   function newSession(kind) {
-    // 片付けた（アーカイブした）ものは一覧から消えるだけで tmux には残っている。
-    // ここで archived を数え忘れると、生きている work2 に work2 を作りにいって
-    // tmux が duplicate session で落ち、画面には「失敗: http 500」しか出ない。
+    // 空いている名前を探す。見えているものが全部＝tmux にあるものが全部なので、
+    // 一覧を数えるだけでよい（隠れて席を占めているものはもう無い）
     var used = {};
     sessions.forEach(function (s) { used[s.name] = 1; });
-    archived.forEach(function (a) { used[a.name] = 1; });
     var prefix = kind === 'shell' ? 'sh' : 'work';
     var name = '';
-    // 枠は 20 まで。9 だと片付けたものが席を占め続けてすぐ満席になった（2026-08-12）
     for (var i = 1; i <= 20 && !name; i++) if (!used[prefix + i]) name = prefix + i;
-    // 「多すぎます」だけだと、何が席を埋めているのか画面から分からない。
-    // 実際の詰まりは「片付けた（＝見えない）まま動き続けているもの」なので、
-    // その件数と、どこから終わらせられるかまで言う
-    if (!name) {
-      return toast(archived.length
-        ? '満席です。片付けたもの ' + archived.length + ' 件が動いたままです（⋯ →「片付けたもの」から終わらせる）'
-        : '満席です（' + prefix + '1〜20 すべて使用中）');
-    }
+    if (!name) return toast('満席です（' + prefix + '1〜20 すべて使用中）');
     var body = { name: name };
     if (kind === 'claude') body.run = 'claude';
     api('/api/new', { method: 'POST', body: JSON.stringify(body) })
@@ -484,15 +568,13 @@
   function refreshState() {
     return api('/api/state').then(function (d) {
       checkVersion(d.version);
+      renderUsage(d.usage);
       sessions = d.sessions;
-      archived = d.archived || [];
       if (!sessions.length) {
         current = '';
         el.send.disabled = true;
         lastText = null;
-        el.out.textContent = archived.length
-          ? '表示するものがありません。⋯ →「片付けたものを戻す」から戻せます。'
-          : 'まだ作業場所がありません。＋Claude で作ってください。';
+        el.out.textContent = 'まだ作業場所がありません。＋Claude で作ってください。';
       } else if (!sessions.some(function (s) { return s.name === current; })) {
         current = sessions[0].name;
         el.send.disabled = false;
@@ -708,22 +790,8 @@
     reader.readAsDataURL(f);
   };
 
-  // 片付ける = 一覧から隠すだけ。中の作業は動き続ける（消さない）
-  function doArchive() {
-    if (!current) return;
-    var name = current;
-    api('/api/archive', { method: 'POST', body: JSON.stringify({ name: name }) })
-      .then(function () {
-        toast(name + ' を片付けました（作業は動いています）');
-        current = '';
-        localStorage.removeItem('tsumiki-remote-session');
-        tick(true);
-      })
-      .catch(function (e) { toast('片付けられません: ' + e.message); });
-  }
-
-  // 終わらせる = tmux ごと消す。片付ける（隠すだけ）と対になる、戻せない操作。
-  // これが無かったせいで作業場所の名前が枯れて「セッションが多すぎます」になった
+  // 終わらせる = tmux ごと消す。作業場所の後始末はこれ1つだけ（戻せない）。
+  // 「隠すだけ」も持っていた時期があるが、隠れたまま席を占め続けて満席になった
   function doKill(name) {
     api('/api/kill', { method: 'POST', body: JSON.stringify({ name: name }) })
       .then(function () {
@@ -750,10 +818,56 @@
     sheetItem('終わらせる', '取り消せません', function () { closeSheet(); doKill(name); });
   }
 
-  function doUnarchive(name) {
-    api('/api/unarchive', { method: 'POST', body: JSON.stringify({ name: name }) })
-      .then(function () { toast(name + ' を戻しました'); select(name); tick(true); })
-      .catch(function (e) { toast('戻せません: ' + e.message); });
+  // 席が埋まったときの後始末。作業中のものだけ残して、あとはまとめて終わらせる。
+  // ⚠️ 「作業中」の判定は画面が動いたかどうかなので、何も出力しない長い処理
+  //    （静かなビルド等）は待機に見える。だから消す前に必ず一覧を見せる。
+  function killableList() {
+    return sessions.filter(function (s) { return s.status !== 'busy'; });
+  }
+
+  function confirmKillIdle() {
+    var list = killableList();
+    if (!list.length) return toast('終わらせるものがありません');
+    openSheet('作業中以外を終わらせますか？');
+
+    var waiting = list.filter(function (s) { return s.status === 'waiting'; }).length;
+    var head = document.createElement('div');
+    head.className = 'sheethead';
+    head.textContent = list.length + ' 件の Claude を終了します。会話の続きはできなくなります'
+      + '（ファイルへの変更は残ります）。'
+      + (waiting ? '⚠️ うち ' + waiting + ' 件は返答待ち＝あなたの返事を待って止まっているものです。' : '');
+    sheetBody.appendChild(head);
+
+    var box = document.createElement('div');
+    box.className = 'killlist';
+    list.forEach(function (s) {
+      var row = document.createElement('div');
+      row.className = 'killrow' + (s.status === 'waiting' ? ' warn' : '');
+      row.textContent = '・' + (s.title || s.name) + '（' + s.name + '・' + LABEL[s.status] + '）';
+      box.appendChild(row);
+    });
+    sheetBody.appendChild(box);
+
+    sheetItem('やめる', '何もしません', function () { closeSheet(); });
+    sheetItem('終わらせる', list.length + ' 件・取り消せません', function () {
+      closeSheet();
+      doKillMany(list.map(function (s) { return s.name; }));
+    });
+  }
+
+  function doKillMany(names) {
+    api('/api/killmany', { method: 'POST', body: JSON.stringify({ names: names }) })
+      .then(function (d) {
+        var msg = d.killed.length + ' 件を終わらせました';
+        if (d.skipped.length) msg += '（' + d.skipped.length + ' 件は残しました）';
+        toast(msg);
+        if (d.killed.indexOf(current) >= 0) {
+          current = '';
+          localStorage.removeItem('tsumiki-remote-session');
+        }
+        tick(true);
+      })
+      .catch(function (e) { toast('終わらせられません: ' + e.message); });
   }
 
   // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用
@@ -810,34 +924,17 @@
       function () { openFileList(); });
     sheetItem('Mac の画面を消す', '蓋は開けたまま。作業は止まりません',
       function () { closeSheet(); doDark(); });
-    sheetItem('この作業場所を片付ける',
-      current ? current + ' を一覧から隠します（作業は止まりません）' : '選ばれていません',
-      function () { closeSheet(); doArchive(); }, { disabled: !current });
     sheetItem('この作業場所を終わらせる',
       current ? current + ' の Claude を終了して席を空けます' : '選ばれていません',
       function () {
         var cur = sessions.filter(function (s) { return s.name === current; })[0];
         confirmKill(current, cur && cur.title);
       }, { disabled: !current });
-    if (archived.length) {
-      sheetItem('片付けたもの', archived.length + ' 件（動いたままです）',
-        function () { openArchived(); });
-    }
+    var killable = killableList();
+    sheetItem('作業中以外を終わらせる',
+      killable.length ? killable.length + ' 件の席を空けます（作業中は残す）' : '終わらせるものがありません',
+      function () { confirmKillIdle(); }, { disabled: !killable.length });
   };
-
-  // 片付けたものは「戻す」だけでなく「終わらせる」も要る。
-  // 席を占めているのはここに並んでいるものなので、片付ける場所と
-  // 終わらせる場所が別々だと、詰まったときに辿り着けない
-  function openArchived() {
-    openSheet('片付けたもの ・ ' + archived.length + ' 件');
-    if (!archived.length) { sheetItem('ありません', '', closeSheet); return; }
-    archived.forEach(function (a) {
-      sheetItem(a.title || a.name, a.name + ' を一覧に戻す',
-        function () { closeSheet(); doUnarchive(a.name); });
-      sheetItem('　└ 終わらせる', a.name + ' の Claude を終了して席を空ける',
-        function () { confirmKill(a.name, a.title); });
-    });
-  }
 
   // ---------------------------------------------------------- 制作物を見る
 

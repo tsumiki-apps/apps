@@ -35,22 +35,6 @@ const TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
 // TSUMIKI_CLAUDE_CMD=claude を LaunchAgent に足す）。
 const CLAUDE_CMD = process.env.TSUMIKI_CLAUDE_CMD || 'claude --permission-mode bypassPermissions';
 
-// ------------------------------------------------------------ 片付け（アーカイブ）
-//
-// 「片付ける」は tmux セッションを消さない。中の Claude Code は動いたまま、
-// このアプリの一覧から隠すだけ。ローカルの小さな JSON なので同期読み書きでよい
-// （iCloud ではないので固まらない）。
-const ARCHIVE_FILE = path.join(CONF_DIR, 'archived.json');
-
-function readArchived() {
-  try { const a = JSON.parse(fs.readFileSync(ARCHIVE_FILE, 'utf8')); return Array.isArray(a) ? a : []; }
-  catch (e) { return []; }
-}
-
-function writeArchived(list) {
-  try { fs.writeFileSync(ARCHIVE_FILE, JSON.stringify(list), { mode: 0o600 }); } catch (e) {}
-}
-
 // ---------------------------------------------------------------- 版（バージョン）
 //
 // スマホの「ホーム画面アプリ」は一度開くと開きっぱなしになる。Mac 側でアプリを
@@ -72,6 +56,94 @@ function currentVersion() {
     verCache = { key, value: h.digest('hex').slice(0, 12) };
   }
   return verCache.value;
+}
+
+// ------------------------------------------------------------ Claude の残量
+//
+// Claude Code の `/usage` が使っているのと同じ口に、キーチェーンにある
+// ログイン情報で問い合わせて「5時間枠」と「週枠」をどれだけ使ったかを取る。
+//
+// ⚠️ これは公開仕様ではない（いつ形が変わってもおかしくない）。だから
+// 取れなかったら黙って諦める＝スマホ側は残量バーが消えるだけで、他は普通に動く。
+//
+// スマホは1.5秒ごとに状態を聞きに来る。それをそのまま外へ投げると叩きすぎで
+// 弾かれるので、ここで60秒ためておき、/api/state にはその写しを乗せる。
+const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
+const USAGE_TTL = 60 * 1000;        // これより新しければ取り直さない
+const USAGE_KEEP = 10 * 60 * 1000;  // 取れなくなっても、これだけは前の値を出す
+let usageCache = { at: 0, value: null };
+let usageFetching = null;
+
+// キーチェーンからアクセストークンを読むだけ。書き戻しはしない
+// （自前で更新すると Claude Code 側のログインを壊しかねない）。
+function keychainToken() {
+  return new Promise((resolve) => {
+    execFile('/usr/bin/security',
+      ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+      { timeout: 5000 },
+      (err, stdout) => {
+        if (err) return resolve(null);
+        try {
+          const o = JSON.parse(stdout);
+          const t = o && o.claudeAiOauth && o.claudeAiOauth.accessToken;
+          resolve(typeof t === 'string' && t ? t : null);
+        } catch (e) { resolve(null); }
+      });
+  });
+}
+
+// {utilization, resets_at} → {used, resetsAt}。数字が入っていなければ null。
+function usageBucket(b) {
+  if (!b || typeof b.utilization !== 'number' || !isFinite(b.utilization)) return null;
+  return {
+    used: Math.max(0, Math.min(100, Math.round(b.utilization))),
+    resetsAt: typeof b.resets_at === 'string' ? b.resets_at : null,
+  };
+}
+
+async function fetchUsage() {
+  const token = await keychainToken();
+  if (!token) return null;
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(USAGE_URL, {
+      headers: {
+        authorization: 'Bearer ' + token,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'user-agent': 'tsumiki-remote',
+      },
+      signal: ctl.signal,
+    });
+    if (!r.ok) { console.log(`usage ${r.status}`); return null; }
+    const d = await r.json();
+    const session = usageBucket(d.five_hour);
+    const week = usageBucket(d.seven_day);
+    if (!session && !week) return null;
+    return { session, week };
+  } catch (e) {
+    console.log('usage ' + String(e && e.message).slice(0, 80));
+    return null;
+  } finally {
+    clearTimeout(to);
+  }
+}
+
+// 待たせない。古ければ裏で取り直しにいって、いま持っている写しを返す
+// （状態の一覧が残量の取得を待って遅くなると、画面全体がもたつく）。
+function usageSnapshot() {
+  const age = Date.now() - usageCache.at;
+  if (age > USAGE_TTL && !usageFetching) {
+    usageFetching = fetchUsage()
+      .then((v) => {
+        // 取れなかったときは、少しの間だけ前の値を出し続ける（一瞬の失敗で
+        // バーが消えたり出たりするのを防ぐ）。それも古くなったら消す。
+        if (v) usageCache = { at: Date.now(), value: v };
+        else if (Date.now() - usageCache.at > USAGE_KEEP) usageCache = { at: Date.now(), value: null };
+      })
+      .finally(() => { usageFetching = null; });
+  }
+  return usageCache.value;
 }
 
 // ---------------------------------------------------------------- tmux
@@ -96,8 +168,8 @@ function tmux(args, { timeout = 5000 } = {}) {
 // tmux は書式出力中のタブを "_" に潰すので、区切りには使えない
 const SEP = '|::|';
 
-// 「本当に0件」と「tmux が答えなかった」は区別する。混ぜると、一時的な失敗で
-// 片付けリストを全部消してしまう（片付けたものが勝手に戻ってくる）。
+// 「本当に0件」と「tmux が答えなかった」は区別する。混ぜると、一時的な失敗を
+// 「セッションが1つも無い」と誤読して、間違った案内や判定をしてしまう。
 const NO_SERVER_RE = /no server running|error connecting to|no such file or directory/i;
 
 async function listSessions() {
@@ -445,17 +517,8 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/state' && req.method === 'GET') {
       const listed = await listSessions();
       const sessions = listed.sessions;
-      let archived = readArchived();
-      // 既に無くなったセッションは片付けリストからも落とす。
-      // 一覧が取れなかったときは触らない（消えたのか答えが返らなかっただけか分からない）。
-      // 書き込むのも中身が変わったときだけ（毎回書くと1.5秒ごとにディスクを叩く）。
-      if (listed.ok) {
-        const alive = sessions.map((s) => s.name);
-        const kept = archived.filter((n) => alive.indexOf(n) >= 0);
-        if (kept.length !== archived.length) { writeArchived(kept); archived = kept; }
-      }
       const out = [];
-      for (const s of sessions.filter((x) => archived.indexOf(x.name) < 0)) {
+      for (const s of sessions) {
         const text = (await captureScreen(s.name)) || '';
         const { status, quietMs } = judge(s.name, text);
         const info = await paneInfo(s.name);
@@ -466,13 +529,8 @@ const server = http.createServer(async (req, res) => {
           preview: lastMeaningfulLine(text),
         });
       }
-      // 片付けたものも題名で返す（work3 だけでは何を戻すのか分からない）。
-      // 状態は見せない＝片付けたものは静かなまま、という約束は変えない。
-      const archivedOut = [];
-      for (const n of archived) archivedOut.push({ name: n, title: titleOf(await paneInfo(n), n) });
-
       return json(res, 200, {
-        sessions: out, archived: archivedOut, version: currentVersion(), now: Date.now(),
+        sessions: out, usage: usageSnapshot(), version: currentVersion(), now: Date.now(),
       });
     }
 
@@ -523,11 +581,11 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const cwd = body.dir === 'home' ? os.homedir() : path.join(os.homedir(), '制作物');
-      // 片付けたセッションは画面から消えるだけで tmux には残る。同じ名前で作りにくると
-      // tmux が duplicate session で落ちるので、その一件だけは日本語で返す。
+      // 同じ名前で作りにくると tmux が duplicate session で落ちる。
+      // 画面には「失敗: http 500」しか出ないので、その一件だけは日本語で返す。
       const listed = await listSessions();
       if (listed.ok && listed.sessions.some((s) => s.name === name)) {
-        return json(res, 409, { error: name + ' は既にあります（片付けたものが残っています）' });
+        return json(res, 409, { error: name + ' は既にあります' });
       }
       const r = await tmux(['new-session', '-d', '-s', name, '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
@@ -582,36 +640,39 @@ const server = http.createServer(async (req, res) => {
       return json(res, r ? 200 : 500, r ? { ok: true } : { error: '消せませんでした' });
     }
 
-    // 片付ける／戻す。tmux セッションには触らない（中の作業は動き続ける）
-    if ((p === '/api/archive' || p === '/api/unarchive') && req.method === 'POST') {
-      const body = await readBody(req);
-      const name = String(body.name || '');
-      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
-      let archived = readArchived();
-      if (p === '/api/archive') {
-        if (archived.indexOf(name) < 0) archived.push(name);
-      } else {
-        archived = archived.filter((n) => n !== name);
-      }
-      writeArchived(archived);
-      return json(res, 200, { ok: true, archived });
-    }
-
-    // 本当に終わらせる（tmux ごと消す）。
-    // 2026-08-11 に一度これを削除したが、そのせいで「作れる・隠せる・終われない」に
-    // なり、片付けたセッションが work1〜9 の名前を占有し続けて満席になった
-    // （2026-08-12 実発生：9枠中7枠が片付け済みの放置セッション）。
-    // 片付ける＝隠すだけ、終わらせる＝消す。両方ないと運用が詰む。
+    // 終わらせる（tmux ごと消す）。作業場所の後始末はこれ1つだけにする。
+    // 一時は「片付ける＝隠すだけ」も持っていたが、隠したものが work1〜9 の名前を
+    // 占有し続けて満席になった（2026-08-12 実発生）。閉じる＝消す、で単純化する。
     if (p === '/api/kill' && req.method === 'POST') {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const r = await tmux(['kill-session', '-t', '=' + name + ':']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
-      // 名簿にも残さない（消えたものを「戻す」一覧に出しても押せないだけ）
-      writeArchived(readArchived().filter((n) => n !== name));
       console.log(`kill ${name}`);
       return json(res, 200, { ok: true });
+    }
+
+    // 作業中以外をまとめて終わらせる。名前は画面から受け取るが、消す直前に
+    // もう一度いまの状態を見て、作業中になっていたものは残す（押してから
+    // ここに届くまでの数秒で動き出すことがある）。何を残したかは返す。
+    if (p === '/api/killmany' && req.method === 'POST') {
+      const body = await readBody(req);
+      const names = (Array.isArray(body.names) ? body.names : [])
+        .map(String).filter((n) => NAME_RE.test(n));
+      if (!names.length) return json(res, 400, { error: 'bad names' });
+
+      const killed = [];
+      const skipped = [];
+      for (const name of names) {
+        const text = await captureScreen(name);
+        if (text === null) { skipped.push({ name, why: 'ありません' }); continue; }
+        if (judge(name, text).status === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
+        const r = await tmux(['kill-session', '-t', '=' + name + ':']);
+        if (r.ok) { killed.push(name); console.log(`kill ${name} (まとめて)`); }
+        else skipped.push({ name, why: '失敗' });
+      }
+      return json(res, 200, { ok: true, killed, skipped });
     }
 
     return json(res, 404, { error: 'not found' });
