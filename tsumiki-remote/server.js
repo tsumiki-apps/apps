@@ -177,6 +177,47 @@ function pruneUploads() {
   } catch (e) { /* 無ければ何もしない */ }
 }
 
+// -------------------------------------------------------------- プレビュー
+
+// 制作物の置き場。ここから外は絶対に出さない
+const PREVIEW_ROOT = fs.realpathSync(path.join(os.homedir(), '制作物'));
+const SKIP_DIR = /^(\.git|node_modules|\.next|dist|build|\.venv|__pycache__)$/;
+const PREVIEW_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;
+
+// 見せられるファイルを新しい順に集める（深さは3階層まで）
+function listPreviewables(limit = 200) {
+  const out = [];
+  (function walk(dir, depth) {
+    if (depth > 3 || out.length > 2000) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const e of entries) {
+      if (e.name.startsWith('.') && e.name !== '.') continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (!SKIP_DIR.test(e.name)) walk(full, depth + 1);
+      } else if (PREVIEW_EXT.test(e.name)) {
+        try {
+          const st = fs.statSync(full);
+          out.push({ rel: path.relative(PREVIEW_ROOT, full), mtime: st.mtimeMs, size: st.size });
+        } catch (e2) { /* 読めないものは飛ばす */ }
+      }
+    }
+  })(PREVIEW_ROOT, 0);
+  out.sort((a, b) => b.mtime - a.mtime);
+  return out.slice(0, limit);
+}
+
+const PREVIEW_MIME = {
+  '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+  '.md': 'text/plain; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+};
+
 // ---------------------------------------------------------------- HTTP
 
 const MIME = {
@@ -201,8 +242,14 @@ function json(res, code, obj) {
   send(res, code, JSON.stringify(obj));
 }
 
+function cookieToken(req) {
+  const raw = req.headers.cookie || '';
+  const m = /(?:^|;\s*)tsumiki_t=([^;]+)/.exec(raw);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 function authed(req, url) {
-  const t = url.searchParams.get('t') || req.headers['x-token'];
+  const t = url.searchParams.get('t') || req.headers['x-token'] || cookieToken(req);
   if (typeof t !== 'string' || t.length !== TOKEN.length) return false;
   return crypto.timingSafeEqual(Buffer.from(t), Buffer.from(TOKEN));
 }
@@ -261,6 +308,45 @@ const server = http.createServer(async (req, res) => {
       ],
     };
     return send(res, 200, JSON.stringify(manifest), 'application/manifest+json; charset=utf-8');
+  }
+
+  // 制作物のプレビュー。別タブ（Safari）で開くため、最初の1回でクッキーを配り、
+  // 以降の CSS・画像・フォントの読み込みはクッキーで通す。
+  if (p.startsWith('/preview/')) {
+    if (!authed(req, url)) return send(res, 401, '合言葉がありません', 'text/plain; charset=utf-8');
+
+    let rel;
+    try { rel = decodeURIComponent(p.slice('/preview/'.length)); }
+    catch (e) { return send(res, 400, 'bad path', 'text/plain; charset=utf-8'); }
+
+    const full = path.resolve(PREVIEW_ROOT, rel);
+    let real;
+    try { real = fs.realpathSync(full); } catch (e) {
+      return send(res, 404, 'ありません', 'text/plain; charset=utf-8');
+    }
+    // シンボリックリンクを辿った先が外なら拒否する
+    if (real !== PREVIEW_ROOT && !real.startsWith(PREVIEW_ROOT + path.sep)) {
+      return send(res, 403, '制作物フォルダの外は開けません', 'text/plain; charset=utf-8');
+    }
+    let st;
+    try { st = fs.statSync(real); } catch (e) {
+      return send(res, 404, 'ありません', 'text/plain; charset=utf-8');
+    }
+    if (st.isDirectory()) return send(res, 404, 'フォルダは開けません', 'text/plain; charset=utf-8');
+
+    const type = PREVIEW_MIME[path.extname(real).toLowerCase()] || 'application/octet-stream';
+    const headers = {
+      'content-type': type,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    };
+    if (url.searchParams.get('t')) {
+      headers['set-cookie'] =
+        `tsumiki_t=${encodeURIComponent(TOKEN)}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`;
+    }
+    res.writeHead(200, headers);
+    fs.createReadStream(real).pipe(res);
+    return;
   }
 
   if (!p.startsWith('/api/')) return serveStatic(res, p);
@@ -337,6 +423,14 @@ const server = http.createServer(async (req, res) => {
         await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       }
       return json(res, 200, { ok: true });
+    }
+
+    // 制作物の一覧（新しい順）
+    if (p === '/api/files' && req.method === 'GET') {
+      const q = (url.searchParams.get('q') || '').toLowerCase();
+      let files = listPreviewables(400);
+      if (q) files = files.filter((f) => f.rel.toLowerCase().indexOf(q) >= 0);
+      return json(res, 200, { root: PREVIEW_ROOT, files: files.slice(0, 120) });
     }
 
     // 画像を Mac に置く。Claude Code は画像そのものを受け取れないが、
