@@ -66,6 +66,23 @@ if [ -n "${TMUX:-}" ] && [ -x "$TMUX_BIN" ]; then
   fi
 fi
 
+# 同じセッションの連発を抑える。
+# 許可待ちのとき Claude Code は PermissionRequest と Notification の両方を撃つので、
+# そのままだと「返答待ち」の 6 秒後に「入力待ち」が来て 1 件の用事で 2 回鳴る。
+# 先に来た方（＝より具体的な「返答待ち」）だけ通し、直後の追い討ちは捨てる。
+COOLDOWN=20
+STATE_DIR="$HOME/.tsumiki-remote/notify-state"
+KEY=$(printf '%s' "$SESSION" | tr -c 'A-Za-z0-9_.-' '_')
+NOW=$(date +%s)
+LAST=0
+if [ -r "$STATE_DIR/$KEY" ]; then
+  LAST=$(cat "$STATE_DIR/$KEY" 2>/dev/null)
+  case "$LAST" in (''|*[!0-9]*) LAST=0 ;; esac
+fi
+[ "$((NOW - LAST))" -lt "$COOLDOWN" ] && exit 0
+mkdir -p "$STATE_DIR" 2>/dev/null
+printf '%s' "$NOW" > "$STATE_DIR/$KEY" 2>/dev/null
+
 EVENT="${1:-notification}"
 case "$EVENT" in
   permission)
