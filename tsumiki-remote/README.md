@@ -47,11 +47,24 @@ launchctl unload ~/Library/LaunchAgents/com.tsumiki.awake.plist
 
 ### 2. 画面だけ消す
 
-- キーボード: **Control + Shift + 電源ボタン**（macOS標準）
-- コマンド: `pmset displaysleepnow`
+**Control + Shift + 電源ボタンは Touch ID 搭載機では効かない。** 電源ボタンが
+Touch ID センサーになっていて、修飾キーの組み合わせとして認識されないため。
+代わりに次のどれかを使う。
+
+| 手段 | やりかた |
+|---|---|
+| 専用アプリ | `~/Applications/画面を消す.app`（Dock に置いて1クリック） |
+| アプリから | つみきリモートのヘッダーの **消灯**（外出先からでも消せる） |
+| コマンド | `pmset displaysleepnow` |
+| ホットコーナー | システム設定 → デスクトップとDock → ホットコーナー → 隅に「ディスプレイをスリープさせる」 |
 
 `caffeinate -ims` を常駐させてあるので、画面が消えても Mac は眠らない。
 （`-d` を付けていないので「画面は消える」。付けると画面も点いたままになる）
+
+**⚠️ Amphetamine と喧嘩する。** Amphetamine が「ディスプレイも起こしておく」
+セッションを持っていると、何で消しても画面がすぐ復帰する。今回の目的
+（蓋は開けたまま画面だけ消す）とは真逆なので、そのセッションは終了しておく。
+眠らせない役目は `com.tsumiki.awake` が担っているので Amphetamine は不要。
 
 ### 3. Tailscale（外から繋ぐ）— sudo なしで動かす
 

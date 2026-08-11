@@ -352,6 +352,15 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { path: file, bytes: buf.length });
     }
 
+    // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用。
+    if (p === '/api/displaysleep' && req.method === 'POST') {
+      const r = await new Promise((resolve) => {
+        execFile('/usr/bin/pmset', ['displaysleepnow'], { timeout: 5000 },
+          (err) => resolve(!err));
+      });
+      return json(res, r ? 200 : 500, r ? { ok: true } : { error: '消せませんでした' });
+    }
+
     // セッションを閉じる（中で動いているものごと終了する）
     if (p === '/api/kill' && req.method === 'POST') {
       const body = await readBody(req);
