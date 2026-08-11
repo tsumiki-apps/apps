@@ -31,7 +31,6 @@ APPS = {
     "tsugi":       ("⏰", "#5fd3c3", "#15a892"),
     "copybox":     ("📋", "#7fa8ff", "#4d6fe0"),
     "tabinoki":    ("🌴", "#3fd4c4", "#0d9488"),
-    "dokokani":    ("🚄", "#7fb8e8", "#3a7fc4"),
     "yarukoto":    ("✅", "#7c8bff", "#4f5edb"),
     "interview":   ("🎤", "#7b8cff", "#4f5bd5"),
     "check":       ("🔍", "#8fa3c8", "#54648c"),
