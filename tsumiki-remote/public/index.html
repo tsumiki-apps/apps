@@ -824,19 +824,6 @@
       .catch(function (e) { toast('終わらせられません: ' + e.message); });
   }
 
-  // 戻せない操作なので、シートをもう一枚出して指を止める。
-  // 「はい」を下ではなく上に置くと、勢いで押した指が当たるのが「やめる」になる
-  function confirmKill(name, title) {
-    openSheet('終わらせますか？');
-    var head = document.createElement('div');
-    head.className = 'sheethead';
-    head.textContent = (title || name) + '（' + name + '）の Claude を終了します。'
-      + '会話の続きはできなくなります（ファイルへの変更は残ります）。';
-    sheetBody.appendChild(head);
-    sheetItem('やめる', '何もしません', function () { closeSheet(); });
-    sheetItem('終わらせる', '取り消せません', function () { closeSheet(); doKill(name); });
-  }
-
   // 選ばれている札をもう一度タップしたときのメニュー。⋯（右上）まで行かずに、
   // いま目の前にある1件をその場で片付けるための入口。
   // 中身は必ず「今の一覧」から引き直す（札は1.5秒ごとに作り直されるが、
@@ -852,9 +839,12 @@
     head.textContent = s.name + ' ・ ' + LABEL[s.status] + ' ・ ' + KIND[s.kind];
     sheetBody.appendChild(head);
 
+    // 押したらすぐ終わる。確認シートは挟まない（ここに来るまでに
+    //「札をタップ→もう一度タップ」を踏んでいて、題名も目の前に出ている＝
+    // 間違った席を畳む余地が小さい。毎回2枚目を出すほうが邪魔）
     sheetItem('片付ける（終わらせる）',
-      s.status === 'busy' ? '⚠️ いま作業中です' : '取り消せません（次の画面で確認）',
-      function () { confirmKill(s.name, s.title); });
+      (s.status === 'busy' ? '⚠️ いま作業中です・' : '') + '押すとすぐ終わります（取り消せません）',
+      function () { closeSheet(); doKill(s.name); });
   }
 
   // 席が埋まったときの後始末。作業中のものだけ残して、あとはまとめて終わらせる。
@@ -964,11 +954,8 @@
     sheetItem('Mac の画面を消す', '蓋は開けたまま。作業は止まりません',
       function () { closeSheet(); doDark(); });
     sheetItem('この作業場所を終わらせる',
-      current ? current + ' の Claude を終了して席を空けます' : '選ばれていません',
-      function () {
-        var cur = sessions.filter(function (s) { return s.name === current; })[0];
-        confirmKill(current, cur && cur.title);
-      }, { disabled: !current });
+      current ? current + ' をすぐ終わらせます（取り消せません）' : '選ばれていません',
+      function () { closeSheet(); doKill(current); }, { disabled: !current });
     var killable = killableList();
     sheetItem('作業中以外を終わらせる',
       killable.length ? killable.length + ' 件の席を空けます（作業中は残す）' : '終わらせるものがありません',
