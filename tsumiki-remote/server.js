@@ -63,6 +63,21 @@ async function listSessions() {
     });
 }
 
+// そのセッションで動いているのが Claude Code か、素のシェルか。
+// ここが見えないと「AIに話しかけたつもりがシェルに打っていた」が起きる。
+async function currentCommand(name) {
+  if (!NAME_RE.test(name)) return '';
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
+  return r.ok ? r.out.trim() : '';
+}
+
+function kindOf(cmd) {
+  if (/^claude/i.test(cmd)) return 'claude';
+  if (/^(codex|gemini|aider)/i.test(cmd)) return 'agent';
+  if (/^(zsh|bash|sh|fish)$/i.test(cmd)) return 'shell';
+  return 'other';
+}
+
 // いま見えている画面だけ（状態判定はこちらを使う。履歴を混ぜると
 // 一度出た「Do you want…」がいつまでも残って返答待ちに見えてしまう）
 async function captureScreen(name) {
@@ -225,7 +240,12 @@ const server = http.createServer(async (req, res) => {
       for (const s of sessions) {
         const text = (await captureScreen(s.name)) || '';
         const { status, quietMs } = judge(s.name, text);
-        out.push({ name: s.name, window: s.window, status, quietMs, preview: lastMeaningfulLine(text) });
+        const cmd = await currentCommand(s.name);
+        out.push({
+          name: s.name, window: s.window, status, quietMs,
+          kind: kindOf(cmd), command: cmd,
+          preview: lastMeaningfulLine(text),
+        });
       }
       return json(res, 200, { sessions: out, now: Date.now() });
     }
@@ -265,13 +285,20 @@ const server = http.createServer(async (req, res) => {
       return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
     }
 
-    // セッションを作る
+    // セッションを作る。run:'claude' なら作った直後に Claude Code を起動する
+    // （素のシェルを作るだけだと、AI に話しかけたつもりでシェルに打ってしまう）
     if (p === '/api/new' && req.method === 'POST') {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
-      const r = await tmux(['new-session', '-d', '-s', name, '-c', os.homedir()]);
-      return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
+      const cwd = body.dir === 'home' ? os.homedir() : path.join(os.homedir(), '制作物');
+      const r = await tmux(['new-session', '-d', '-s', name, '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
+      if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
+      if (body.run === 'claude') {
+        await tmux(['send-keys', '-t', '=' + name + ':', '-l', 'claude']);
+        await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
+      }
+      return json(res, 200, { ok: true });
     }
 
     return json(res, 404, { error: 'not found' });

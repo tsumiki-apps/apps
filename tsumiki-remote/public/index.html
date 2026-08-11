@@ -48,7 +48,17 @@
   .tab.waiting .st{color:var(--wait)}
   .tab[aria-selected="true"]{background:#1f232b;border-color:#3b4250}
   @keyframes pulse{50%{opacity:.35}}
-  .tab.add{min-width:44px;text-align:center;color:var(--dim);font-size:18px;padding:10px}
+  .tab .kind{
+    margin-top:4px;font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;
+    display:inline-block;background:#20242c;color:var(--dim);
+  }
+  .tab .kind.claude,.tab .kind.agent{background:#13301f;color:#4ade80}
+  .tab .kind.shell{background:#2a2320;color:#d9a86c}
+  .tab.add{
+    min-width:56px;text-align:center;color:var(--dim);font-size:17px;padding:8px 6px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  }
+  .tab.add span{font-size:9px;letter-spacing:.04em}
 
   main{flex:1 1 auto;min-height:0;margin:0 10px;border:1px solid var(--line);border-radius:14px;background:#0b0c0f;overflow:hidden}
   #out{
@@ -172,6 +182,8 @@
   var toastTimer = null;
 
   var LABEL = { busy: '作業中', waiting: '返答待ち', idle: '待機' };
+  // 「AIに話しかけたつもりでシェルに打っていた」を防ぐための表示
+  var KIND = { claude: 'Claude', agent: 'AI', shell: 'シェル', other: '実行中' };
 
   function toast(msg) {
     el.toast.textContent = msg;
@@ -212,15 +224,28 @@
       b.className = 'tab ' + s.status;
       b.setAttribute('aria-selected', String(s.name === current));
       b.innerHTML = '<div class="n">' + (i + 1) + '・' + escapeHtml(s.name) + '</div>' +
-                    '<div class="st">' + LABEL[s.status] + '</div>';
+                    '<div class="st">' + LABEL[s.status] + '</div>' +
+                    '<div class="kind ' + s.kind + '">' + KIND[s.kind] + '</div>';
       b.onclick = function () { select(s.name); };
       el.tabs.appendChild(b);
     });
     var add = document.createElement('button');
     add.className = 'tab add';
-    add.textContent = '＋';
-    add.onclick = newSession;
+    add.innerHTML = '＋<span>Claude</span>';
+    add.onclick = function () { newSession('claude'); };
     el.tabs.appendChild(add);
+
+    var addSh = document.createElement('button');
+    addSh.className = 'tab add sh';
+    addSh.innerHTML = '＋<span>シェル</span>';
+    addSh.onclick = function () { newSession('shell'); };
+    el.tabs.appendChild(addSh);
+
+    // 素のシェルに日本語で話しかけてしまう事故を、入力欄の文言で防ぐ
+    var cur = sessions.filter(function (s) { return s.name === current; })[0];
+    el.cmd.placeholder = (cur && cur.kind === 'shell')
+      ? 'コマンドを入力…（AIではありません）'
+      : '指示を入力…';
   }
 
   function escapeHtml(s) {
@@ -237,14 +262,21 @@
     refreshPane(true);
   }
 
-  function newSession() {
+  function newSession(kind) {
     var used = {};
     sessions.forEach(function (s) { used[s.name] = 1; });
+    var prefix = kind === 'shell' ? 'sh' : 'work';
     var name = '';
-    for (var i = 1; i <= 9 && !name; i++) if (!used['work' + i]) name = 'work' + i;
+    for (var i = 1; i <= 9 && !name; i++) if (!used[prefix + i]) name = prefix + i;
     if (!name) return toast('セッションが多すぎます');
-    api('/api/new', { method: 'POST', body: JSON.stringify({ name: name }) })
-      .then(function () { toast(name + ' を作りました'); select(name); tick(true); })
+    var body = { name: name };
+    if (kind === 'claude') body.run = 'claude';
+    api('/api/new', { method: 'POST', body: JSON.stringify(body) })
+      .then(function () {
+        toast(name + (kind === 'claude' ? ' で Claude を起動中…' : ' を作りました'));
+        select(name);
+        tick(true);
+      })
       .catch(function (e) { toast('失敗: ' + e.message); });
   }
 
