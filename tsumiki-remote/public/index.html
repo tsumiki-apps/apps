@@ -26,8 +26,6 @@
   }
 
   header{display:flex;align-items:center;gap:8px;padding:10px 14px 8px;flex:0 0 auto;flex-wrap:nowrap}
-  /* 一番上の一等地はアプリ名ではなく「いま見ている作業の題名」に使う。
-     アプリ名は毎回同じで情報量がない（どのアプリかはアイコンで分かっている） */
   header .title{flex:1 1 auto;font-weight:700;font-size:15px;letter-spacing:.02em;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;min-width:0}
   header button{white-space:nowrap;flex:0 0 auto}
@@ -46,11 +44,14 @@
     background:var(--panel);border:1px solid var(--line);text-align:left;color:var(--fg);
     font:inherit;font-size:12px;line-height:1.3;
   }
-  /* タブは「どれに切り替えるか」の道しるべ。題名は頭だけ見えれば足りるので、
-     幅を止めて…で省く（全文はヘッダーに出る）。伸ばすと全部読めなくなる */
-  .tab .n{font-weight:700;font-size:13px;max-width:11em;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tab .st{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px;margin-top:3px}
+  /* 題名は折り返して全文出す。伸びるのは縦だけ（横に伸ばすと隣のタブが
+     画面から消えて、切り替え先が見えなくなる） */
+  .tab .n{font-weight:700;font-size:13px;max-width:11.5em;
+    white-space:normal;overflow-wrap:anywhere}
+  /* 状態（待機/作業中）と種類（Claude/シェル）は同じ行に置く。
+     題名が2〜3行になるぶん、ここで1行返す */
+  .tab .meta{display:flex;align-items:center;gap:6px;margin-top:4px}
+  .tab .st{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px}
   .tab .st::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--idle);flex:0 0 auto}
   .tab.busy .st::before{background:var(--busy);animation:pulse 1.2s ease-in-out infinite}
   .tab.waiting{border-color:var(--wait)}
@@ -59,7 +60,7 @@
   .tab[aria-selected="true"]{background:#1f232b;border-color:#3b4250}
   @keyframes pulse{50%{opacity:.35}}
   .tab .kind{
-    margin-top:4px;font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;
+    font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;flex:0 0 auto;
     display:inline-block;background:#20242c;color:var(--dim);
   }
   .tab .kind.claude,.tab .kind.agent{background:#13301f;color:#4ade80}
@@ -171,7 +172,7 @@
 <body>
 
 <header>
-  <span class="title" id="title">つみきリモート</span>
+  <span class="title">つみきリモート</span>
   <span class="conn" id="conn"><span class="txt">接続待ち</span></span>
   <button id="reload" aria-label="読み込み直す">↻</button>
   <button id="menu" aria-label="メニュー">⋯</button>
@@ -245,7 +246,6 @@
   }
 
   var el = {
-    title: document.getElementById('title'),
     tabs: document.getElementById('tabs'),
     out: document.getElementById('out'),
     cmd: document.getElementById('cmd'),
@@ -307,8 +307,10 @@
       b.className = 'tab ' + s.status;
       b.setAttribute('aria-selected', String(s.name === current));
       b.innerHTML = '<div class="n">' + (i + 1) + '・' + escapeHtml(s.title || s.name) + '</div>' +
-                    '<div class="st">' + LABEL[s.status] + '</div>' +
-                    '<div class="kind ' + s.kind + '">' + KIND[s.kind] + '</div>';
+                    '<div class="meta">' +
+                      '<span class="st">' + LABEL[s.status] + '</span>' +
+                      '<span class="kind ' + s.kind + '">' + KIND[s.kind] + '</span>' +
+                    '</div>';
       b.onclick = function () { select(s.name); };
       el.tabs.appendChild(b);
     });
@@ -330,9 +332,6 @@
       ? 'コマンドを入力…（AIではありません）'
       : '指示を入力…';
     pickBtn.disabled = !cur;
-
-    // いま見ている作業の題名を一番上に出す（タブは頭だけなので、全文はここで読む）
-    el.title.textContent = cur ? (cur.title || cur.name) : 'つみきリモート';
   }
 
   function escapeHtml(s) {
