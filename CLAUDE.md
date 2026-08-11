@@ -21,6 +21,9 @@
 2. **公開 = GitHub Pages を一気通貫**。「公開しますか？」と**許可を求めない**。
    動作確認 → 戻るボタン/アイコン注入 → `index.html` 追加 → commit & push まで完結し、
    **最後にまとめて報告＋公開URLを必ず貼る**。例外はユーザーが「まだ公開しないで」と明示した時のみ。
+   **push は `git push` ではなく `~/制作物/push_pages.sh` を使う**（＝公開完了まで見届ける）。
+   GitHub Pages は同時に1つしか公開できず、続けて push すると後発の deploy が 400 で落ちる。
+   それが最後の push だと**サイトが古いまま止まる**（2026-08-11 実発生）。スクリプトが自動で再実行する。
    → 詳細 `Preferences/deploy-workflow.md`
    **⚠️ 置き場は「外部に使わせるか？」で決める（4系統）**：
    - **仕事（Apple）で同僚に使わせる → 別アカウント `teamkit-tools`＝teamkit-tools.github.io**
