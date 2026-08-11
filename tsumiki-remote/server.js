@@ -301,6 +301,16 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
+    // セッションを閉じる（中で動いているものごと終了する）
+    if (p === '/api/kill' && req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name || '');
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      const r = await tmux(['kill-session', '-t', '=' + name + ':']);
+      prev.delete(name);
+      return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
+    }
+
     return json(res, 404, { error: 'not found' });
   } catch (e) {
     return json(res, 500, { error: String(e && e.message || e) });
