@@ -17,11 +17,17 @@
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;height:100%;overscroll-behavior:none}
+  html,body{margin:0;height:100%;overscroll-behavior:none;overflow:hidden}
+  /* body を position:fixed で流れから外す＝「文書そのもの」がスクロールしなくなる。
+     iOS はキーボードが出ると文書を勝手にスクロールし、閉じても戻さないことがある。
+     すると画面全体が下にズレたように見える（上端を触ったときに起きやすい）。
+     中身のスクロールは #out / nav / #keys が各自持っているので、これで困らない。
+     ※ overflow:hidden だけでは iOS に効かない。位置を固定するのが要点（2026-08-11） */
   body{
     background:var(--bg);color:var(--fg);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
     display:flex;flex-direction:column;height:100dvh;
+    position:fixed;top:0;left:0;right:0;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   }
 
@@ -281,7 +287,13 @@
     if (opts.body) opts.headers['content-type'] = 'application/json';
     return fetch(path, opts).then(function (r) {
       if (r.status === 401) { gate(true); throw new Error('unauthorized'); }
-      if (!r.ok) throw new Error('http ' + r.status);
+      // 失敗したときは中身の error を読んで見せる。「http 500」だけだと
+      // 何が起きたのか外出先から確かめようがない（2026-08-11）。
+      if (!r.ok) {
+        return r.json().catch(function () { return null; }).then(function (d) {
+          throw new Error((d && d.error) ? d.error : 'http ' + r.status);
+        });
+      }
       return r.json();
     });
   }
@@ -350,8 +362,12 @@
   }
 
   function newSession(kind) {
+    // 片付けた（アーカイブした）ものは一覧から消えるだけで tmux には残っている。
+    // ここで archived を数え忘れると、生きている work2 に work2 を作りにいって
+    // tmux が duplicate session で落ち、画面には「失敗: http 500」しか出ない。
     var used = {};
     sessions.forEach(function (s) { used[s.name] = 1; });
+    archived.forEach(function (a) { used[a.name] = 1; });
     var prefix = kind === 'shell' ? 'sh' : 'work';
     var name = '';
     for (var i = 1; i <= 9 && !name; i++) if (!used[prefix + i]) name = prefix + i;

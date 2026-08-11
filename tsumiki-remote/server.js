@@ -518,6 +518,12 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const cwd = body.dir === 'home' ? os.homedir() : path.join(os.homedir(), '制作物');
+      // 片付けたセッションは画面から消えるだけで tmux には残る。同じ名前で作りにくると
+      // tmux が duplicate session で落ちるので、その一件だけは日本語で返す。
+      const listed = await listSessions();
+      if (listed.ok && listed.sessions.some((s) => s.name === name)) {
+        return json(res, 409, { error: name + ' は既にあります（片付けたものが残っています）' });
+      }
       const r = await tmux(['new-session', '-d', '-s', name, '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       if (body.run === 'claude') {
