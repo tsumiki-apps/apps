@@ -11,13 +11,14 @@ SOCK="$HOME/.tsumiki-remote/tailscaled.sock"
 TOKEN=$(tr -d ' \n' < "$HOME/.tsumiki-remote/token")
 PORT="${TSUMIKI_REMOTE_PORT:-8787}"
 
-# tailscale serve を使っていれば https の名前、なければ tailscale IP を使う
-HOSTNAME_TS=$(/opt/homebrew/bin/tailscale --socket="$SOCK" status --json 2>/dev/null \
-  | /usr/bin/python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["Self"]["DNSName"].rstrip("."))' 2>/dev/null || true)
+# tailscale serve を張っていればその URL、無ければ tailscale IP に直接。
+# serve status の1行目は短縮名なので、FQDN（*.ts.net）の行を拾う。
+BASE=$(/opt/homebrew/bin/tailscale --socket="$SOCK" serve status 2>/dev/null \
+  | grep -oE '^https?://[A-Za-z0-9.-]+\.ts\.net' | head -1 || true)
 IP_TS=$(/opt/homebrew/bin/tailscale --socket="$SOCK" ip -4 2>/dev/null | head -1 || true)
 
-if /opt/homebrew/bin/tailscale --socket="$SOCK" serve status 2>/dev/null | grep -q "$PORT"; then
-  URL="https://$HOSTNAME_TS/?t=$TOKEN"
+if [ -n "$BASE" ]; then
+  URL="$BASE/?t=$TOKEN"
 elif [ -n "$IP_TS" ]; then
   URL="http://$IP_TS:$PORT/?t=$TOKEN"
 else
