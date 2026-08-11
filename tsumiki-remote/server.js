@@ -492,6 +492,10 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const text = String(body.text || '').replace(/[\r\n]+/g, ' ');
+      // 「押したのに効かない」を後から追えるようにする。指示の本文まで丸ごと
+      // 残すと server.log が日誌になってしまうので、短いものだけ中身を出し、
+      // 長いものは字数だけにする（数字ボタンの調査にはこれで足りる）
+      console.log(`send ${name} ${text.length <= 8 ? JSON.stringify(text) : text.length + '文字'}${body.enter ? ' +Enter' : ''}`);
       if (text) {
         const r = await tmux(['send-keys', '-t', '=' + name + ':', '-l', text]);
         if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
@@ -507,6 +511,7 @@ const server = http.createServer(async (req, res) => {
       const key = String(body.key || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       if (!/^[A-Za-z0-9_-]{1,12}$/.test(key)) return json(res, 400, { error: 'bad key' });
+      console.log(`key ${name} ${key}`);
       const r = await tmux(['send-keys', '-t', '=' + name + ':', key]);
       return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
     }
@@ -590,6 +595,23 @@ const server = http.createServer(async (req, res) => {
       }
       writeArchived(archived);
       return json(res, 200, { ok: true, archived });
+    }
+
+    // 本当に終わらせる（tmux ごと消す）。
+    // 2026-08-11 に一度これを削除したが、そのせいで「作れる・隠せる・終われない」に
+    // なり、片付けたセッションが work1〜9 の名前を占有し続けて満席になった
+    // （2026-08-12 実発生：9枠中7枠が片付け済みの放置セッション）。
+    // 片付ける＝隠すだけ、終わらせる＝消す。両方ないと運用が詰む。
+    if (p === '/api/kill' && req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name || '');
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      const r = await tmux(['kill-session', '-t', '=' + name + ':']);
+      if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
+      // 名簿にも残さない（消えたものを「戻す」一覧に出しても押せないだけ）
+      writeArchived(readArchived().filter((n) => n !== name));
+      console.log(`kill ${name}`);
+      return json(res, 200, { ok: true });
     }
 
     return json(res, 404, { error: 'not found' });

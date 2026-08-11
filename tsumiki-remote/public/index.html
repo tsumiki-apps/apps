@@ -94,7 +94,9 @@
 
   /* 下端は iPhone のホームバー領域（触れない帯）。そこに 8px を足すと
      黒い余りが増えるだけなので、max() で「多い方」を使うだけにする */
-  footer{flex:0 0 auto;padding:6px 10px max(6px, env(safe-area-inset-bottom))}
+  /* position:relative ＝ トーストの位置の基準。footer が伸び縮みしても
+     トーストが必ずその真上に乗るようにするため（.toast のコメント参照） */
+  footer{flex:0 0 auto;padding:6px 10px max(6px, env(safe-area-inset-bottom));position:relative}
 
   /* 送り先バー。iOS はキーボードを出すとき画面全体を押し上げるので、ヘッダーも
      タブ行も画面の上へ消える＝打っている最中に「いま誰に送ろうとしているのか」
@@ -211,9 +213,15 @@
     padding:13px;border-radius:12px;background:#20242c;border:1px solid var(--line);
     color:var(--fg);font:inherit;font-size:15px;font-weight:700;
   }
-  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#242932;
-    color:var(--fg);padding:8px 14px;border-radius:10px;font-size:12px;opacity:0;transition:opacity .2s;
-    pointer-events:none;z-index:20}
+  /* トーストは footer の子にして「footer の上端のさらに上」に置く。
+     以前は bottom:96px の決め打ちだったが、送り先バーや画像の札が増えて
+     footer が伸びるたびに位置がずれ、esc/↓/tab/1 のキー行を覆っていた
+     （タップ自体は貫通するが、何を押しているのか見えない）。
+     100% 基準なら footer が何段になっても必ず真上に出る（2026-08-12） */
+  .toast{position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);
+    background:#242932;color:var(--fg);padding:8px 14px;border-radius:10px;font-size:12px;
+    opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;
+    max-width:calc(100% - 20px);text-align:center}
   .toast.show{opacity:1}
 </style>
 </head>
@@ -251,6 +259,7 @@
     <button id="send" disabled>↑</button>
   </div>
   <input id="file" type="file" accept="image/*" hidden>
+  <div class="toast" id="toast"></div>
 </footer>
 
 <div id="gate">
@@ -275,8 +284,6 @@
     <button class="sheetcancel" id="sheetcancel">とじる</button>
   </div>
 </div>
-
-<div class="toast" id="toast"></div>
 
 <script>
 (function () {
@@ -423,8 +430,16 @@
     archived.forEach(function (a) { used[a.name] = 1; });
     var prefix = kind === 'shell' ? 'sh' : 'work';
     var name = '';
-    for (var i = 1; i <= 9 && !name; i++) if (!used[prefix + i]) name = prefix + i;
-    if (!name) return toast('セッションが多すぎます');
+    // 枠は 20 まで。9 だと片付けたものが席を占め続けてすぐ満席になった（2026-08-12）
+    for (var i = 1; i <= 20 && !name; i++) if (!used[prefix + i]) name = prefix + i;
+    // 「多すぎます」だけだと、何が席を埋めているのか画面から分からない。
+    // 実際の詰まりは「片付けた（＝見えない）まま動き続けているもの」なので、
+    // その件数と、どこから終わらせられるかまで言う
+    if (!name) {
+      return toast(archived.length
+        ? '満席です。片付けたもの ' + archived.length + ' 件が動いたままです（⋯ →「片付けたもの」から終わらせる）'
+        : '満席です（' + prefix + '1〜20 すべて使用中）');
+    }
     var body = { name: name };
     if (kind === 'claude') body.run = 'claude';
     api('/api/new', { method: 'POST', body: JSON.stringify(body) })
@@ -552,8 +567,10 @@
       });
   }
 
+  // 送り先が無いときに黙って何もしないと、「押しても画面が全く変わらない」に
+  // なって原因が分からない。効かないなら効かないと言う（2026-08-12）
   function sendText(text, enter) {
-    if (!current) return;
+    if (!current) return toast('送り先が選ばれていません');
     return api('/api/send', {
       method: 'POST',
       body: JSON.stringify({ name: current, text: text, enter: !!enter })
@@ -562,7 +579,7 @@
   }
 
   function sendKey(key) {
-    if (!current) return;
+    if (!current) return toast('送り先が選ばれていません');
     return api('/api/key', { method: 'POST', body: JSON.stringify({ name: current, key: key }) })
       .then(function () { setTimeout(function () { tick(true); }, 250); })
       .catch(function (e) { toast('送信失敗: ' + e.message); });
@@ -705,6 +722,34 @@
       .catch(function (e) { toast('片付けられません: ' + e.message); });
   }
 
+  // 終わらせる = tmux ごと消す。片付ける（隠すだけ）と対になる、戻せない操作。
+  // これが無かったせいで作業場所の名前が枯れて「セッションが多すぎます」になった
+  function doKill(name) {
+    api('/api/kill', { method: 'POST', body: JSON.stringify({ name: name }) })
+      .then(function () {
+        toast(name + ' を終わらせました');
+        if (current === name) {
+          current = '';
+          localStorage.removeItem('tsumiki-remote-session');
+        }
+        tick(true);
+      })
+      .catch(function (e) { toast('終わらせられません: ' + e.message); });
+  }
+
+  // 戻せない操作なので、シートをもう一枚出して指を止める。
+  // 「はい」を下ではなく上に置くと、勢いで押した指が当たるのが「やめる」になる
+  function confirmKill(name, title) {
+    openSheet('終わらせますか？');
+    var head = document.createElement('div');
+    head.className = 'sheethead';
+    head.textContent = (title || name) + '（' + name + '）の Claude を終了します。'
+      + '会話の続きはできなくなります（ファイルへの変更は残ります）。';
+    sheetBody.appendChild(head);
+    sheetItem('やめる', '何もしません', function () { closeSheet(); });
+    sheetItem('終わらせる', '取り消せません', function () { closeSheet(); doKill(name); });
+  }
+
   function doUnarchive(name) {
     api('/api/unarchive', { method: 'POST', body: JSON.stringify({ name: name }) })
       .then(function () { toast(name + ' を戻しました'); select(name); tick(true); })
@@ -768,17 +813,29 @@
     sheetItem('この作業場所を片付ける',
       current ? current + ' を一覧から隠します（作業は止まりません）' : '選ばれていません',
       function () { closeSheet(); doArchive(); }, { disabled: !current });
+    sheetItem('この作業場所を終わらせる',
+      current ? current + ' の Claude を終了して席を空けます' : '選ばれていません',
+      function () {
+        var cur = sessions.filter(function (s) { return s.name === current; })[0];
+        confirmKill(current, cur && cur.title);
+      }, { disabled: !current });
     if (archived.length) {
-      sheetItem('片付けたものを戻す', archived.length + ' 件', function () { openArchived(); });
+      sheetItem('片付けたもの', archived.length + ' 件（動いたままです）',
+        function () { openArchived(); });
     }
   };
 
+  // 片付けたものは「戻す」だけでなく「終わらせる」も要る。
+  // 席を占めているのはここに並んでいるものなので、片付ける場所と
+  // 終わらせる場所が別々だと、詰まったときに辿り着けない
   function openArchived() {
-    openSheet('片付けたもの');
+    openSheet('片付けたもの ・ ' + archived.length + ' 件');
     if (!archived.length) { sheetItem('ありません', '', closeSheet); return; }
     archived.forEach(function (a) {
-      sheetItem(a.title || a.name, a.name + ' を一覧に戻します',
+      sheetItem(a.title || a.name, a.name + ' を一覧に戻す',
         function () { closeSheet(); doUnarchive(a.name); });
+      sheetItem('　└ 終わらせる', a.name + ' の Claude を終了して席を空ける',
+        function () { confirmKill(a.name, a.title); });
     });
   }
 
