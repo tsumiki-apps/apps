@@ -69,6 +69,9 @@
     cursor:pointer; transition:transform .15s ease, opacity .15s ease;}
   .btn:active{transform:scale(.97);}
   .btn[disabled]{opacity:.55;}
+  /* 書き出しずみ＝あとは押すだけの状態。もう一度おしてほしいので、そっと目立たせる */
+  .btn.ready{animation:ready 1.6s ease-in-out infinite;}
+  @keyframes ready{0%,100%{box-shadow:0 0 0 0 rgba(36,35,33,.26);} 50%{box-shadow:0 0 0 7px rgba(36,35,33,0);}}
   .btn.ghost{flex:0 0 auto; width:58px; padding:15px 0; background:var(--card);
     color:var(--sub); border-color:var(--line);}
   .btn svg{width:22px; height:22px; display:block;}
@@ -191,11 +194,13 @@ function layout(){
 el('w').addEventListener('input', e => {
   pct = parseFloat(e.target.value);
   localStorage.setItem(KEY, String(pct));
+  if(pending) disarmSave();   // 見た目を変えたら、書き出しずみのファイルは作り直し
   layout();
 });
 el('r').addEventListener('input', e => {
   rad = parseFloat(e.target.value);
   localStorage.setItem(KEY_R, String(rad));
+  if(pending) disarmSave();
   layout();
 });
 window.addEventListener('resize', layout);
@@ -216,6 +221,7 @@ el('again').addEventListener('click', () => { if(!busy) reset(); });
 function reset(){
   if(url) URL.revokeObjectURL(url);
   url = null; media = null; kind = null; srcW = 0; srcH = 0;
+  disarmSave();
   el('frame').innerHTML = '';
   el('view2').classList.add('hide');
   el('view1').classList.remove('hide');
@@ -228,6 +234,7 @@ function load(file, hint){
   kind = /^video\//.test(file.type) ? 'video'
        : /^image\//.test(file.type) ? 'image'
        : (hint || 'image');
+  disarmSave();
   el('frame').innerHTML = '';
 
   if(kind === 'image'){
@@ -289,33 +296,54 @@ function paint(ctx, src, W, H){
 /* ---------- 保存 ---------- */
 el('save').addEventListener('click', () => { if(!busy) save(); });
 
+/* 書き出しずみで、まだ写真アプリに入れていないファイル。
+   動画は書き出しに時間がかかり、その間に「タップの権利」（＝ユーザー操作の有効時間・数秒）が
+   切れてしまうので、共有シートは次のタップで開く。それまでここに置いておく。 */
+let pending = null;
+
 async function save(){
-  busy = true;
   const btn = el('save');
+  // 2回目のタップ＝書き出しずみのファイルを、そのまま共有シートへ（押した瞬間に開く）
+  if(pending){ handOver(pending); return; }
+
+  busy = true;
   btn.disabled = true; el('again').disabled = true;
   try{
     if(kind === 'image'){
       btn.textContent = '…';
       const blob = await makeImage();
-      await deliver(blob, stamp() + '.jpg', 'image/jpeg');
-      toast('保存しました');
+      handOver(new File([blob], stamp() + '.jpg', {type:'image/jpeg'}));
     } else {
       const blob = await makeVideo(p => {
         btn.textContent = Math.round(p * 100) + '%';
         el('bar').querySelector('i').style.width = (p * 100) + '%';
       });
       const mp4 = blob.type.indexOf('mp4') >= 0;
-      await deliver(blob, stamp() + (mp4 ? '.mp4' : '.webm'), mp4 ? 'video/mp4' : 'video/webm');
-      toast(mp4 ? '保存しました' : 'この端末はmp4を作れないため、webmで書き出しました');
+      if(!mp4) toast('この端末はmp4を作れないため、webmで書き出しました');
+      handOver(new File([blob], stamp() + (mp4 ? '.mp4' : '.webm'), {type: mp4 ? 'video/mp4' : 'video/webm'}));
     }
   }catch(e){
     toast((e && e.message) ? e.message : '保存できませんでした');
+    btn.textContent = '保存';
   }
   el('bar').style.display = 'none';
   el('bar').querySelector('i').style.width = '0%';
   btn.disabled = false; el('again').disabled = false;
-  btn.textContent = '保存';
   busy = false;
+}
+
+/* 書き出したファイルの受け渡し。待ちの状態は保存ボタンの見た目で伝える */
+function armSave(file){
+  pending = file;
+  const btn = el('save');
+  btn.textContent = '写真に保存';
+  btn.classList.add('ready');
+}
+function disarmSave(){
+  pending = null;
+  const btn = el('save');
+  btn.textContent = '保存';
+  btn.classList.remove('ready');
 }
 
 function stamp(){
@@ -450,22 +478,41 @@ function makeVideo(onProgress){
   });
 }
 
-/* 共有シート（＝iPhoneの「写真に保存」が出るところ）へ渡す。だめならダウンロード */
-async function deliver(blob, name, type){
-  const file = new File([blob], name, {type});
-  if(navigator.canShare && navigator.canShare({files:[file]})){
+/* 共有シート（＝iPhoneの「写真に保存」が出るところ）へ渡す。
+   ⚠️ navigator.share は「タップしてから数秒以内」でないと開けない決まりがある。
+   そのため await を1つも挟まずに呼ぶこと。開けなかったときはボタンを
+   「写真に保存」に変えて待機し、次のタップで開く（書き出しはやり直さない）。 */
+function handOver(file){
+  const tries = (file.__tries || 0) + 1;
+  file.__tries = tries;
+
+  let can = false;
+  try{ can = !!(navigator.canShare && navigator.canShare({files:[file]})); }catch(e){}
+  if(can){
+    const failed = e => {
+      // AbortError＝共有シートを閉じただけ。それ以外＝タップの権利ぎれなど
+      if(e && e.name === 'AbortError'){ armSave(file); return; }
+      if(tries >= 2){ download(file); return; }   // 2回だめなら行き止まりにせず受け取り方を変える
+      armSave(file);
+      toast('できました。もう一度おしてください');
+    };
     try{
-      await navigator.share({files:[file]});
+      navigator.share({files:[file]}).then(() => { disarmSave(); toast('保存しました'); }).catch(failed);
       return;
-    }catch(e){
-      if(e && e.name === 'AbortError') return;   // ユーザーが閉じただけ
-    }
+    }catch(e){ failed(e); return; }
   }
+  // 共有シートが使えない端末（パソコンなど）はダウンロードで受け取る
+  download(file);
+}
+
+function download(file){
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+  disarmSave();
+  toast('保存しました');
 }
 
 /* ---------- トースト ---------- */
