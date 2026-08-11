@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-genka.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="げんか">
+<meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131109" media="(prefers-color-scheme: dark)">
+<title>げんか</title>
+<style>
+  :root{
+    --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5; --ink:#1d1a15;
+    --ink-mid:#5b554a; --ink-soft:#8f8877; --line:#e2ded4; --line-2:#d8d3c7;
+    --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
+    --good:#4c7a51; --good-wash:#dde9dd; --warn:#b0522a; --warn-wash:#f2e0d4;
+    --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
+    --serif:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Songti SC",serif;
+    --sans:"Hiragino Kaku Gothic ProN","Yu Gothic",YuGothic,Meiryo,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#131109; --surface:#1d1a12; --surface-2:#26221a; --ink:#efe8da;
+      --ink-mid:#a89e8b; --ink-soft:#7d7566; --line:#2f2b21; --line-2:#3a352a;
+      --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+      --good:#7fae82; --good-wash:#23301f; --warn:#d9825a; --warn-wash:#39251a;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5; --ink:#1d1a15;
+    --ink-mid:#5b554a; --ink-soft:#8f8877; --line:#e2ded4; --line-2:#d8d3c7;
+    --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
+    --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
+  }
+  :root[data-theme="dark"]{
+    --paper:#131109; --surface:#1d1a12; --surface-2:#26221a; --ink:#efe8da;
+    --ink-mid:#a89e8b; --ink-soft:#7d7566; --line:#2f2b21; --line-2:#3a352a;
+    --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper); color:var(--ink); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased; font-feature-settings:"palt" 1; -webkit-text-size-adjust:100%;
+  }
+  .tnum{font-variant-numeric:tabular-nums;}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:20; background:color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter:saturate(1.3) blur(10px); -webkit-backdrop-filter:saturate(1.3) blur(10px);
+    border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 12px) 18px 12px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .brand{display:flex; align-items:center; gap:10px; min-width:0;}
+  .brand .cube{
+    width:22px; height:22px; flex:none;
+    background:
+      linear-gradient(var(--accent),var(--accent)) left top/9px 9px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) right top/9px 9px no-repeat,
+      linear-gradient(var(--accent-2),var(--accent-2)) center bottom/9px 9px no-repeat;
+  }
+  .brand h1{font-family:var(--serif); font-weight:600; font-size:1.1rem; margin:0; letter-spacing:.02em; white-space:nowrap;}
+  .spacer{flex:1;}
+
+  /* ---------- layout ---------- */
+  main{max-width:600px; margin:0 auto; padding:16px 16px calc(env(safe-area-inset-bottom) + 44px); display:grid; gap:15px;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); padding:18px 19px;}
+  .label{font-size:.74rem; font-weight:700; letter-spacing:.06em; color:var(--accent-2);}
+  @media (min-width:1080px){ main{max-width:860px;} }
+
+  /* ---------- 月／年の切り替え ---------- */
+  .viewseg{display:flex; gap:0; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:3px;}
+  .viewseg button{
+    flex:1; border:none; background:transparent; border-radius:9px; padding:9px 6px;
+    font-family:var(--sans); font-size:.9rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+  }
+  .viewseg button.on{background:var(--surface); color:var(--accent-2); box-shadow:0 1px 3px rgba(40,32,18,.1);}
+
+  /* ---------- 合計 ---------- */
+  .total{text-align:center; margin:16px 0 4px;}
+  .total .cap{font-size:.78rem; color:var(--ink-soft); font-weight:700;}
+  .total .big{
+    display:block; font-family:var(--serif); color:var(--ink); line-height:1.15; margin-top:4px;
+    font-size:clamp(1.9rem, 11vw, 2.9rem); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .total .sub{font-size:.83rem; color:var(--ink-soft); margin-top:6px;}
+
+  /* ---------- 内訳 ---------- */
+  .bd{display:grid; gap:10px; margin-top:16px;}
+  .bd-row .t{display:flex; align-items:baseline; gap:8px; font-size:.86rem;}
+  .bd-row .t .n{font-weight:700;}
+  .bd-row .t .p{margin-left:auto; color:var(--ink-soft); font-size:.78rem; flex:none;}
+  .bd-row .t .v{font-family:var(--serif); font-size:1rem; flex:none;}
+  .bar{height:7px; border-radius:99px; background:var(--surface-2); margin-top:5px; overflow:hidden;}
+  .bar i{display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--accent),var(--accent-2));}
+
+  /* ---------- 入力 ---------- */
+  .cat-h{display:flex; align-items:center; gap:8px; margin:0 0 11px;}
+  .cat-h h2{font-family:var(--serif); font-size:1.02rem; font-weight:600; margin:0; letter-spacing:.02em;}
+  .cat-h .csum{margin-left:auto; font-family:var(--serif); font-size:.95rem; color:var(--ink-mid);}
+  .items{display:grid; gap:9px;}
+  .item{background:var(--surface-2); border:1px solid var(--line); border-radius:13px; padding:10px 11px; display:grid; gap:8px;}
+  .item .r1{display:flex; align-items:center; gap:8px;}
+  .item .nm{
+    flex:1; min-width:0; border:none; background:transparent; padding:2px 0;
+    font-family:var(--sans); font-size:.92rem; font-weight:700; color:var(--ink);
+  }
+  .item .nm:focus{outline:none; border-bottom:1.5px solid var(--accent);}
+  .item .del{
+    flex:none; width:26px; height:26px; border:1px solid var(--line-2); background:var(--surface);
+    border-radius:8px; color:var(--ink-soft); font-size:1rem; line-height:1; cursor:pointer; padding:0;
+  }
+  .item .del:active{transform:scale(.92);}
+  .item .r2{display:flex; align-items:center; gap:8px;}
+  .item .yen{flex:none; color:var(--ink-soft); font-size:.95rem;}
+  .item .amt{
+    flex:1; min-width:0; border:1.5px solid var(--line); background:var(--surface); border-radius:10px;
+    padding:9px 11px; font-size:16px; color:var(--ink); font-family:var(--sans);
+    text-align:right; font-variant-numeric:tabular-nums;
+  }
+  .item .amt:focus{outline:2px solid var(--accent-wash); border-color:var(--accent);}
+  .useg{flex:none; display:flex; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:2px;}
+  .useg button{
+    border:none; background:transparent; border-radius:8px; padding:6px 10px;
+    font-family:var(--sans); font-size:.8rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+  }
+  .useg button.on{background:var(--accent-wash); color:var(--accent-2);}
+  .additem{
+    margin-top:9px; width:100%; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
+    padding:10px; font-family:var(--sans); font-size:.85rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+  }
+  .additem:active{background:var(--surface-2);}
+
+  .btn{
+    width:100%; border:none; border-radius:13px; padding:14px; font-weight:700; font-size:1rem;
+    font-family:var(--sans); cursor:pointer; color:#fff; background:linear-gradient(155deg,var(--accent),var(--accent-2));
+  }
+  .btn:active{transform:scale(.98);}
+  .btn.ghost{background:none; color:var(--ink-mid); border:1.5px solid var(--line-2);}
+  .note{font-size:.78rem; color:var(--ink-soft); margin:11px 2px 0; line-height:1.55;}
+
+  .toast{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 22px); transform:translate(-50%,14px);
+    background:var(--ink); color:var(--paper); padding:10px 16px; border-radius:99px; font-size:.85rem;
+    font-weight:700; opacity:0; pointer-events:none; transition:.22s; z-index:50;
+  }
+  .toast.show{opacity:1; transform:translate(-50%,0);}
+
+  /* ---------- PDF（印刷）用のシート ---------- */
+  .sheet{display:none;}
+  @media print{
+    @page{size:A4 portrait; margin:15mm 14mm;}
+    body{background:#fff; color:#000;}
+    .topbar, main, .toast, #tsumikiEdge, #tsumikiPeek{display:none !important;}
+    .sheet{
+      display:block !important; font-family:var(--serif); color:#000;
+      -webkit-print-color-adjust:exact; print-color-adjust:exact;
+    }
+    .sheet .sh-h{border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:4px;}
+    .sheet h1{font-size:19pt; margin:0; font-weight:600; letter-spacing:.04em;}
+    .sheet .sh-meta{font-size:9pt; color:#444; margin-top:4px; display:flex;}
+    .sheet .sh-meta .r{margin-left:auto;}
+    .sheet .sh-sum{
+      display:flex; gap:10mm; margin:8mm 0 7mm; padding:5mm 6mm;
+      border:1.2pt solid #000; border-radius:2mm;
+    }
+    .sheet .sh-sum div{flex:1;}
+    .sheet .sh-sum span{display:block; font-size:8.5pt; color:#444; letter-spacing:.06em;}
+    .sheet .sh-sum b{display:block; font-size:17pt; font-weight:600; margin-top:1mm;}
+    .sheet table{width:100%; border-collapse:collapse; font-size:10pt;}
+    .sheet thead th{
+      text-align:right; font-size:8.5pt; font-weight:600; color:#444; letter-spacing:.06em;
+      border-bottom:1pt solid #000; padding:0 0 2mm;
+    }
+    .sheet thead th:first-child{text-align:left;}
+    .sheet td{padding:2.2mm 0; border-bottom:.4pt solid #ccc; text-align:right; font-variant-numeric:tabular-nums;}
+    .sheet td:first-child{text-align:left;}
+    /* 行のクラスは sh- を付ける。画面用の .item（角丸のベージュ箱・display:grid）が
+       印刷シートの <tr> にも当たって表が崩れるため（2026-08-11 検証で発覚）。 */
+    .sheet tr.sh-cat td{
+      border-bottom:.6pt solid #666; padding-top:5mm; font-weight:600; font-size:10.5pt;
+    }
+    .sheet tr.sh-item td:first-child{padding-left:5mm; color:#222;}
+    .sheet tr.sh-item td{font-size:9.5pt; color:#222;}
+    .sheet tr.sh-grand td{border-top:1.2pt solid #000; border-bottom:none; padding-top:3mm; font-size:12pt; font-weight:600;}
+    .sheet tr.sh-cat, .sheet tr.sh-item{break-inside:avoid;}
+    .sheet .sh-f{margin-top:8mm; padding-top:3mm; border-top:.4pt solid #ccc; font-size:8pt; color:#666; line-height:1.7;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="cube"></span><h1>げんか</h1></div>
+  <span class="spacer"></span>
+</div>
+
+<main>
+
+  <!-- 結果 -->
+  <section class="card">
+    <div class="viewseg" id="viewSeg">
+      <button data-v="m" class="on">月ごと</button>
+      <button data-v="y">年ごと</button>
+    </div>
+
+    <div class="total">
+      <span class="cap" id="totCap">1ヶ月あたりの原価</span>
+      <b class="big tnum" id="totBig">¥0</b>
+      <div class="sub" id="totSub">1年あたり ¥0</div>
+    </div>
+
+    <div class="bd" id="breakdown"></div>
+  </section>
+
+  <!-- 入力 -->
+  <div id="cats"></div>
+
+  <!-- 書き出し -->
+  <section class="card">
+    <div class="label">書き出し</div>
+    <p class="note" style="margin-top:6px;">
+      印刷の画面がひらきます。プリンタの代わりに「PDFとして保存」（iPhoneは共有 → ファイルに保存）を選ぶとPDFになります。
+    </p>
+    <button class="btn" id="btnPdf" style="margin-top:12px;">PDFにする</button>
+    <button class="btn ghost" id="btnReset" style="margin-top:9px;">ぜんぶ空にする</button>
+  </section>
+
+</main>
+
+<!-- 印刷されるページ本体 -->
+<div class="sheet" id="sheet"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   げんか — つみき事業の原価を、月ごと／年ごとに出してPDFにする。
+
+   設計のねらい:
+     - 項目ごとに「月額で入れるか／年額で入れるか」を選べる。パソコンのように
+       年に一度のものを月額に直す暗算をさせない。内部は必ず月額に正規化して持つ。
+     - 数字はすべて本人が入れる。過去の実測値や相場を既定値として入れない
+       （2026-08-11 本人指定：完全に無の状態から始める）。
+   ========================================================================= */
+
+const KEY = 'tsumiki_genka_v1';
+
+/* 初期の骨組み。金額は空。名前は書き換えられる。 */
+function seed(){
+  return {
+    view: 'm',
+    cats: [
+      {name:'インフラ', items:[
+        {name:'家賃（ライフライン＋ネット込）', amt:'', unit:'m'},
+      ]},
+      {name:'AI・ハードウェア', items:[
+        {name:'AIサブスク',            amt:'', unit:'m'},
+        {name:'パソコン',              amt:'', unit:'y'},
+        {name:'アクセサリー類（まとめて）', amt:'', unit:'y'},
+      ]},
+      {name:'人件費', items:[
+        {name:'自分の人件費',            amt:'', unit:'m'},
+        {name:'残業・追加作業の見込み',   amt:'', unit:'m'},
+      ]},
+      {name:'営業費', items:[
+        {name:'ヒアリング費用（交通費＋飲食の上限）', amt:'', unit:'m'},
+      ]},
+    ],
+  };
+}
+
+let S = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(!raw) return seed();
+    const o = JSON.parse(raw);
+    if(!o || !Array.isArray(o.cats)) return seed();
+    return o;
+  }catch(e){ return seed(); }
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+}
+
+/* ---- お金の計算（内部は月額に統一。年は月×12） ---- */
+const num  = v => { const n = parseFloat(String(v).replace(/[^\d.-]/g,'')); return isFinite(n) ? n : 0; };
+const perM = it => it.unit === 'y' ? num(it.amt) / 12 : num(it.amt);
+const catM = c  => c.items.reduce((s,it) => s + perM(it), 0);
+const allM = () => S.cats.reduce((s,c) => s + catM(c), 0);
+
+/* 年額は「月額×12」ではなく、年入力のものは入力値そのまま足す。
+   ÷12→×12 の丸め誤差で1円ずれるのを避ける。 */
+const perY = it => it.unit === 'y' ? num(it.amt) : num(it.amt) * 12;
+const catY = c  => c.items.reduce((s,it) => s + perY(it), 0);
+const allY = () => S.cats.reduce((s,c) => s + catY(c), 0);
+
+const yen = n => '¥' + Math.round(n).toLocaleString('ja-JP');
+
+/* ---- 入力欄を描く（追加・削除のときだけ呼ぶ。打鍵ごとには呼ばない） ---- */
+function renderCats(){
+  const wrap = document.getElementById('cats');
+  wrap.innerHTML = '';
+
+  S.cats.forEach((c, ci) => {
+    const sec = document.createElement('section');
+    sec.className = 'card';
+    sec.innerHTML =
+      '<div class="cat-h"><h2></h2><span class="csum tnum" data-csum="' + ci + '"></span></div>' +
+      '<div class="items"></div>' +
+      '<button class="additem">＋ 項目を追加</button>';
+
+    sec.querySelector('h2').textContent = c.name;
+
+    const list = sec.querySelector('.items');
+    c.items.forEach((it, ii) => list.appendChild(itemEl(c, it, ci, ii)));
+
+    sec.querySelector('.additem').addEventListener('click', () => {
+      c.items.push({name:'', amt:'', unit:'m'});
+      save(); renderCats(); recalc();
+    });
+
+    wrap.appendChild(sec);
+  });
+}
+
+function itemEl(cat, it, ci, ii){
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.innerHTML =
+    '<div class="r1">' +
+      '<input class="nm" type="text" placeholder="項目の名前">' +
+      '<button class="del" aria-label="この項目を消す">×</button>' +
+    '</div>' +
+    '<div class="r2">' +
+      '<span class="yen">¥</span>' +
+      '<input class="amt" type="text" inputmode="decimal" placeholder="0">' +
+      '<div class="useg">' +
+        '<button data-u="m">月額</button><button data-u="y">年額</button>' +
+      '</div>' +
+    '</div>';
+
+  const nm  = el.querySelector('.nm');
+  const amt = el.querySelector('.amt');
+  nm.value  = it.name;
+  amt.value = it.amt;
+
+  const paintUnit = () => el.querySelectorAll('.useg button').forEach(b => {
+    b.classList.toggle('on', b.dataset.u === it.unit);
+  });
+  paintUnit();
+
+  nm.addEventListener('input',  () => { it.name = nm.value; save(); buildSheet(); });
+  amt.addEventListener('input', () => { it.amt = amt.value; save(); recalc(); });
+
+  el.querySelectorAll('.useg button').forEach(b => {
+    b.addEventListener('click', () => { it.unit = b.dataset.u; paintUnit(); save(); recalc(); });
+  });
+
+  el.querySelector('.del').addEventListener('click', () => {
+    cat.items.splice(ii, 1);
+    save(); renderCats(); recalc();
+  });
+
+  return el;
+}
+
+/* ---- 合計・内訳を塗り替える ---- */
+function recalc(){
+  const m = allM(), y = allY();
+  const isM = S.view === 'm';
+
+  document.getElementById('totCap').textContent = isM ? '1ヶ月あたりの原価' : '1年あたりの原価';
+  document.getElementById('totBig').textContent = yen(isM ? m : y);
+  document.getElementById('totSub').textContent = isM ? ('1年あたり ' + yen(y)) : ('1ヶ月あたり ' + yen(m));
+
+  const total = isM ? m : y;
+  const bd = document.getElementById('breakdown');
+  bd.innerHTML = '';
+  S.cats.forEach(c => {
+    const v = isM ? catM(c) : catY(c);
+    const p = total > 0 ? (v / total * 100) : 0;
+    const row = document.createElement('div');
+    row.className = 'bd-row';
+    row.innerHTML =
+      '<div class="t"><span class="n"></span>' +
+      '<span class="p tnum">' + (total > 0 ? p.toFixed(0) + '%' : '—') + '</span>' +
+      '<span class="v tnum">' + yen(v) + '</span></div>' +
+      '<div class="bar"><i style="width:' + p.toFixed(1) + '%"></i></div>';
+    row.querySelector('.n').textContent = c.name;
+    bd.appendChild(row);
+  });
+
+  S.cats.forEach((c, ci) => {
+    const t = document.querySelector('[data-csum="' + ci + '"]');
+    if(t) t.textContent = yen(isM ? catM(c) : catY(c));
+  });
+
+  buildSheet();
+}
+
+/* ---- 印刷（PDF）用のページを組む ---- */
+function buildSheet(){
+  const d = new Date();
+  const stamp = d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日';
+
+  let rows = '';
+  S.cats.forEach(c => {
+    const used = c.items.filter(it => num(it.amt) !== 0 || it.name.trim() !== '');
+    if(!used.length) return;
+    rows += '<tr class="sh-cat"><td>' + esc(c.name) + '</td><td>' + yen(catM(c)) + '</td><td>' + yen(catY(c)) + '</td></tr>';
+    used.forEach(it => {
+      const nm = it.name.trim() || '（名前なし）';
+      const tag = it.unit === 'y' ? '年額で入力' : '月額で入力';
+      rows += '<tr class="sh-item"><td>' + esc(nm) + '<span style="color:#888; font-size:8pt;">　' + tag + '</span></td>' +
+              '<td>' + yen(perM(it)) + '</td><td>' + yen(perY(it)) + '</td></tr>';
+    });
+  });
+  rows += '<tr class="sh-grand"><td>合計</td><td>' + yen(allM()) + '</td><td>' + yen(allY()) + '</td></tr>';
+
+  document.getElementById('sheet').innerHTML =
+    '<div class="sh-h"><h1>つみき事業　原価表</h1>' +
+    '<div class="sh-meta"><span>屋号：Tsumiki</span><span class="r">作成日：' + stamp + '</span></div></div>' +
+    '<div class="sh-sum">' +
+      '<div><span>1ヶ月あたりの原価</span><b>' + yen(allM()) + '</b></div>' +
+      '<div><span>1年あたりの原価</span><b>' + yen(allY()) + '</b></div>' +
+    '</div>' +
+    '<table><thead><tr><th>項目</th><th>月額</th><th>年額</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div class="sh-f">・年額で入力した項目の月額は、年額を12で割った額です（1円未満は四捨五入）。<br>' +
+    '・この表は入力した金額をそのまま集計したものです。減価償却・事業按分・税や手数料は含みません。</div>';
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+/* ---- 画面まわり ---- */
+document.querySelectorAll('#viewSeg button').forEach(b => {
+  b.addEventListener('click', () => {
+    S.view = b.dataset.v;
+    document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x === b));
+    save(); recalc();
+  });
+});
+
+document.getElementById('btnPdf').addEventListener('click', () => { buildSheet(); window.print(); });
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  if(!confirm('入れた金額をぜんぶ消して、まっさらに戻します。よろしいですか？')) return;
+  S = seed();
+  save(); paintView(); renderCats(); recalc();
+  toast('まっさらに戻しました');
+});
+
+function paintView(){
+  document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === S.view));
+}
+
+let toastT = null;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+paintView();
+renderCats();
+recalc();
+</script>
+
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>

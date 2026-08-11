@@ -267,6 +267,12 @@ ICONS = {
              '<circle cx="40" cy="62" r="2.6" fill="#fff" stroke="none"/>'
              '<circle cx="50" cy="62" r="2.6" fill="#fff" stroke="none"/>'
              '<circle cx="60" cy="62" r="2.6" fill="#fff" stroke="none"/>',
+    # げんか＝費目を積み上げた1本の柱（原価の内訳）。
+    # 電卓(money)・円グラフ(maitsuki)・折れ線(forecast)・貯金瓶(chiritsumo)と重ならない形にする
+    "genka": '<line x1="26" y1="79" x2="74" y2="79"/>'
+             '<rect x="37" y="23" width="26" height="52" rx="4"/>'
+             '<line x1="37" y1="40" x2="63" y2="40"/>'
+             '<line x1="37" y1="57" x2="63" y2="57"/>',
     # 資産予測＝右肩上がりの折れ線
     "forecast": '<path d="M28,30 V72 H74"/>'
                 '<path d="M34,64 L46,54 L56,60 L70,38"/>'
