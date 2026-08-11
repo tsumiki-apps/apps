@@ -223,45 +223,75 @@
   }
   .toast.show{opacity:1; transform:translate(-50%,0);}
 
-  /* ---------- PDF（印刷）用のシート ---------- */
+  /* ---------- PDF（印刷）用のシート ----------
+     ⚠️ 印刷用の見た目は @media print の外に置く。中に入れると画面では高さを測れず、
+        「A4縦1枚に収まるか」を判定できない（fitSheet() が採寸に使う）。
+        表示の切り替えだけを @media print と .measuring で行う。
+     大きさはすべて --u（＝基準の文字サイズ・px）のかけ算で書く。
+     fitSheet() が --u を小さくするだけで、余白も文字も同じ比率で縮む。
+     mm や pt で直書きすると縮まず、はみ出した1行のために2枚目ができる。
+     行の間の詰め具合も変数（--pr など）にしてある。項目が多いときは
+     まず**行間だけ**を詰め（.tight）、それでも入らないときに文字を縮める。
+     文字の大きさは最後に手をつける＝紙に出したとき読めることを優先する。 */
   .sheet{display:none;}
+  .sheet.measuring{
+    display:block !important;
+    position:fixed; top:0; left:-9999px;   /* 画面には出さない。採寸のためだけに置く */
+    width:182mm;                            /* A4縦(210mm) − 左右余白14mm×2 */
+  }
   @media print{
     @page{size:A4 portrait; margin:15mm 14mm;}
     body{background:#fff; color:#000;}
     .topbar, main, .toast, #tsumikiEdge, #tsumikiPeek{display:none !important;}
-    .sheet{
-      display:block !important; font-family:var(--display); color:#000;
-      -webkit-print-color-adjust:exact; print-color-adjust:exact;
-    }
-    .sheet .sh-h{border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:4px;}
-    .sheet h1{font-size:19pt; margin:0; font-weight:600; letter-spacing:.04em;}
-    .sheet .sh-meta{font-size:9pt; color:#444; margin-top:4px; display:flex;}
-    .sheet .sh-meta .r{margin-left:auto;}
-    .sheet .sh-sum{
-      display:flex; gap:10mm; margin:8mm 0 7mm; padding:5mm 6mm;
-      border:1.2pt solid #000; border-radius:2mm;
-    }
-    .sheet .sh-sum div{flex:1;}
-    .sheet .sh-sum span{display:block; font-size:8.5pt; color:#444; letter-spacing:.06em;}
-    .sheet .sh-sum b{display:block; font-size:17pt; font-weight:600; margin-top:1mm;}
-    .sheet table{width:100%; border-collapse:collapse; font-size:10pt;}
-    .sheet thead th{
-      text-align:right; font-size:8.5pt; font-weight:600; color:#444; letter-spacing:.06em;
-      border-bottom:1pt solid #000; padding:0 0 2mm;
-    }
-    .sheet thead th:first-child{text-align:left;}
-    .sheet td{padding:2.2mm 0; border-bottom:.4pt solid #ccc; text-align:right; font-variant-numeric:tabular-nums;}
-    .sheet td:first-child{text-align:left;}
-    /* 行のクラスは sh- を付ける。画面用の .item（角丸のベージュ箱・display:grid）が
-       印刷シートの <tr> にも当たって表が崩れるため（2026-08-11 検証で発覚）。 */
-    .sheet tr.sh-cat td{
-      border-bottom:.6pt solid #666; padding-top:5mm; font-weight:600; font-size:10.5pt;
-    }
-    .sheet tr.sh-item td:first-child{padding-left:5mm; color:#222;}
-    .sheet tr.sh-item td{font-size:9.5pt; color:#222;}
-    .sheet tr.sh-grand td{border-top:1.2pt solid #000; border-bottom:none; padding-top:3mm; font-size:12pt; font-weight:600;}
-    .sheet tr.sh-cat, .sheet tr.sh-item{break-inside:avoid;}
-    .sheet .sh-f{margin-top:8mm; padding-top:3mm; border-top:.4pt solid #ccc; font-size:8pt; color:#666; line-height:1.7;}
+    .sheet{display:block !important;}
+  }
+  .sheet{
+    --u:13.33px;                            /* 10pt 相当。fitSheet() が上書きする */
+    --lh:1.45;                              /* 行の高さ */
+    --pr:.62;                               /* 各行の上下の余白 */
+    --pc:1.42;                              /* 分類の行の上の空き（かたまりの区切り） */
+    --gs:2.27;                              /* 合計の箱の上の空き */
+    --gs2:1.98;                             /*      同じ箱の下の空き */
+    --ps:1.42;                              /*      箱の中の上下の余白 */
+    --gf:2.27;                              /* 注意書きの上の空き */
+    font-family:var(--display); color:#000; font-size:var(--u); line-height:var(--lh);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  /* 項目が多いとき。文字の大きさは変えず、たての空きだけを詰める */
+  .sheet.tight{--lh:1.28; --pr:.3; --pc:.72; --gs:1.1; --gs2:1.0; --ps:.9; --gf:1.1;}
+  .sheet .sh-h{border-bottom:2px solid #000; padding-bottom:calc(.6*var(--u)); margin-bottom:calc(.3*var(--u));}
+  .sheet h1{font-size:calc(1.9*var(--u)); margin:0; font-weight:600; letter-spacing:.04em;}
+  .sheet .sh-meta{font-size:calc(.9*var(--u)); color:#444; margin-top:calc(.3*var(--u)); display:flex;}
+  .sheet .sh-meta .r{margin-left:auto;}
+  .sheet .sh-sum{
+    display:flex; gap:calc(2.8*var(--u));
+    margin:calc(var(--gs)*var(--u)) 0 calc(var(--gs2)*var(--u)); padding:calc(var(--ps)*var(--u)) calc(1.7*var(--u));
+    border:1.2pt solid #000; border-radius:2mm;
+  }
+  .sheet .sh-sum div{flex:1;}
+  .sheet .sh-sum span{display:block; font-size:calc(.85*var(--u)); color:#444; letter-spacing:.06em;}
+  .sheet .sh-sum b{display:block; font-size:calc(1.7*var(--u)); font-weight:600; margin-top:calc(.28*var(--u));}
+  .sheet table{width:100%; border-collapse:collapse; font-size:var(--u);}
+  .sheet thead th{
+    text-align:right; font-size:calc(.85*var(--u)); font-weight:600; color:#444; letter-spacing:.06em;
+    border-bottom:1pt solid #000; padding:0 0 calc(.57*var(--u));
+  }
+  .sheet thead th:first-child{text-align:left;}
+  .sheet td{padding:calc(var(--pr)*var(--u)) 0; border-bottom:.4pt solid #ccc; text-align:right; font-variant-numeric:tabular-nums;}
+  .sheet td:first-child{text-align:left;}
+  /* 行のクラスは sh- を付ける。画面用の .item（角丸のベージュ箱・display:grid）が
+     印刷シートの <tr> にも当たって表が崩れるため（2026-08-11 検証で発覚）。 */
+  .sheet tr.sh-cat td{
+    border-bottom:.6pt solid #666; padding-top:calc(var(--pc)*var(--u)); font-weight:600; font-size:calc(1.05*var(--u));
+  }
+  .sheet tr.sh-item td:first-child{padding-left:calc(1.42*var(--u)); color:#222;}
+  .sheet tr.sh-item td{font-size:calc(.95*var(--u)); color:#222;}
+  .sheet tr.sh-grand td{border-top:1.2pt solid #000; border-bottom:none; padding-top:calc(.85*var(--u)); font-size:calc(1.2*var(--u)); font-weight:600;}
+  .sheet tr.sh-cat, .sheet tr.sh-item{break-inside:avoid;}
+  .sheet .sh-unit{color:#888; font-size:calc(.8*var(--u));}
+  .sheet .sh-f{
+    margin-top:calc(var(--gf)*var(--u)); padding-top:calc(.85*var(--u)); border-top:.4pt solid #ccc;
+    font-size:calc(.8*var(--u)); color:#666; line-height:calc(var(--lh)*1.15);
   }
 </style>
 </head>
@@ -750,7 +780,7 @@ function buildSheet(){
     used.forEach(it => {
       const nm = it.name.trim() || '（名前なし）';
       const tag = it.unit === 'y' ? '年額で入力' : '月額で入力';
-      rows += '<tr class="sh-item"><td>' + esc(nm) + '<span style="color:#888; font-size:8pt;">　' + tag + '</span></td>' +
+      rows += '<tr class="sh-item"><td>' + esc(nm) + '<span class="sh-unit">　' + tag + '</span></td>' +
               '<td>' + yen(perM(it)) + '</td><td>' + yen(perY(it)) + '</td></tr>';
     });
   });
@@ -768,6 +798,53 @@ function buildSheet(){
     '・この表は入力した金額をそのまま集計したものです。減価償却・事業按分・税や手数料は含みません。</div>';
 }
 
+/* ---- A4縦1枚に収める ----
+   紙の高さは決まっているのに、項目は増える。そこで印刷の直前に高さを測って、
+   入りきる大きさまで自分で縮める。手を入れる順番は
+     ①ふつうの見た目のまま → ②行間だけ詰める（.tight・文字は同じ大きさ）
+     → ③それでも入らなければ文字も少しずつ小さく（下限あり）
+   文字を最後にするのは、紙に出したとき読めることを優先するため。
+   採寸は .measuring で画面の外にA4の本文幅で置き、scrollHeight を読む。
+   ⚠️ 下限まで縮めても入らない量（項目が数十）なら、無理に1枚にしない。
+      読めない1枚より読める2枚。表の見出しは2枚目にも自動で付く（thead）。 */
+const SH_U0  = 13.33;   /* 基準＝10pt。ふつうの量ならこの大きさで出る */
+const SH_MIN = 9.3;     /* これ以下には縮めない（約7pt） */
+
+function fitSheet(){
+  const sheet = document.getElementById('sheet');
+  if(!sheet) return;
+
+  /* mm→px の実測。ブラウザによって変わるので係数を決め打ちにしない */
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed; left:-9999px; top:0; height:100mm;';
+  document.body.appendChild(probe);
+  const mm = probe.getBoundingClientRect().height / 100;
+  probe.remove();
+
+  /* A4縦(297mm) − 上下余白15mm×2。ぴったりを狙うと、書体や機種のわずかな差で
+     最後の1行がこぼれて2枚目ができる。4mmほど余らせて狙う */
+  const avail = 267 * mm * 0.985;
+  sheet.classList.remove('tight');
+  sheet.style.setProperty('--u', SH_U0 + 'px');
+  sheet.classList.add('measuring');
+
+  if(sheet.scrollHeight > avail){
+    /* ② 行間を詰める */
+    sheet.classList.add('tight');
+
+    /* ③ 1回の計算では行の折り返しが変わってずれるので、収まるまで数回だけ詰める */
+    let u = SH_U0;
+    for(let i = 0; i < 6 && u > SH_MIN; i++){
+      const h = sheet.scrollHeight;
+      if(h <= avail) break;
+      u = Math.max(SH_MIN, u * (avail / h) * 0.995);
+      sheet.style.setProperty('--u', u + 'px');
+    }
+  }
+
+  sheet.classList.remove('measuring');
+}
+
 const esc = s => String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
 /* ===================== 画面まわり ===================== */
@@ -778,7 +855,12 @@ document.querySelectorAll('#viewSeg button').forEach(b => {
   });
 });
 
-document.getElementById('btnPdf').addEventListener('click', () => { buildSheet(); window.print(); });
+/* 採寸（fitSheet）は入力のたびではなく、PDFにする直前だけ。
+   buildSheet は文字を打つたびに走るので、そこに入れると毎回レイアウトを測り直すことになる */
+document.getElementById('btnPdf').addEventListener('click', () => { buildSheet(); fitSheet(); window.print(); });
+
+/* ボタンを使わず ⌘P で印刷したときも、同じように1枚に収める */
+window.addEventListener('beforeprint', () => { buildSheet(); fitSheet(); });
 
 document.getElementById('btnReset').addEventListener('click', () => {
   if(!confirm('入れた金額をぜんぶ消して、まっさらに戻します。\niPhone・MacBook の両方が空になります。よろしいですか？')) return;
