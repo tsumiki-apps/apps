@@ -142,6 +142,36 @@ function lastMeaningfulLine(text) {
   return '';
 }
 
+// ------------------------------------------------------------ 画像の置き場
+
+const UPLOAD_DIR = path.join(CONF_DIR, 'uploads');
+const KEEP_DAYS = 7;
+
+// 拡張子はファイル名ではなく中身で判定する
+function sniffImage(b) {
+  if (b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
+  if (b.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (b.slice(0, 6).toString('ascii') === 'GIF87a' || b.slice(0, 6).toString('ascii') === 'GIF89a') return 'gif';
+  if (b.slice(0, 4).toString('ascii') === 'RIFF' && b.slice(8, 12).toString('ascii') === 'WEBP') return 'webp';
+  if (b.slice(4, 8).toString('ascii') === 'ftyp') {
+    const brand = b.slice(8, 12).toString('ascii');
+    if (/^(heic|heix|hevc|mif1|msf1|avif)$/.test(brand)) return 'heic';
+  }
+  return null;
+}
+
+// 置きっぱなしを溜めない。古いものは消す
+function pruneUploads() {
+  try {
+    const limit = Date.now() - KEEP_DAYS * 24 * 3600 * 1000;
+    for (const f of fs.readdirSync(UPLOAD_DIR)) {
+      const full = path.join(UPLOAD_DIR, f);
+      if (fs.statSync(full).mtimeMs < limit) fs.unlinkSync(full);
+    }
+  } catch (e) { /* 無ければ何もしない */ }
+}
+
 // ---------------------------------------------------------------- HTTP
 
 const MIME = {
@@ -172,13 +202,13 @@ function authed(req, url) {
   return crypto.timingSafeEqual(Buffer.from(t), Buffer.from(TOKEN));
 }
 
-function readBody(req) {
+function readBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let n = 0;
     const chunks = [];
     req.on('data', (c) => {
       n += c.length;
-      if (n > 64 * 1024) { reject(new Error('too large')); req.destroy(); return; }
+      if (n > limit) { reject(new Error('too large')); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => {
@@ -299,6 +329,27 @@ const server = http.createServer(async (req, res) => {
         await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       }
       return json(res, 200, { ok: true });
+    }
+
+    // 画像を Mac に置く。Claude Code は画像そのものを受け取れないが、
+    // 「ファイルの場所」を渡せば読める。置いた場所を返して、入力欄に差し込む。
+    if (p === '/api/upload' && req.method === 'POST') {
+      const body = await readBody(req, 16 * 1024 * 1024);
+      const data = String(body.data || '');
+      const buf = Buffer.from(data, 'base64');
+      if (!buf.length) return json(res, 400, { error: 'empty' });
+      if (buf.length > 10 * 1024 * 1024) return json(res, 413, { error: '10MBまでです' });
+
+      // 拡張子は中身（マジックバイト）で決める。名前は信用しない
+      const ext = sniffImage(buf);
+      if (!ext) return json(res, 415, { error: '画像として読めません' });
+
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true, mode: 0o700 });
+      pruneUploads();
+      const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDhhmmss
+      const file = path.join(UPLOAD_DIR, `${stamp}-${crypto.randomBytes(3).toString('hex')}.${ext}`);
+      fs.writeFileSync(file, buf, { mode: 0o600 });
+      return json(res, 200, { path: file, bytes: buf.length });
     }
 
     // セッションを閉じる（中で動いているものごと終了する）

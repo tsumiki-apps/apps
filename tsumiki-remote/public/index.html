@@ -96,6 +96,11 @@
     border:1px solid var(--line);color:var(--fg);font:inherit;font-size:16px;
   }
   #cmd:focus{outline:none;border-color:#3b4250}
+  #pick{
+    flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:var(--panel);
+    border:1px solid var(--line);color:var(--dim);font-size:20px;line-height:1;
+  }
+  #pick:disabled{opacity:.35}
   #send{
     flex:0 0 auto;width:40px;height:40px;border-radius:50%;border:none;
     background:var(--accent);color:#06240f;font-size:18px;font-weight:700;
@@ -143,9 +148,11 @@
     <button data-key="C-d">Ctrl-D</button>
   </div>
   <div class="row">
+    <button id="pick" title="画像を送る">＋</button>
     <input id="cmd" placeholder="指示を入力…" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
     <button id="send" disabled>↑</button>
   </div>
+  <input id="file" type="file" accept="image/*" hidden>
 </footer>
 
 <div id="gate">
@@ -257,6 +264,7 @@
       ? 'コマンドを入力…（AIではありません）'
       : '指示を入力…';
     killBtn.disabled = !cur;
+    pickBtn.disabled = !cur;
   }
 
   function escapeHtml(s) {
@@ -366,6 +374,37 @@
     localStorage.setItem(LS, token);
     gate(false);
     tick(true);
+  };
+
+  // 画像を送る。Claude Code は画像そのものを受け取れないので、
+  // Mac に置いてから「そのファイルの場所」を入力欄に差し込む。
+  // 文章を足してから送れるよう、勝手に送信はしない。
+  var pickBtn = document.getElementById('pick');
+  var fileInput = document.getElementById('file');
+
+  pickBtn.onclick = function () { fileInput.click(); };
+
+  fileInput.onchange = function () {
+    var f = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!f || !current) return;
+    if (f.size > 10 * 1024 * 1024) return toast('10MBまでです');
+
+    toast('送っています…');
+    var reader = new FileReader();
+    reader.onerror = function () { toast('読み込めませんでした'); };
+    reader.onload = function () {
+      var base64 = String(reader.result).split(',')[1] || '';
+      api('/api/upload', { method: 'POST', body: JSON.stringify({ data: base64 }) })
+        .then(function (d) {
+          var sep = el.cmd.value && !/\s$/.test(el.cmd.value) ? ' ' : '';
+          el.cmd.value = el.cmd.value + sep + d.path + ' ';
+          el.cmd.focus();
+          toast('置きました。続けて指示を書いて送信');
+        })
+        .catch(function (e) { toast('送れません: ' + e.message); });
+    };
+    reader.readAsDataURL(f);
   };
 
   // セッションを閉じる。中で動いているものごと終わるので必ず確認を挟む
