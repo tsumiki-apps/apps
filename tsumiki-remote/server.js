@@ -29,6 +29,11 @@ if (!fs.existsSync(TOKEN_FILE)) {
 }
 const TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
 
+// つみきリモートから起動する Claude Code のコマンド。
+// 環境変数で上書きできる（普通の権限確認つきに戻したいときは
+// TSUMIKI_CLAUDE_CMD=claude を LaunchAgent に足す）。
+const CLAUDE_CMD = process.env.TSUMIKI_CLAUDE_CMD || 'claude --permission-mode bypassPermissions';
+
 // ---------------------------------------------------------------- tmux
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
@@ -325,7 +330,10 @@ const server = http.createServer(async (req, res) => {
       const r = await tmux(['new-session', '-d', '-s', name, '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       if (body.run === 'claude') {
-        await tmux(['send-keys', '-t', '=' + name + ':', '-l', 'claude']);
+        // スマホからは「これ実行していい？」に毎回答えるのが現実的でないので、
+        // このアプリから作るセッションは最初から編集をバイパスで起動する。
+        // 許可を求めて止まらなくなる＝返答待ちの通知もほぼ飛ばなくなる。
+        await tmux(['send-keys', '-t', '=' + name + ':', '-l', CLAUDE_CMD]);
         await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       }
       return json(res, 200, { ok: true });
