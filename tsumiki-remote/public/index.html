@@ -122,6 +122,28 @@
     border:1px solid var(--line);color:var(--fg);font:inherit;font-size:12px;
   }
   #keys button:active{background:#242932}
+  /* 添えた画像の札。以前は Mac 側の保存先パス（70文字ほど）を文字として入力欄に
+     流し込んでいたが、1行の入力欄がそれだけで埋まり、本文を打ち直そうとタップすると
+     カーソルがパスの中に落ちる → Backspace で末尾が欠け、送っても Claude 側では
+     「そんなファイルはない」になる（欠けたことに気づけない）。札は文字ではないので
+     壊しようがなく、入力欄はまるごと本文用に空く（2026-08-11） */
+  #atts{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+  #atts[hidden]{display:none}
+  #atts::-webkit-scrollbar{display:none}
+  .att{
+    flex:0 0 auto;display:flex;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;
+  }
+  .att.up{opacity:.45}
+  .att img,.att .ph{
+    width:38px;height:38px;border-radius:7px;background:#242932;
+    object-fit:cover;display:flex;align-items:center;justify-content:center;font-size:15px;
+  }
+  /* ✕ は指で押せる幅を確保する（画像側を狭めずボタン側で稼ぐ） */
+  .att button{
+    width:32px;height:38px;border:none;background:none;color:var(--dim);
+    font:inherit;font-size:15px;line-height:1;
+  }
   .row{display:flex;gap:8px;align-items:flex-end}
   #cmd{
     flex:1 1 auto;min-width:0;padding:11px 14px;border-radius:20px;background:var(--panel);
@@ -222,6 +244,7 @@
     <button data-key="C-c">Ctrl-C</button>
     <button data-key="C-d">Ctrl-D</button>
   </div>
+  <div id="atts" hidden></div>
   <div class="row">
     <button id="pick" title="画像を送る">＋</button>
     <input id="cmd" placeholder="指示を入力…" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
@@ -420,12 +443,24 @@
   var seenVersion = null;
   var reloading = false;
 
+  // 書きかけは本文だけでなく、添えた画像の札も一緒に預ける。
+  // 画像そのものは Mac に置いた後なので、パスと小さな見本だけで戻せる
+  function saveDraft() {
+    try {
+      var body = el.cmd.value || '';
+      var keep = atts.filter(function (a) { return a.path; })
+        .map(function (a) { return { p: a.path, t: a.thumb }; });
+      if (!body && !keep.length) return localStorage.removeItem(DRAFT);
+      localStorage.setItem(DRAFT, JSON.stringify({ t: body, a: keep }));
+    } catch (e) { /* 入らなくても本文優先で諦める */ }
+  }
+
   function checkVersion(v) {
     if (!v || reloading) return;
     if (seenVersion === null) { seenVersion = v; return; }
     if (v === seenVersion) return;
     reloading = true;
-    try { localStorage.setItem(DRAFT, el.cmd.value || ''); } catch (e) {}
+    saveDraft();
     toast('新しい版になりました。開き直します');
     clearInterval(timer);
     setTimeout(function () { location.reload(); }, 700);
@@ -533,11 +568,19 @@
       .catch(function (e) { toast('送信失敗: ' + e.message); });
   }
 
+  // 添えた画像（札）。送信の瞬間に「パス + 半角スペース + 本文」に組み立てる
+  var atts = [];
+
   el.send.onclick = function () {
-    var v = el.cmd.value;
-    if (!v.trim()) return;
+    var v = el.cmd.value.trim();
+    if (atts.some(function (a) { return !a.path; })) return toast('画像を置いている途中です');
+    var paths = atts.map(function (a) { return a.path; }).join(' ');
+    var text = paths ? (v ? paths + ' ' + v : paths) : v;
+    if (!text) return;
     el.cmd.value = '';
-    sendText(v, true);
+    atts = [];
+    renderAtts();
+    sendText(text, true);
   };
   el.cmd.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); el.send.onclick(); }
@@ -557,13 +600,63 @@
     tick(true);
   };
 
-  // 画像を送る。Claude Code は画像そのものを受け取れないので、
-  // Mac に置いてから「そのファイルの場所」を入力欄に差し込む。
+  // 画像を送る。Claude Code は画像そのものを受け取れないので、Mac に置いてから
+  // 「そのファイルの場所」を文章の先頭に付けて送る。ただしパスは入力欄には入れず、
+  // 入力欄の上の「札」として持つ（理由は #atts の CSS のところ）。
   // 文章を足してから送れるよう、勝手に送信はしない。
   var pickBtn = document.getElementById('pick');
   var fileInput = document.getElementById('file');
+  var attsBox = document.getElementById('atts');
+  var attSeq = 0;
 
   pickBtn.onclick = function () { fileInput.click(); };
+
+  function renderAtts() {
+    attsBox.innerHTML = '';
+    attsBox.hidden = !atts.length;
+    atts.forEach(function (a) {
+      var box = document.createElement('span');
+      box.className = 'att' + (a.path ? '' : ' up');   // 置いている最中は薄く
+      if (a.thumb) {
+        var img = document.createElement('img');
+        img.src = a.thumb;
+        img.alt = '添えた画像';
+        box.appendChild(img);
+      } else {
+        var ph = document.createElement('span');
+        ph.className = 'ph';
+        ph.textContent = a.path ? '🖼' : '…';
+        box.appendChild(ph);
+      }
+      var x = document.createElement('button');
+      x.textContent = '✕';
+      x.setAttribute('aria-label', '画像を取り消す');
+      x.onclick = function () {
+        atts = atts.filter(function (b) { return b.id !== a.id; });
+        renderAtts();
+      };
+      box.appendChild(x);
+      attsBox.appendChild(box);
+    });
+  }
+
+  // 札に出す小さな画像を作る。元の写真そのままだと数MBあり、
+  // 書きかけの預け先（localStorage）にも入らないし、スマホでは重い
+  function makeThumb(dataUrl, cb) {
+    var img = new Image();
+    img.onerror = function () { cb(''); };
+    img.onload = function () {
+      try {
+        var s = Math.min(1, 120 / Math.max(img.width, img.height));
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * s));
+        c.height = Math.max(1, Math.round(img.height * s));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        cb(c.toDataURL('image/jpeg', 0.6));
+      } catch (e) { cb(''); }   // HEIC など、この端末で開けない形式
+    };
+    img.src = dataUrl;
+  }
 
   fileInput.onchange = function () {
     var f = fileInput.files && fileInput.files[0];
@@ -571,19 +664,29 @@
     if (!f || !current) return;
     if (f.size > 10 * 1024 * 1024) return toast('10MBまでです');
 
-    toast('送っています…');
     var reader = new FileReader();
     reader.onerror = function () { toast('読み込めませんでした'); };
     reader.onload = function () {
-      var base64 = String(reader.result).split(',')[1] || '';
+      var dataUrl = String(reader.result);
+      var base64 = dataUrl.split(',')[1] || '';
+      var a = { id: ++attSeq, path: '', thumb: '' };
+      atts.push(a);
+      renderAtts();
+      makeThumb(dataUrl, function (t) { a.thumb = t; renderAtts(); });
+
       api('/api/upload', { method: 'POST', body: JSON.stringify({ data: base64 }) })
         .then(function (d) {
-          var sep = el.cmd.value && !/\s$/.test(el.cmd.value) ? ' ' : '';
-          el.cmd.value = el.cmd.value + sep + d.path + ' ';
-          el.cmd.focus();
-          toast('置きました。続けて指示を書いて送信');
+          // 置いている間に ✕ で取り消されていたら、そのまま捨てる
+          if (!atts.some(function (b) { return b.id === a.id; })) return;
+          a.path = d.path;
+          renderAtts();
+          toast('画像を添えました。指示を書いて送信');
         })
-        .catch(function (e) { toast('送れません: ' + e.message); });
+        .catch(function (e) {
+          atts = atts.filter(function (b) { return b.id !== a.id; });
+          renderAtts();
+          toast('送れません: ' + e.message);
+        });
     };
     reader.readAsDataURL(f);
   };
@@ -652,7 +755,7 @@
   // 右上の ↻。版が変わったときは自動で読み込み直すが、
   // 「反応がおかしい」と感じたときに自分で試せる場所が要る
   document.getElementById('reload').onclick = function () {
-    try { localStorage.setItem(DRAFT, el.cmd.value || ''); } catch (e) {}
+    saveDraft();
     location.reload();
   };
 
@@ -749,10 +852,23 @@
 
   document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(true); });
 
-  // 読み込み直す前に預けた書きかけを戻す
+  // 読み込み直す前に預けた書きかけを戻す（古い版は本文だけの文字列で入っている）
   try {
     var draft = localStorage.getItem(DRAFT);
-    if (draft) { el.cmd.value = draft; localStorage.removeItem(DRAFT); }
+    if (draft) {
+      localStorage.removeItem(DRAFT);
+      var d = null;
+      try { d = JSON.parse(draft); } catch (e) {}
+      if (d && typeof d === 'object') {
+        el.cmd.value = d.t || '';
+        atts = (d.a || []).map(function (x) {
+          return { id: ++attSeq, path: x.p, thumb: x.t || '' };
+        });
+        renderAtts();
+      } else {
+        el.cmd.value = draft;
+      }
+    }
   } catch (e) {}
 
   if (!token) gate(true);
