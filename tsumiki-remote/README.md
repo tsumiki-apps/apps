@@ -15,6 +15,7 @@ iPhone (PWA)  ──https──▶  Tailscale  ──▶  Mac:8787 (server.js)  
 |---|---|
 | `server.js` | 依存パッケージなしの小さなHTTPサーバー。tmux にコマンドを投げるだけ |
 | `public/index.html` | スマホ用の画面（単一HTML・PWA）。1.5秒ごとに状態を取りに行く |
+| `~/.tsumiki-remote/archived.json` | 片付けた作業場所の名前。tmux は消さない |
 | `hooks/ntfy-notify.sh` | Claude Code の hook から ntfy.sh に「返答待ち／終わった」を通知 |
 | `launchagents/*.plist` | ログイン時に ①サーバー ②caffeinate を自動起動 |
 
@@ -177,18 +178,18 @@ TSUMIKI_CLAUDE_CMD=claude
 - 拡張子はファイル名ではなく中身（マジックバイト）で判定。画像でなければ弾く
 - 上限10MB。iPhoneの写真は Safari が JPEG に変換して送ることが多い
 
-## セッションを閉じる
+## 作業場所を片付ける
 
-ヘッダーの **閉じる** ボタン。中で動いているものごと終了するので確認を挟む。
-アプリを使わないなら次のどれでも同じ:
+**⋯ → この作業場所を片付ける**。これは **消さない**。tmux セッションはそのまま動き続け、
+**このアプリの一覧から隠すだけ**。使い終わったものが並び続けて邪魔になるのを避けるための機能。
 
-| 中身 | 閉じかた |
-|---|---|
-| Claude | `/exit` → シェルに戻る → `exit` |
-| シェル | `exit` |
-| Mac から | `tmux kill-session -t work2` |
+- 戻すのは **⋯ →「片付けたものを戻す」**（片付けたものがあるときだけ出る）
+- 片付けた記録は `~/.tsumiki-remote/archived.json`。tmux 側で消えたセッションは自動で落ちる
+- **片付けたものは状態も見えなくなる**。返答待ちになっても一覧に出ないので、
+  返事が要る作業は片付けない
 
-閉じ忘れても害はない（待機中のセッションは何も消費しない）。Mac を再起動すれば全部消える。
+本当に終わらせたいときは、中で `/exit`（Claude）や `exit`（シェル）、
+または Mac から `tmux kill-session -t work2`。
 
 ## 注意
 

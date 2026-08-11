@@ -35,6 +35,22 @@ const TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
 // TSUMIKI_CLAUDE_CMD=claude を LaunchAgent に足す）。
 const CLAUDE_CMD = process.env.TSUMIKI_CLAUDE_CMD || 'claude --permission-mode bypassPermissions';
 
+// ------------------------------------------------------------ 片付け（アーカイブ）
+//
+// 「片付ける」は tmux セッションを消さない。中の Claude Code は動いたまま、
+// このアプリの一覧から隠すだけ。ローカルの小さな JSON なので同期読み書きでよい
+// （iCloud ではないので固まらない）。
+const ARCHIVE_FILE = path.join(CONF_DIR, 'archived.json');
+
+function readArchived() {
+  try { const a = JSON.parse(fs.readFileSync(ARCHIVE_FILE, 'utf8')); return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+
+function writeArchived(list) {
+  try { fs.writeFileSync(ARCHIVE_FILE, JSON.stringify(list), { mode: 0o600 }); } catch (e) {}
+}
+
 // ---------------------------------------------------------------- tmux
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
@@ -379,8 +395,12 @@ const server = http.createServer(async (req, res) => {
     // 全セッションの状態一覧
     if (p === '/api/state' && req.method === 'GET') {
       const sessions = await listSessions();
+      const alive = sessions.map((s) => s.name);
+      // 既に無くなったセッションは片付けリストからも落とす
+      let archived = readArchived().filter((n) => alive.indexOf(n) >= 0);
+      writeArchived(archived);
       const out = [];
-      for (const s of sessions) {
+      for (const s of sessions.filter((x) => archived.indexOf(x.name) < 0)) {
         const text = (await captureScreen(s.name)) || '';
         const { status, quietMs } = judge(s.name, text);
         const cmd = await currentCommand(s.name);
@@ -390,7 +410,7 @@ const server = http.createServer(async (req, res) => {
           preview: lastMeaningfulLine(text),
         });
       }
-      return json(res, 200, { sessions: out, now: Date.now() });
+      return json(res, 200, { sessions: out, archived, now: Date.now() });
     }
 
     // 1セッションの画面
@@ -488,14 +508,19 @@ const server = http.createServer(async (req, res) => {
       return json(res, r ? 200 : 500, r ? { ok: true } : { error: '消せませんでした' });
     }
 
-    // セッションを閉じる（中で動いているものごと終了する）
-    if (p === '/api/kill' && req.method === 'POST') {
+    // 片付ける／戻す。tmux セッションには触らない（中の作業は動き続ける）
+    if ((p === '/api/archive' || p === '/api/unarchive') && req.method === 'POST') {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
-      const r = await tmux(['kill-session', '-t', '=' + name + ':']);
-      prev.delete(name);
-      return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
+      let archived = readArchived();
+      if (p === '/api/archive') {
+        if (archived.indexOf(name) < 0) archived.push(name);
+      } else {
+        archived = archived.filter((n) => n !== name);
+      }
+      writeArchived(archived);
+      return json(res, 200, { ok: true, archived });
     }
 
     return json(res, 404, { error: 'not found' });

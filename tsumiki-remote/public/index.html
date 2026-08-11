@@ -68,9 +68,10 @@
   main{flex:1 1 auto;min-height:0;margin:0 10px;border:1px solid var(--line);border-radius:14px;background:#0b0c0f;overflow:hidden}
   #out{
     margin:0;padding:12px;height:100%;overflow:auto;-webkit-overflow-scrolling:touch;
-    font-family:var(--mono);font-size:11px;line-height:1.45;white-space:pre;color:#d5d9e0;
+    font-family:var(--mono);font-size:11px;line-height:1.45;color:#d5d9e0;
+    /* スマホでは常に折り返す。横スクロールしながら読むのは現実的でない */
+    white-space:pre-wrap;overflow-wrap:anywhere;
   }
-  #out.wrap{white-space:pre-wrap;overflow-wrap:anywhere}
   /* 画面の塗り分け。黒地に彩度の高い色を敷くと文字が沈むので、面はごく薄く、
      手がかりは左端の線に持たせる（紙の蛍光ペンが成立するのは白地だから） */
   #out .blk{display:block;padding:2px 8px;border-left:2px solid transparent;margin:0 -4px}
@@ -78,20 +79,6 @@
   #out .ask{background:rgba(245,158,11,.13);border-left-color:#f59e0b;color:#fdf3e2}
   #out .me {background:rgba(255,255,255,.05);border-left-color:#4b525e}
   #out .dim{color:#8b93a1}
-  #wrap{
-    margin-left:auto;padding:5px 9px;border-radius:8px;background:var(--panel);
-    border:1px solid var(--line);color:var(--dim);font:inherit;font-size:11px;
-  }
-  #wrap.on{color:var(--fg);border-color:#3b4250}
-  #kill{
-    padding:5px 9px;border-radius:8px;background:var(--panel);
-    border:1px solid var(--line);color:var(--dim);font:inherit;font-size:11px;
-  }
-  #kill:disabled{opacity:.35}
-  #dark{
-    padding:5px 9px;border-radius:8px;background:var(--panel);
-    border:1px solid var(--line);color:var(--dim);font:inherit;font-size:11px;
-  }
 
   /* 下端は iPhone のホームバー領域（触れない帯）。そこに 8px を足すと
      黒い余りが増えるだけなので、max() で「多い方」を使うだけにする */
@@ -129,10 +116,9 @@
   #gate button{padding:11px 22px;border-radius:12px;border:none;background:var(--accent);
     color:#06240f;font:inherit;font-weight:700;font-size:15px}
   #menu{
-    padding:5px 9px;border-radius:8px;background:var(--panel);
-    border:1px solid var(--line);color:var(--dim);font:inherit;font-size:11px;
+    margin-left:auto;padding:6px 10px;border-radius:8px;background:var(--panel);
+    border:1px solid var(--line);color:var(--dim);font:inherit;font-size:13px;line-height:1;
   }
-  #menu{margin-left:auto;font-size:13px;line-height:1;padding:6px 10px}
 
   #viewer{position:fixed;inset:0;z-index:40;background:var(--bg);
     display:flex;flex-direction:column;
@@ -265,6 +251,7 @@
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
   var sessions = [];
+  var archived = [];
   var timer = null;
   var toastTimer = null;
 
@@ -372,11 +359,14 @@
   function refreshState() {
     return api('/api/state').then(function (d) {
       sessions = d.sessions;
+      archived = d.archived || [];
       if (!sessions.length) {
         current = '';
         el.send.disabled = true;
         lastText = null;
-        el.out.textContent = 'tmux セッションがありません。＋ で作るか、Mac 側で\n  tmux new -s work1\nを実行してください。';
+        el.out.textContent = archived.length
+          ? '表示するものがありません。⋯ →「片付けたものを戻す」から戻せます。'
+          : 'まだ作業場所がありません。＋Claude で作ってください。';
       } else if (!sessions.some(function (s) { return s.name === current; })) {
         current = sessions[0].name;
         el.send.disabled = false;
@@ -522,20 +512,24 @@
     reader.readAsDataURL(f);
   };
 
-  // セッションを閉じる。中で動いているものごと終わるので必ず確認を挟む
-  function doKill() {
+  // 片付ける = 一覧から隠すだけ。中の作業は動き続ける（消さない）
+  function doArchive() {
     if (!current) return;
-    var cur = sessions.filter(function (s) { return s.name === current; })[0] || {};
-    var what = cur.kind === 'claude' ? 'Claude との会話' : 'この作業場所';
-    if (!confirm(current + ' を閉じますか？\n' + what + 'は終了し、画面の中身も消えます。')) return;
-    api('/api/kill', { method: 'POST', body: JSON.stringify({ name: current }) })
+    var name = current;
+    api('/api/archive', { method: 'POST', body: JSON.stringify({ name: name }) })
       .then(function () {
-        toast(current + ' を閉じました');
+        toast(name + ' を片付けました（作業は動いています）');
         current = '';
         localStorage.removeItem('tsumiki-remote-session');
         tick(true);
       })
-      .catch(function (e) { toast('閉じられません: ' + e.message); });
+      .catch(function (e) { toast('片付けられません: ' + e.message); });
+  }
+
+  function doUnarchive(name) {
+    api('/api/unarchive', { method: 'POST', body: JSON.stringify({ name: name }) })
+      .then(function () { toast(name + ' を戻しました'); select(name); tick(true); })
+      .catch(function (e) { toast('戻せません: ' + e.message); });
   }
 
   // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用
@@ -544,12 +538,6 @@
       .then(function () { toast('Mac の画面を消しました'); })
       .catch(function (e) { toast('消せません: ' + e.message); });
   }
-
-  function applyWrap(on) {
-    el.out.classList.toggle('wrap', on);
-    localStorage.setItem('tsumiki-remote-wrap', on ? '1' : '0');
-  }
-  applyWrap(localStorage.getItem('tsumiki-remote-wrap') !== '0');
 
   // ---------------------------------------------------------- シート
 
@@ -589,14 +577,23 @@
     openSheet('メニュー');
     sheetItem('制作物を見る', 'この画面の中でプレビューします',
       function () { openFileList(); });
-    var wrapped = el.out.classList.contains('wrap');
-    sheetItem(wrapped ? '折り返し：オン' : '折り返し：オフ', '長い行を画面幅で折り返す',
-      function () { applyWrap(!wrapped); closeSheet(); }, { on: wrapped });
     sheetItem('Mac の画面を消す', '蓋は開けたまま。作業は止まりません',
       function () { closeSheet(); doDark(); });
-    sheetItem('この作業場所を閉じる', current ? current + ' を終了します' : '選ばれていません',
-      function () { closeSheet(); doKill(); }, { disabled: !current });
+    sheetItem('この作業場所を片付ける',
+      current ? current + ' を一覧から隠します（作業は止まりません）' : '選ばれていません',
+      function () { closeSheet(); doArchive(); }, { disabled: !current });
+    if (archived.length) {
+      sheetItem('片付けたものを戻す', archived.length + ' 件', function () { openArchived(); });
+    }
   };
+
+  function openArchived() {
+    openSheet('片付けたもの');
+    if (!archived.length) { sheetItem('ありません', '', closeSheet); return; }
+    archived.forEach(function (name) {
+      sheetItem(name, '一覧に戻します', function () { closeSheet(); doUnarchive(name); });
+    });
+  }
 
   // ---------------------------------------------------------- 制作物を見る
 
