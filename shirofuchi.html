@@ -33,11 +33,17 @@
   .screen{flex:1; min-height:0; display:flex; flex-direction:column; width:100%; max-width:520px; margin:0 auto;}
   .hide{display:none !important;}
 
-  /* ---- えらぶ画面：アイコン1個だけ・文字なし ---- */
-  #view1{align-items:center; justify-content:center; cursor:pointer;}
-  #view1 svg{width:min(46vw, 186px); height:auto; color:var(--ghost);
-    transition:transform .18s ease, color .18s ease;}
-  #view1:active svg{transform:scale(.94); color:var(--sub);}
+  /* ---- えらぶ画面：写真 / 動画 の2択だけ・文字なし ---- */
+  #view1{justify-content:center;}
+  .picks{display:flex; gap:14px; align-items:center; justify-content:center; width:100%;}
+  /* カード自体も9:16（このアプリが扱う形）。画面が低いときは max-height ではみ出しを防ぐ */
+  .pick{flex:1; aspect-ratio:9/16; max-height:100%;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:var(--card); border:1px solid var(--line); border-radius:26px;
+    transition:transform .16s ease, border-color .16s ease, background .16s ease;}
+  .pick:active{transform:scale(.965); border-color:var(--ghost); background:var(--surface);}
+  .pick svg{width:min(30vw, 128px); height:auto; color:var(--ghost); transition:color .16s ease;}
+  .pick:active svg{color:var(--sub);}
   input[type=file]{display:none;}
 
   /* ---- プレビュー ---- */
@@ -77,17 +83,28 @@
 </head>
 <body>
 
-<!-- えらぶ画面：どこを押してもえらべる -->
-<label class="screen" id="view1" for="file">
-  <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
-       stroke-linecap="round" stroke-linejoin="round" aria-label="写真か動画をえらぶ">
-    <rect x="29" y="14" width="42" height="72" rx="8"/>
-    <rect x="37" y="22" width="26" height="56" rx="6"/>
-    <circle cx="45" cy="34" r="3"/>
-    <path d="M38,71 L48,58 L53,64 L62,53"/>
-  </svg>
-</label>
-<input type="file" id="file" accept="image/*,video/*">
+<!-- えらぶ画面：左＝写真だけ／右＝動画だけ（iPhoneの写真アプリが絞り込まれて開く） -->
+<div class="screen" id="view1">
+  <div class="picks">
+    <label class="pick" for="filePhoto">
+      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-label="写真をえらぶ">
+        <rect x="30" y="14" width="40" height="72" rx="8"/>
+        <circle cx="44" cy="35" r="3.2"/>
+        <path d="M33,73 L46,55 L53,63 L67,46"/>
+      </svg>
+    </label>
+    <label class="pick" for="fileVideo">
+      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-label="動画をえらぶ">
+        <rect x="30" y="14" width="40" height="72" rx="8"/>
+        <path d="M44,39 L61,50 L44,61 Z"/>
+      </svg>
+    </label>
+  </div>
+</div>
+<input type="file" id="filePhoto" accept="image/*">
+<input type="file" id="fileVideo" accept="video/*">
 
 <!-- 編集画面：1画面ぴったり。スクロールなし -->
 <div class="screen hide" id="view2">
@@ -177,11 +194,15 @@ el('r').addEventListener('input', e => {
 window.addEventListener('resize', layout);
 window.addEventListener('orientationchange', () => setTimeout(layout, 250));
 
-/* ---------- ファイルをえらぶ ---------- */
-el('file').addEventListener('change', e => {
-  const f = e.target.files && e.target.files[0];
-  if(f) load(f);
-  e.target.value = '';
+/* ---------- ファイルをえらぶ ----------
+   写真用・動画用で入力欄を分けている。accept を絞っておくと、
+   iPhoneの写真アプリが「写真だけ」「ビデオだけ」に絞り込まれた状態で開く */
+['filePhoto','fileVideo'].forEach(id => {
+  el(id).addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(f) load(f, id === 'fileVideo' ? 'video' : 'image');
+    e.target.value = '';
+  });
 });
 el('again').addEventListener('click', () => { if(!busy) reset(); });
 
@@ -193,10 +214,13 @@ function reset(){
   el('view1').classList.remove('hide');
 }
 
-function load(file){
+function load(file, hint){
   if(url) URL.revokeObjectURL(url);
   url = URL.createObjectURL(file);
-  kind = /^video\//.test(file.type) ? 'video' : 'image';
+  // 種類はファイル自身の型で判定。型が空のときは押したボタン（hint）を使う
+  kind = /^video\//.test(file.type) ? 'video'
+       : /^image\//.test(file.type) ? 'image'
+       : (hint || 'image');
   el('frame').innerHTML = '';
 
   if(kind === 'image'){
