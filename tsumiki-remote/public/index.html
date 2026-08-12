@@ -14,6 +14,9 @@
   :root{
     --bg:#0e0f12; --panel:#16181d; --line:#262a32; --fg:#e8eaed; --dim:#8b93a1;
     --busy:#c084fc; --wait:#f59e0b; --idle:#3f4653; --accent:#22c55e;
+    /* 作業中タブの枠だけ薄い紫。ドット(--busy)はそのままの濃さ。
+       返答待ち(オレンジ)より弱くして「返事を待って止まっている＝先に見るべき」を目立たせる */
+    --busy-line:rgba(192,132,252,.4);
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -79,10 +82,14 @@
   .tab .st{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px}
   .tab .st::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--idle);flex:0 0 auto}
   .tab.busy .st::before{background:var(--busy);animation:pulse 1.2s ease-in-out infinite}
-  .tab.waiting{border-color:var(--wait)}
   .tab.waiting .st::before{background:var(--wait)}
   .tab.waiting .st{color:var(--wait)}
   .tab[aria-selected="true"]{background:#1f232b;border-color:#3b4250}
+  /* 状態の枠。選択中(aria-selected)より後に置いて色で勝たせる＝いま開いている
+     タブでも「作業中/返答待ち」が枠から消えない（選択中は背景の明るさで示す）。
+     枠は点滅させない（タブが並ぶと目がちらつく）。動きはドットの点滅が担当 */
+  .tab.busy{border-color:var(--busy-line)}
+  .tab.waiting{border-color:var(--wait)}
   @keyframes pulse{50%{opacity:.35}}
   .tab .kind{
     font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;flex:0 0 auto;
@@ -125,6 +132,23 @@
   #out .ask{background:rgba(245,158,11,.13);border-left-color:#f59e0b;color:#fdf3e2}
   #out .me {background:rgba(255,255,255,.05);border-left-color:#4b525e}
   #out .dim{color:#8b93a1}
+
+  /* 端末が ┌─┬┐ で描いた表。ターミナルは「文字何個ぶん」で桁を合わせているので、
+     幅がその半分しかないスマホでは必ず折り返し、罫線が二重に見えて読めなくなる
+     （2026-08-12）。折り返さず横スクロールにすると今度は全体が見えない。
+     なので枠線を読み取って本物の <table> に組み直す＝桁合わせをブラウザに任せる。
+     日本語は等幅フォントでも半角2つぶんぴったりにはならないので、文字数で
+     揃えている限りどのみち縦線はズレる。表に直せばその問題ごと無くなる */
+  #out .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:4px 0 6px}
+  #out .tbl{
+    border-collapse:collapse;max-width:100%;
+    font-size:10.5px;line-height:1.35;white-space:normal;
+  }
+  #out .tbl th,#out .tbl td{
+    border:1px solid var(--line);padding:3px 6px;
+    text-align:left;vertical-align:top;overflow-wrap:anywhere;
+  }
+  #out .tbl th{background:#161a20;color:#aab2c0;font-weight:700}
 
   /* 下端は iPhone のホームバー領域（触れない帯）。そこに 8px を足すと
      黒い余りが増えるだけなので、max() で「多い方」を使うだけにする */
@@ -755,11 +779,61 @@
     return '';
   }
 
+  // 表の枠線。┌├└ で始まる行が罫線、│ で始まる行が中身。
+  // ╭╮╰╯（角が丸い方）は Claude Code の確認ダイアログなので、ここでは拾わない
+  var RE_T_TOP = /^\s*┌[─┬]+┐\s*$/;
+  var RE_T_MID = /^\s*├[─┼]+┤\s*$/;
+  var RE_T_BOT = /^\s*└[─┴]+┘\s*$/;
+  var RE_T_ROW = /^\s*│(.*)│\s*$/;
+
+  // i 行目から表が始まっていれば、中身と終わりの行番号を返す。
+  // 途中で表でない行が来たら諦めて null＝生のまま出す。表を描いている最中
+  // （下の罫線がまだ来ていない）も同じで、出来かけを表に組むとガタつくため
+  function takeTable(lines, i) {
+    if (!RE_T_TOP.test(lines[i])) return null;
+    var rows = [];
+    for (var j = i + 1; j < lines.length; j++) {
+      if (RE_T_BOT.test(lines[j])) return rows.length ? { end: j, rows: rows } : null;
+      if (RE_T_MID.test(lines[j])) continue;
+      var m = RE_T_ROW.exec(lines[j]);
+      if (!m) return null;
+      rows.push(m[1].split('│').map(function (c) { return c.trim(); }));
+    }
+    return null;
+  }
+
+  function tableEl(rows) {
+    var wrap = document.createElement('div');
+    wrap.className = 'tblwrap';
+    var table = document.createElement('table');
+    table.className = 'tbl';
+    rows.forEach(function (cells, ri) {
+      var tr = document.createElement('tr');
+      cells.forEach(function (text) {
+        var cell = document.createElement(ri === 0 ? 'th' : 'td');
+        cell.textContent = text;
+        tr.appendChild(cell);
+      });
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+    return wrap;
+  }
+
   function renderScreen(text) {
     var lines = text.split('\n');
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
     for (var i = 0; i < lines.length; i++) {
+      var tbl = takeTable(lines, i);
+      if (tbl) {
+        // いま塗っているかたまりの中に入れる＝表も「Claude の発言」の一部として
+        // 帯が途切れない。表の行は分類にかけない（│ で始まるので、そのままだと
+        // 確認ダイアログと同じオレンジに塗られてしまう）
+        (block || frag).appendChild(tableEl(tbl.rows));
+        i = tbl.end;
+        continue;
+      }
       var c = classify(lines[i], prev) || '';
       if (!block || c !== cls) {
         block = document.createElement('span');
