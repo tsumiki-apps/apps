@@ -153,6 +153,48 @@ function usageSnapshot() {
   return usageCache.value;
 }
 
+// ---------------------------------------------------------- MacBook の電池
+//
+// 出先から見ているとき、いちばん困るのは Mac の電池が切れること。切れた瞬間に
+// 全部のセッションが消えて、こちらからは何が起きたのかも分からなくなる。
+//
+// pmset は速い（10ms 前後）が、スマホは1.5秒ごとに聞きに来る。そのたびに
+// プロセスを起こしていたら、残量を見るために電池を削ることになる。30秒ためる。
+const BATT_TTL = 30 * 1000;
+let battCache = { at: 0, value: null };
+let battFetching = null;
+
+// 例) -InternalBattery-0 (id=...)  64%; discharging; 3:21 remaining present: true
+// 電池のない Mac（mini 等）はこの行が出ない → null＝スマホ側は何も出さない。
+// 残り時間は「(no estimate)」になることがあるので、無くても諦めない
+function parseBatt(out) {
+  const m = /(\d+)%;\s*([A-Za-z ]+);/.exec(out);
+  if (!m) return null;
+  const state = m[2].trim().toLowerCase();
+  const t = /(\d+):(\d+)\s+remaining/.exec(out);
+  const min = t ? Number(t[1]) * 60 + Number(t[2]) : 0;
+  return {
+    pct: Math.max(0, Math.min(100, Number(m[1]))),
+    ac: /'AC Power'/.test(out),
+    charging: state === 'charging' || state === 'finishing charge',
+    // 0:00 は「計算中」か「満充電」。時間として見せると嘘になる
+    remainMin: min > 0 ? min : null,
+  };
+}
+
+function batterySnapshot() {
+  if (Date.now() - battCache.at > BATT_TTL && !battFetching) {
+    battFetching = new Promise((resolve) => {
+      execFile('/usr/bin/pmset', ['-g', 'batt'], { timeout: 4000 }, (err, stdout) => {
+        // 取れなければ黙って消す。電池表示が出ないだけで他は普通に動く
+        battCache = { at: Date.now(), value: err ? null : parseBatt(stdout || '') };
+        resolve();
+      });
+    }).finally(() => { battFetching = null; });
+  }
+  return battCache.value;
+}
+
 // ---------------------------------------------------------------- tmux
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
@@ -537,7 +579,8 @@ const server = http.createServer(async (req, res) => {
         });
       }
       return json(res, 200, {
-        sessions: out, usage: usageSnapshot(), version: currentVersion(), now: Date.now(),
+        sessions: out, usage: usageSnapshot(), battery: batterySnapshot(),
+        version: currentVersion(), now: Date.now(),
       });
     }
 

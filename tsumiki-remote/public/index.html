@@ -65,6 +65,34 @@
   #usage .num.crit{color:#ef4444}
   #usage .num[hidden]{display:none}
 
+  /* MacBook の電池。Claude の残量と並ぶが、意味の違う数字なので形を変える。
+     棒3本にすると「どれがどれ？」になるので、こちらは電池の絵にする
+     （説明なしで何の残量か分かる形。単位も割合も言わなくていい）。
+     電源につながっているときは⚡だけ＝そのとき残量は気にする必要がない。 */
+  #batt{display:flex;align-items:center;gap:3px;padding:8px 2px;background:none;border:none}
+  #batt[hidden]{display:none}
+  #batt .bolt{font-size:9px;color:var(--accent);line-height:1}
+  #batt .bolt[hidden]{display:none}
+  #batt .cell{
+    position:relative;width:22px;height:11px;padding:1.5px;
+    border:1px solid #6b7280;border-radius:3px;
+  }
+  /* 電池の＋極。これが無いと、ただの角丸の箱に見える */
+  #batt .cell::after{
+    content:"";position:absolute;left:100%;top:3px;width:2px;height:5px;
+    background:#6b7280;border-radius:0 1px 1px 0;
+  }
+  #batt .cell i{display:block;height:100%;width:0;border-radius:1px;
+    background:var(--dim);transition:width .3s,background-color .3s}
+  #batt .cell i.warn{background:var(--wait)}
+  #batt .cell i.crit{background:#ef4444}
+  #batt .num{font-size:10px;color:var(--wait);font-variant-numeric:tabular-nums}
+  #batt .num.crit{color:#ef4444}
+  #batt .num[hidden]{display:none}
+  /* 届いていないあいだは隠す。電池は「離れているあいだに減るもの」なので、
+     古い値を出すのがいちばん危ない（満タンに見えて、実は切れている） */
+  body.offline #batt{display:none}
+
   nav{display:flex;gap:8px;padding:0 14px 10px;overflow-x:auto;flex:0 0 auto;scrollbar-width:none}
   nav::-webkit-scrollbar{display:none}
   .tab{
@@ -301,6 +329,8 @@
     <span class="bar" id="bar5"><i></i></span>
     <span class="bar" id="bar7"><i></i></span>
   </span><span class="num" id="unum" hidden></span></button>
+  <button id="batt" hidden aria-label="MacBookの電池"><span class="bolt" hidden>⚡︎</span><span
+    class="cell"><i></i></span><span class="num" id="bnum" hidden></span></button>
   <button id="reload" aria-label="読み込み直す">↻</button>
   <button id="menu" aria-label="メニュー">⋯</button>
 </header>
@@ -393,7 +423,11 @@
     bar5: document.getElementById('bar5'),
     bar7: document.getElementById('bar7'),
     unum: document.getElementById('unum'),
-    stale: document.getElementById('stale')
+    stale: document.getElementById('stale'),
+    batt: document.getElementById('batt'),
+    bolt: document.querySelector('#batt .bolt'),
+    cell: document.querySelector('#batt .cell'),
+    bnum: document.getElementById('bnum')
   };
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
@@ -500,6 +534,43 @@
   el.usage.addEventListener('click', function () {
     if (!usage) return;
     toast(usageLine('5時間', usage.session) + '\n' + usageLine('週', usage.week), 2800);
+  });
+
+  // ---- MacBook の電池
+  //
+  // 電源につながっていれば⚡だけ出して、残量の色は静かなまま（気にしなくていい）。
+  // 電源が無いときだけ、減るほど色が変わる。20%を切ったら数字も出す。
+  // ここが尽きると全部のセッションが消えるので、Claude の残量より重い数字。
+
+  var battery = null;
+
+  function renderBatt(b) {
+    battery = (b && typeof b.pct === 'number') ? b : null;
+    el.batt.hidden = !battery;
+    if (!battery) return;
+    var fill = el.cell.firstElementChild;
+    fill.style.width = battery.pct + '%';
+    fill.className = battery.ac ? '' : (battery.pct <= 10 ? 'crit' : (battery.pct <= 20 ? 'warn' : ''));
+    el.bolt.hidden = !battery.ac;
+    el.bnum.hidden = battery.ac || battery.pct > 20;
+    el.bnum.textContent = battery.pct + '%';
+    el.bnum.className = 'num' + (battery.pct <= 10 ? ' crit' : '');
+  }
+
+  function battLine() {
+    var b = battery;
+    var head = 'MacBook ' + b.pct + '%';
+    if (b.charging) return head + '・充電中';
+    if (b.ac) return head + '・電源につないでいます';
+    var rest = b.remainMin
+      ? 'あと' + (b.remainMin >= 60 ? Math.floor(b.remainMin / 60) + '時間' : '') + (b.remainMin % 60) + '分'
+      : '残り時間は計算中';
+    // 切れたら全部止まる、というのはここでしか言えない
+    return head + '・電源なし（' + rest + '）\n切れると作業場所ごと終わります';
+  }
+
+  el.batt.addEventListener('click', function () {
+    if (battery) toast(battLine(), 2800);
   });
 
   // ---- 最後に見た内容を iPhone の中に残す（オフラインでも開けるように）
@@ -736,6 +807,7 @@
     return api('/api/state').then(function (d) {
       checkVersion(d.version);
       renderUsage(d.usage);
+      renderBatt(d.battery);
       sessions = d.sessions;
       if (!sessions.length) {
         current = '';
