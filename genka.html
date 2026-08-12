@@ -196,21 +196,34 @@
     background:var(--surface); color:var(--accent-2);
     box-shadow:0 1px 2px rgba(40,32,18,.10), inset 0 0 0 1px var(--line-2);
   }
-  /* 時給×時間の行。¥欄と時間欄をならべ、下の段に「＝ いくら」を出す */
+  /* 計算する行（時給×時間・取得価格÷耐用年数）。
+     上の段にかけ算/わり算の材料、下の段に「＝ いくら」を出す */
   .fld .suf{flex:none; color:var(--ink-soft); font-size:.78rem; white-space:nowrap;}
   .item .times{flex:none; color:var(--ink-soft); font-size:.92rem; font-weight:700;}
   .item .r3{display:flex; align-items:center; gap:8px; min-width:0;}
+  .item .unitfix{font-size:.79rem; font-weight:700; color:var(--ink-soft); padding:7px 3px;}
   .item .calc{
     margin-left:auto; font-family:var(--display); font-weight:500; font-size:1rem;
     color:var(--ink); font-variant-numeric:tabular-nums; white-space:nowrap;
   }
   .item .calc.zero{color:var(--line-2);}
-  .adds{display:flex; gap:8px; margin-top:12px;}
+  /* 追加は「＋」ひとつ。押したときだけ、どの入れ方かを選ばせる
+     （3つのボタンを常に並べると、カードごとに賑やかになりすぎる） */
+  .adds{margin-top:12px; display:grid; gap:7px;}
   .additem{
-    flex:1; min-width:0; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
-    padding:10px 6px; font-family:var(--sans); font-size:.82rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+    width:100%; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
+    padding:10px; font-family:var(--sans); font-size:.85rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
   }
   .additem:active{background:var(--surface-2);}
+  .addpick{display:grid; gap:7px; padding:9px; border:1.5px dashed var(--line-2); border-radius:11px;}
+  .addpick[hidden]{display:none;}
+  .addpick button{
+    width:100%; border:1px solid var(--line); background:var(--surface-2); border-radius:9px;
+    padding:11px 12px; font-family:var(--sans); font-size:.87rem; font-weight:700; color:var(--ink-mid);
+    cursor:pointer; text-align:left;
+  }
+  .addpick button:active{background:var(--accent-wash); color:var(--accent-2);}
+  .addpick button u{display:block; font-size:.74rem; font-weight:400; color:var(--ink-soft); text-decoration:none; margin-top:2px;}
 
   .btn{
     width:100%; border:none; border-radius:13px; padding:14px; font-weight:700; font-size:1rem;
@@ -365,10 +378,13 @@
        年に一度のものを月額に直す暗算をさせない。内部は必ず月額に正規化して持つ。
      - 数字はすべて本人が入れる。過去の実測値や相場を既定値として入れない
        （2026-08-11 本人指定：完全に無の状態から始める）。
-     - 項目には2種類ある。kind:'amt'＝金額をそのまま入れる。kind:'rate'＝
-       時給 × 想定稼働時間 のかけ算で出す（人件費用）。rate 側は金額を持たず
-       rate（時給）と hours（時間）だけを保存し、表示のたびに掛ける。
-       ＝どちらか片方だけ直したときに、古い掛け算の答えが残らない。
+     - 項目には3種類ある。
+         kind:'amt'  金額をそのまま入れる
+         kind:'rate' 時給 × 想定稼働時間（人件費用）
+         kind:'life' 取得価格 ÷ 耐用年数（パソコンなど、何年か使うもの）
+       計算する2種類は答えを保存せず、材料（rate/hours, cost/years）だけを持って
+       表示のたびに計算する＝片方だけ直したときに古い答えが残らない。
+       life は性質上いつも年額なので unit は 'y' に固定する。
 
    同期の設計（⚠️ここは事故の再発防止が本体）:
      - iPhone と MacBook で同じ Supabase の1行（kodai_genka_v1）を共有する。
@@ -411,22 +427,27 @@ function seed(t){
     del: {},
     cats: [
       {id:'infra', name:'インフラ', upd:t, items:[
-        {id:'rent',    name:'家賃（ライフライン＋ネット込）', amt:'', unit:'m', upd:t},
+        it0('rent', '家賃（ライフライン＋ネット込）', 'amt', 'm', t),
       ]},
       {id:'aihw', name:'AI・ハードウェア', upd:t, items:[
-        {id:'ai',      name:'AIサブスク',              amt:'', unit:'m', upd:t},
-        {id:'pc',      name:'パソコン',                amt:'', unit:'y', upd:t},
-        {id:'acc',     name:'アクセサリー類（まとめて）', amt:'', unit:'y', upd:t},
+        it0('ai',  'AIサブスク',               'amt',  'm', t),
+        it0('pc',  'パソコン',                 'life', 'y', t),
+        it0('acc', 'アクセサリー類（まとめて）', 'amt',  'y', t),
       ]},
       {id:'labor', name:'人件費', upd:t, items:[
-        {id:'salary',  name:'自分の人件費', kind:'rate', rate:'', hours:'', amt:'', unit:'m', upd:t},
-        {id:'extra',   name:'残業・追加作業の見込み',  amt:'', unit:'m', upd:t},
+        it0('salary', '自分の人件費',           'rate', 'm', t),
+        it0('extra',  '残業・追加作業の見込み',  'amt',  'm', t),
       ]},
       {id:'sales', name:'営業費', upd:t, items:[
-        {id:'hearing', name:'ヒアリング費用（交通費＋飲食の上限）', amt:'', unit:'m', upd:t},
+        it0('hearing', 'ヒアリング費用（交通費＋飲食の上限）', 'amt', 'm', t),
       ]},
     ],
   };
+}
+/* 空の項目1つぶん。持ち物（amt/rate/hours/cost/years）は全部そろえておく＝
+   端末どうしで形が食い違わない */
+function it0(id, name, kind, unit, t){
+  return {id, name, kind, amt:'', rate:'', hours:'', cost:'', years:'', unit, upd:t};
 }
 
 /* ---- 形をそろえる（旧v1＝idなしの保存からの引き上げも兼ねる） ---- */
@@ -455,20 +476,28 @@ function normalize(o){
       const bi = bc && bc.items[ii];
       const id = typeof it.id === 'string' && it.id ? it.id : (bi ? bi.id : uid());
       const amt = typeof it.amt === 'string' ? it.amt : (it.amt == null ? '' : String(it.amt));
-      /* 旧データ（kind が無い）の引き上げ。
-         まだ何も入れていない「自分の人件費」だけ、時給×時間の行に切り替える。
-         金額が入っているものは触らない＝勝手に消えたように見えるのを防ぐ。 */
-      const kind = it.kind === 'rate' ? 'rate'
-                 : (it.kind === 'amt' ? 'amt'
-                 : (id === 'salary' && amt === '' ? 'rate' : 'amt'));
+      /* 旧データ（kind が無い）の引き上げ。初期からある2項目だけ、計算する行に
+         切り替える（人件費＝時給×時間、パソコン＝取得価格÷耐用年数）。
+         ⚠️ 入っていた金額は消さない。パソコンは amt をそのまま残したうえで
+         取得価格(cost)にも写す。古い版が残っている端末（ホーム画面のPWAは
+         しばらく前の版を掴んでいることがある）で 0円 に見えないようにするため。 */
+      const KINDS = {rate:1, life:1, amt:1};
+      const kind = KINDS[it.kind] ? it.kind
+                 : (id === 'salary' && amt === '' ? 'rate'
+                 : (id === 'pc' ? 'life' : 'amt'));
+      const str = (v, k) => typeof v[k] === 'string' ? v[k] : (v[k] == null ? '' : String(v[k]));
+      const cost = str(it, 'cost') || (kind === 'life' && !KINDS[it.kind] ? amt : '');
       cat.items.push({
         id: id,
         name: typeof it.name === 'string' ? it.name : '',
         kind: kind,
         amt:  amt,
-        rate:  typeof it.rate  === 'string' ? it.rate  : (it.rate  == null ? '' : String(it.rate)),
-        hours: typeof it.hours === 'string' ? it.hours : (it.hours == null ? '' : String(it.hours)),
-        unit: it.unit === 'y' ? 'y' : 'm',
+        rate:  str(it, 'rate'),
+        hours: str(it, 'hours'),
+        cost:  cost,
+        years: str(it, 'years'),
+        /* 耐用年数で割る行は、いつでも「1年あたり」。月/年の切り替えは持たない */
+        unit: kind === 'life' ? 'y' : (it.unit === 'y' ? 'y' : 'm'),
         upd:  typeof it.upd === 'string' ? it.upd : t,
       });
     });
@@ -519,7 +548,8 @@ function mergeState(a, b){
 function sig(s){
   return JSON.stringify({
     view: s.view, del: s.del,
-    cats: s.cats.map(c => [c.id, c.name, c.items.map(i => [i.id, i.name, i.kind, i.amt, i.rate, i.hours, i.unit])]),
+    cats: s.cats.map(c => [c.id, c.name,
+      c.items.map(i => [i.id, i.name, i.kind, i.amt, i.rate, i.hours, i.cost, i.years, i.unit])]),
   });
 }
 
@@ -613,9 +643,15 @@ function renderSync(){
 /* ===================== お金の計算（内部は月額に統一） ===================== */
 const num  = v => { const n = parseFloat(String(v).replace(/[^\d.-]/g,'')); return isFinite(n) ? n : 0; };
 
-/* その項目の「入力どおりの額」。時給の行はここで掛け算する。
-   unit が m なら hours は1ヶ月ぶんの時間、y なら1年ぶんの時間。 */
-const val  = it => it.kind === 'rate' ? num(it.rate) * num(it.hours) : num(it.amt);
+/* その項目の「入力どおりの額」。計算する行はここで計算する。
+   rate: unit が m なら hours は1ヶ月ぶんの時間、y なら1年ぶんの時間。
+   life: 取得価格 ÷ 耐用年数＝1年ぶん（unit は必ず y）。年数が空なら0円扱いにして
+         ゼロ割り（Infinity）を作らない。 */
+const val = it => {
+  if(it.kind === 'rate') return num(it.rate) * num(it.hours);
+  if(it.kind === 'life'){ const y = num(it.years); return y > 0 ? num(it.cost) / y : 0; }
+  return num(it.amt);
+};
 
 const perM = it => it.unit === 'y' ? val(it) / 12 : val(it);
 const catM = c  => c.items.reduce((s,it) => s + perM(it), 0);
@@ -655,8 +691,12 @@ function renderCats(){
       '<h2></h2><span class="csum tnum" data-csum="' + ci + '"></span></div>' +
       '<div class="items"></div>' +
       '<div class="adds">' +
-        '<button class="additem" data-k="amt">＋ 金額で追加</button>' +
-        '<button class="additem" data-k="rate">＋ 時給×時間で追加</button>' +
+        '<button class="additem">＋ 項目を追加</button>' +
+        '<div class="addpick" hidden>' +
+          '<button data-k="amt">金額を入れる<u>毎月／毎年かかる額がわかっているもの</u></button>' +
+          '<button data-k="rate">時給 × 想定稼働時間<u>人の手間から出すもの</u></button>' +
+          '<button data-k="life">取得価格 ÷ 耐用年数<u>パソコンなど、何年か使うもの</u></button>' +
+        '</div>' +
       '</div>';
 
     sec.querySelector('h2').textContent = c.name;
@@ -664,8 +704,17 @@ function renderCats(){
     const list = sec.querySelector('.items');
     c.items.forEach(it => list.appendChild(itemEl(c, it)));
 
-    sec.querySelectorAll('.additem').forEach(b => b.addEventListener('click', () => {
-      c.items.push({id:uid(), name:'', kind:b.dataset.k, amt:'', rate:'', hours:'', unit:'m', upd:nowISO()});
+    /* ＋ を押したときだけ、どの入れ方かを選ばせる */
+    const pick = sec.querySelector('.addpick');
+    const plus = sec.querySelector('.additem');
+    plus.addEventListener('click', () => {
+      pick.hidden = !pick.hidden;
+      plus.textContent = pick.hidden ? '＋ 項目を追加' : '× 閉じる';
+    });
+    pick.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.k;
+      c.items.push({id:uid(), name:'', kind:k, amt:'', rate:'', hours:'', cost:'', years:'',
+                    unit:(k === 'life' ? 'y' : 'm'), upd:nowISO()});
       save(); renderCats(); recalc();
     }));
 
@@ -674,7 +723,7 @@ function renderCats(){
 }
 
 function itemEl(cat, it){
-  const rate = (it.kind === 'rate');
+  const rate = (it.kind === 'rate'), life = (it.kind === 'life');
   const el = document.createElement('div');
   el.className = 'item';
   el.innerHTML =
@@ -697,6 +746,20 @@ function itemEl(cat, it){
           '<div class="useg">' +
             '<button data-u="m">月額</button><button data-u="y">年額</button>' +
           '</div>' +
+          '<span class="calc tnum" data-calc="' + it.id + '"></span>' +
+        '</div>'
+    : life
+      /* 耐用年数の行も2段。答えはいつも「1年あたり」なので月/年の切り替えは出さない */
+      ? '<div class="r2">' +
+          '<div class="fld"><span class="yen">¥</span>' +
+            '<input class="amt f-cost" type="text" inputmode="decimal" placeholder="0" aria-label="取得価格"></div>' +
+          '<span class="times">÷</span>' +
+          '<div class="fld">' +
+            '<input class="amt f-years" type="text" inputmode="decimal" placeholder="0" aria-label="耐用年数">' +
+            '<span class="suf">年</span></div>' +
+        '</div>' +
+        '<div class="r3">' +
+          '<span class="unitfix">1年あたり</span>' +
           '<span class="calc tnum" data-calc="' + it.id + '"></span>' +
         '</div>'
       : '<div class="r2">' +
@@ -730,6 +793,9 @@ function itemEl(cat, it){
   if(rate){
     bindNum(el.querySelector('.f-rate'),  'rate');
     bindNum(el.querySelector('.f-hours'), 'hours');
+  }else if(life){
+    bindNum(el.querySelector('.f-cost'),  'cost');
+    bindNum(el.querySelector('.f-years'), 'years');
   }else{
     bindNum(el.querySelector('.amt'), 'amt');
   }
@@ -750,11 +816,11 @@ function itemEl(cat, it){
 }
 
 /* ===================== 合計・内訳 ===================== */
-/* 時給×時間の行の「＝ いくら」。合計が0のときも出したいので、recalc の
-   早期 return より前に呼ぶ。 */
+/* 計算する行（時給×時間・価格÷耐用年数）の「＝ いくら」。
+   合計が0のときも出したいので、recalc の早期 return より前に呼ぶ。 */
 function paintCalcs(){
   S.cats.forEach(c => c.items.forEach(it => {
-    if(it.kind !== 'rate') return;
+    if(it.kind !== 'rate' && it.kind !== 'life') return;
     const e = document.querySelector('[data-calc="' + it.id + '"]');
     if(!e) return;
     const v = val(it);
@@ -854,9 +920,11 @@ function buildSheet(){
     used.forEach(it => {
       const nm = it.name.trim() || '（名前なし）';
       const per = it.unit === 'y' ? '年' : '月';
-      /* 時給の行は、答えだけでなく「どう出したか」を紙にも残す */
+      /* 計算した行は、答えだけでなく「どう出したか」を紙にも残す */
       const tag = it.kind === 'rate'
         ? ('時給' + yen(num(it.rate)) + ' × ' + fmtAmt(it.hours || '0') + '時間/' + per)
+        : it.kind === 'life'
+        ? (yen(num(it.cost)) + ' ÷ ' + fmtAmt(it.years || '0') + '年')
         : (per + '額で入力');
       rows += '<tr class="sh-item"><td>' + esc(nm) + '<span class="sh-unit">　' + tag + '</span></td>' +
               '<td>' + yen(perM(it)) + '</td><td>' + yen(perY(it)) + '</td></tr>';
