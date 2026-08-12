@@ -196,9 +196,19 @@
     background:var(--surface); color:var(--accent-2);
     box-shadow:0 1px 2px rgba(40,32,18,.10), inset 0 0 0 1px var(--line-2);
   }
+  /* 時給×時間の行。¥欄と時間欄をならべ、下の段に「＝ いくら」を出す */
+  .fld .suf{flex:none; color:var(--ink-soft); font-size:.78rem; white-space:nowrap;}
+  .item .times{flex:none; color:var(--ink-soft); font-size:.92rem; font-weight:700;}
+  .item .r3{display:flex; align-items:center; gap:8px; min-width:0;}
+  .item .calc{
+    margin-left:auto; font-family:var(--display); font-weight:500; font-size:1rem;
+    color:var(--ink); font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .item .calc.zero{color:var(--line-2);}
+  .adds{display:flex; gap:8px; margin-top:12px;}
   .additem{
-    margin-top:12px; width:100%; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
-    padding:10px; font-family:var(--sans); font-size:.85rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
+    flex:1; min-width:0; border:1.5px dashed var(--line-2); background:transparent; border-radius:11px;
+    padding:10px 6px; font-family:var(--sans); font-size:.82rem; font-weight:700; color:var(--ink-soft); cursor:pointer;
   }
   .additem:active{background:var(--surface-2);}
 
@@ -355,6 +365,10 @@
        年に一度のものを月額に直す暗算をさせない。内部は必ず月額に正規化して持つ。
      - 数字はすべて本人が入れる。過去の実測値や相場を既定値として入れない
        （2026-08-11 本人指定：完全に無の状態から始める）。
+     - 項目には2種類ある。kind:'amt'＝金額をそのまま入れる。kind:'rate'＝
+       時給 × 想定稼働時間 のかけ算で出す（人件費用）。rate 側は金額を持たず
+       rate（時給）と hours（時間）だけを保存し、表示のたびに掛ける。
+       ＝どちらか片方だけ直したときに、古い掛け算の答えが残らない。
 
    同期の設計（⚠️ここは事故の再発防止が本体）:
      - iPhone と MacBook で同じ Supabase の1行（kodai_genka_v1）を共有する。
@@ -405,7 +419,7 @@ function seed(t){
         {id:'acc',     name:'アクセサリー類（まとめて）', amt:'', unit:'y', upd:t},
       ]},
       {id:'labor', name:'人件費', upd:t, items:[
-        {id:'salary',  name:'自分の人件費',           amt:'', unit:'m', upd:t},
+        {id:'salary',  name:'自分の人件費', kind:'rate', rate:'', hours:'', amt:'', unit:'m', upd:t},
         {id:'extra',   name:'残業・追加作業の見込み',  amt:'', unit:'m', upd:t},
       ]},
       {id:'sales', name:'営業費', upd:t, items:[
@@ -439,10 +453,21 @@ function normalize(o){
     (Array.isArray(c.items) ? c.items : []).forEach((it, ii) => {
       if(!it || typeof it !== 'object') return;
       const bi = bc && bc.items[ii];
+      const id = typeof it.id === 'string' && it.id ? it.id : (bi ? bi.id : uid());
+      const amt = typeof it.amt === 'string' ? it.amt : (it.amt == null ? '' : String(it.amt));
+      /* 旧データ（kind が無い）の引き上げ。
+         まだ何も入れていない「自分の人件費」だけ、時給×時間の行に切り替える。
+         金額が入っているものは触らない＝勝手に消えたように見えるのを防ぐ。 */
+      const kind = it.kind === 'rate' ? 'rate'
+                 : (it.kind === 'amt' ? 'amt'
+                 : (id === 'salary' && amt === '' ? 'rate' : 'amt'));
       cat.items.push({
-        id: typeof it.id === 'string' && it.id ? it.id : (bi ? bi.id : uid()),
+        id: id,
         name: typeof it.name === 'string' ? it.name : '',
-        amt:  typeof it.amt  === 'string' ? it.amt : (it.amt == null ? '' : String(it.amt)),
+        kind: kind,
+        amt:  amt,
+        rate:  typeof it.rate  === 'string' ? it.rate  : (it.rate  == null ? '' : String(it.rate)),
+        hours: typeof it.hours === 'string' ? it.hours : (it.hours == null ? '' : String(it.hours)),
         unit: it.unit === 'y' ? 'y' : 'm',
         upd:  typeof it.upd === 'string' ? it.upd : t,
       });
@@ -494,7 +519,7 @@ function mergeState(a, b){
 function sig(s){
   return JSON.stringify({
     view: s.view, del: s.del,
-    cats: s.cats.map(c => [c.id, c.name, c.items.map(i => [i.id, i.name, i.amt, i.unit])]),
+    cats: s.cats.map(c => [c.id, c.name, c.items.map(i => [i.id, i.name, i.kind, i.amt, i.rate, i.hours, i.unit])]),
   });
 }
 
@@ -587,13 +612,18 @@ function renderSync(){
 
 /* ===================== お金の計算（内部は月額に統一） ===================== */
 const num  = v => { const n = parseFloat(String(v).replace(/[^\d.-]/g,'')); return isFinite(n) ? n : 0; };
-const perM = it => it.unit === 'y' ? num(it.amt) / 12 : num(it.amt);
+
+/* その項目の「入力どおりの額」。時給の行はここで掛け算する。
+   unit が m なら hours は1ヶ月ぶんの時間、y なら1年ぶんの時間。 */
+const val  = it => it.kind === 'rate' ? num(it.rate) * num(it.hours) : num(it.amt);
+
+const perM = it => it.unit === 'y' ? val(it) / 12 : val(it);
 const catM = c  => c.items.reduce((s,it) => s + perM(it), 0);
 const allM = () => S.cats.reduce((s,c) => s + catM(c), 0);
 
 /* 年額は「月額×12」ではなく、年入力のものは入力値そのまま足す。
    ÷12→×12 の丸め誤差で1円ずれるのを避ける。 */
-const perY = it => it.unit === 'y' ? num(it.amt) : num(it.amt) * 12;
+const perY = it => it.unit === 'y' ? val(it) : val(it) * 12;
 const catY = c  => c.items.reduce((s,it) => s + perY(it), 0);
 const allY = () => S.cats.reduce((s,c) => s + catY(c), 0);
 
@@ -624,23 +654,27 @@ function renderCats(){
       '<div class="cat-h"><span class="dot" style="background:' + catColor(ci) + '"></span>' +
       '<h2></h2><span class="csum tnum" data-csum="' + ci + '"></span></div>' +
       '<div class="items"></div>' +
-      '<button class="additem">＋ 項目を追加</button>';
+      '<div class="adds">' +
+        '<button class="additem" data-k="amt">＋ 金額で追加</button>' +
+        '<button class="additem" data-k="rate">＋ 時給×時間で追加</button>' +
+      '</div>';
 
     sec.querySelector('h2').textContent = c.name;
 
     const list = sec.querySelector('.items');
     c.items.forEach(it => list.appendChild(itemEl(c, it)));
 
-    sec.querySelector('.additem').addEventListener('click', () => {
-      c.items.push({id:uid(), name:'', amt:'', unit:'m', upd:nowISO()});
+    sec.querySelectorAll('.additem').forEach(b => b.addEventListener('click', () => {
+      c.items.push({id:uid(), name:'', kind:b.dataset.k, amt:'', rate:'', hours:'', unit:'m', upd:nowISO()});
       save(); renderCats(); recalc();
-    });
+    }));
 
     wrap.appendChild(sec);
   });
 }
 
 function itemEl(cat, it){
+  const rate = (it.kind === 'rate');
   const el = document.createElement('div');
   el.className = 'item';
   el.innerHTML =
@@ -648,31 +682,57 @@ function itemEl(cat, it){
       '<input class="nm" type="text" placeholder="項目の名前">' +
       '<button class="del" aria-label="この項目を消す">×</button>' +
     '</div>' +
-    '<div class="r2">' +
-      '<div class="fld"><span class="yen">¥</span>' +
-        '<input class="amt" type="text" inputmode="decimal" placeholder="0"></div>' +
-      '<div class="useg">' +
-        '<button data-u="m">月額</button><button data-u="y">年額</button>' +
-      '</div>' +
-    '</div>';
+    (rate
+      /* 時給の行は2段。上でかけ算の材料、下で「月額か年額か」と答え */
+      ? '<div class="r2">' +
+          '<div class="fld"><span class="yen">¥</span>' +
+            '<input class="amt f-rate" type="text" inputmode="decimal" placeholder="0" aria-label="時給">' +
+            '<span class="suf">/時</span></div>' +
+          '<span class="times">×</span>' +
+          '<div class="fld">' +
+            '<input class="amt f-hours" type="text" inputmode="decimal" placeholder="0" aria-label="想定稼働時間">' +
+            '<span class="suf hsuf">時間</span></div>' +
+        '</div>' +
+        '<div class="r3">' +
+          '<div class="useg">' +
+            '<button data-u="m">月額</button><button data-u="y">年額</button>' +
+          '</div>' +
+          '<span class="calc tnum" data-calc="' + it.id + '"></span>' +
+        '</div>'
+      : '<div class="r2">' +
+          '<div class="fld"><span class="yen">¥</span>' +
+            '<input class="amt" type="text" inputmode="decimal" placeholder="0"></div>' +
+          '<div class="useg">' +
+            '<button data-u="m">月額</button><button data-u="y">年額</button>' +
+          '</div>' +
+        '</div>');
 
   const nm  = el.querySelector('.nm');
-  const amt = el.querySelector('.amt');
   nm.value  = it.name;
-  amt.value = fmtAmt(it.amt);
 
-  const paintUnit = () => el.querySelectorAll('.useg button').forEach(b => {
-    b.classList.toggle('on', b.dataset.u === it.unit);
-  });
+  const hsuf = el.querySelector('.hsuf');
+  const paintUnit = () => {
+    el.querySelectorAll('.useg button').forEach(b => b.classList.toggle('on', b.dataset.u === it.unit));
+    if(hsuf) hsuf.textContent = it.unit === 'y' ? '時間/年' : '時間/月';
+  };
   paintUnit();
 
   nm.addEventListener('input',  () => { it.name = nm.value; it.upd = nowISO(); save(); buildSheet(); });
 
   /* 金額は「生の数字」で持ち、手を離したときだけ 3桁区切りにして見せる。
      入力中に整形するとカーソルが末尾に飛ぶので、そこはさわらない。 */
-  amt.addEventListener('input', () => { it.amt = rawAmt(amt.value); it.upd = nowISO(); save(); recalc(); });
-  amt.addEventListener('focus', () => { amt.value = it.amt; });
-  amt.addEventListener('blur',  () => { amt.value = fmtAmt(it.amt); });
+  const bindNum = (input, key) => {
+    input.value = fmtAmt(it[key]);
+    input.addEventListener('input', () => { it[key] = rawAmt(input.value); it.upd = nowISO(); save(); recalc(); });
+    input.addEventListener('focus', () => { input.value = it[key]; });
+    input.addEventListener('blur',  () => { input.value = fmtAmt(it[key]); });
+  };
+  if(rate){
+    bindNum(el.querySelector('.f-rate'),  'rate');
+    bindNum(el.querySelector('.f-hours'), 'hours');
+  }else{
+    bindNum(el.querySelector('.amt'), 'amt');
+  }
 
   el.querySelectorAll('.useg button').forEach(b => {
     b.addEventListener('click', () => { it.unit = b.dataset.u; it.upd = nowISO(); paintUnit(); save(); recalc(); });
@@ -690,7 +750,21 @@ function itemEl(cat, it){
 }
 
 /* ===================== 合計・内訳 ===================== */
+/* 時給×時間の行の「＝ いくら」。合計が0のときも出したいので、recalc の
+   早期 return より前に呼ぶ。 */
+function paintCalcs(){
+  S.cats.forEach(c => c.items.forEach(it => {
+    if(it.kind !== 'rate') return;
+    const e = document.querySelector('[data-calc="' + it.id + '"]');
+    if(!e) return;
+    const v = val(it);
+    e.textContent = v > 0 ? '＝ ' + yen(v) : '＝ —';
+    e.classList.toggle('zero', !(v > 0));
+  }));
+}
+
 function recalc(){
+  paintCalcs();
   const m = allM(), y = allY();
   const isM = S.view === 'm';
 
@@ -774,12 +848,16 @@ function buildSheet(){
 
   let rows = '';
   S.cats.forEach(c => {
-    const used = c.items.filter(it => num(it.amt) !== 0 || it.name.trim() !== '');
+    const used = c.items.filter(it => val(it) !== 0 || it.name.trim() !== '');
     if(!used.length) return;
     rows += '<tr class="sh-cat"><td>' + esc(c.name) + '</td><td>' + yen(catM(c)) + '</td><td>' + yen(catY(c)) + '</td></tr>';
     used.forEach(it => {
       const nm = it.name.trim() || '（名前なし）';
-      const tag = it.unit === 'y' ? '年額で入力' : '月額で入力';
+      const per = it.unit === 'y' ? '年' : '月';
+      /* 時給の行は、答えだけでなく「どう出したか」を紙にも残す */
+      const tag = it.kind === 'rate'
+        ? ('時給' + yen(num(it.rate)) + ' × ' + fmtAmt(it.hours || '0') + '時間/' + per)
+        : (per + '額で入力');
       rows += '<tr class="sh-item"><td>' + esc(nm) + '<span class="sh-unit">　' + tag + '</span></td>' +
               '<td>' + yen(perM(it)) + '</td><td>' + yen(perY(it)) + '</td></tr>';
     });
