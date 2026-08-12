@@ -590,10 +590,14 @@ document.addEventListener('visibilitychange', () => { if(document.visibilityStat
 function adopt(remoteRaw){
   const remote = normalize(remoteRaw);
   const merged = mergeState(S, remote);
-  const changed = sig(merged) !== sig(S);
   S = merged;
   saveLocal();
-  if(changed){ paintView(); renderCats(); recalc(); }
+  /* ⚠️ 中身が同じでも必ず画面を作り直す（2026-08-12 のバグ）。
+     mergeState は項目の入れ物（オブジェクト）を作り直すので、作り直さないと
+     入力欄のイベントは「もう S にいない古い入れ物」に書き込み続ける。
+     ＝打っても保存されない・合計に入らない。見た目が同じでも作り直すこと。
+     入力中に走らせると文字が消えるので、呼ぶ側が typing() で止めている。 */
+  paintView(); renderCats(); recalc();
   /* マージ結果がリモートより豊かなら押し戻す＝どれか1台に残っていれば自己修復 */
   if(sig(merged) !== sig(remote)){ S.updatedAt = nowISO(); saveLocal(); push(); }
 }
@@ -608,7 +612,11 @@ async function loadRemote(){
   const { data, error } = await sb.from(STATE_TABLE).select('state').eq('id', STATE_ID).maybeSingle();
   if(error){ online = false; renderSync(); return; }
   online = true;
-  if(data && data.state && typeof data.state === 'object') adopt(data.state);
+  /* 開いた直後にもう打ち始めていることがある。adopt は画面を作り直すので、
+     打っている最中は割り込まず、手が離れてから反映する（下の focusout） */
+  if(data && data.state && typeof data.state === 'object'){
+    if(typing()) pending = data.state; else adopt(data.state);
+  }
   else push();                       /* まだ行が無い＝この端末の中身で作る */
   renderSync();
 }
