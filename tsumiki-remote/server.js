@@ -48,7 +48,7 @@ const CLAUDE_CMD = process.env.TSUMIKI_CLAUDE_CMD || 'claude --permission-mode b
 // 再起動したときなので、そのタイミング＝起動ごとの通し番号（BOOT）を版に混ぜる。
 // これで「画面のファイルが変わった」か「サーバーが入れ替わった」ときだけ読み直す。
 const BOOT = crypto.randomBytes(3).toString('hex');
-const VER_FILES = [path.join(PUBLIC_DIR, 'index.html')];
+const VER_FILES = [path.join(PUBLIC_DIR, 'index.html'), path.join(PUBLIC_DIR, 'sw.js')];
 let verCache = { key: null, value: '0' };
 
 function currentVersion() {

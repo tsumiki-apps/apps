@@ -96,6 +96,21 @@
   }
   .tab.add span{font-size:9px;letter-spacing:.04em}
 
+  /* オフラインの帯。ヘッダーの丸い点は狭い画面だと色しか出ない＝「古い内容を
+     見ている」と気づけない。取り違えると事故になるので、文字で言い切る場所を
+     画面の中に持つ（2026-08-12） */
+  #stale{
+    flex:0 0 auto;margin:0 10px 6px;padding:7px 10px;border-radius:10px;
+    background:rgba(245,158,11,.13);border:1px solid rgba(245,158,11,.32);
+    color:var(--wait);font-size:11px;line-height:1.45;
+  }
+  #stale[hidden]{display:none}
+  /* 届いていないあいだ、札の「作業中」は今の話ではない（点滅は動いている合図に
+     見えてしまう）。止めて、薄くして、古い情報だと分かるようにする */
+  body.offline nav{opacity:.5}
+  body.offline .tab.busy .st::before,
+  body.offline #dest.busy::before{animation:none}
+
   main{flex:1 1 auto;min-height:0;margin:0 10px;border:1px solid var(--line);border-radius:14px;background:#0b0c0f;overflow:hidden}
   #out{
     margin:0;padding:12px;height:100%;overflow:auto;-webkit-overflow-scrolling:touch;
@@ -268,6 +283,8 @@
 
 <nav id="tabs"></nav>
 
+<div id="stale" hidden></div>
+
 <main><pre id="out">セッションを選んでください。</pre></main>
 
 <footer>
@@ -351,7 +368,8 @@
     usage: document.getElementById('usage'),
     bar5: document.getElementById('bar5'),
     bar7: document.getElementById('bar7'),
-    unum: document.getElementById('unum')
+    unum: document.getElementById('unum'),
+    stale: document.getElementById('stale')
   };
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
@@ -374,7 +392,11 @@
     opts = opts || {};
     opts.headers = Object.assign({ 'x-token': token }, opts.headers || {});
     if (opts.body) opts.headers['content-type'] = 'application/json';
-    return fetch(path, opts).then(function (r) {
+    // 届かなかったときの言い方をここで揃える。Safari の素の文言は "Load failed" で、
+    // 出先で見ても何が起きたのか分からない（2026-08-12）
+    return fetch(path, opts).catch(function () {
+      throw new Error('MacBook に届きません');
+    }).then(function (r) {
       if (r.status === 401) { gate(true); throw new Error('unauthorized'); }
       // 失敗したときは中身の error を読んで見せる。「http 500」だけだと
       // 何が起きたのか外出先から確かめようがない（2026-08-11）。
@@ -456,6 +478,107 @@
     toast(usageLine('5時間', usage.session) + '\n' + usageLine('週', usage.week), 2800);
   });
 
+  // ---- 最後に見た内容を iPhone の中に残す（オフラインでも開けるように）
+  //
+  // 画面そのもの（HTML）は sw.js が写しを持つ。ここで残すのは「中身」の方＝
+  // セッションの一覧と、それぞれで見えていた画面の文字。届かないときはこれを描く。
+  // 何も残していないと、Mac に届かない＝真っ白、になる（2026-08-12）。
+  //
+  // 1.5秒ごとに書くと、そのたび数十KBの書き込みで画面が引っかかるので、
+  // 変わったときだけ・SNAP_EVERY_MS に1回までにする。閉じる直前にも1回書く。
+  var SNAP = 'tsumiki-remote-snap';
+  var SNAP_EVERY_MS = 5000;
+  // 1セッションぶんの上限（文字数）。400行ぶんの画面がだいたい入る大きさ。
+  // 溢れたら末尾＝新しい方を残す（上が切れる）
+  var PANE_MAX = 40000;
+  var panes = {};            // name -> 最後に見えていた画面
+  var snapAt = 0;            // その中身を見た時刻
+  var snapDirty = false;
+  var snapSavedAt = 0;
+  var offline = false;
+
+  function snapBody(only) {
+    var keep = {};
+    // いま席にあるものだけ残す。終わらせた席の画面まで抱えても場所を食うだけ
+    sessions.forEach(function (s) {
+      if (only && s.name !== only) return;
+      var t = panes[s.name];
+      if (t) keep[s.name] = t.length > PANE_MAX ? t.slice(-PANE_MAX) : t;
+    });
+    return JSON.stringify({
+      at: Date.now(), sessions: sessions, current: current, usage: usage, panes: keep
+    });
+  }
+
+  function saveSnap(force) {
+    if (!snapDirty && !force) return;
+    if (!force && Date.now() - snapSavedAt < SNAP_EVERY_MS) return;
+    try {
+      localStorage.setItem(SNAP, snapBody(null));
+    } catch (e) {
+      // 入りきらないときは、いま見ている1つだけにして入れ直す
+      try { localStorage.setItem(SNAP, snapBody(current)); } catch (e2) { return; }
+    }
+    snapDirty = false;
+    snapSavedAt = Date.now();
+  }
+
+  // 「いつの内容か」。今日なら時刻だけ、昨日以前は日付から言う
+  function stampText(ms) {
+    var d = new Date(ms), now = new Date();
+    var p = function (x) { return ('0' + x).slice(-2); };
+    var hm = p(d.getHours()) + ':' + p(d.getMinutes());
+    if (d.toDateString() === now.toDateString()) return hm;
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+  }
+
+  function setOffline(yes) {
+    offline = !!yes;
+    el.stale.hidden = !offline;
+    document.body.classList.toggle('offline', offline);
+    if (!offline) return;
+    // 375px で1行に収まる長さにする（折り返して1文字だけ次の行に残ると読みにくい）
+    el.stale.textContent = snapAt
+      ? 'MacBook に届きません・下は ' + stampText(snapAt) + ' 時点の内容です'
+      : 'MacBook に届きません・保存された内容はまだありません';
+  }
+
+  // 届かないときに、残してある画面を出す
+  function showCachedPane() {
+    var t = panes[current];
+    if (t == null) {
+      // 残していない席に切り替えたとき。前の席の画面を出したままにすると
+      // 「切り替わっていないのに切り替わったように見える」ので、はっきり言う
+      if (lastText === null) {
+        lastText = '';
+        el.out.textContent = 'この作業場所の内容は保存されていません。つながったら出ます。';
+      }
+      return;
+    }
+    if (t !== lastText) { lastText = t; renderScreen(t); el.out.scrollTop = el.out.scrollHeight; }
+  }
+
+  function restoreSnap() {
+    var raw = null, d = null;
+    try { raw = localStorage.getItem(SNAP); } catch (e) { return; }
+    if (!raw) return;
+    try { d = JSON.parse(raw); } catch (e) { return; }
+    if (!d || !d.sessions || !d.sessions.length) return;
+
+    sessions = d.sessions;
+    panes = d.panes || {};
+    snapAt = d.at || 0;
+    if (!sessions.some(function (s) { return s.name === current; })) {
+      current = d.current || sessions[0].name;
+    }
+    el.send.disabled = false;
+    renderUsage(d.usage);
+    renderTabs();
+    showCachedPane();
+    // まだ「つながらない」と決まったわけではないので、帯はここでは出さない。
+    // 最初の問い合わせが失敗したときに setOffline(true) で出す
+  }
+
   function atBottom() {
     return el.out.scrollHeight - el.out.scrollTop - el.out.clientHeight < 40;
   }
@@ -520,7 +643,8 @@
     localStorage.setItem('tsumiki-remote-session', name);
     el.send.disabled = false;
     renderTabs();
-    refreshPane(true);
+    // 届かないときは、その席の残してある画面に切り替える（切り替え自体は効く）
+    refreshPane(true).catch(function () { showCachedPane(); });
   }
 
   function newSession(kind) {
@@ -602,6 +726,9 @@
       }
       renderTabs();
       setConn('on', 'つながっています');
+      setOffline(false);
+      snapAt = Date.now();
+      snapDirty = true;
     });
   }
 
@@ -655,6 +782,8 @@
       var text = d.text || '(空)';
       if (text !== lastText) { lastText = text; renderScreen(text); }
       if (stick) el.out.scrollTop = el.out.scrollHeight;
+      if (panes[current] !== text) { panes[current] = text; snapDirty = true; }
+      saveSnap();
     });
   }
 
@@ -664,7 +793,12 @@
     refreshState()
       .then(refreshPane)
       .catch(function (e) {
-        if (e.message !== 'unauthorized') setConn('err', 'つながりません');
+        if (e.message === 'unauthorized') return;
+        setConn('err', 'つながりません');
+        // 届かないあいだは、残してある最後の内容を出したままにする。
+        // 消して真っ白にするより、「いつの内容か」を言い添えて見せる方がいい
+        setOffline(true);
+        showCachedPane();
       });
   }
 
@@ -1050,6 +1184,24 @@
       }
     }
   } catch (e) {}
+
+  // 画面一式を iPhone の中に置いておく係。これが居ると、Mac に届かないときでも
+  // 開いた瞬間に写しが出る（真っ白にならない）。
+  // ⚠️ https でないと登録できない決まり。http のときは静かに失敗するだけ。
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .catch(function () { /* http で開いている・対応していない。普通に動く */ });
+  }
+
+  // 最後に見た内容を先に描く。つながっていれば1秒以内に本物へ入れ替わるので、
+  // 出しても損はなく、つながっていないときだけ意味が出る
+  restoreSnap();
+
+  // 閉じる・裏に回る直前に必ず1回残す。次に開いたときここから始まる
+  window.addEventListener('pagehide', function () { saveSnap(true); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) saveSnap(true);
+  });
 
   if (!token) gate(true);
   tick(true);
