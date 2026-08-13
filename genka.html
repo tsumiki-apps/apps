@@ -263,16 +263,23 @@
     width:182mm;                            /* A4縦(210mm) − 左右余白14mm×2 */
   }
   @media print{
-    @page{size:A4 portrait; margin:15mm 14mm;}
-    body{background:#fff; color:#000;}
+    /* ⚠️ 余白は 0 にする（＝紙のふちギリギリまでブラウザに使わせる）。
+       ブラウザは @page の余白のすきまに「ページのURL・日付・何ページ目か」を
+       勝手に刷り込む。余白を 0 にすると刷り込む場所がなくなり、消える。
+       そのぶんの余白（上下15mm・左右14mm）は .sheet の padding で自分で作る
+       ので、紙に出たときの見た目は今までと同じ。 */
+    @page{size:A4 portrait; margin:0;}
+    body{background:#fff; color:#000; margin:0;}
     .topbar, main, .toast, #tsumikiEdge, #tsumikiPeek{display:none !important;}
     .sheet{display:block !important;}
     /* ⚠️ 紙の中身の幅を自分で決める（＝画面の幅に左右されない）。
        iPhone の Safari は、印刷のとき「画面の幅（例:390px）で組んだものを紙幅まで
        引き伸ばす」。幅を決めておかないと、パソコンでは1枚でも iPhone では字が
        大きく組まれて縦にあふれ、2枚目ができる。182mm＝A4の本文幅（210−14×2）で、
-       採寸に使う .sheet.measuring と同じ値。両者は必ず一致させること。 */
-    .sheet{width:182mm; margin:0 auto;}
+       採寸に使う .sheet.measuring と同じ値。両者は必ず一致させること。
+       左右の余白は @page ではなくここで作る（上の @page{margin:0} の理由を参照）。
+       採寸（.measuring）には padding が付かないので、測る高さは今までどおり。 */
+    .sheet{width:182mm; margin:0 auto; padding:15mm 0;}
     /* 文字の自動拡大も止める（iOS は印刷時に本文を勝手に大きくすることがある） */
     html, body{-webkit-text-size-adjust:none; text-size-adjust:none;}
   }
@@ -284,12 +291,11 @@
     --gs:2.27;                              /* 合計の箱の上の空き */
     --gs2:1.98;                             /*      同じ箱の下の空き */
     --ps:1.42;                              /*      箱の中の上下の余白 */
-    --gf:2.27;                              /* 注意書きの上の空き */
     font-family:var(--display); color:#000; font-size:var(--u); line-height:var(--lh);
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
   /* 項目が多いとき。文字の大きさは変えず、たての空きだけを詰める */
-  .sheet.tight{--lh:1.28; --pr:.3; --pc:.72; --gs:1.1; --gs2:1.0; --ps:.9; --gf:1.1;}
+  .sheet.tight{--lh:1.28; --pr:.3; --pc:.72; --gs:1.1; --gs2:1.0; --ps:.9;}
   .sheet .sh-h{
     display:flex; align-items:center; gap:calc(.95*var(--u));
     border-bottom:2px solid #000; padding-bottom:calc(.6*var(--u)); margin-bottom:calc(.3*var(--u));
@@ -331,10 +337,6 @@
   .sheet tr.sh-grand td{border-top:1.2pt solid #000; border-bottom:none; padding-top:calc(.85*var(--u)); font-size:calc(1.2*var(--u)); font-weight:600;}
   .sheet tr.sh-cat, .sheet tr.sh-item{break-inside:avoid;}
   .sheet .sh-unit{color:#888; font-size:calc(.8*var(--u));}
-  .sheet .sh-f{
-    margin-top:calc(var(--gf)*var(--u)); padding-top:calc(.85*var(--u)); border-top:.4pt solid #ccc;
-    font-size:calc(.8*var(--u)); color:#666; line-height:calc(var(--lh)*1.15);
-  }
 </style>
 </head>
 <body>
@@ -993,14 +995,12 @@ function buildSheet(){
   document.getElementById('sheet').innerHTML =
     '<div class="sh-h">' + LOGO_SVG +
     '<div class="sh-hx"><h1>つみき事業　原価表</h1>' +
-    '<div class="sh-meta"><span>屋号：Tsumiki</span><span class="r">作成日：' + stamp + '</span></div></div></div>' +
+    '<div class="sh-meta"><span class="r">作成日：' + stamp + '</span></div></div></div>' +
     '<div class="sh-sum">' +
       '<div><span>1ヶ月あたりの原価</span><b>' + yen(allM()) + '</b></div>' +
       '<div><span>1年あたりの原価</span><b>' + yen(allY()) + '</b></div>' +
     '</div>' +
-    '<table><thead><tr><th>項目</th><th>月額</th><th>年額</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<div class="sh-f">・年額で入力した項目の月額は、年額を12で割った額です（1円未満は四捨五入）。<br>' +
-    '・この表は入力した金額をそのまま集計したものです。減価償却・事業按分・税や手数料は含みません。</div>';
+    '<table><thead><tr><th>項目</th><th>月額</th><th>年額</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 /* ---- A4縦1枚に収める ----
