@@ -735,7 +735,7 @@
     // 文字を出さないので、読み上げ用の名前はここで補う
     add.setAttribute('aria-label', 'Claude を追加');
     add.innerHTML = '＋' + CLAUDE_MARK;
-    add.onclick = function () { newSession('claude'); };
+    add.onclick = function () { newClaudeMenu(); };
     el.tabs.appendChild(add);
 
     // ＋シェルは置かない（使っていないので、押し間違いの元だけが残る）。
@@ -774,7 +774,31 @@
     refreshPane(true).catch(function () { showCachedPane(); });
   }
 
-  function newSession(kind) {
+  // ＋Claude を押したときに選ぶ「頭」。arg は起動時の --model に渡す合図で、
+  // 'default' は Claude Code のおすすめ（Opus 5・1M 文脈）。
+  // ⚠️ 起動時の --model は、その席だけに効く（Mac 側の既定は変わらない）。
+  //    動いている席に /model を打つやり方だと既定まで書き換わるので採らない。
+  var MODELS = [
+    { arg: 'default', name: 'Opus（おすすめ）', sub: 'ふだんづかい。長い話も読める' },
+    { arg: 'fable',   name: 'Fable',            sub: 'いちばん賢い。そのぶん高い' },
+    { arg: 'sonnet',  name: 'Sonnet',           sub: '速くて安い。軽い用事に' },
+    { arg: 'haiku',   name: 'Haiku',            sub: 'いちばん速い。簡単な用事に' }
+  ];
+  var LAST_MODEL = 'tsumiki-remote-model';
+
+  // 席ができたあとから頭を見分ける手がかりは画面の中にしか無いので、
+  // せめて「前回どれで始めたか」だけは覚えておいて印をつける
+  function newClaudeMenu() {
+    var last = localStorage.getItem(LAST_MODEL);
+    openSheet('どの頭で始める？');
+    MODELS.forEach(function (m) {
+      sheetItem(m.name, m.sub + (m.arg === last ? '（前回）' : ''),
+        function () { closeSheet(); newSession('claude', m); },
+        { on: m.arg === last });
+    });
+  }
+
+  function newSession(kind, model) {
     // 空いている名前を探す。見えているものが全部＝tmux にあるものが全部なので、
     // 一覧を数えるだけでよい（隠れて席を占めているものはもう無い）
     var used = {};
@@ -785,9 +809,13 @@
     if (!name) return toast('満席です（' + prefix + '1〜20 すべて使用中）');
     var body = { name: name };
     if (kind === 'claude') body.run = 'claude';
+    if (kind === 'claude' && model) body.model = model.arg;
     api('/api/new', { method: 'POST', body: JSON.stringify(body) })
       .then(function () {
-        toast(name + (kind === 'claude' ? ' で Claude を起動中…' : ' を作りました'));
+        if (kind === 'claude' && model) localStorage.setItem(LAST_MODEL, model.arg);
+        toast(name + (kind === 'claude'
+          ? ' で ' + (model ? model.name.replace(/（.*/, '') : 'Claude') + ' を起動中…'
+          : ' を作りました'));
         select(name);
         tick(true);
       })
