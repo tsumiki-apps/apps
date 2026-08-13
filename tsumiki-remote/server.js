@@ -199,6 +199,9 @@ function batterySnapshot() {
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 
+// 複数行の指示を貼り付けるときに使う、名前つきの控え置き場
+const PASTE_BUF = 'tsumiki-remote';
+
 // LaunchAgent から起動すると LANG が空になり、tmux が UTF-8 モードにならない。
 // そのままだと日本語の指示を送ったときに1バイトずつ化ける。-u と合わせて明示する。
 const TMUX_ENV = Object.assign({}, process.env, {
@@ -211,6 +214,19 @@ function tmux(args, { timeout = 5000 } = {}) {
     execFile(TMUX, ['-u'].concat(args), { timeout, env: TMUX_ENV, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({ ok: !err, out: stdout || '', err: (stderr || '') + (err ? String(err.message) : '') });
     });
+  });
+}
+
+// 本文を標準入力から渡す版（load-buffer 用）。指示の本文を引数に混ぜると、
+// 長文で「引数が長すぎる」に当たるうえ、記号の扱いも面倒になる
+function tmuxStdin(args, input) {
+  return new Promise((resolve) => {
+    const cp = execFile(TMUX, ['-u'].concat(args), { timeout: 5000, env: TMUX_ENV },
+      (err, stdout, stderr) => {
+        resolve({ ok: !err, out: stdout || '', err: (stderr || '') + (err ? String(err.message) : '') });
+      });
+    cp.stdin.on('error', () => {});   // 先に閉じられても落とさない
+    cp.stdin.end(input);
   });
 }
 
@@ -599,12 +615,21 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
-      const text = String(body.text || '').replace(/[\r\n]+/g, ' ');
+      const text = String(body.text || '').replace(/\r\n?/g, '\n');
+      const lines = text ? text.split('\n').length : 0;
       // 「押したのに効かない」を後から追えるようにする。指示の本文まで丸ごと
       // 残すと server.log が日誌になってしまうので、短いものだけ中身を出し、
       // 長いものは字数だけにする（数字ボタンの調査にはこれで足りる）
-      console.log(`send ${name} ${text.length <= 8 ? JSON.stringify(text) : text.length + '文字'}${body.enter ? ' +Enter' : ''}`);
-      if (text) {
+      console.log(`send ${name} ${text.length <= 8 ? JSON.stringify(text) : text.length + '文字'}${lines > 1 ? '/' + lines + '行' : ''}${body.enter ? ' +Enter' : ''}`);
+      if (lines > 1) {
+        // 複数行は「角括弧ペースト」で入れる（-p）。素直に送ると、改行のたびに
+        // Enter を押したのと同じ＝1行ごとに実行されてしまう（2026-08-13 実測）。
+        // 名前つきの控えに置いて、貼ったら消す（-d）＝tmux の貼り付け履歴を汚さない
+        const r = await tmuxStdin(['load-buffer', '-b', PASTE_BUF, '-'], text);
+        if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
+        const p = await tmux(['paste-buffer', '-b', PASTE_BUF, '-d', '-p', '-t', '=' + name + ':']);
+        if (!p.ok) return json(res, 500, { error: p.err.slice(0, 200) });
+      } else if (text) {
         const r = await tmux(['send-keys', '-t', '=' + name + ':', '-l', text]);
         if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       }

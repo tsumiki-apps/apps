@@ -233,9 +233,16 @@
     font:inherit;font-size:15px;line-height:1;
   }
   .row{display:flex;gap:8px;align-items:flex-end}
+  /* 入力欄。改行のぶんだけ縦に伸びる（LINE と同じ）。
+     ・font-size は 16px 以上（これを下回ると iOS が勝手に拡大する）
+     ・伸びるのは5行まで。それ以上は中でスクロールさせる＝入力欄が画面を
+       埋めて、上の作業画面が見えなくなるのを防ぐ
+     ・高さの計算は JS 側（autoGrow）。max-height と行の高さはここと揃える */
   #cmd{
-    flex:1 1 auto;min-width:0;padding:11px 14px;border-radius:20px;background:var(--panel);
+    flex:1 1 auto;min-width:0;padding:10px 14px;border-radius:20px;background:var(--panel);
     border:1px solid var(--line);color:var(--fg);font:inherit;font-size:16px;
+    line-height:22px;resize:none;overflow-y:auto;max-height:132px;
+    -webkit-overflow-scrolling:touch;
   }
   #cmd:focus{outline:none;border-color:#3b4250}
   #pick{
@@ -360,7 +367,7 @@
   <div id="atts" hidden></div>
   <div class="row">
     <button id="pick" title="画像を送る">＋</button>
-    <input id="cmd" placeholder="指示を入力…" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+    <textarea id="cmd" rows="1" placeholder="指示を入力…" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="enter"></textarea>
     <button id="send" disabled>↑</button>
   </div>
   <input id="file" type="file" accept="image/*" hidden>
@@ -969,6 +976,17 @@
   // 添えた画像（札）。送信の瞬間に「パス + 半角スペース + 本文」に組み立てる
   var atts = [];
 
+  // 入力欄の高さを中身に合わせる。改行のぶんだけ伸びて、5行で止まる（LINE と同じ）。
+  //
+  // ⚠️ この画面は * { box-sizing:border-box }。scrollHeight には枠線が入らないのに
+  // height には入るので、そのまま入れると毎回2px ずつ縮んでいく。枠線ぶんを足す。
+  // いったん auto に戻すのは、消したときに縮められるようにするため。
+  function autoGrow() {
+    el.cmd.style.height = 'auto';
+    el.cmd.style.height = (el.cmd.scrollHeight + 2) + 'px';
+  }
+  el.cmd.addEventListener('input', autoGrow);
+
   el.send.onclick = function () {
     var v = el.cmd.value.trim();
     if (atts.some(function (a) { return !a.path; })) return toast('画像を置いている途中です');
@@ -976,13 +994,15 @@
     var text = paths ? (v ? paths + ' ' + v : paths) : v;
     if (!text) return;
     el.cmd.value = '';
+    autoGrow();                 // 1行に戻す
     atts = [];
     renderAtts();
     sendText(text, true);
   };
-  el.cmd.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); el.send.onclick(); }
-  });
+  // Enter は改行。送信は右の↑だけ（2026-08-13）。
+  // 送信を Enter に持たせると、日本語の変換確定でも送信が走る＝書きかけが
+  // 飛んでいく。改行を入れたいという要望と、この誤送信の両方がこれで消える。
+  // クイックキーの ⏎ は別物（ターミナルに Enter を押す機能）なので残す。
 
   el.keys.addEventListener('click', function (e) {
     var b = e.target.closest('button');
@@ -1328,6 +1348,7 @@
       } else {
         el.cmd.value = draft;
       }
+      autoGrow();   // 改行入りの書きかけなら、その行数ぶん開いた状態で戻す
     }
   } catch (e) {}
 
