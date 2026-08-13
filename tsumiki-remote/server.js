@@ -433,17 +433,21 @@ function pruneUploads() {
 
 // -------------------------------------------------------------- プレビュー
 
-// やり取りの中で出力したものの置き場。実体は iCloud Drive なので、
-// アプリで見るのと iPhone のファイルアプリで見るのが同じ1か所になる。
-// ここから外は絶対に出さない。
+// つみきの持ちもの一式（ロゴ・名刺・書類ひな形・やり取りの出力）の置き場。
+// 実体は iCloud Drive なので、アプリで見るのと iPhone のファイルアプリで
+// 見るのが同じ1か所になる。ここから外は絶対に出さない。
 //
 // ⚠️ iCloud のフォルダは、同期系の fs 呼び出し（readdirSync など）が
 // 数分単位で返ってこないことがある。Node は1本のループで動いているので、
 // そこで固まるとターミナル表示もキー送信も全部止まる（実際に止めた）。
 // このフォルダを触るときは必ず非同期＋制限時間つきで扱うこと。
 const PREVIEW_ROOT = path.join(
-  os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'つみきリモート');
-fsp.mkdir(PREVIEW_ROOT, { recursive: true }).catch(() => {});
+  os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs',
+  'Kodai', '00_Tsumiki');
+// やり取りの中で作ったものは、屋号の資産（ロゴ・名刺・書類）と混ざらないよう
+// この中の `11_やりとり出力` に入れる。Mac からは `~/つみき出力/` がその近道。
+const PREVIEW_OUT = path.join(PREVIEW_ROOT, '11_やりとり出力');
+fsp.mkdir(PREVIEW_OUT, { recursive: true }).catch(() => {});
 
 // 制限時間つきで待つ。返ってこない相手を切り離すための保険。
 function within(promise, ms, label) {
