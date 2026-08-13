@@ -202,6 +202,38 @@
   }
   #out .tbl th{background:#161a20;color:#aab2c0;font-weight:700}
 
+  /* 端末が ╭─╮ で描いた選択ダイアログを組み直したもの。中身は桁合わせを捨てて
+     普通に折り返す＝スマホの幅で素直に読める。色は .ask（返答待ち）と同じ意味 */
+  #out .dlg{
+    display:block;margin:4px -4px 6px;padding:8px 10px;border-radius:10px;
+    border-left:2px solid #f59e0b;background:rgba(245,158,11,.13);color:#fdf3e2;
+    white-space:normal;overflow-wrap:break-word;
+  }
+  #out .dlg.done{border-left-color:#4b525e;background:rgba(255,255,255,.04);color:var(--dim)}
+  #out .dtx{margin:2px 0;line-height:1.6}
+  #out .dsep{margin:6px 0;padding-top:6px;border-top:1px dashed var(--line);
+    font-size:10px;color:var(--dim)}
+  /* 罫線が入った中身（表・差分）は桁が崩れると意味が変わるので、折り返さず横に流す */
+  #out .dlg .draw{margin:4px 0;padding:6px 8px;border-radius:8px;background:#0b0c0f;
+    white-space:pre;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    font-size:10.5px;line-height:1.4;color:#aab2c0}
+  /* 選択肢はそのまま押せる。指1本ぶん（44px）の高さを確保する */
+  #out .dopt{
+    display:flex;align-items:flex-start;gap:8px;width:100%;min-height:38px;
+    margin:3px 0;padding:8px 10px;border-radius:10px;text-align:left;
+    border:1px solid var(--line);background:#161a20;color:var(--fg);
+    font:inherit;line-height:1.5;
+  }
+  #out .dopt.sel{border-color:#f59e0b;background:rgba(245,158,11,.18)}
+  #out .dopt:active{background:#242932}
+  #out .dopt[disabled]{opacity:.55;background:transparent}
+  #out .dnum{flex:0 0 auto;min-width:17px;height:17px;border-radius:5px;margin-top:1px;
+    background:#2a303a;color:#aab2c0;font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  #out .dopt.sel .dnum{background:#f59e0b;color:#1a1205}
+  #out .dlab{flex:1 1 auto;min-width:0}
+  #out .ddesc{display:block;margin-top:2px;font-size:10.5px;color:var(--dim);line-height:1.5}
+
   /* 下端は iPhone のホームバー領域（触れない帯）。そこに 8px を足すと
      黒い余りが増えるだけなので、max() で「多い方」を使うだけにする */
   /* position:relative ＝ トーストの位置の基準。footer が伸び縮みしても
@@ -866,7 +898,7 @@
     var name = '';
     for (var i = 1; i <= 20 && !name; i++) if (!used[prefix + i]) name = prefix + i;
     if (!name) return toast('満席です（' + prefix + '1〜20 すべて使用中）');
-    var body = { name: name };
+    var body = { name: name, cols: measureCols() || undefined };
     if (kind === 'claude') body.run = 'claude';
     if (kind === 'claude' && model) body.model = model.arg;
     api('/api/new', { method: 'POST', body: JSON.stringify(body) })
@@ -1011,11 +1043,166 @@
     return wrap;
   }
 
+  // ---------------------------------------- 角丸の枠＝Claude Code の選択ダイアログ
+  //
+  // 「どれにしますか？」「実行していい？」で出てくる ╭─╮ の箱。中身は端末の桁数で
+  // 折り返された「絵」なので、そのまま出すと罫線が散らばる（2026-08-13）。
+  // 枠を読み取って捨て、中身を普通の文章と選択肢に組み直す＝桁合わせから解放する。
+  // ついでに選択肢はそのまま押せるようにする（押す＝クイックキーの 1〜5 と同じ）。
+  var RE_D_TOP = /^\s*╭─*╮\s*$/;
+  var RE_D_BOT = /^\s*╰─*╯\s*$/;
+  var RE_D_SEP = /^\s*├─.*┤\s*$/;          // ├── ✂ ── 7 lines hidden ──┤
+  var RE_D_ROW = /^\s*│(.*)$/;
+  var RE_DRAW = /[─│┌┐└┘├┤┬┴┼╭╮╰╯━┃]/;    // 中身に混じった罫線（表・差分など）
+  var RE_OPT = /^\s*([❯>›]\s+)?(\d{1,2})[.)]\s+(.+)$/;
+
+  // 全角＝半角2つぶん。端末はこの数え方で桁を合わせているので、
+  // 「その行が枠いっぱいまで届いていたか（＝折り返された行か）」もこれで測る
+  var RE_WIDE = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/;
+  function dispw(s) {
+    var w = 0;
+    for (var i = 0; i < s.length; i++) w += RE_WIDE.test(s[i]) ? 2 : 1;
+    return w;
+  }
+
+  // 端末が折り返しただけの行をつなぎ直す。日本語はそのまま、英語は空白を挟む
+  function joinWrapped(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    return (RE_WIDE.test(a.slice(-1)) || RE_WIDE.test(b[0])) ? a + b : a + ' ' + b;
+  }
+
+  // i 行目から角丸の箱が始まっていれば、中身と終わりの行番号を返す。
+  // 閉じていない（まだ描いている最中）なら null＝生のまま出す
+  function takeDialog(lines, i) {
+    if (!RE_D_TOP.test(lines[i])) return null;
+    var inner = Math.max(1, dispw(lines[i].trim()) - 2);
+    var rows = [];
+    for (var j = i + 1; j < lines.length; j++) {
+      if (RE_D_BOT.test(lines[j])) return rows.length ? { end: j, inner: inner, rows: rows } : null;
+      if (RE_D_SEP.test(lines[j])) { rows.push({ sep: true, text: lines[j] }); continue; }
+      var m = RE_D_ROW.exec(lines[j]);
+      if (!m) return null;
+      // 右端の縦線は消す。tmux は行末の空白を落とすので、無いこともある
+      rows.push({ sep: false, text: m[1].replace(/│\s*$/, '').replace(/\s+$/, '') });
+    }
+    return null;
+  }
+
+  // 箱の中身を「文章・選択肢・罫線のかたまり・区切り」に分ける。
+  //
+  // 難しいのは「その行は、前の行が折り返しただけなのか／別の行なのか」の見分け。
+  // 手がかりは2つ：①前の行が枠いっぱいまで届いていたら折り返し（日本語は必ずこう
+  // なる。英語は単語の途中で切らないぶん少し手前で終わるので、遊びを持たせる）
+  // ②選択肢より深く字下げされていたら、その選択肢にぶら下がる説明文。
+  // 迷ったらつながない＝行が分かれて少し不格好、で済ませる（誤ってつなぐと文が壊れる）
+  function dialogItems(d) {
+    var items = [], cur = null;
+    var slack = Math.min(12, Math.max(3, Math.round(d.inner * 0.12)));
+    function add(cur, s) {
+      var f = cur.into || 'text';
+      cur[f] = joinWrapped(cur[f] || '', s.trim());
+      cur.w = dispw(s);
+    }
+    d.rows.forEach(function (row) {
+      if (row.sep) {
+        cur = null;
+        var t = row.text.replace(/[├┤─✂]/g, ' ').replace(/\s+/g, ' ').trim();
+        var n = /(\d+)\s*lines?\s*hidden/i.exec(t);
+        items.push({ t: 'sep', text: n ? '途中の' + n[1] + '行は端末に入りきらず省略されています' : t });
+        return;
+      }
+      var s = row.text;
+      if (!s.trim()) { cur = null; return; }          // 空行＝段落の切れ目
+      if (RE_DRAW.test(s)) {                          // 表や差分。桁を崩さず出す
+        if (cur && cur.t === 'raw') cur.lines.push(s);
+        else items.push(cur = { t: 'raw', lines: [s] });
+        return;
+      }
+      var ind = s.length - s.replace(/^\s+/, '').length;
+      var m = RE_OPT.exec(s);
+      if (m) {
+        items.push(cur = { t: 'opt', n: m[2], sel: !!m[1], text: m[3].trim(),
+          desc: '', into: 'text', ind: ind, w: dispw(s) });
+        return;
+      }
+      // ① 前の行が枠いっぱい＝折り返しの続き
+      if (cur && (cur.t === 'p' || cur.t === 'opt') && cur.w >= d.inner - slack) { add(cur, s); return; }
+      // ② 選択肢より深い字下げ＝その選択肢の説明文
+      if (cur && cur.t === 'opt' && ind > cur.ind) { cur.into = 'desc'; add(cur, s); return; }
+      items.push(cur = { t: 'p', text: s.trim(), into: 'text', ind: ind, w: dispw(s) });
+    });
+    return items;
+  }
+
+  function dialogEl(d) {
+    var box = document.createElement('div');
+    box.className = 'dlg';
+    dialogItems(d).forEach(function (it) {
+      if (it.t === 'sep') {
+        var sep = document.createElement('div');
+        sep.className = 'dsep';
+        sep.textContent = it.text;
+        box.appendChild(sep);
+        return;
+      }
+      if (it.t === 'raw') {
+        // 中に表が入っていれば、外と同じように本物の <table> に組み直す
+        for (var k = 0; k < it.lines.length; k++) {
+          var tbl = takeTable(it.lines, k);
+          if (tbl) { box.appendChild(tableEl(tbl.rows)); k = tbl.end; continue; }
+          var pre = document.createElement('pre');
+          pre.className = 'draw';
+          var buf = [];
+          for (; k < it.lines.length && !takeTable(it.lines, k); k++) buf.push(it.lines[k]);
+          k--;
+          pre.textContent = buf.join('\n');
+          box.appendChild(pre);
+        }
+        return;
+      }
+      if (it.t === 'opt') {
+        var b = document.createElement('button');
+        b.className = 'dopt' + (it.sel ? ' sel' : '');
+        b.dataset.opt = it.n;
+        b.dataset.label = it.text;      // 押したときの言い添え用（説明文は混ぜない）
+        b.innerHTML = '<span class="dnum"></span><span class="dlab"></span>';
+        b.firstChild.textContent = it.n;
+        b.lastChild.textContent = it.text;
+        if (it.desc) {
+          var dd = document.createElement('span');
+          dd.className = 'ddesc';
+          dd.textContent = it.desc;
+          b.lastChild.appendChild(dd);
+        }
+        box.appendChild(b);
+        return;
+      }
+      var p = document.createElement('div');
+      p.className = 'dtx';
+      p.textContent = it.text;
+      box.appendChild(p);
+    });
+    return box;
+  }
+
   function renderScreen(text) {
     var lines = text.split('\n');
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
+    var dlgs = [];
     for (var i = 0; i < lines.length; i++) {
+      var dlg = takeDialog(lines, i);
+      if (dlg) {
+        // 枠は「かたまり」の外に出す。中で色を塗り直すので、外側の帯に乗せると二重になる。
+        // 枠の次の空行に色が伸びないよう、直前の分類も切っておく
+        block = null; cls = ''; prev = '';
+        var de = dialogEl(dlg);
+        frag.appendChild(de);
+        dlgs.push(de);
+        i = dlg.end;
+        continue;
+      }
       var tbl = takeTable(lines, i);
       if (tbl) {
         // いま塗っているかたまりの中に入れる＝表も「Claude の発言」の一部として
@@ -1035,14 +1222,47 @@
       block.appendChild(document.createTextNode(lines[i] + '\n'));
       prev = c;
     }
+    // 押せるのは一番下の枠だけ。履歴に残った古い枠まで押せると、
+    // 遡って読んでいるつもりが、いまの質問に答えてしまう
+    dlgs.forEach(function (de, k) {
+      if (k === dlgs.length - 1) return;
+      de.classList.add('done');
+      Array.prototype.forEach.call(de.querySelectorAll('.dopt'), function (b) { b.disabled = true; });
+    });
     el.out.textContent = '';
     el.out.appendChild(frag);
+  }
+
+  // ------------------------------------------------ この画面に入る「桁数」を測る
+  //
+  // ターミナルは「半角が何個ぶん」で桁を合わせている。だから Mac 側の端末を
+  // この画面に入る桁数まで狭めてやれば、Claude Code は最初から折り返した絵を
+  // 描いてくれて、罫線が散らばらない（2026-08-13）。
+  // 決め打ちにしないのは、iPhone の機種・横向き・文字サイズで変わるため。
+  // 実測する（フォントの読み込み待ちで最初だけズレることがあるので毎回測る）。
+  var colProbe = null;
+  function measureCols() {
+    if (!colProbe) {
+      colProbe = document.createElement('span');
+      colProbe.setAttribute('aria-hidden', 'true');
+      colProbe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;top:0;left:0';
+      colProbe.textContent = new Array(101).join('0');   // 半角100個
+    }
+    // 描き直すたびに #out は空にされるので、外れていたら入れ直す
+    if (colProbe.parentNode !== el.out) el.out.appendChild(colProbe);
+    // .blk は左右に padding 8px・margin -4px を持つので、本文が使える幅はその内側
+    var per = colProbe.getBoundingClientRect().width / 100;
+    var avail = el.out.clientWidth - 24 + 8 - 16;        // #out padding / .blk margin / .blk padding
+    if (!(per > 0) || !(avail > 0)) return 0;
+    return Math.max(40, Math.min(120, Math.floor(avail / per)));
   }
 
   var lastText = null;
   function refreshPane(force) {
     if (!current) return Promise.resolve();
-    return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400').then(function (d) {
+    var cols = measureCols();
+    return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400'
+      + (cols ? '&cols=' + cols : '')).then(function (d) {
       var stick = force || atBottom();
       var text = d.text || '(空)';
       if (text !== lastText) { lastText = text; renderScreen(text); }
@@ -1121,6 +1341,15 @@
     if (!b) return;
     if (b.dataset.key) sendKey(b.dataset.key);
     else if (b.dataset.text) sendText(b.dataset.text, b.dataset.enter === '1');
+  });
+
+  // 選択ダイアログの項目を押したら、その番号を送る＝クイックキーの 1〜5 と同じ動き。
+  // 下のキー行まで指を運ばなくても、読んでいるその場で答えられる
+  el.out.addEventListener('click', function (e) {
+    var b = e.target.closest('.dopt');
+    if (!b || b.disabled) return;
+    sendText(b.dataset.opt, true);
+    toast(b.dataset.opt + '「' + (b.dataset.label || '') + '」を選びました');
   });
 
   el.tokenSave.onclick = function () {

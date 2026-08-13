@@ -236,6 +236,43 @@ function tmuxStdin(args, input) {
   });
 }
 
+// ------------------------------------------------------- 端末の寸法（幅と高さ）
+//
+// tmux は誰も繋いでいないと 80x24 で作られる（default-size）。Claude Code は
+// 「80桁ある前提」で枠を描くので、スマホ（実測 約47〜55桁）では必ず折り返し、
+// 罫線が散らばって読めなくなる（2026-08-13）。
+// なので「スマホに入る桁数」を画面側で測って送ってもらい、その幅に合わせる。
+// 高さは画面に合わせない。Claude Code は端末が短いと自分で中身を畳んで
+// 「✂ 7 lines hidden」にしてしまう＝スマホにそもそも届かなくなるため、
+// 畳まれない程度に高く固定する。
+const ROWS = 45;
+const COLS_MIN = 40;
+const COLS_MAX = 120;
+const COLS_DEFAULT = 60;
+
+function clampCols(v) {
+  const n = Math.round(Number(v));
+  if (!isFinite(n)) return null;
+  return Math.max(COLS_MIN, Math.min(COLS_MAX, n));
+}
+
+// いま何桁にしてあるか。毎回 tmux を叩くと2秒おきの取得のたびに resize が走るので、
+// 変わったときだけ動かす（同じ幅で resize しても実害はないが、無駄に SIGWINCH が飛ぶ）
+const sized = new Map();
+
+async function resizeWindow(name, cols) {
+  if (!NAME_RE.test(name)) return;
+  const want = clampCols(cols);
+  if (!want) return;
+  if (sized.get(name) === want) return;
+  sized.set(name, want);
+  await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(want), '-y', String(ROWS)]);
+  // resize-window はその窓を window-size manual に切り替える。そのままだと
+  // MacBook のターミナルから繋いだときも 60桁のままになってしまうので、
+  // 「最後に繋いだ相手に合わせる」既定に戻す（いまの寸法はそのまま残る）
+  await tmux(['set-window-option', '-t', '=' + name + ':', 'window-size', 'latest']);
+}
+
 // tmux は書式出力中のタブを "_" に潰すので、区切りには使えない
 const SEP = '|::|';
 
@@ -620,6 +657,8 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/pane' && req.method === 'GET') {
       const name = url.searchParams.get('name') || '';
       const lines = Number(url.searchParams.get('lines') || 400);
+      // 見ている端末に入る桁数。画面側が実測して送ってくる（送ってこなければ触らない）
+      if (url.searchParams.has('cols')) await resizeWindow(name, url.searchParams.get('cols'));
       const text = await captureHistory(name, lines);
       if (text === null) return json(res, 404, { error: 'no such session' });
       const { status, quietMs } = judge(name, (await captureScreen(name)) || '');
@@ -678,8 +717,13 @@ const server = http.createServer(async (req, res) => {
       if (listed.ok && listed.sessions.some((s) => s.name === name)) {
         return json(res, 409, { error: name + ' は既にあります' });
       }
-      const r = await tmux(['new-session', '-d', '-s', name, '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
-      if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
+      // 作るときから寸法を指定する。あとで resize しても、それまでに流れた行は
+      // 80桁で折り返された形のまま履歴に残ってしまうため（tmux は組み直さない）
+      const cols = clampCols(body.cols) || COLS_DEFAULT;
+      sized.set(name, cols);
+      const r = await tmux(['new-session', '-d', '-s', name, '-x', String(cols), '-y', String(ROWS),
+        '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
+      if (!r.ok) { sized.delete(name); return json(res, 500, { error: r.err.slice(0, 200) }); }
       if (body.run === 'claude') {
         // スマホからは「これ実行していい？」に毎回答えるのが現実的でないので、
         // このアプリから作るセッションは最初から編集をバイパスで起動する。
@@ -749,6 +793,7 @@ const server = http.createServer(async (req, res) => {
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const r = await tmux(['kill-session', '-t', '=' + name + ':']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
+      sized.delete(name);   // 同じ名前で作り直したとき、寸法を指定し直せるように
       console.log(`kill ${name}`);
       return json(res, 200, { ok: true });
     }
@@ -769,7 +814,7 @@ const server = http.createServer(async (req, res) => {
         if (text === null) { skipped.push({ name, why: 'ありません' }); continue; }
         if (judge(name, text).status === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         const r = await tmux(['kill-session', '-t', '=' + name + ':']);
-        if (r.ok) { killed.push(name); console.log(`kill ${name} (まとめて)`); }
+        if (r.ok) { killed.push(name); sized.delete(name); console.log(`kill ${name} (まとめて)`); }
         else skipped.push({ name, why: '失敗' });
       }
       return json(res, 200, { ok: true, killed, skipped });
