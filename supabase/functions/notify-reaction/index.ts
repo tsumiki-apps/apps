@@ -1,8 +1,8 @@
 // Supabase Edge Function: notify-reaction
-// ゆずごはん日記で「いいね/コメント」が付いたとき、相手の端末へ Web Push を送る。
-// クライアント(cooking.html)が、自分がいいね/コメントした直後に呼ぶ。
+// ゆずごはん日記で「投稿/いいね/コメント/スタンプ」が起きたとき、相手の端末へ Web Push を送る。
+// クライアント(cooking.html)が、自分が操作した直後に呼ぶ。
 //
-// デプロイ: Supabaseダッシュボード → Edge Functions → 新規作成「notify-reaction」にこのコードを貼り付け。
+// デプロイ: Supabaseダッシュボード → Edge Functions → 「notify-reaction」にこのコードを貼り付け。
 // Secret(Project Settings → Edge Functions → Secrets):
 //   VAPID_PUBLIC_KEY  … cooking.html の VAPID_PUBLIC と同じ公開鍵
 //   VAPID_PRIVATE_KEY … 秘密鍵（クライアントには絶対に置かない）
@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POSTのみ対応" }, 405);
 
   try {
-    const { kind, actor, recordName, body } = await req.json();
+    const { kind, actor, recordName, body, emoji } = await req.json();
     if (!actor) return json({ error: "actor が必要です" }, 400);
 
     const pub = Deno.env.get("VAPID_PUBLIC_KEY");
@@ -51,17 +51,30 @@ Deno.serve(async (req) => {
       .neq("who", actor);
     if (error) return json({ error: error.message }, 500);
 
+    // 2026-08-13〜 家族端末（こうだい/ゆずは 以外の名前）にも通知が届くようになった。
+    // ただし家族に送るのは「新しい投稿」だけ。いいね/コメント/スタンプで
+    // 1投稿あたり何通も鳴ると、見る側にはうるさいので送らない。
+    const COUPLE = ["こうだい", "ゆずは"];
+    const targets = (subs || []).filter((s) =>
+      COUPLE.includes(s.who) ? true : kind === "post"
+    );
+
     const name = recordName || "日記";
     const msg = kind === "like"
       ? `${actor}さんが「${name}」にいいねしました ❤️`
       : kind === "comment"
       ? `${actor}さんが「${name}」にコメントしました 💬${body ? "：" + body : ""}`
+      : kind === "react"
+      // react: body に絵文字が入ってくる（🙏＝またこれ食べたい、それ以外＝ひとこと返事）
+      ? ((emoji || body) === "🙏"
+        ? `${actor}さんが「${name}」をまた食べたいそうです 🙏`
+        : `${actor}さんが「${name}」に ${emoji || body} しました`)
       // post: クライアントが用意した文面（保存メッセージ）をそのまま使う
       : (body || `${actor}さんが「${name}」を投稿しました 📔`);
     const payload = JSON.stringify({ title: "🍋 ゆずごはん日記", body: msg });
 
     let sent = 0;
-    for (const s of subs || []) {
+    for (const s of targets) {
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
