@@ -47,10 +47,11 @@
   header .conn.err::before{background:#ef4444}
 
   /* Claude の残量。上が5時間枠、下が週枠。電池と同じで、使うほど減る。
+     ヘッダーは iPhone 390px でぎゅうぎゅうなので、普段は数字を出さず棒だけ。
      押せば内訳（残り％とリセット時刻）をトーストで出す。
-     ⚠️ 数字は必ず出す（2026-08-13）。以前は「残り20%を切ったときだけ」出す作りに
-     していたが、残りが多いあいだは 26×3px の灰色の線2本だけになり、
-     出ているのに気づけない＝消えたように見えた。数字があれば何の表示か分かる。 */
+     残り20%を切ったときだけ数字が横に出る＝知りたい時だけ情報が増える。
+     ※ 一度「数字を常に出す」に変えたが、ヘッダーが静かなほうがよいので戻した
+     （2026-08-13・本人の指示）。残りが多いあいだ棒だけになるのは承知のうえ。 */
   #usage{display:flex;align-items:center;gap:5px;padding:8px 2px;background:none;border:none}
   #usage[hidden]{display:none}
   #usage .bars{display:flex;flex-direction:column;gap:4px}
@@ -62,9 +63,7 @@
   #usage .bar i.warn{background:var(--wait)}
   #usage .bar i.crit{background:#ef4444}
   #usage .bar.off{opacity:.35}
-  #usage .num{font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums;
-    line-height:1.1;white-space:nowrap}
-  #usage .num.warn{color:var(--wait)}
+  #usage .num{font-size:10px;color:var(--wait);font-variant-numeric:tabular-nums}
   #usage .num.crit{color:#ef4444}
   #usage .num[hidden]{display:none}
 
@@ -534,13 +533,11 @@
     paintBar(el.bar5, usage.session);
     paintBar(el.bar7, usage.week);
     // 少ない方＝先に詰まる方の数字だけ出す。両方あるときは小さい方。
-    // 数字は常に出す（棒だけだと何の表示か分からず、消えたように見える）。
-    // 色は残りが減ったときだけ変える＝いつもは主張しない。
     var rems = [remOf(usage.session), remOf(usage.week)].filter(function (r) { return r !== null; });
     var worst = Math.min.apply(null, rems);
-    el.unum.hidden = false;
+    el.unum.hidden = !(worst <= 20);
     el.unum.textContent = '残' + worst + '%';
-    el.unum.className = 'num' + (worst <= 10 ? ' crit' : (worst <= 30 ? ' warn' : ''));
+    el.unum.className = 'num' + (worst <= 10 ? ' crit' : '');
   }
 
   // リセットの時刻。近いうちなら「あと◯時間◯分」、先なら日付と時刻。
