@@ -267,6 +267,14 @@
     body{background:#fff; color:#000;}
     .topbar, main, .toast, #tsumikiEdge, #tsumikiPeek{display:none !important;}
     .sheet{display:block !important;}
+    /* ⚠️ 紙の中身の幅を自分で決める（＝画面の幅に左右されない）。
+       iPhone の Safari は、印刷のとき「画面の幅（例:390px）で組んだものを紙幅まで
+       引き伸ばす」。幅を決めておかないと、パソコンでは1枚でも iPhone では字が
+       大きく組まれて縦にあふれ、2枚目ができる。182mm＝A4の本文幅（210−14×2）で、
+       採寸に使う .sheet.measuring と同じ値。両者は必ず一致させること。 */
+    .sheet{width:182mm; margin:0 auto;}
+    /* 文字の自動拡大も止める（iOS は印刷時に本文を勝手に大きくすることがある） */
+    html, body{-webkit-text-size-adjust:none; text-size-adjust:none;}
   }
   .sheet{
     --u:13.33px;                            /* 10pt 相当。fitSheet() が上書きする */
@@ -282,7 +290,17 @@
   }
   /* 項目が多いとき。文字の大きさは変えず、たての空きだけを詰める */
   .sheet.tight{--lh:1.28; --pr:.3; --pc:.72; --gs:1.1; --gs2:1.0; --ps:.9; --gf:1.1;}
-  .sheet .sh-h{border-bottom:2px solid #000; padding-bottom:calc(.6*var(--u)); margin-bottom:calc(.3*var(--u));}
+  .sheet .sh-h{
+    display:flex; align-items:center; gap:calc(.95*var(--u));
+    border-bottom:2px solid #000; padding-bottom:calc(.6*var(--u)); margin-bottom:calc(.3*var(--u));
+  }
+  /* つみきのしるし（積み木3つ）。線だけで描いてあるので紙でも潰れず、
+     --u に合わせて題字と一緒に縮む。画像ではなくSVG＝どの大きさでも輪郭がぼけない */
+  .sheet .sh-logo{
+    width:calc(2.9*var(--u)); height:calc(2.9*var(--u)); flex:none;
+    fill:none; stroke:#000; stroke-width:4.2; stroke-linejoin:round; stroke-linecap:round;
+  }
+  .sheet .sh-hx{flex:1; min-width:0;}
   .sheet h1{font-size:calc(1.9*var(--u)); margin:0; font-weight:600; letter-spacing:.04em;}
   .sheet .sh-meta{font-size:calc(.9*var(--u)); color:#444; margin-top:calc(.3*var(--u)); display:flex;}
   .sheet .sh-meta .r{margin-left:auto;}
@@ -916,6 +934,30 @@ function recalc(){
 }
 
 /* ===================== 印刷（PDF）用のページ ===================== */
+
+/* つみきのしるし。ホーム画面のアイコン（icons/icon-index.png）と同じ形＝
+   積み木を3つ、下に2つ・上に1つ積んだ図を、線だけで描き直したもの。
+   画像を貼らずにSVGで持つ理由は3つ。
+     ①紙は画面よりずっと細かいので、PNGだと輪郭がぼやける
+     ②アイコンは黒地に白の線＝紙に出すと真っ黒な四角になってしまう
+     ③大きさを --u に合わせて変えても、線の太さの比が崩れない
+   立方体1つは「六角形の輪郭＋中のY字」。頂点の名前は
+     T=てっぺん UR/UL=上の左右 LR/LL=下の左右 B=いちばん下 C=手前の角
+   の6+1点で、幅28・高さ32。下2つは左右にずらし、上の1つはその谷（0,8）に
+   ぴったり載る＝3つの立方体が辺を共有して噛み合う。 */
+const LOGO_SVG = (() => {
+  const cube = (x, y) =>
+    /* 輪郭（六角形） */
+    '<path d="M' + x + ' ' + y + 'L' + (x+14) + ' ' + (y+8) + 'L' + (x+14) + ' ' + (y+24) +
+      'L' + x + ' ' + (y+32) + 'L' + (x-14) + ' ' + (y+24) + 'L' + (x-14) + ' ' + (y+8) + 'Z"/>' +
+    /* 中のY字＝手前の角から、上の左右と真下へ */
+    '<path d="M' + x + ' ' + (y+16) + 'L' + (x-14) + ' ' + (y+8) +
+      'M' + x + ' ' + (y+16) + 'L' + (x+14) + ' ' + (y+8) +
+      'M' + x + ' ' + (y+16) + 'L' + x + ' ' + (y+32) + '"/>';
+  return '<svg class="sh-logo" viewBox="-31 -27 62 62" aria-hidden="true">' +
+         cube(-14, 0) + cube(14, 0) + cube(0, -24) + '</svg>';
+})();
+
 function buildSheet(){
   const d = new Date();
   const stamp = d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日';
@@ -941,8 +983,9 @@ function buildSheet(){
   rows += '<tr class="sh-grand"><td>合計</td><td>' + yen(allM()) + '</td><td>' + yen(allY()) + '</td></tr>';
 
   document.getElementById('sheet').innerHTML =
-    '<div class="sh-h"><h1>つみき事業　原価表</h1>' +
-    '<div class="sh-meta"><span>屋号：Tsumiki</span><span class="r">作成日：' + stamp + '</span></div></div>' +
+    '<div class="sh-h">' + LOGO_SVG +
+    '<div class="sh-hx"><h1>つみき事業　原価表</h1>' +
+    '<div class="sh-meta"><span>屋号：Tsumiki</span><span class="r">作成日：' + stamp + '</span></div></div></div>' +
     '<div class="sh-sum">' +
       '<div><span>1ヶ月あたりの原価</span><b>' + yen(allM()) + '</b></div>' +
       '<div><span>1年あたりの原価</span><b>' + yen(allY()) + '</b></div>' +
@@ -976,8 +1019,12 @@ function fitSheet(){
   probe.remove();
 
   /* A4縦(297mm) − 上下余白15mm×2。ぴったりを狙うと、書体や機種のわずかな差で
-     最後の1行がこぼれて2枚目ができる。4mmほど余らせて狙う */
-  const avail = 267 * mm * 0.985;
+     最後の1行がこぼれて2枚目ができる。
+     ⚠️ 余らせる量は多め（13mm）。iPhone の Safari は @page の余白をそのまま
+        使わないことがあり、手元のパソコンで「あと1mm入る」の詰め方をすると、
+        iPhone でだけ2枚目ができる。読みやすさは --u で保てるので、ここは
+        安全側に振る。 */
+  const avail = 267 * mm * 0.95;
   sheet.classList.remove('tight');
   sheet.style.setProperty('--u', SH_U0 + 'px');
   sheet.classList.add('measuring');

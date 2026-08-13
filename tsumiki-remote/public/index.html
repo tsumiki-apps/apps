@@ -130,6 +130,11 @@
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   }
   .tab.add span{font-size:9px;letter-spacing:.04em}
+  /* ＋Claude の「Claude」の字を Claude のマークに置き換える。小さな札の中では
+     読ませるより「見て分かる」ほうが速い。色は Claude の橙（#d97757）。
+     マークは中心から出る10本の光条＝きらめきの形で写している */
+  .tab.add .cmark{width:16px;height:16px;display:block}
+  .tab.add .cmark line{stroke:#d97757;stroke-width:2.3;stroke-linecap:round}
 
   /* オフラインの帯。ヘッダーの丸い点は狭い画面だと色しか出ない＝「古い内容を
      見ている」と気づけない。取り違えると事故になるので、文字で言い切る場所を
@@ -446,6 +451,21 @@
   // 「AIに話しかけたつもりでシェルに打っていた」を防ぐための表示
   var KIND = { claude: 'Claude', agent: 'AI', shell: 'シェル', other: '実行中' };
 
+  // ＋の下に置く Claude のマーク（中心から10本の光条）。色と太さは CSS 側
+  var CLAUDE_MARK =
+    '<svg class="cmark" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<line x1="12" y1="12" x2="22.08" y2="8.72"/>' +
+    '<line x1="12" y1="12" x2="17.17" y2="4.88"/>' +
+    '<line x1="12" y1="12" x2="12.00" y2="1.40"/>' +
+    '<line x1="12" y1="12" x2="6.83" y2="4.88"/>' +
+    '<line x1="12" y1="12" x2="1.92" y2="8.72"/>' +
+    '<line x1="12" y1="12" x2="3.63" y2="14.72"/>' +
+    '<line x1="12" y1="12" x2="5.77" y2="20.58"/>' +
+    '<line x1="12" y1="12" x2="12.00" y2="20.80"/>' +
+    '<line x1="12" y1="12" x2="18.23" y2="20.58"/>' +
+    '<line x1="12" y1="12" x2="20.37" y2="14.72"/>' +
+    '</svg>';
+
   function toast(msg, ms) {
     el.toast.textContent = msg;
     el.toast.classList.add('show');
@@ -707,7 +727,9 @@
     });
     var add = document.createElement('button');
     add.className = 'tab add';
-    add.innerHTML = '＋<span>Claude</span>';
+    // 文字を出さないので、読み上げ用の名前はここで補う
+    add.setAttribute('aria-label', 'Claude を追加');
+    add.innerHTML = '＋' + CLAUDE_MARK;
     add.onclick = function () { newSession('claude'); };
     el.tabs.appendChild(add);
 
@@ -1247,18 +1269,19 @@
     location.reload();
   };
 
+  // 説明文は置かない。何度も見る場所なので、毎回同じ説明が並ぶと
+  // 4項目でも「読む画面」になってしまう。押せない項目は灰色で分かるので、
+  // 理由（選ばれていない／0件）も言わない。
+  // ただし「この作業場所を終わらせる」だけは確認シートを挟まず即実行なので、
+  // どこが消えるか（席の名前）と危険の合図（⚠️）は文字数を使ってでも残す。
   document.getElementById('menu').onclick = function () {
-    openSheet('メニュー ・ 版 ' + (seenVersion || '?'));
-    sheetItem('制作物を見る', 'この画面の中でプレビューします',
-      function () { openFileList(); });
-    sheetItem('Mac の画面を消す', '蓋は開けたまま。作業は止まりません',
-      function () { closeSheet(); doDark(); });
-    sheetItem('この作業場所を終わらせる',
-      current ? current + ' をすぐ終わらせます（取り消せません）' : '選ばれていません',
+    openSheet('版 ' + (seenVersion || '?'));
+    sheetItem('制作物を見る', '', function () { openFileList(); });
+    sheetItem('Mac の画面を消す', '', function () { closeSheet(); doDark(); });
+    sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
       function () { closeSheet(); doKill(current); }, { disabled: !current });
     var killable = killableList();
-    sheetItem('作業中以外を終わらせる',
-      killable.length ? killable.length + ' 件の席を空けます（作業中は残す）' : '終わらせるものがありません',
+    sheetItem('作業中以外を終わらせる', killable.length ? killable.length + ' 件' : '',
       function () { confirmKillIdle(); }, { disabled: !killable.length });
   };
 
