@@ -243,15 +243,23 @@ const SEP = '|::|';
 // 「セッションが1つも無い」と誤読して、間違った案内や判定をしてしまう。
 const NO_SERVER_RE = /no server running|error connecting to|no such file or directory/i;
 
+// 「どのモデルで始めたか」の覚え場所。tmux のセッションに付ける自前の印
+// （@ で始まる名前はユーザー用の置き場として tmux が用意している）。
+// 席と一緒に消えるので後始末が要らず、サーバーを入れ替えても残る。
+// ⚠️ 覚えているのは「始めたときに選んだもの」だけ。あとから中で /model を
+//    打って変えた場合は追いかけられない（外から見る手がかりが無い）。
+const MODEL_OPT = '@tsumiki_model';
+
 async function listSessions() {
-  const r = await tmux(['list-sessions', '-F', `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}`]);
+  const r = await tmux(['list-sessions', '-F',
+    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}`]);
   if (!r.ok) return { ok: NO_SERVER_RE.test(r.err), sessions: [] };
   const sessions = r.out
     .split('\n')
     .filter(Boolean)
     .map((line) => {
-      const [name, window, activity] = line.split(SEP);
-      return { name, window, activity: Number(activity) || 0 };
+      const [name, window, activity, model] = line.split(SEP);
+      return { name, window, activity: Number(activity) || 0, model: (model || '').trim() };
     });
   return { ok: true, sessions };
 }
@@ -597,6 +605,8 @@ const server = http.createServer(async (req, res) => {
           name: s.name, window: s.window, status, quietMs,
           kind: kindOf(info.cmd), command: info.cmd,
           title: titleOf(info, s.name),
+          // 始めたときに選んだモデル。選ばずに作った席・アプリの外で作った席は空
+          model: s.model,
           preview: lastMeaningfulLine(text),
         });
       }
@@ -677,7 +687,12 @@ const server = http.createServer(async (req, res) => {
         // モデルは選ばれていれば足す。知らない名前は黙って無視して、
         // 素の設定で起動する（起動できないより、いつも通り起動するほうがまし）
         const model = String(body.model || '');
-        const cmd = MODELS.indexOf(model) >= 0 ? CLAUDE_CMD + ' --model ' + model : CLAUDE_CMD;
+        const known = MODELS.indexOf(model) >= 0;
+        const cmd = known ? CLAUDE_CMD + ' --model ' + model : CLAUDE_CMD;
+        // どのモデルで始めたかを席に書いておく（一覧の札に出すため）。
+        // ここだけ `=名前` の指定が使えないので素の名前で指す。名前は NAME_RE を
+        // 通っていて、tmux は完全一致を先に見るので、別の席に付くことはない。
+        if (known) await tmux(['set-option', '-t', name, MODEL_OPT, model]);
         await tmux(['send-keys', '-t', '=' + name + ':', '-l', cmd]);
         await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       }
