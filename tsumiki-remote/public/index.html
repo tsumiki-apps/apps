@@ -1164,12 +1164,60 @@
     head.textContent = s.name + ' ・ ' + LABEL[s.status] + ' ・ ' + KIND[s.kind];
     sheetBody.appendChild(head);
 
+    // 使う頭（モデル）を変える。シェルの席には無い機能なので押せなくしておく
+    sheetItem('モデルを変える',
+      s.kind !== 'claude' ? 'Claude の席だけです'
+        : (s.status === 'busy' ? '⚠️ 作業中・返事を待ってからのほうが確実です' : ''),
+      function () { modelMenu(s); },
+      { disabled: s.kind !== 'claude' });
+
     // 押したらすぐ終わる。確認シートは挟まない（ここに来るまでに
     //「札をタップ→もう一度タップ」を踏んでいて、題名も目の前に出ている＝
     // 間違った席を畳む余地が小さい。毎回2枚目を出すほうが邪魔）
     sheetItem('片付ける（終わらせる）',
       (s.status === 'busy' ? '⚠️ いま作業中です・' : '') + '押すとすぐ終わります（取り消せません）',
       function () { closeSheet(); doKill(s.name); });
+  }
+
+  // Claude Code に使わせる頭（モデル）。arg は /model のうしろに打ち込む合図。
+  // 'default' は Claude Code のおすすめ（Opus 5・1M 文脈）に戻す合図で、
+  // 設定ファイルからモデルの指定そのものを外してくれる（2026-08-13 実機確認）。
+  var MODELS = [
+    { arg: 'default', name: 'Opus（おすすめ）', sub: 'ふだんづかい。長い話も読める' },
+    { arg: 'fable',   name: 'Fable',            sub: 'いちばん賢い。そのぶん高い' },
+    { arg: 'sonnet',  name: 'Sonnet',           sub: '速くて安い。軽い用事に' },
+    { arg: 'haiku',   name: 'Haiku',            sub: 'いちばん速い。簡単な用事に' }
+  ];
+
+  // ⚠️ Claude Code の作りとして、ここで選んだものは「これから作る席の既定」にも
+  //    なる（選んだ席だけの切り替えにはできない）。黙って既定が変わるのが
+  //    いちばん困るので、選ぶ前に必ず見える場所へ書いておく。
+  function modelMenu(s) {
+    openSheet('モデルを変える');
+
+    var head = document.createElement('div');
+    head.className = 'sheethead';
+    head.textContent = s.name + ' ・ 選んだものは、これから作る席の既定にもなります';
+    sheetBody.appendChild(head);
+
+    MODELS.forEach(function (m) {
+      sheetItem(m.name, m.sub, function () { closeSheet(); setModel(s.name, m); });
+    });
+  }
+
+  // 席に /model を打ち込むだけ。Claude Code が「Set model to …」と返すので、
+  // 効いたかどうかは画面でそのまま確かめられる（こちらで覚え込まない＝
+  // Mac 側で切り替えたときに嘘の印が残らない）
+  function setModel(name, m) {
+    api('/api/send', {
+      method: 'POST',
+      body: JSON.stringify({ name: name, text: '/model ' + m.arg, enter: true })
+    })
+      .then(function () {
+        toast(name + ' を ' + m.name + ' にしました');
+        setTimeout(function () { tick(true); }, 400);
+      })
+      .catch(function (e) { toast('切り替え失敗: ' + e.message); });
   }
 
   // 席が埋まったときの後始末。作業中のものだけ残して、あとはまとめて終わらせる。
