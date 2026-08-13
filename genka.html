@@ -376,7 +376,7 @@
     <div class="label">書き出し</div>
     <button class="btn" id="btnPdf" style="margin-top:11px;">PDFにする</button>
     <p class="note">
-      印刷の画面がひらきます。プリンタの代わりに「PDFとして保存」（iPhoneは共有 → ファイルに保存）を選ぶと、原価表がPDFになります。
+      A4縦1枚の原価表をPDFにします。iPhoneは共有の画面がひらくので「ファイルに保存」を選んでください。パソコンはそのまま保存されます。
     </p>
   </section>
 
@@ -1011,7 +1011,8 @@ function buildSheet(){
    文字を最後にするのは、紙に出したとき読めることを優先するため。
    採寸は .measuring で画面の外にA4の本文幅で置き、scrollHeight を読む。
    ⚠️ 下限まで縮めても入らない量（項目が数十）なら、無理に1枚にしない。
-      読めない1枚より読める2枚。表の見出しは2枚目にも自動で付く（thead）。 */
+      読めない1枚より読める2枚。2枚目からは行の切れ目で分ける（makePdf）。
+      ※ 表の見出しは2枚目には付かない（PDFは見た目をそのまま写しているため）。 */
 const SH_U0  = 13.33;   /* 基準＝10pt。ふつうの量ならこの大きさで出る */
 const SH_MIN = 9.3;     /* これ以下には縮めない（約7pt） */
 
@@ -1054,6 +1055,121 @@ function fitSheet(){
   sheet.classList.remove('measuring');
 }
 
+/* ---- PDFを自分で作る ----
+   ⚠️ ブラウザの印刷機能は使わない。iPhone の Safari は、印刷から作ったPDFの
+      下のふちに「ページのURL・時刻・何ページ目か」を必ず刷り込む。消す設定はなく、
+      CSSの @page{margin:0}（パソコンでは効く）も iOS では無視される（2026-08-13 実機で確認）。
+      そこで、原価表の見た目をそのまま画像にして、A4の紙に貼ったPDFを組み立てる。
+      こうすると刷り込む主が居なくなるので、iPhone でもパソコンでも中身が同じになる。
+      引きかえに、PDFの中の文字は画像になる＝コピーや検索はできない。
+      紙に出す用途なので、細かさ（約290dpi）を優先した。
+   道具は2つ。押したときに読み込む＝ページを開くだけの人を待たせない。
+     html2canvas＝画面の一部をそのまま画像にする
+     jsPDF      ＝PDFファイルを組み立てる */
+const CDN_H2C = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+const CDN_PDF = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
+
+/* 紙の寸法（mm）。A4縦＝210×297。本文幅182mm は .sheet と採寸に合わせてある */
+const PG = {W:182, MX:14, MY:15, H:267};
+
+function loadScript(src){
+  return new Promise((ok, ng) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => ok(); s.onerror = () => ng(new Error('読み込めない: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function makePdf(){
+  buildSheet();
+  fitSheet();
+
+  if(!window.html2canvas) await loadScript(CDN_H2C);
+  if(!window.jspdf)       await loadScript(CDN_PDF);
+  /* 書体が届く前に写すと、明朝や既定の書体で写ってしまう */
+  if(document.fonts && document.fonts.ready) await document.fonts.ready;
+
+  const sheet = document.getElementById('sheet');
+
+  /* 採寸と同じ置き場（画面の外・A4の本文幅）に出してから写す */
+  sheet.classList.add('measuring');
+  let canvas, cuts = [], cssH = 1;
+  try{
+    cssH = sheet.scrollHeight;
+    /* 行の頭の位置を控えておく。2枚に分かれるとき、行の途中で切らないために使う。
+       ⚠️ tr.offsetTop は使わない。表の中の要素は「表の左上」からの高さを返すので、
+          題字や合計の箱のぶんだけずれ、行の真ん中で切れる（2026-08-13 実際に発生）。
+          画面上の位置どうしの引き算なら、どこから測っても正しい高さになる。 */
+    const top = sheet.getBoundingClientRect().top;
+    cuts = Array.from(sheet.querySelectorAll('tbody tr')).map(tr => tr.getBoundingClientRect().top - top);
+    canvas = await html2canvas(sheet, {
+      scale: 3,                       /* 182mm を約2064px＝約290dpi。紙で線がぼけない細かさ */
+      backgroundColor: '#ffffff',
+      logging: false,
+      /* html2canvas は写す相手を複製して別の枠で描く。複製は画面の外に置く必要が
+         ないので、左端に戻しておく（-9999px のままだと切れることがある） */
+      onclone: doc => {
+        const c = doc.getElementById('sheet');
+        if(c){ c.style.left = '0'; c.style.top = '0'; }
+      }
+    });
+  } finally {
+    sheet.classList.remove('measuring');
+  }
+
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait', compress:true});
+  const pxPerMm = canvas.width / PG.W;
+  const pageH   = PG.H * pxPerMm;            /* 1枚に貼れる高さ（画像の点の数） */
+  const ratio   = canvas.height / cssH;      /* 画面の1pxが、画像の何点にあたるか */
+  const cutsPx  = cuts.map(v => v * ratio);
+
+  /* 1枚に入らないときだけ、行の切れ目で分ける（fitSheet で普通は1枚に収まる） */
+  let y = 0, first = true;
+  while(y < canvas.height - 1){
+    let end = Math.min(y + pageH, canvas.height);
+    if(end < canvas.height){
+      /* いま貼れる範囲のうち、いちばん下にある行の頭まで戻す。
+         戻しすぎ（紙がスカスカ）を防ぐため、半分より下にある切れ目だけを使う */
+      const c = cutsPx.filter(v => v > y + pageH * 0.5 && v < end).pop();
+      if(c) end = c;
+    }
+    const part = document.createElement('canvas');
+    part.width = canvas.width; part.height = Math.round(end - y);
+    const g = part.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, part.width, part.height);
+    g.drawImage(canvas, 0, -y);
+
+    if(!first) doc.addPage();
+    doc.addImage(part.toDataURL('image/png'), 'PNG', PG.MX, PG.MY, PG.W, part.height / pxPerMm);
+    first = false;
+    y = end;
+  }
+
+  const d = new Date();
+  const ymd = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const name = 'つみき事業_原価表_' + ymd + '.pdf';
+
+  /* iPhone・iPad は共有シート（→「ファイルに保存」）が自然。パソコンはそのまま保存。
+     ⚠️ 指で触る端末かどうかで分ける。パソコンの Chrome も共有を持っているので、
+        「使えるなら共有」にすると Mac でも共有シートが出て、かえって手間が増える。 */
+  const blob  = doc.output('blob');
+  const touch = navigator.maxTouchPoints > 0;
+  if(touch && navigator.canShare && window.File){
+    try{
+      const file = new File([blob], name, {type:'application/pdf'});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:'つみき事業 原価表'});
+        return;
+      }
+    }catch(e){
+      /* ユーザーが閉じただけなら、勝手に保存しない */
+      if(e && e.name === 'AbortError') return;
+    }
+  }
+  doc.save(name);
+}
+
 const esc = s => String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
 /* ===================== 画面まわり ===================== */
@@ -1064,9 +1180,22 @@ document.querySelectorAll('#viewSeg button').forEach(b => {
   });
 });
 
-/* 採寸（fitSheet）は入力のたびではなく、PDFにする直前だけ。
+/* 採寸（fitSheet）は入力のたびではなく、PDFにする直前だけ。makePdf の中で呼んでいる。
    buildSheet は文字を打つたびに走るので、そこに入れると毎回レイアウトを測り直すことになる */
-document.getElementById('btnPdf').addEventListener('click', () => { buildSheet(); fitSheet(); window.print(); });
+document.getElementById('btnPdf').addEventListener('click', async (e) => {
+  const b = e.currentTarget;
+  if(b.disabled) return;
+  const label = b.textContent;
+  b.disabled = true; b.textContent = 'PDFを作っています…';
+  try{
+    await makePdf();
+  }catch(err){
+    console.error(err);
+    toast('PDFを作れませんでした。通信を確かめてもう一度お試しください');
+  }finally{
+    b.disabled = false; b.textContent = label;
+  }
+});
 
 /* ボタンを使わず ⌘P で印刷したときも、同じように1枚に収める */
 window.addEventListener('beforeprint', () => { buildSheet(); fitSheet(); });
