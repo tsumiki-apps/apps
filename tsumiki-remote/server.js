@@ -35,7 +35,7 @@ const TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
 // TSUMIKI_CLAUDE_CMD=claude を LaunchAgent に足す）。
 const CLAUDE_CMD = process.env.TSUMIKI_CLAUDE_CMD || 'claude --permission-mode bypassPermissions';
 
-// ＋Claude で選べる頭（モデル）。画面から来た文字はそのままシェルの行に混ぜるので、
+// ＋Claude で選べるモデル。画面から来た文字はそのままシェルの行に混ぜるので、
 // ここに書いてあるものだけを通す（自由な文字を許すとコマンドを継ぎ足せてしまう）。
 // 'default' ＝ Claude Code のおすすめ（Opus 5・1M 文脈）。
 // 起動時の --model はその席だけに効き、Mac 側の既定は書き換えない（2026-08-13 実機確認）
@@ -674,7 +674,7 @@ const server = http.createServer(async (req, res) => {
         // スマホからは「これ実行していい？」に毎回答えるのが現実的でないので、
         // このアプリから作るセッションは最初から編集をバイパスで起動する。
         // 許可を求めて止まらなくなる＝返答待ちの通知もほぼ飛ばなくなる。
-        // 頭（モデル）は選ばれていれば足す。知らない名前は黙って無視して、
+        // モデルは選ばれていれば足す。知らない名前は黙って無視して、
         // 素の設定で起動する（起動できないより、いつも通り起動するほうがまし）
         const model = String(body.model || '');
         const cmd = MODELS.indexOf(model) >= 0 ? CLAUDE_CMD + ' --model ' + model : CLAUDE_CMD;
