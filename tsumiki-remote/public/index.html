@@ -127,6 +127,20 @@
   }
   .tab .kind.claude,.tab .kind.agent{background:#13301f;color:#4ade80}
   .tab .kind.shell{background:#2a2320;color:#d9a86c}
+  /* モデルごとの色。Anthropic が自分のサイトで使っている色をそのまま借りる
+     （anthropic.com の --swatch--clay / fig / sky / cactus）。
+     文字はその色のまま、下地は同じ色を黒に沈めたもの＝小さな札でも色で見分けがつき、
+     字も読める明るさが残る（黒地との明暗比 4.8〜9.6）。
+     色は変数で持たせて、札（下地＋文字）と、選ぶ画面の丸い印で同じものを使う。
+     ⚠️ 種類の色（.claude / .shell）より後に書くこと。強さが同じなので、
+        後に書いたほうが勝つ＝モデルが分かっているときだけ色が変わる */
+  .m-opus  {--mfg:#d97757;--mbg:#271510}   /* clay   ＝ Claude 本体の色 */
+  .m-fable {--mfg:#c46686;--mbg:#231218}   /* fig    ＝ いちばん賢い＝目立たせる */
+  .m-sonnet{--mfg:#6a9bcc;--mbg:#131c25}   /* sky    ＝ 速くて安い */
+  .m-haiku {--mfg:#bcd1ca;--mbg:#222624}   /* cactus ＝ いちばん速い＝いちばん軽い色 */
+  .tab .kind.m-opus,.tab .kind.m-fable,.tab .kind.m-sonnet,.tab .kind.m-haiku{
+    background:var(--mbg);color:var(--mfg);
+  }
   /* ＋とドット絵の2段を、札の真ん中に置く。
      line-height:1 が要点＝文字の標準の行間（1.5）のままだと ＋ の下に見えない
      余白がぶら下がり、2段の塊が上に寄って見える（真ん中に見えない） */
@@ -218,7 +232,7 @@
      縮まないので、題名が長いときは題名のほうが先に切られる＝送り先のモデルは必ず見える */
   #dest .dm{
     flex:0 0 auto;font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;
-    background:#13301f;color:#4ade80;
+    background:var(--mbg,#13301f);color:var(--mfg,#4ade80);
   }
   #dest .dm[hidden]{display:none}
 
@@ -321,6 +335,10 @@
   .sheetbody .sub{display:block;font-size:11px;color:var(--dim);margin-top:3px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sheetbody .on{color:var(--accent)}
+  /* モデルを選ぶ画面の丸い印。名前そのものに色を付けないのは、「（前回）」の緑と
+     ぶつかるため。印なら両方いっぺんに見える＝色と札の対応も覚えられる */
+  .sheetbody .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
+    margin-right:8px;background:var(--mfg,var(--dim))}
   /* まとめて終わらせる前に「何が消えるか」を1件ずつ見せる。
      数だけ出しても、押していいのか判断できない */
   .sheetbody .killlist{display:flex;flex-direction:column;gap:2px;padding:0 8px 4px}
@@ -727,13 +745,16 @@
       var b = document.createElement('button');
       b.className = 'tab ' + s.status;
       b.setAttribute('aria-selected', String(s.name === current));
-      // 種類の札は、モデルが分かっていればモデル名にする（「Claude」と「Opus」を
-      // 並べない＝札が狭いのと、緑の札＝Claude はもう色と場所で分かっているため）
-      var model = modelOf(s);
+      // 種類の札は、モデルが分かっていればモデル名にして、色もそのモデルの色にする
+      // （「Claude」と「Opus」を並べない＝札が狭いのと、Claude であることは
+      //   もう場所で分かっているため）
+      var chip = modelChip(s);
       b.innerHTML = '<div class="n">' + (i + 1) + '・' + escapeHtml(s.title || s.name) + '</div>' +
                     '<div class="meta">' +
                       '<span class="st">' + LABEL[s.status] + '</span>' +
-                      '<span class="kind ' + s.kind + '">' + (model || KIND[s.kind]) + '</span>' +
+                      '<span class="kind ' + s.kind + (chip ? ' ' + chip.cls : '') + '">' +
+                        (chip ? chip.label : KIND[s.kind]) +
+                      '</span>' +
                     '</div>';
       // 1回目＝切り替え、選ばれている札をもう一度＝その席のメニュー。
       // 「◯秒以内に2回」にはしない。出る/出ないが目に見えず、指の速さで
@@ -769,10 +790,12 @@
       el.dest.className = cur.status;
       el.destName.textContent =
         (sessions.indexOf(cur) + 1) + '・' + (cur.title || cur.name);
-      // 送り先のモデルも同じ行に出す（打っている間ずっと見えるのはこの行だけ）
-      var curModel = modelOf(cur);
-      el.destModel.textContent = curModel;
-      el.destModel.hidden = !curModel;
+      // 送り先のモデルも同じ行に出す（打っている間ずっと見えるのはこの行だけ）。
+      // 色は札と同じ＝上の札と目でつながる
+      var curChip = modelChip(cur);
+      el.destModel.textContent = curChip ? curChip.label : '';
+      el.destModel.className = 'dm' + (curChip ? ' ' + curChip.cls : '');
+      el.destModel.hidden = !curChip;
     }
   }
 
@@ -796,29 +819,30 @@
   // 'default' は Claude Code のおすすめ（Opus 5・1M 文脈）。
   // ⚠️ 起動時の --model は、その席だけに効く（Mac 側の既定は変わらない）。
   //    動いている席に /model を打つやり方だと既定まで書き換わるので採らない。
-  // label は札に出す短い名前（狭いので「（おすすめ）」等は落とす）
+  // label は札に出す短い名前（狭いので「（おすすめ）」等は落とす）、
+  // cls は色を決める札の名前（CSS の .m-* ＝ Anthropic 本家の色）
   var MODELS = [
-    { arg: 'default', label: 'Opus',   name: 'Opus（おすすめ）', sub: 'ふだんづかい。長い話も読める' },
-    { arg: 'fable',   label: 'Fable',  name: 'Fable',            sub: 'いちばん賢い。そのぶん高い' },
-    { arg: 'sonnet',  label: 'Sonnet', name: 'Sonnet',           sub: '速くて安い。軽い用事に' },
-    { arg: 'haiku',   label: 'Haiku',  name: 'Haiku',            sub: 'いちばん速い。簡単な用事に' }
+    { arg: 'default', label: 'Opus',   cls: 'm-opus',   name: 'Opus（おすすめ）', sub: 'ふだんづかい。長い話も読める' },
+    { arg: 'fable',   label: 'Fable',  cls: 'm-fable',  name: 'Fable',            sub: 'いちばん賢い。そのぶん高い' },
+    { arg: 'sonnet',  label: 'Sonnet', cls: 'm-sonnet', name: 'Sonnet',           sub: '速くて安い。軽い用事に' },
+    { arg: 'haiku',   label: 'Haiku',  cls: 'm-haiku',  name: 'Haiku',            sub: 'いちばん速い。簡単な用事に' }
   ];
   var LAST_MODEL = 'tsumiki-remote-model';
 
   // 選ぶ画面には出さないが、サーバーは 'opus' も受け付けるので、
   // その名前で始まっている席も名前で出せるようにしておく
-  var MODEL_LABEL = { opus: 'Opus' };
-  MODELS.forEach(function (m) { MODEL_LABEL[m.arg] = m.label; });
+  var MODEL_CHIP = { opus: { label: 'Opus', cls: 'm-opus' } };
+  MODELS.forEach(function (m) { MODEL_CHIP[m.arg] = { label: m.label, cls: m.cls }; });
 
-  // その席が「どのモデルで始まったか」。始めるときに選んでいれば、サーバーが
-  // 席そのものに書いてくれている（→ server.js の MODEL_OPT）。
-  // 知らない名前・アプリの外で作られた席は空文字＝呼び出し側で従来の表示に戻す。
+  // その席が「どのモデルで始まったか」＝札に出す名前と色。始めるときに選んで
+  // いれば、サーバーが席そのものに書いてくれている（→ server.js の MODEL_OPT）。
+  // 知らない名前・アプリの外で作られた席は null ＝呼び出し側で従来の表示に戻す。
   // typeof で確かめているのは、'constructor' のような特別な名前が入ってきても
   // 中身の分からないものを画面に混ぜないため
-  function modelOf(s) {
-    if (!s || s.kind !== 'claude') return '';
-    var t = MODEL_LABEL[s.model];
-    return typeof t === 'string' ? t : '';
+  function modelChip(s) {
+    if (!s || s.kind !== 'claude') return null;
+    var c = MODEL_CHIP[s.model];
+    return (c && typeof c.label === 'string') ? c : null;
   }
 
   // 席ができたあとからモデルを見分ける手がかりは画面の中にしか無いので、
@@ -829,7 +853,7 @@
     MODELS.forEach(function (m) {
       sheetItem(m.name, m.sub + (m.arg === last ? '（前回）' : ''),
         function () { closeSheet(); newSession('claude', m); },
-        { on: m.arg === last });
+        { on: m.arg === last, dot: m.cls });
     });
   }
 
@@ -1225,8 +1249,9 @@
     var head = document.createElement('div');
     head.className = 'sheethead';
     // ここは幅に余裕があるので、種類（Claude）とモデルの両方を出す
+    var headChip = modelChip(s);
     head.textContent = s.name + ' ・ ' + LABEL[s.status] + ' ・ ' + KIND[s.kind]
-      + (modelOf(s) ? ' ・ ' + modelOf(s) : '');
+      + (headChip ? ' ・ ' + headChip.label : '');
     sheetBody.appendChild(head);
 
     // 押したらすぐ終わる。確認シートは挟まない（ここに来るまでに
@@ -1308,6 +1333,12 @@
 
   function sheetItem(label, sub, onclick, opts) {
     var b = document.createElement('button');
+    // 色の印（モデルを選ぶ画面だけ）。名前の前に置く
+    if (opts && opts.dot) {
+      var d = document.createElement('span');
+      d.className = 'dot ' + opts.dot;
+      b.appendChild(d);
+    }
     var t = document.createElement('span');
     t.textContent = label;
     if (opts && opts.on) t.className = 'on';
