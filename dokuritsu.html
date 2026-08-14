@@ -686,7 +686,41 @@
   .month .mg{flex:1; min-width:0; font-size:.93rem; line-height:1.45; word-break:break-word;}
   .month .mg.unset{color:var(--ink-soft);}
   .month .chip{flex:none;}
+  .month .mcnt{flex:none; font-size:.74rem; color:var(--ink-soft); font-family:var(--sans); font-weight:700;}
+  .month.op{border-bottom-left-radius:0; border-bottom-right-radius:0; border-bottom-color:transparent;}
   .m-editor{background:var(--surface-2); border:1.5px solid var(--accent); border-radius:13px; padding:14px;}
+
+  /* ---------- 月をひらいた中身（やるべきこと／やれたら良いこと） ---------- */
+  .mo-open{
+    background:var(--surface); border:1.5px solid var(--line-2); border-top:none;
+    border-radius:0 0 13px 13px; padding:11px 13px 13px; margin:-11px 0 2px; display:grid; gap:13px;
+  }
+  .mo-phase{
+    display:inline-flex; align-items:center; gap:6px; align-self:start; justify-self:start; font-size:.72rem; font-weight:700;
+    color:var(--ink-mid); background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:4px 10px;
+  }
+  .mo-sec{display:grid; gap:2px;}
+  .mo-head{display:flex; align-items:center; gap:7px; margin-bottom:3px;}
+  .mo-head .t{font-size:.78rem; font-weight:700; color:var(--ink-mid);}
+  .mo-head .n{font-size:.72rem; color:var(--ink-soft); font-family:var(--sans); font-weight:700;}
+  .mo-head .t.want{color:var(--ink-soft);}
+  .mo-empty{font-size:.82rem; color:var(--ink-soft); padding:3px 4px 5px;}
+  .mo-edit{
+    border:none; background:transparent; color:var(--ink-soft); cursor:pointer; flex:none;
+    padding:3px 6px; border-radius:8px; display:flex; align-items:center;
+  }
+  .mo-edit svg{width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+  .mo-edit:active{transform:scale(.9);}
+  .mo-in{display:grid; gap:8px; padding:8px 4px 4px;}
+  .mo-in input[type=text]{
+    width:100%; border:1.5px solid var(--accent); background:var(--surface-2); border-radius:11px;
+    padding:10px 12px; font-size:16px; color:var(--ink); font-family:var(--sans); line-height:1.5;
+  }
+  .mo-in input:focus{outline:2px solid var(--accent-wash);}
+  .mo-in .row{display:flex; gap:8px; align-items:center;}
+  .mo-in .row .btn{padding:9px 14px; font-size:.86rem;}
+  .mo-in .del{margin-left:auto; border:none; background:transparent; color:var(--warn); font-size:.82rem; font-weight:700; cursor:pointer; padding:6px;}
+  .mo-foot{display:flex; align-items:center; gap:12px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:9px;}
 
   /* ---------- history ---------- */
   .hist{display:grid; gap:9px; margin-top:12px;}
@@ -988,6 +1022,15 @@ function clampHTML(text, key, lines){
 }
 
 /* ===================== 状態 ===================== */
+/* 月がどのフェーズに属するか。8〜12月の5ヶ月を、卒業までの3つの段に分けている。
+   （収入ロードマップの Phase 1〜3 を、年末逆算の5ヶ月へ圧縮したもの） */
+const PHASE_OF = {
+  '2026-08':'Phase 1 ｜ 需要の証明',
+  '2026-09':'Phase 1 ｜ 需要の証明',
+  '2026-10':'Phase 2 ｜ 現金化と床づくり',
+  '2026-11':'Phase 2 ｜ 現金化と床づくり',
+  '2026-12':'Phase 3 ｜ 独立判断'
+};
 function blank(){
   return {
     v:3,
@@ -996,7 +1039,10 @@ function blank(){
       title:'Appleを卒業して、つみき事業へ完全移行する',
       deadline:'2026-12-31'
     },
-    months:['2026-08','2026-09','2026-10','2026-11','2026-12'].map(ym=>({ym, goal:'', status:'', note:''})),
+    /* 月＝{ym, goal, status, note, phase, must[], want[]}
+       must＝やるべきこと（これが欠けるとその月は未達）／want＝やれたら良いこと（上振れ・急がない）
+       どちらも {id, text, done} の並び。月をひらいてその場で足す・チェックする */
+    months:['2026-08','2026-09','2026-10','2026-11','2026-12'].map(ym=>({ym, goal:'', status:'', note:'', phase:'', must:[], want:[]})),
     weeks:{},          /* key = 週の始まり（日曜）のISO日付 */
     /* 下書き＝{id, title, text, at, archived, src}
        Claudeが作った文面も、自分の考えごと（旧・自由帳）も、ここ1か所にためる */
@@ -1022,6 +1068,8 @@ const openThreads = new Set();/* ラリーを全部ひらいている枝分か�
 const openText = new Set();   /* 長い文を全部出しているid（ふだんは2行で畳む＝表示だけ・データは無傷） */
 let openGoalId = null;        /* いま開いている目標のid。同時に1つだけ＝アコーディオン */
 let showFut = false;          /* 「この先の予定」を開いているか */
+let openMonth = null;         /* いま開いている月のym（同時に1つだけ）。中に やるべきこと／やれたら良いこと が出る */
+let mItemEdit = null;         /* 月の中の1行を書いている状態＝{ym, kind:'must'|'want', id:null(新規)|既存id} */
 let openDraft = null;         /* いま開いている下書きのid */
 let showArcDft = false;       /* 下書きの「しまった分」を見ているか（この端末だけの表示状態） */
 let foldPulse = false;        /* 今まさに完了して畳まれた時だけ、まとまりをふわっと光らせる */
@@ -1036,7 +1084,15 @@ function migrate(){
   ['slogan','title','deadline'].forEach(k=>{ if(typeof db.vision[k]!=='string') db.vision[k]=b.vision[k]; });
   if(!Array.isArray(db.months)) db.months=b.months;
   db.months=db.months.filter(m=>m && m.ym);
-  db.months.forEach(m=>{ if(typeof m.goal!=='string') m.goal=''; if(typeof m.status!=='string') m.status=''; if(typeof m.note!=='string') m.note=''; });
+  db.months.forEach(m=>{
+    if(typeof m.goal!=='string') m.goal=''; if(typeof m.status!=='string') m.status=''; if(typeof m.note!=='string') m.note='';
+    if(typeof m.phase!=='string' || !m.phase) m.phase=PHASE_OF[m.ym]||'';
+    ['must','want'].forEach(kind=>{
+      if(!Array.isArray(m[kind])) m[kind]=[];
+      m[kind]=m[kind].filter(x=>x && typeof x==='object' && typeof x.text==='string' && x.text.trim());
+      m[kind].forEach(x=>{ if(!x.id) x.id=uid(); x.text=String(x.text); x.done=!!x.done; });
+    });
+  });
   db.months.sort((a,b2)=>a.ym<b2.ym?-1:1);
   if(!db.weeks || typeof db.weeks!=='object') db.weeks={};
   Object.keys(db.weeks).forEach(k=>{
@@ -1519,11 +1575,15 @@ function renderGradPage(){
     else if(m.status==='partial') chip=`<span class="chip partial">△ 一部</span>`;
     else if(m.status==='miss') chip=`<span class="chip miss">× 未達</span>`;
     else if(cur) chip=`<span class="chip">進行中</span>`;
-    h+=`<div class="month ${cur?'now':''}" data-act="month-open" data-ym="${m.ym}" role="button" tabindex="0">
+    const md=(m.must||[]).filter(x=>x.done).length, mt=(m.must||[]).length;
+    const isOpen=openMonth===m.ym;
+    h+=`<div class="month ${cur?'now':''} ${isOpen?'op':''}" data-act="month-open" data-ym="${m.ym}" role="button" tabindex="0" aria-expanded="${isOpen}">
       <span class="m tnum">${mm}月</span>
       <span class="mg ${m.goal?'':'unset'}">${m.goal?esc(m.goal):'タップして目標を設定'}</span>
+      ${mt?`<span class="mcnt tnum">${md}/${mt}</span>`:''}
       ${chip}
     </div>`;
+    if(isOpen) h+=monthOpenHTML(m);
   });
   h+=`</div>`;
   if(!anyGoal) h+=`<div class="hist-empty" style="margin-top:11px;">各月の目標は、Claudeとの目標セッションで決めて流し込めます。</div>`;
@@ -1939,6 +1999,58 @@ function reviewEditorHTML(){
     <div class="ed-actions"><button class="btn ghost" data-act="rv-cancel">キャンセル</button><button class="btn primary" data-act="rv-save">保存</button></div>
   </div>`;
 }
+/* 月をひらいた中身。上＝やるべきこと（必達）、下＝やれたら良いこと（上振れ）。
+   行はタップでチェック、✎で書き直し・削除。目標と結果の編集は下の「目標と結果を書き直す」から。 */
+function monthOpenHTML(m){
+  const sec=(kind)=>{
+    const list=m[kind]||[];
+    const done=list.filter(x=>x.done).length;
+    const title = kind==='must' ? 'やるべきこと' : 'やれたら良いこと';
+    let s=`<div class="mo-sec">
+      <div class="mo-head">
+        <span class="t ${kind==='want'?'want':''}">${title}</span>
+        ${list.length?`<span class="n tnum">${done}/${list.length}</span>`:''}
+      </div>`;
+    if(!list.length && !(mItemEdit && mItemEdit.ym===m.ym && mItemEdit.kind===kind && !mItemEdit.id)){
+      s+=`<div class="mo-empty">${kind==='must'?'この月に外せないことを足していく':'できたら嬉しい、急がないことを足していく'}</div>`;
+    }
+    s+=`<div class="acts">`;
+    list.forEach(it=>{
+      if(mItemEdit && mItemEdit.ym===m.ym && mItemEdit.kind===kind && mItemEdit.id===it.id){
+        s+=mItemInputHTML(m.ym, kind, it);
+        return;
+      }
+      s+=`<span class="act ${it.done?'done':''}" data-act="mi-toggle" data-ym="${m.ym}" data-kind="${kind}" data-id="${it.id}" role="button" tabindex="0" aria-label="${esc(it.text)}${it.done?'（済）':''}">
+        <span class="adot">${CHK_S}</span>
+        <span class="atext">${esc(it.text)}</span>
+        <button class="mo-edit" data-act="mi-edit" data-ym="${m.ym}" data-kind="${kind}" data-id="${it.id}" aria-label="書き直す">${ICON_PENCIL}</button>
+      </span>`;
+    });
+    s+=`</div>`;
+    if(mItemEdit && mItemEdit.ym===m.ym && mItemEdit.kind===kind && !mItemEdit.id) s+=mItemInputHTML(m.ym, kind, null);
+    else s+=`<button class="add-row" data-act="mi-add" data-ym="${m.ym}" data-kind="${kind}">＋ 行を足す</button>`;
+    return s+`</div>`;
+  };
+  return `<div class="mo-open">
+    ${m.phase?`<span class="mo-phase">${esc(m.phase)}</span>`:''}
+    ${sec('must')}
+    ${sec('want')}
+    <div class="mo-foot">
+      <button class="edit-link" data-act="month-edit" data-ym="${m.ym}">目標と結果を書き直す</button>
+      <button class="edit-link" data-act="month-close" data-ym="${m.ym}">閉じる</button>
+    </div>
+  </div>`;
+}
+function mItemInputHTML(ym, kind, it){
+  return `<div class="mo-in">
+    <input type="text" class="mi-text" data-ym="${ym}" data-kind="${kind}" value="${it?esc(it.text):''}" placeholder="${kind==='must'?'外せないこと（例：8月中に見積りを1本送る）':'できたら嬉しいこと（例：保守の床を1件つける）'}">
+    <div class="row">
+      <button class="btn primary" data-act="mi-save" data-ym="${ym}" data-kind="${kind}" data-id="${it?it.id:''}">保存</button>
+      <button class="btn ghost" data-act="mi-cancel">やめる</button>
+      ${it?`<button class="del" data-act="mi-del" data-ym="${ym}" data-kind="${kind}" data-id="${it.id}">削除</button>`:''}
+    </div>
+  </div>`;
+}
 function monthEditorHTML(m){
   const selCls=v=>draft.status===v?('sel-'+v):'';
   return `<div class="m-editor editor">
@@ -2318,10 +2430,54 @@ document.querySelector('main').addEventListener('click', e=>{
   }
 
   /* --- 月別マイルストーン --- */
+  /* 月をタップ＝ひらく／閉じる。中身（やるべきこと・やれたら良いこと）はその場でチェックできる。
+     目標そのものの編集は、開いた中の「目標と結果を書き直す」から入る（＝誤って上書きしない）。 */
   if(act==='month-open'){
+    const ym=btn.dataset.ym;
+    openMonth = (openMonth===ym) ? null : ym;
+    mItemEdit=null; mode=null; draft=null;
+    render();
+    return;
+  }
+  if(act==='month-close'){ openMonth=null; mItemEdit=null; render(); return; }
+  if(act==='month-edit'){
     const m=db.months.find(x=>x.ym===btn.dataset.ym); if(!m) return;
     draft={ goal:m.goal, status:m.status };
-    mode={type:'month', ym:m.ym}; render();
+    mode={type:'month', ym:m.ym}; mItemEdit=null; render();
+    return;
+  }
+  if(act==='mi-toggle'){
+    const m=db.months.find(x=>x.ym===btn.dataset.ym); if(!m) return;
+    const it=(m[btn.dataset.kind]||[]).find(x=>x.id===btn.dataset.id); if(!it) return;
+    it.done=!it.done;
+    save(); render();
+    return;
+  }
+  if(act==='mi-add'){ mItemEdit={ym:btn.dataset.ym, kind:btn.dataset.kind, id:null}; render(); focusEnd('.mi-text'); return; }
+  if(act==='mi-edit'){ mItemEdit={ym:btn.dataset.ym, kind:btn.dataset.kind, id:btn.dataset.id}; render(); focusEnd('.mi-text'); return; }
+  if(act==='mi-cancel'){ mItemEdit=null; render(); return; }
+  if(act==='mi-save'){
+    const m=db.months.find(x=>x.ym===btn.dataset.ym); if(!m) return;
+    const kind=btn.dataset.kind, el=document.querySelector('.mi-text');
+    const text=(el ? el.value : '').trim();
+    if(!text){ toast('ひとこと書いてから保存してね'); return; }
+    if(!Array.isArray(m[kind])) m[kind]=[];
+    if(btn.dataset.id){
+      const it=m[kind].find(x=>x.id===btn.dataset.id); if(it) it.text=text;
+    } else {
+      m[kind].push({ id:uid(), text, done:false });
+    }
+    mItemEdit=null; save(); render();
+    return;
+  }
+  if(act==='mi-del'){
+    const m=db.months.find(x=>x.ym===btn.dataset.ym); if(!m) return;
+    const kind=btn.dataset.kind, id=btn.dataset.id;
+    const i=(m[kind]||[]).findIndex(x=>x.id===id); if(i<0) return;
+    const removed=m[kind][i];
+    m[kind].splice(i,1);
+    mItemEdit=null; save(); render();
+    toast('消しました', { label:'取り消す', fn:()=>{ m[kind].splice(i,0,removed); save(); render(); } });
     return;
   }
   if(act==='m-status'){ syncMonthDraft(); draft.status=btn.dataset.v; render(); return; }
@@ -2394,6 +2550,12 @@ function syncReviewDraft(){
 function syncMonthDraft(){
   const g=document.getElementById('mGoal'); if(g) draft.goal=g.value;
 }
+/* 月の中の1行は、改行キーでそのまま保存できる（スマホで足しやすくするため） */
+document.querySelector('main').addEventListener('keydown', e=>{
+  if(e.key!=='Enter' || !e.target.classList.contains('mi-text')) return;
+  e.preventDefault();
+  const b=document.querySelector('[data-act="mi-save"]'); if(b) b.click();
+});
 document.querySelector('main').addEventListener('input', e=>{
   /* 下書きは編集した端から保存する（描き直さないので、入力中もカーソルが飛ばない） */
   if(e.target.classList.contains('dft-title')){
