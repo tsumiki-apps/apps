@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-hiyou.png">
+<meta name="apple-mobile-web-app-title" content="費用図鑑">
+<title>費用の分解</title>
+<style>
+  :root{
+    color-scheme: light;
+    --paper:#fbfaf7;
+    --card:#ffffff;
+    --ink:#14130f;
+    --ink-2:#57554d;
+    --muted:#9b988f;
+    --line:#c9c5b8;
+    --hair:#eceae3;
+    --mark:#c2410c;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])){
+      color-scheme: dark;
+      --paper:#0f0f0e; --card:#1a1a18; --ink:#f5f4f0;
+      --ink-2:#b3b0a6; --muted:#807d75; --line:#4a4945; --hair:#2a2a27;
+      --mark:#f0834f;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --paper:#0f0f0e; --card:#1a1a18; --ink:#f5f4f0;
+    --ink-2:#b3b0a6; --muted:#807d75; --line:#4a4945; --hair:#2a2a27;
+    --mark:#f0834f;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:16px; line-height:1.7; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:40px 20px 80px}
+
+  header{margin:0 0 16px}
+  .kicker{font-size:11px;letter-spacing:.18em;color:var(--muted);margin:0 0 8px}
+  h1{font-size:22px;font-weight:600;margin:0 0 12px;letter-spacing:.02em}
+  .intro{font-size:13.5px;color:var(--ink-2);margin:0 0 40px;line-height:1.85}
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--hair);
+    border-radius:16px;
+    padding:24px 20px 22px;
+    margin:0 0 16px;
+  }
+  .card.origin{border-color:var(--line);background:transparent}
+  .name{font-size:14px;font-weight:600;margin:0 0 22px;letter-spacing:.03em}
+  .card.origin .name{color:var(--ink-2)}
+
+  /* 分野の区切り */
+  .cat{
+    font-size:11px;letter-spacing:.18em;color:var(--muted);
+    margin:34px 0 12px;padding-left:4px;
+  }
+  .cat:first-child{margin-top:0}
+
+  /* 前のカードとの対 */
+  .pair{
+    display:flex;gap:8px;align-items:flex-start;
+    margin:-4px 4px 14px;font-size:12.5px;color:var(--muted);line-height:1.65;
+  }
+  .pair span:first-child{flex:0 0 auto}
+
+  /* ── 分解の木 ── */
+  .tree{position:relative;display:grid;grid-template-columns:auto 1fr;align-items:start}
+  .wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+  .root{font-size:13.5px;line-height:1.55;font-weight:600;color:var(--ink-2);white-space:nowrap}
+  .arms{padding-left:40px;display:flex;flex-direction:column;gap:18px}
+  .arm{display:grid;grid-template-columns:auto 1fr;align-items:start}
+  .kind{font-size:13.5px;line-height:1.55;font-weight:600;white-space:nowrap;color:var(--ink-2)}
+  .leaves{padding-left:32px;display:flex;flex-direction:column;gap:10px}
+  .leaf .t{font-size:15px;line-height:1.55;color:var(--ink);display:block}
+  .leaf.none .t{color:var(--muted)}
+  .leaf.key .t{font-weight:650}
+
+  .twist{
+    margin:8px 0 2px;
+    padding:0 0 0 13px;
+    border-left:2px solid var(--mark);
+    font-size:14px; line-height:1.8; color:var(--ink-2);
+  }
+  .twist b{color:var(--ink);font-weight:650}
+
+  .src{
+    margin:20px 0 0;padding-top:12px;border-top:1px solid var(--hair);
+    font-size:11px;color:var(--muted);line-height:1.7;
+  }
+  .src a{color:inherit}
+
+  footer{margin:34px 0 0;font-size:12px;color:var(--muted);line-height:1.9}
+
+  .themebtn{
+    appearance:none;background:transparent;color:var(--muted);
+    border:1px solid var(--hair);border-radius:999px;
+    font:inherit;font-size:11px;padding:5px 12px;cursor:pointer;
+    float:right;margin-top:-2px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <button class="themebtn" id="themebtn" type="button">表示</button>
+    <p class="kicker">費用構造図鑑</p>
+    <h1>費用の分解</h1>
+    <p class="intro">枝は、その商売にしかない費用を選んでいます。<br>色のついた枝が、名前から想像するのとは違う動きをするところ。</p>
+  </header>
+
+  <div id="list"></div>
+
+  <footer>
+    最初の1枚は、この図鑑のお手本にした航空会社です。<br>
+    いまは小売・流通13業種と、飲食7業種。ここに他の業界を足していきます。
+  </footer>
+</div>
+
+<script>
+const DATA = [
+  { name:"航空会社", origin:true, cat:"お手本",
+    hen:[
+      {t:"燃料費", key:true,
+       twist:"お客が1人増えても、<b>燃料は1滴も増えない</b>。増えるのは便を1本飛ばしたとき。だから空席のまま飛ばすくらいなら、直前に投げ売りしたほうが得になる。"},
+      {t:"空港使用料"}],
+    kotei:[{t:"航空機代"},{t:"人件費"}],
+    src:{title:"日本航空 有価証券報告書", year:2024}, conf:"高" },
+
+  { name:"Apple直営店", cat:"小売・流通",
+    hen:[{t:"製品原価"}],
+    kotei:[
+      {t:"店員100人", key:true,
+       twist:"売っても歩合が出ない。<b>販売員ではなく、置いてあるもの</b>。だから店員は売り込んでこないし、それでも店は成り立つ。"},
+      {t:"ガラスの建物"}],
+    src:{title:"HBR「What I Learned Building the Apple Store」", url:"https://hbr.org/2011/11/what-i-learned-building-the-ap", year:2011}, conf:"高" },
+
+  { name:"コンビニ本部",
+    hen:[{t:"ない", none:true, key:true,
+      twist:"仕入れないし、店員も雇わない。<b>加盟店の粗利の半分を受け取るだけ</b>。売上が増えても、本部側で増える費用がほとんどない。"}],
+    kotei:[{t:"店を回る指導員"},{t:"システム・物流"}],
+    src:{title:"セブン＆アイHD 決算短信", url:"https://www.7andi.com/ir/library/co_financial/2025/convenience_store", year:2025}, conf:"高" },
+
+  { name:"コンビニ加盟店",
+    pair:"本部とは、同じ売上を分け合っている。痛むのは、こちらだけ。",
+    hen:[
+      {t:"捨てた弁当", key:true,
+       twist:"捨てた分の原価は、<b>本部の取り分からは引かれない</b>。廃棄はオーナーだけが被る。だから長いあいだ、値引きして売り切ることができなかった。"},
+      {t:"仕入原価"}],
+    kotei:[{t:"本部チャージ"},{t:"24時間ぶんの人件費"}],
+    src:{title:"公正取引委員会 コンビニ実態調査報告書", url:"https://www.jftc.go.jp/houdou/pressrelease/2020/sep/200902_1.html", year:2020}, conf:"高" },
+
+  { name:"スーパーマーケット",
+    hen:[
+      {t:"売れ残った生鮮", key:true,
+       twist:"買い取っているので、<b>売れ残りはまるごと自分の損</b>。捨てるよりは安くても売ったほうがいい。夕方に値札が貼り替わるのは、そのため。"},
+      {t:"仕入原価"}],
+    kotei:[{t:"冷蔵ケースの電気代"},{t:"人件費"}],
+    src:{title:"Business Insider Japan「決算から見る食品スーパーの裏側」", url:"https://www.businessinsider.jp/article/291604/", year:2024}, conf:"高" },
+
+  { name:"ドラッグストア",
+    hen:[
+      {t:"食品の仕入", key:true,
+       twist:"食品はほとんど儲からない。<b>売るためでなく、人を呼ぶために置いてある</b>。利益は、あとから薬と化粧品で取り返す。"},
+      {t:"薬・化粧品の仕入"}],
+    kotei:[{t:"薬剤師の人件費"},{t:"賃料"}],
+    src:{title:"ダイヤモンド・オンライン「食品の粗利率はコンビニの半分以下」", url:"https://diamond.jp/articles/-/212916", year:2019}, conf:"高" },
+
+  { name:"百貨店",
+    hen:[
+      {t:"売れた分だけの仕入", key:true,
+       twist:"売れ残りは取引先に返せる。<b>在庫の損を、自分では持っていない</b>。売場を貸してマージンを取る、不動産に近い商売になっている。"}],
+    kotei:[{t:"一等地の建物"},{t:"外商の人件費"}],
+    src:{title:"太陽グラントソントン「消化仕入の会計処理」", url:"https://www.grantthornton.jp/globalassets/1.-member-firms/japan-2/pdfs/ac/report/report_201809.pdf", year:2018}, conf:"中〜高" },
+
+  { name:"家電量販店",
+    hen:[
+      {t:"ポイント還元の原資", key:true,
+       twist:"「10%還元」は10%引きに見えて、同じではない。値引きなら現金がその場で減るが、<b>ポイントは自分の店でしか使えず、一部は使われないまま失効する</b>。だから店は「10%引き」と言わず「還元」と言い続け、レジでポイントカードを勧めてくる。"},
+      {t:"仕入原価"}],
+    kotei:[{t:"駅前の大型店の賃料"},{t:"接客する販売員"}],
+    src:{title:"フルカイテン「薄利多売からの脱却｜家電量販店」", url:"https://full-kaiten.com/news/blog/11296", year:2024}, conf:"高" },
+
+  { name:"アパレルSPA（製造小売）",
+    hen:[
+      {t:"売り減らしの値下げ", key:true,
+       twist:"ユニクロの値下げは投げ売りに見えて、<b>最初から計画に入っている売り減らしの道具</b>。作った服を全部自分で抱えるから、期末に一気に投げず毎週こまめに値札を書き換える。だから店頭は、いつ行っても何かが安い。"},
+      {t:"自社生産の原価"}],
+    kotei:[{t:"駅ビルの店舗賃料"},{t:"店舗スタッフ"}],
+    src:{title:"WWDJAPAN 小島健輔リポート「利益を食いつぶすのは値下げか？販管費か？」", url:"https://www.wwdjapan.com/articles/1843847", year:2024}, conf:"高" },
+
+  { name:"セレクトショップ",
+    pair:"ユニクロと同じで、在庫は自分の損。なのに値下げの出し方が正反対。",
+    hen:[
+      {t:"半年前の買い付け", key:true,
+       twist:"セールは気まぐれに見えて、<b>時期が構造で決まっている</b>。展示会でシーズンの半年以上前に発注を確定し、買い取った服は返品できない。だから毎年ほぼ同じ時期にセールが始まり、常連は次がいつか読めてしまう。"},
+      {t:"セールの値引き"}],
+    kotei:[{t:"路面店の賃料"},{t:"目利きのバイヤー"}],
+    src:{title:"ユナイテッドアローズ 決算説明会資料", url:"https://www.united-arrows.co.jp/wp-content/uploads/2024/05/presentation_2024_4.pdf", year:2024}, conf:"高" },
+
+  { name:"100円ショップ",
+    hen:[
+      {t:"商品ごとに違う原価", key:true,
+       twist:"全品おなじ利益に見えて、<b>原価が100円を超える赤字商品すらある</b>。売価を1円も動かせないので、安い商品と高い商品を混ぜて店ぜんたいで帳尻を合わせる。だから円安でも値札を変えられず、200円・300円の棚が増えていく。"},
+      {t:"海外からの船賃"}],
+    kotei:[{t:"店舗賃料"},{t:"品出しの人件費"}],
+    src:{title:"Business Insider Japan「物価高で人気の100均 勢力図」", url:"https://www.businessinsider.jp/article/2502_full-kaiten_100yen_hikaku/?page=2", year:2025}, conf:"中" },
+
+  { name:"EC専業（自社EC・D2C）",
+    hen:[
+      {t:"客を集める広告費", key:true,
+       twist:"最初の宣伝費に見えて、<b>客を1人連れてくるたびに毎回かかる</b>。しかも広告の単価は上がり続けるので、初回の購入だけでは元が取れない。だから「初回だけ半額」や、しつこい定期購入への誘導が世の中にあふれる。"},
+      {t:"注文ごとの送料"}],
+    kotei:[{t:"サイトの維持費"},{t:"倉庫と在庫"}],
+    src:{title:"DIGIDAY日本版「CPA高騰に苦悩する、あるD2Cメディアバイヤーの告白」", url:"https://digiday.jp/agencies/tougher-media-buyers-get-wins-confessions-dtc-media-buyer-consequences-rising-cpas/", year:2022}, conf:"中" },
+
+  { name:"Amazon出品者",
+    pair:"自社ECは、客を「集める」。こちらは、客を「借りる」。",
+    hen:[
+      {t:"Amazonへの手数料", key:true,
+       twist:"「販売手数料15%」だけ見ると安いが、<b>配送・保管・広告を足すと売上の半分が消える</b>。集客も物流も借りているので、上に表示されるたびに払うものが増える。だから同じ商品が、よそのほうが安いことがある。"},
+      {t:"仕入原価"}],
+    kotei:[{t:"月額の出品料だけ"}],
+    src:{title:"Marketplace Pulse「Amazon Takes a 50% Cut of Sellers' Revenue」", url:"https://www.marketplacepulse.com/articles/amazon-takes-a-50-cut-of-sellers-revenue", year:2023}, conf:"中" },
+
+  { name:"リユース・中古買取",
+    hen:[
+      {t:"買取価格", key:true,
+       twist:"仕入コストがほぼゼロに見えて、<b>安く買い叩くと、そもそも商品が集まらない</b>。だから買い手ではなく売り手を呼ぶために広告を打つ。「いまなら買取金額UP」の貼り紙は、ここでは仕入の値札にあたる。"},
+      {t:"買取を呼び込む広告"}],
+    kotei:[{t:"店舗賃料"},{t:"査定スタッフ"}],
+    src:{title:"ブックオフグループHD 決算説明資料", url:"https://www.ryutsuu.biz/accounts/q101647.html", year:2025}, conf:"高" },
+
+  { name:"個人経営カフェ", cat:"飲食",
+    hen:[{t:"コーヒー原価"},{t:"水道光熱費"}],
+    kotei:[
+      {t:"客席の家賃", key:true,
+       twist:"家賃は場所代に見えて、<b>客が使う「滞在時間」の仕入れ値</b>。コーヒー1杯の原価は数十円でも、2時間ねばられると、その席は1杯ぶんしか稼がない。だから儲かるカフェほど、椅子が硬かったり、雑誌が置いていなかったりする。"},
+      {t:"ワンオペ人件費"}],
+    src:{title:"Cafe's LIFE「個人カフェの売上の考え方」", url:"https://cafeslife.jp/blog/column/cafesales/", year:2024}, conf:"中" },
+
+  { name:"チェーン居酒屋",
+    hen:[
+      {t:"フード原価"},
+      {t:"ドリンク原価", key:true,
+       twist:"同じ「原価」でも、<b>飲み物だけ原価率が15〜25%と極端に安い</b>。刺身やビールは高いが、サワーやハイボールの割り材はほとんどタダに近い。だから店員は「とりあえず生」と勧めてくるし、損に見える飲み放題が成り立つ。"}],
+    kotei:[{t:"深夜の人件費"},{t:"客席の家賃"}],
+    src:{title:"マルヨシ酒店「飲食店のドリンク原価率の目安」", url:"https://maruyoshisaketen.co.jp/blog/blog-3733/", year:2025}, conf:"高" },
+
+  { name:"回転寿司",
+    hen:[
+      {t:"ネタ原価"},
+      {t:"廃棄する皿", key:true,
+       twist:"レーンの皿は「選ばれるのを待つ商品」に見えて、<b>時間と距離で管理された生鮮在庫</b>。取られなかった皿は自社の損なので、皿にICタグを付け、350m流れたら機械が自動で捨てる。だから最近は、レーンに寿司がほとんど流れていない。"}],
+    kotei:[{t:"レーン設備"},{t:"客席の家賃"}],
+    src:{title:"Business Insider Japan「スシロー 廃棄は100皿に1皿」", url:"https://www.businessinsider.jp/post-105290", year:2017}, conf:"高" },
+
+  { name:"ラーメン店（個人店）",
+    hen:[{t:"スープと麺"}],
+    kotei:[
+      {t:"寸胴の光熱費", key:true,
+       twist:"光熱費は売れた杯数ぶんに見えて、<b>1杯も売れなくても毎日出ていく</b>。濃厚スープは強火で10〜12時間炊き続け、ガス代だけで月15〜20万円になる。だから閉店間際の客に麺を茹でるのを渋るし、スープが切れたら早じまいする。"},
+      {t:"仕込みの時間"}],
+    src:{title:"東京商工リサーチ「2024年ラーメン店倒産 過去最多57件」", url:"https://www.tsr-net.co.jp/data/detail/1200917", year:2025}, conf:"高" },
+
+  { name:"ファストフード（FC加盟店）",
+    pair:"同じ一杯なのに、個人店は自分の時間を払う。こちらは、本部に払う。",
+    hen:[
+      {t:"ロイヤリティ", key:true,
+       twist:"「儲けたら払う成功報酬」に見えて、<b>売れた瞬間に自動で引かれる</b>。個人店なら自分の仕込みで作れたソースも、ここでは本部から買う義務がある。だから「今日は安くするよ」ができず、全国どこでも同じ値段になる。"},
+      {t:"指定仕入れ"}],
+    kotei:[{t:"ロードサイド店"},{t:"人件費"}],
+    src:{title:"公正取引委員会「フランチャイズ・システムに関する独占禁止法上の考え方」", url:"https://www.jftc.go.jp/dk/guideline/unyoukijun/franchise.html", year:2021}, conf:"高" },
+
+  { name:"ゴーストキッチン",
+    hen:[
+      {t:"手数料", key:true,
+       twist:"集客のための広告費に見えて、<b>売れるたびに商品代金の3分の1超が消える</b>。客席もホールも一等地も捨てられる代わりに、注文1件ごとに約35%を払う。手数料が、席の家賃の代わりをしている。だから同じ料理でも、デリバリーだと妙に高い。"},
+      {t:"食材原価"}],
+    kotei:[{t:"厨房だけの賃料"},{t:"客席もホールもない", none:true}],
+    src:{title:"aumo「Uber Eats 店舗側の手数料」", url:"https://business.aumo.jp/column/ubereats-commission-store", year:2025}, conf:"中" },
+
+  { name:"高級レストラン",
+    pair:"席を捨てて手数料を払う店と、席を絞って人の時間を払う店。",
+    hen:[{t:"食材原価"}],
+    kotei:[
+      {t:"仕込みの人時", key:true,
+       twist:"値段の高さは高級食材のぶんに見えて、<b>客1人に注ぎ込まれた人の時間のぶん</b>。仕込みは営業時間の外で何時間もかかり、1席は1日1〜2回転しかしない。だから来なかった1予約はまるごと損になり、無断キャンセルには全額を請求してくる。"},
+      {t:"絞った客席"}],
+    src:{title:"経済産業省 No show（無断キャンセル）対策レポート", url:"https://squareup.com/jp/ja/townsquare/how-to-handle-noshows-and-cancellations", year:2018}, conf:"中" }
+];
+
+function leaves(items){
+  return items.map(x => {
+    const cls = 'leaf' + (x.key?' key':'') + (x.none?' none':'');
+    const twist = x.twist ? '<p class="twist">'+x.twist+'</p>' : '';
+    return '<div class="'+cls+'"><span class="t">'+x.t+'</span>'+twist+'</div>';
+  }).join('');
+}
+function source(d){
+  const s = d.src;
+  const t = s.url ? `<a href="${s.url}" target="_blank" rel="noopener">${s.title}</a>` : s.title;
+  return `<p class="src">出典：${t}（${s.year}）　／　確信度 ${d.conf}</p>`;
+}
+
+document.getElementById('list').innerHTML = DATA.map(d => `
+  ${d.cat ? `<p class="cat">${d.cat}</p>` : ''}
+  ${d.pair ? `<p class="pair"><span>↑</span><span>${d.pair}</span></p>` : ''}
+  <article class="card${d.origin?' origin':''}">
+    <p class="name">${d.name}</p>
+    <div class="tree">
+      <svg class="wires" aria-hidden="true"></svg>
+      <div class="root">費用</div>
+      <div class="arms">
+        <div class="arm">
+          <span class="kind">変動費</span>
+          <div class="leaves">${leaves(d.hen)}</div>
+        </div>
+        <div class="arm">
+          <span class="kind">固定費</span>
+          <div class="leaves">${leaves(d.kotei)}</div>
+        </div>
+      </div>
+    </div>
+    ${source(d)}
+  </article>
+`).join('');
+
+
+/* ───────────────────────────────────────────
+   線を引く。
+   置いたあとに実寸を測り、角を丸めた経路を引く。
+   形はノートと同じ：親は最初の子と同じ高さで結び、
+   2つ目以降は、その線から下へ落ちて └ で受ける。
+   ─────────────────────────────────────────── */
+const R = 9;
+const SVGNS = "http://www.w3.org/2000/svg";
+const crisp = n => Math.round(n) + 0.5;
+
+function firstLineCenter(el, box){
+  const r  = el.getBoundingClientRect();
+  const lh = parseFloat(getComputedStyle(el).lineHeight);
+  return r.top - box.top + lh / 2;
+}
+function edges(el, box){
+  const r = el.getBoundingClientRect();
+  return { left: r.left - box.left, right: r.right - box.left };
+}
+function path(cls, d){
+  const p = document.createElementNS(SVGNS, "path");
+  p.setAttribute("d", d);
+  p.setAttribute("class", cls);
+  return p;
+}
+/* 親の高さ x0 から、子たちの y へ配る経路。keyIndex の1本だけ別に返す */
+function segments(x0, xJoin, xEnd, ys, keyIndex){
+  const normal = [], keyed = [];
+  const push = (i, s) => (i === keyIndex ? keyed : normal).push(s);
+  push(0, `M ${crisp(x0)} ${crisp(ys[0])} L ${crisp(xEnd)} ${crisp(ys[0])}`);
+  for (let i = 1; i < ys.length; i++){
+    const jx = crisp(xJoin), y = crisp(ys[i]), yPrev = crisp(ys[i-1]);
+    push(i, `M ${jx} ${yPrev} L ${jx} ${y - R} Q ${jx} ${y} ${jx + R} ${y} L ${crisp(xEnd)} ${y}`);
+  }
+  return { normal, keyed };
+}
+
+function drawTree(tree){
+  const svg  = tree.querySelector('svg.wires');
+  const root = tree.querySelector('.root');
+  const arms = [...tree.querySelectorAll('.arm')];
+
+  root.style.transform = '';
+  arms.forEach(a => a.querySelector('.kind').style.transform = '');
+
+  const box = tree.getBoundingClientRect();
+  if (!box.width) return;
+
+  /* 1. 枝のラベルを、最初の葉と同じ高さにそろえる */
+  const info = arms.map(arm => {
+    const kind  = arm.querySelector('.kind');
+    const nodes = [...arm.querySelectorAll('.leaf')];
+    const texts = nodes.map(n => n.querySelector('.t'));
+    const ys    = texts.map(t => firstLineCenter(t, box));
+    const kc    = firstLineCenter(kind, box);
+    kind.style.transform = `translateY(${(ys[0] - kc).toFixed(2)}px)`;
+    return { kind, y: ys[0], ys,
+             leafLeft: edges(texts[0], box).left,
+             kindRight: edges(kind, box).right,
+             keyIndex: nodes.findIndex(n => n.classList.contains('key')) };
+  });
+
+  /* 2. 幹のラベルを、最初の枝と同じ高さにそろえる */
+  const rc = firstLineCenter(root, box);
+  root.style.transform = `translateY(${(info[0].y - rc).toFixed(2)}px)`;
+
+  /* 3. 引く */
+  svg.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+  svg.setAttribute('width',  box.width);
+  svg.setAttribute('height', box.height);
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const rootRight = edges(root, box).right;
+  const armLeft   = Math.min(...info.map(a => edges(a.kind, box).left));
+  const trunkX    = rootRight + (armLeft - rootRight) / 2;
+
+  const trunk = segments(rootRight + 6, trunkX, armLeft - 6, info.map(a => a.y), -1);
+  svg.appendChild(path('w', trunk.normal.join(' ')));
+
+  info.forEach(a => {
+    const branchX = a.kindRight + (a.leafLeft - a.kindRight) / 2;
+    const s = segments(a.kindRight + 6, branchX, a.leafLeft - 6, a.ys, a.keyIndex);
+    if (s.normal.length) svg.appendChild(path('w', s.normal.join(' ')));
+    if (s.keyed.length)  svg.appendChild(path('w key', s.keyed.join(' ')));
+  });
+}
+
+function drawAll(){ document.querySelectorAll('.tree').forEach(drawTree); }
+
+const style = document.createElement('style');
+style.textContent = `
+  .wires .w{ fill:none; stroke:var(--line); stroke-width:1; stroke-linecap:round; stroke-linejoin:round; }
+  .wires .w.key{ stroke:var(--mark); stroke-width:1.5; }
+`;
+document.head.appendChild(style);
+
+drawAll();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAll);
+window.addEventListener('resize', drawAll);
+new ResizeObserver(drawAll).observe(document.getElementById('list'));
+
+document.getElementById('themebtn').addEventListener('click',()=>{
+  const cur=document.documentElement.getAttribute('data-theme');
+  const sys=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme',
+    cur ? (cur==='dark'?'light':'dark') : (sys?'light':'dark'));
+});
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
