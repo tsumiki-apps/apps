@@ -422,16 +422,6 @@
   .act .aask:active{transform:scale(.92);}
   .act.asked .atext{color:var(--ink-soft);}   /* 自分の手は離れている＝主張を弱める */
 
-  /* 書き込み欄の下の「これはClaudeへの依頼にする」 */
-  .askchip{
-    display:flex; align-items:center; gap:7px; width:100%; text-align:left; cursor:pointer;
-    border:1.5px dashed var(--line-2); background:transparent; border-radius:10px; padding:8px 10px;
-    color:var(--ink-soft); font-family:var(--sans); font-size:.76rem; font-weight:700; line-height:1.4;
-  }
-  .askchip svg{width:15px; height:15px; flex:none;}
-  .askchip:active{transform:scale(.99);}
-  .askchip.on{border-style:solid; border-color:var(--accent); background:var(--accent-wash); color:var(--accent-2);}
-
   .done-fold.ask{color:var(--accent-2); border-color:var(--accent);}
   .done-fold.ask svg{color:var(--accent-2);}
   .ask-list{margin-top:11px;}
@@ -823,51 +813,105 @@
   .pick-i .g{font-size:.72rem; color:var(--ink-soft);}
   .pick-f{display:flex; justify-content:flex-end;}
 
-  /* ---------- ガント（週軸の帯） ----------
-     左＝見出し（横スクロールしても貼り付いて残る）／右＝週の目盛り。カード幅いっぱいまで使う。 */
-  .gt-scroll{
-    /* 幅は「カードいっぱい＋左右のpadding分」で固定する。中身（帯の長さ）で決めさせると
-       カードごと横に伸びてしまうため、width を明示するのが要点。 */
-    width:calc(100% + 38px); max-width:calc(100% + 38px); min-width:0;
-    margin:12px -19px 0; overflow-x:auto; overflow-y:hidden;
-    -webkit-overflow-scrolling:touch; scrollbar-width:thin; overscroll-behavior-x:contain;
+  /* ---------- 予定表（ガント＝日付の帯）／メニュー → 予定表 の1画面 ----------
+     左＝見出し（横に流しても貼り付いて残る）／上＝月と日の目盛り（縦に流しても貼り付く）。
+     画面まるごと使うので、カードの中に押し込んでいた時の窮屈さ（40件の打ち止め・小さい帯）が要らない。 */
+  #planPane{display:none;}
+  #planPane.active{display:grid; grid-template-rows:auto minmax(0,1fr) auto; min-height:0; background:var(--paper);}
+  body.tool-plan{overflow:hidden;}   /* 中身（表）だけがスクロールする。ページ自体は動かさない */
+
+  /* 上の操作帯：いまの件数 → 目盛りの細かさ → 今日へ → 済みを隠す */
+  .pl-top{
+    display:flex; align-items:center; gap:7px 8px; flex-wrap:wrap;
+    padding:10px 13px; background:var(--surface); border-bottom:1px solid var(--line);
   }
-  .gt-scroll::-webkit-scrollbar{height:7px;}
-  .gt-scroll::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:99px;}
-  .gt-scroll::-webkit-scrollbar-track{background:transparent;}
-  .gt{position:relative; display:grid; width:max-content; padding-right:19px;}
-  .gt-band{position:absolute; top:0; bottom:0; background:var(--surface-2); z-index:0; pointer-events:none;}
-  /* 今日の線。帯の上に薄く重ねる（下に敷くと週の区切り線と重なって見えなくなる日がある） */
-  .gt-now{position:absolute; top:14px; bottom:0; width:1.5px; z-index:3; pointer-events:none;}
-  .gt-now::after{content:''; position:absolute; inset:0; background:var(--accent); opacity:.42;}
-  .gt-now::before{content:''; position:absolute; left:-3px; top:-6px; width:8px; height:8px; border-radius:50%; background:var(--accent);}
+  .pl-stat{display:flex; gap:6px; flex-wrap:wrap; min-width:0;}
+  .pl-chip{
+    display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+    font-size:.72rem; font-weight:700; color:var(--ink-mid);
+    background:var(--surface-2); border:1px solid var(--line-2); border-radius:99px; padding:4px 10px;
+  }
+  .pl-chip b{font-variant-numeric:tabular-nums; font-size:.8rem;}
+  .pl-chip.over{color:var(--warn); border-color:var(--warn); background:var(--warn-wash);}
+  .pl-chip.today{color:var(--accent-2); border-color:var(--accent); background:var(--accent-wash);}
+  .pl-chip.good{color:var(--good); border-color:var(--good); background:var(--good-wash);}
+  .pl-sp{flex:1 1 auto;}
+  .pl-seg{display:inline-flex; border:1px solid var(--line-2); border-radius:99px; overflow:hidden; background:var(--surface-2); flex:none;}
+  .pl-seg button{
+    border:none; background:transparent; cursor:pointer; font-family:var(--sans);
+    font-size:.75rem; font-weight:700; color:var(--ink-soft); padding:6px 13px; min-width:42px;
+  }
+  .pl-seg button.on{background:var(--accent); color:#fff;}
+  .pl-btn{
+    flex:none; border:1px solid var(--line-2); background:var(--surface); border-radius:99px;
+    padding:6px 12px; font-family:var(--sans); font-size:.75rem; font-weight:700;
+    color:var(--ink-mid); cursor:pointer; white-space:nowrap;
+  }
+  .pl-btn:active{transform:scale(.97);}
+  .pl-btn.on{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-2);}
+  .pl-chart{overflow:auto; min-height:0; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; scrollbar-width:thin;}
+  .pl-chart::-webkit-scrollbar{width:8px; height:8px;}
+  .pl-chart::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:99px;}
+  .pl-chart::-webkit-scrollbar-track{background:transparent;}
+  .pl-empty{padding:40px 24px; text-align:center; color:var(--ink-soft); font-size:.88rem; line-height:1.8;}
+  .pl-foot{
+    display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px;
+    padding:8px 13px calc(env(safe-area-inset-bottom) + 8px);
+    background:var(--surface); border-top:1px solid var(--line);
+  }
+
+  .gt{position:relative; display:grid; width:max-content; min-width:100%; padding-bottom:14px;}
+  /* 下地（月の縞）と今日の線は、見出し列より右だけに敷く1枚の重ね板にまとめる */
+  .gt-ov{position:absolute; top:0; bottom:0; z-index:0; pointer-events:none;}
+  .gt-band{position:absolute; top:0; bottom:0; background:var(--surface-2); opacity:.6;}
+  .gt-now{position:absolute; top:0; bottom:0; width:1.5px; background:var(--accent); opacity:.42; z-index:3;}
   /* 行に z-index を付けない＝中の見出し列（z:4）を今日の線（z:3）より上に出せる */
-  .gt-row{display:flex; align-items:stretch; position:relative; min-height:36px;}
+  .gt-row{display:flex; align-items:stretch; position:relative; min-height:38px;}
   .gt-row + .gt-row .gt-lab, .gt-row + .gt-row .gt-track{border-top:1px solid var(--line);}
+  .gt-row.sel .gt-track{background-color:var(--accent-wash);}
   .gt-lab{
-    position:sticky; left:0; z-index:4; flex:none; width:127px; box-sizing:border-box;
-    padding:6px 9px 6px 19px; background:var(--surface); border:none; border-right:1px solid var(--line-2);
-    display:grid; align-content:center; gap:1px; text-align:left; cursor:pointer;
+    position:sticky; left:0; z-index:4; flex:none; width:var(--gtlab); box-sizing:border-box;
+    padding:6px 9px 6px 13px; background:var(--surface); border:none; border-right:1px solid var(--line-2);
+    display:flex; align-items:center; gap:4px; text-align:left; cursor:pointer;
     font-family:var(--sans); color:var(--ink); -webkit-appearance:none;
   }
   .gt-lab:active{background:var(--surface-2);}
+  .gt-lab .tt{display:grid; gap:1px; min-width:0; flex:1;}
   .gt-lab .t{font-size:.78rem; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .gt-lab .s{font-size:.65rem; line-height:1.3; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .gt-lab .car{flex:none; font-size:.6rem; color:var(--ink-soft); transition:transform .18s; transform:rotate(-90deg);}
+  .gt-lab .car.op{transform:none;}
   .gt-lab.fin .t{color:var(--ink-soft); text-decoration:line-through;}
+  .gt-row.m .gt-lab{background:var(--surface); padding-left:13px;}
   .gt-row.m .gt-lab .t{font-weight:700;}
+  .gt-row.g .gt-lab .t{font-weight:700;}
+  .gt-row.a .gt-lab{padding-left:26px;}          /* 枝分かれは目標の下にぶら下げる */
+  .gt-row.a .gt-lab .t{font-size:.75rem;}
   .gt-track{position:relative; flex:none; background-image:linear-gradient(90deg,var(--line) 1px, transparent 1px); background-size:var(--gtcol) 100%;}
-  /* 見出し行（月／週の始まりの日） */
-  .gt-row.head{min-height:0;}
-  .gt-row.head .gt-lab{padding-top:2px; padding-bottom:4px;}
+  .gt.nogrid .gt-track{background-image:none;}
+  /* 見出し行（月／週の勝ち条件／日付）。縦に流しても上に貼り付く */
+  .gt-row.head{position:sticky; top:0; z-index:6; min-height:0; background:var(--surface); border-bottom:1.5px solid var(--line-2);}
+  .gt-row.head .gt-lab{z-index:7; padding-top:3px; padding-bottom:4px;}
   .gt-row.head .gt-track{background-image:none;}
-  .gt-mrow{position:relative; height:17px;}
+  .gt-mrow{position:relative; height:18px;}
+  .gt-wrow{position:relative; height:15px;}
   .gt-drow{position:relative; height:17px;}
-  .gt-m{position:absolute; top:0; font-size:.68rem; font-weight:700; color:var(--ink-mid); padding-left:4px; box-sizing:border-box; border-left:1px solid var(--line-2);}
-  .gt-d{position:absolute; top:0; font-size:.62rem; color:var(--ink-soft); text-align:center; font-variant-numeric:tabular-nums;}
+  .gt-m{position:absolute; top:0; font-size:.68rem; font-weight:700; color:var(--ink-mid); padding-left:4px; box-sizing:border-box; border-left:1px solid var(--line-2); overflow:hidden; white-space:nowrap;}
+  .gt-d{position:absolute; top:0; font-size:.62rem; color:var(--ink-soft); text-align:center; font-variant-numeric:tabular-nums; overflow:hidden;}
   .gt-d.now{color:var(--accent-2); font-weight:700;}
+  .gt-d.sun{color:var(--warn);}
+  .gt-d.sat{color:var(--accent-2);}
+  /* 今日の位置を見出しにも出す（線は貼り付いた見出しの下に隠れるので、印を別に置く） */
+  .gt-tdmark{position:absolute; bottom:0; width:0; height:0; margin-left:-4px; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:5px solid var(--accent);}
+  /* 週の勝ち条件＝その週これが取れたら勝ち、の1行。押すと文が出る */
+  .gt-win{
+    position:absolute; top:0; margin-left:-9px; width:18px; height:15px; padding:0; line-height:15px; text-align:center;
+    border:none; background:transparent; cursor:pointer; color:var(--accent); font-size:.6rem;
+  }
+  .gt-win.ok{color:var(--good);}
   /* 帯 */
   .gt-bar{
-    position:absolute; top:50%; transform:translateY(-50%); height:15px; min-width:12px;
+    position:absolute; top:50%; transform:translateY(-50%); height:16px; min-width:14px;
     border-radius:99px; border:1.5px solid var(--accent); background:var(--accent-wash);
     padding:0; cursor:pointer; -webkit-appearance:none;
   }
@@ -877,20 +921,57 @@
   .gt-bar.s-over::after{content:''; position:absolute; inset:0; border-radius:99px; background:repeating-linear-gradient(45deg,transparent 0 3px,var(--warn) 3px 4px); opacity:.5;}
   .gt-bar.s-done{background:var(--good-wash); border-color:var(--good); opacity:.72;}
   .gt-bar.s-ask{background:transparent; border-style:dashed;}
-  .gt-row.m .gt-bar{height:19px; border-radius:6px; border-width:1.5px; background:var(--surface-2); border-color:var(--line-2);}
+  .gt-bar.sel{box-shadow:0 0 0 3px var(--accent-wash), 0 0 0 4.5px var(--accent);}
+  /* 目標（枝分かれの親）＝細い帯。中の1本1本より主張を弱める */
+  .gt-bar.grp{height:8px; border-radius:4px; opacity:.85;}
+  .gt-row.m .gt-bar{height:20px; border-radius:6px; background:var(--surface-2); border-color:var(--line-2);}
   .gt-row.m .gt-bar.m-done{background:var(--good-wash); border-color:var(--good);}
   .gt-row.m .gt-bar.m-partial{background:var(--accent-wash); border-color:var(--accent);}
   .gt-row.m .gt-bar.m-miss{background:var(--warn-wash); border-color:var(--warn);}
   .gt-row.m + .gt-row:not(.m) .gt-lab, .gt-row.m + .gt-row:not(.m) .gt-track{border-top:1.5px solid var(--line-2);}
+  /* 帯の右に日付。目盛りを指で数えなくても、いつからいつまでか読める */
+  .gt-tag{position:absolute; top:50%; transform:translateY(-50%); font-size:.62rem; color:var(--ink-soft); white-space:nowrap; pointer-events:none; font-variant-numeric:tabular-nums;}
   /* 凡例 */
-  .gt-legend{display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:10px; font-size:.68rem; color:var(--ink-soft);}
+  .gt-legend{display:flex; flex-wrap:wrap; gap:4px 12px; font-size:.68rem; color:var(--ink-soft);}
   .gt-legend span{display:inline-flex; align-items:center; gap:5px;}
   .gt-legend i{width:15px; height:9px; border-radius:99px; border:1.5px solid var(--accent); background:var(--accent-wash);}
   .gt-legend i.s-today{background:var(--accent); border-color:var(--accent-2);}
   .gt-legend i.s-over{background:var(--warn-wash); border-color:var(--warn);}
   .gt-legend i.s-done{background:var(--good-wash); border-color:var(--good);}
   .gt-legend i.s-ask{background:transparent; border-style:dashed;}
-  .gt-more{margin-top:8px; font-size:.72rem; color:var(--ink-soft);}
+  .gt-legend i.win{width:auto; height:auto; border:none; background:none; color:var(--accent); font-style:normal;}
+  .gt-more{padding:10px 13px; font-size:.72rem; color:var(--ink-soft);}
+
+  /* 帯を押すと出る1件の詳細（下からせり上がる） */
+  .pl-sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:60;
+    background:var(--surface); border-top:1px solid var(--line-2); border-radius:17px 17px 0 0;
+    box-shadow:0 -10px 34px rgba(24,19,10,.2);
+    padding:13px 16px calc(env(safe-area-inset-bottom) + 14px); display:grid; gap:9px;
+    animation:plUp .18s ease;
+  }
+  @keyframes plUp{from{transform:translateY(16px); opacity:0;} to{transform:none; opacity:1;}}
+  .pl-sh-top{display:flex; align-items:center; gap:8px;}
+  .pl-sh-r{font-size:.76rem; color:var(--ink-soft); font-variant-numeric:tabular-nums;}
+  .pl-x{
+    margin-left:auto; flex:none; border:none; background:var(--surface-2); color:var(--ink-mid);
+    width:30px; height:30px; border-radius:50%; font-size:.9rem; cursor:pointer; font-family:var(--sans);
+  }
+  .pl-sh-t{font-size:.95rem; line-height:1.5;}
+  .pl-sh-g{font-size:.76rem; color:var(--ink-soft); line-height:1.5;}
+  .pl-sh-act{display:flex; gap:9px; align-items:center; flex-wrap:wrap;}
+  /* 卒業まで画面から予定表へ渡す入口 */
+  .pl-link{
+    display:flex; align-items:center; gap:11px; width:100%; margin-top:0; cursor:pointer; text-align:left;
+    background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow);
+    padding:15px 17px; font-family:var(--sans); color:var(--ink);
+  }
+  .pl-link:active{transform:scale(.995);}
+  .pl-link svg{width:19px; height:19px; flex:none; stroke:var(--accent-2); fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+  .pl-link .tt{display:grid; gap:2px; min-width:0;}
+  .pl-link b{font-size:.92rem;}
+  .pl-link i{font-style:normal; font-size:.74rem; color:var(--ink-soft);}
+  .pl-link .go{margin-left:auto; color:var(--ink-soft);}
 
   /* ---------- 月をひらいた中身（やるべきこと／やれたら良いこと） ---------- */
   .mo-open{
@@ -1005,7 +1086,7 @@
     </nav>
     <section class="page active" id="pageWeek"></section>
     <section class="page" id="pageGrad"></section>
-    <section id="toolPane"><div id="talkPane"></div><div id="draftPane"></div></section>
+    <section id="toolPane"><div id="talkPane"></div><div id="draftPane"></div><div id="planPane"></div></section>
   </main>
 
   <div class="menu-mask" id="menuMask"></div>
@@ -1024,6 +1105,10 @@
       <button class="dr-item" type="button" data-tool="drafts">
         <svg viewBox="0 0 24 24"><path d="M13.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h6"/><path d="M13.5 3.5 18 8v3"/><path d="M8.6 8.6h3.2"/><path d="M8.6 12.2h3.2"/><path d="M19.6 13.4a1.7 1.7 0 0 1 2.4 2.4l-5.2 5.2-3.2.8.8-3.2z"/></svg>
         下書き
+      </button>
+      <button class="dr-item" type="button" data-tool="plan">
+        <svg viewBox="0 0 24 24"><path d="M4.5 7h8.5"/><path d="M8 12h11"/><path d="M4.5 17h6.5"/></svg>
+        予定表
       </button>
       <button class="dr-item" type="button" data-tool="koekake">
         <svg viewBox="0 0 24 24"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.2"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.6-3.4"/><path d="M15.4 4.6a3.2 3.2 0 0 1 0 6.2"/></svg>
@@ -1578,6 +1663,7 @@ function draftsOpen(){ const p=document.getElementById('draftPane'); return !!(p
 function render(){
   renderWeekPage(); renderGradPage();
   if(talkOpen()) renderTalk();
+  if(planOpen()) renderPlan();
   /* 下書きは入力中に描き直すとカーソルが飛ぶので、書いている最中は触らない */
   if(draftsOpen() && !/^(dft-title|dft-text|dft-date)$/.test((document.activeElement&&document.activeElement.className)||'')) renderDrafts();
   renderNotifyBtn(); renderSync(); renderTalkBadge();
@@ -1914,132 +2000,276 @@ function metersHTML(left){
   return h;
 }
 
-/* ===================== ガント（週軸の帯） =====================
-   横軸＝週（日曜はじまり）。縦に ①各月の目標 ②予定日の入っている枝分かれ を並べる。
-   枝分かれは a.due（始まり）〜 a.dueTo（終わり・任意）を**そのまま**帯にするので、
-   このために新しく入力してもらうデータはない。帯を押すとその週・その目標へ飛ぶ。 */
-const GT_COL = 34;          /* 1週の幅(px) */
-const GT_LAB = 127;         /* 左の見出し列の幅(px)。CSSの .gt-lab と合わせる */
-const GT_MAXROW = 40;       /* 行が増えすぎた時の打ち止め */
-const GT_BACK = 28;         /* 過去へさかのぼる上限（日） */
-let gtScroll = null;        /* 横スクロール位置。再描画でも保つ（保存はしない） */
-let gtNowX = 0;             /* 今日の線のx座標。初回だけここへ寄せる */
+/* ===================== 予定表（ガント＝日付の帯） =====================
+   メニュー → 予定表。横軸＝日付（目盛りは 日／週／月 で切り替え）、縦に
+     ① 各月の目標（ロードマップそのもの）
+     ② 目標 → その下にぶら下がる枝分かれ（予定日が入っているもの）
+   を並べる。枝分かれは a.due（始まり）〜 a.dueTo（終わり・任意）を**そのまま**帯にするので、
+   このために新しく入力してもらうデータはない。帯を押すと1件の詳細が下から出て、そこから今週の画面へ渡る。 */
+const GT_SCALES = {
+  day  :{ ppd:21,  lab:'日', grid:'day',   head:'日ごと' },
+  week :{ ppd:5.4, lab:'週', grid:'week',  head:'週のはじまり' },
+  month:{ ppd:1.9, lab:'月', grid:'month', head:'月ごと' }
+};
+const GT_BACK = 28;         /* 過去へさかのぼる上限（日）。ずっと前に終わった予定は出さない */
+const GT_MAXROW = 200;      /* 行の打ち止め（1画面まるごと使うので実質かからない） */
+let gtScale = 'week';       /* 目盛りの細かさ。日＝今週の段取り／週＝ふだん／月＝卒業までの俯瞰 */
+let gtHideDone = false;     /* 済みを隠しているか（表示だけ・データは無傷） */
+const gtFold = new Set();   /* 畳んでいる目標のid */
+let gtSel = null;           /* 帯を押して開いている1件 {wk,tid,aid} */
+let gtScroll = null;        /* スクロール位置。再描画でも保つ（保存はしない） */
+let gtNowX = 0;             /* 今日の線のx座標（帯の内側での位置） */
+let gtJump = true;          /* 次の描画で今日へ寄せるか（初回・目盛り変更・「今日へ」） */
 
 function monthEndISO(ym){ const y=+ym.slice(0,4), m=+ym.slice(5,7); return iso(new Date(y, m, 0)); }
-function gtX(gs, d){ return (parseISO(d)-parseISO(gs))/864e5/7*GT_COL; }
+function daysBetween(a,b){ return Math.round((parseISO(b)-parseISO(a))/864e5); }
+/* 左の見出し列の幅。広い画面では文字を切らずに読めるだけ広げる */
+function gtLabW(){ return innerWidth>=900 ? 208 : 146; }
 
-/* 帯にする行を集める。月の目標が先、そのあと予定日順に枝分かれ */
-function gtRows(){
-  const months=[];
-  db.months.forEach(m=>{
-    if(!m.goal) return;
-    months.push({ kind:'month', ym:m.ym, text:m.goal, sub:(+m.ym.slice(5,7))+'月の目標',
-                  s:m.ym+'-01', e:monthEndISO(m.ym), cls:'m-'+(m.status||'none') });
-  });
-  const acts=[];
+/* 帯にする行を集める。①月の目標 ②目標ごとのまとまり（中に枝分かれ）。件数もここで数える */
+function planRows(){
   const t0=todayISO();
   const back=addDays(sundayOf(t0), -GT_BACK);
-  eachAct((a,t,k)=>{
-    if(!isDate(a.due)) return;         /* 日付として読めないものは幅の計算が壊れるので出さない */
-    const e=(isDate(a.dueTo) && a.dueTo>a.due) ? a.dueTo : a.due;
-    if(e<back) return;                 /* ずっと前に終わった予定は帯に出さない（左端に潰れて並ぶだけ） */
-    let cls='s-plan';
-    if(a.done) cls='s-done';
-    else if(isAsk(a)) cls='s-ask';
-    else if(isOverdue(a)) cls='s-over';
-    else if(a.due<=t0 && e>=t0) cls='s-today';
-    acts.push({ kind:'act', text:a.text, sub:t.text, s:a.due, e, cls, wk:k, tid:t.id, fin:!!a.done });
+  const rows=[];
+  db.months.forEach(m=>{
+    if(!m.goal) return;
+    rows.push({ kind:'month', ym:m.ym, text:m.goal, sub:(+m.ym.slice(5,7))+'月の目標',
+                s:m.ym+'-01', e:monthEndISO(m.ym), cls:'m-'+(m.status||'none'),
+                fin:m.status==='done' });
   });
-  acts.sort((x,y)=> x.s<y.s ? -1 : (x.s>y.s ? 1 : (x.e<y.e ? -1 : 1)));
-  return { rows: months.concat(acts.slice(0, GT_MAXROW)), hidden: Math.max(0, acts.length-GT_MAXROW) };
+  const stat={over:0, today:0, plan:0, done:0};
+  const groups=[];
+  Object.keys(db.weeks).forEach(k=>{
+    (db.weeks[k].tasks||[]).forEach(t=>{
+      const acts=[];
+      (t.actions||[]).forEach(a=>{
+        if(!isDate(a.due)) return;          /* 日付として読めないものは幅の計算が壊れるので出さない */
+        const e=(isDate(a.dueTo) && a.dueTo>a.due) ? a.dueTo : a.due;
+        if(e<back) return;                  /* ずっと前に終わった予定は出さない（左端に潰れて並ぶだけ） */
+        let cls='s-plan';
+        if(a.done){ cls='s-done'; stat.done++; }
+        else if(isAsk(a)){ cls='s-ask'; stat.plan++; }
+        else if(isOverdue(a)){ cls='s-over'; stat.over++; }
+        else if(a.due<=t0 && e>=t0){ cls='s-today'; stat.today++; }
+        else stat.plan++;
+        if(gtHideDone && a.done) return;
+        /* 見出しの2行目＝いまの状態。目標名は上の行（まとまり）に出ているので繰り返さない */
+        const sub = a.done ? '済み'
+                  : isAsk(a) ? '依頼中'
+                  : isOverdue(a) ? daysBetween(e, t0)+'日 遅れ'
+                  : (a.due<=t0 && e>=t0) ? '今日'
+                  : (a.due===addDays(t0,1) ? '明日' : 'あと '+daysBetween(t0, a.due)+'日');
+        acts.push({ kind:'act', text:a.text, sub, s:a.due, e, cls,
+                    wk:k, tid:t.id, aid:a.id, fin:!!a.done });
+      });
+      if(!acts.length) return;
+      acts.sort((x,y)=> x.s<y.s ? -1 : (x.s>y.s ? 1 : (x.e<y.e ? -1 : 1)));
+      let s=acts[0].s, e=acts[0].e;
+      acts.forEach(a=>{ if(a.s<s) s=a.s; if(a.e>e) e=a.e; });
+      const fin=acts.every(a=>a.fin);
+      const cls = fin ? 's-done'
+                : acts.some(a=>a.cls==='s-over') ? 's-over'
+                : (s<=t0 && e>=t0) ? 's-today' : 's-plan';
+      groups.push({ kind:'task', id:t.id, wk:k, text:t.text,
+                    sub:acts.length+'件 ・ '+fmtMD(s)+'〜'+fmtMD(e), s, e, cls, acts, fin });
+    });
+  });
+  groups.sort((x,y)=> x.s<y.s ? -1 : (x.s>y.s ? 1 : 0));
+  groups.forEach(g=>{
+    rows.push(g);
+    if(!gtFold.has(g.id)) g.acts.forEach(a=>rows.push(a));
+  });
+  return { rows: rows.slice(0, GT_MAXROW), hidden: Math.max(0, rows.length-GT_MAXROW), stat };
 }
 
-function ganttHTML(){
-  const {rows, hidden}=gtRows();
-  if(!rows.length){
-    return `<div class="card"><span class="label">予定の帯</span>
-      <div class="hist-empty" style="margin-top:11px;">枝分かれに予定日（カレンダーの印）を入れると、ここに帯で並びます。月の目標を決めても出ます。</div>
-    </div>`;
-  }
-  const today=todayISO();
-  /* 横の範囲＝今週〜卒業日。はみ出す分だけ広げる。
-     月の帯はロードマップそのものなので必ず全部入れる／枝分かれは過去4週までしか遡らない。 */
-  let gs=sundayOf(today), ge=db.vision.deadline||'2026-12-31';
-  const back=addDays(sundayOf(today), -GT_BACK);
-  rows.forEach(r=>{
-    const s = (r.kind==='month') ? r.s : (r.s<back ? back : r.s);
-    if(s<gs) gs=s;
-    if(r.e>ge) ge=r.e;
-  });
-  gs=sundayOf(gs);
-  const cols=Math.min(80, Math.max(2, Math.ceil((parseISO(ge)-parseISO(gs))/864e5/7)+1));
-  const W=cols*GT_COL;
-  gtNowX=gtX(gs, today);
-
-  /* 見出し：月の帯（1つおきに薄い下地）と、週の始まりの日 */
-  let mh='', dh='', bands='', bi=0, i=0;
-  while(i<cols){
-    const ym=addDays(gs, i*7).slice(0,7);
-    let j=i; while(j<cols && addDays(gs, j*7).slice(0,7)===ym) j++;
-    const left=i*GT_COL, w=(j-i)*GT_COL;
-    mh+=`<span class="gt-m" style="left:${left}px;width:${w}px">${+ym.slice(5,7)}月</span>`;
-    if(bi%2) bands+=`<div class="gt-band" style="left:${GT_LAB+left}px;width:${w}px"></div>`;
-    bi++; i=j;
-  }
-  const thisWk=sundayOf(today);
-  for(let c=0;c<cols;c++){
-    const d=addDays(gs, c*7);
-    dh+=`<span class="gt-d ${d===thisWk?'now':''}" style="left:${c*GT_COL}px;width:${GT_COL}px">${+d.slice(8,10)}</span>`;
-  }
-
-  let rh='';
-  rows.forEach(r=>{
-    const x1=Math.max(0, gtX(gs, r.s));
-    const x2=Math.min(W, Math.max(x1+12, gtX(gs, addDays(r.e,1))));   /* 1日だけの予定も指で押せる太さを残す */
-    const attr = r.kind==='month'
-      ? `data-act="gt-month" data-ym="${r.ym}"`
-      : `data-act="gt-go" data-wk="${r.wk}" data-tid="${r.tid}"`;
-    const range = r.s===r.e ? fmtMD(r.s) : fmtMD(r.s)+'〜'+fmtMD(r.e);
-    rh+=`<div class="gt-row ${r.kind==='month'?'m':''}">
-      <button class="gt-lab ${r.fin?'fin':''}" ${attr} aria-label="${esc(firstLine(r.text))} ${range}">
-        <span class="t">${esc(firstLine(r.text))}</span><span class="s">${esc(firstLine(r.sub))}</span>
-      </button>
-      <div class="gt-track" style="width:${W}px">
-        <button class="gt-bar ${r.cls}" ${attr} style="left:${x1}px;width:${x2-x1}px" aria-label="${esc(firstLine(r.text))} ${range}"></button>
-      </div>
-    </div>`;
-  });
-
-  return `<div class="card">
-    <span class="label">予定の帯</span>
-    <div class="gt-scroll">
-      <div class="gt" style="--gtcol:${GT_COL}px">
-        ${bands}
-        <div class="gt-now" style="left:${GT_LAB+gtNowX}px"></div>
-        <div class="gt-row head">
-          <div class="gt-lab" style="cursor:default"><span class="s">週のはじまり</span></div>
-          <div class="gt-track" style="width:${W}px">
-            <div class="gt-mrow">${mh}</div>
-            <div class="gt-drow">${dh}</div>
-          </div>
-        </div>
-        ${rh}
-      </div>
-    </div>
-    <div class="gt-legend">
+/* 上の操作帯。件数 → 目盛り（日/週/月） → 今日へ → 済みを隠す */
+function planTopHTML(stat){
+  const seg=['day','week','month'].map(k=>
+    `<button data-act="pl-scale" data-v="${k}" class="${gtScale===k?'on':''}" aria-pressed="${gtScale===k?'true':'false'}">${GT_SCALES[k].lab}</button>`
+  ).join('');
+  return `<div class="pl-top">
+    <span class="pl-stat">
+      ${stat.over?`<span class="pl-chip over">遅れ <b class="tnum">${stat.over}</b></span>`:''}
+      ${stat.today?`<span class="pl-chip today">いま <b class="tnum">${stat.today}</b></span>`:''}
+      <span class="pl-chip">予定 <b class="tnum">${stat.plan}</b></span>
+      ${stat.done?`<span class="pl-chip good">済み <b class="tnum">${stat.done}</b></span>`:''}
+    </span>
+    <span class="pl-sp"></span>
+    <span class="pl-seg" role="group" aria-label="目盛りの細かさ">${seg}</span>
+    <button class="pl-btn" data-act="pl-today">今日へ</button>
+    <button class="pl-btn ${gtHideDone?'on':''}" data-act="pl-hide" aria-pressed="${gtHideDone?'true':'false'}">済みを隠す</button>
+  </div>`;
+}
+function planLegendHTML(hidden){
+  return `<div class="pl-foot">
+    <span class="gt-legend">
       <span><i class="s-plan"></i>予定</span><span><i class="s-today"></i>いま</span>
       <span><i class="s-over"></i>遅れ</span><span><i class="s-done"></i>済み</span>
-      <span><i class="s-ask"></i>依頼中</span>
-    </div>
-    ${hidden?`<div class="gt-more">ほかに ${hidden} 件（表示は${GT_MAXROW}件まで）</div>`:''}
+      <span><i class="s-ask"></i>依頼中</span>${gtScale==='month'?'':'<span><i class="win">◆</i>週の勝ち条件</span>'}
+      ${hidden?`<span>ほかに ${hidden} 件</span>`:''}
+    </span>
   </div>`;
 }
 
-/* 横スクロールの位置を保つ。初回だけ今日の線が左から少し入った所に来るよう寄せる */
+/* 押している1件の詳細（下からせり上がる）。ここから今週の画面へ渡す */
+function planSheetHTML(){
+  if(!gtSel) return '';
+  const a=findAct(gtSel.wk, gtSel.tid, gtSel.aid);
+  if(!a) return '';
+  const w=db.weeks[gtSel.wk];
+  const t=w ? (w.tasks||[]).find(x=>x.id===gtSel.tid) : null;
+  const e=(a.dueTo && a.dueTo>a.due) ? a.dueTo : '';
+  const range=fmtMDW(a.due)+(e?' 〜 '+fmtMDW(e):'');
+  let st='これから', cls='';
+  if(a.done){ st='済み'; cls='good'; }
+  else if(isAsk(a)){ st='依頼中'; }
+  else if(isOverdue(a)){ st='遅れています'; cls='over'; }
+  else if(a.due<=todayISO() && (e||a.due)>=todayISO()){ st='いま走っている'; cls='today'; }
+  const th=threadOf(a).length;
+  return `<div class="pl-sheet">
+    <div class="pl-sh-top">
+      <span class="pl-chip ${cls}">${st}</span>
+      <span class="pl-sh-r">${range}</span>
+      <button class="pl-x" data-act="pl-close" aria-label="閉じる">✕</button>
+    </div>
+    <div class="pl-sh-t">${esc(a.text)}</div>
+    ${t?`<div class="pl-sh-g">${esc(t.text)}${th?' ・ メモ '+th+'件':''}</div>`:''}
+    <div class="pl-sh-act">
+      <button class="btn primary sm" data-act="pl-open" data-wk="${gtSel.wk}" data-tid="${gtSel.tid}">今週の画面でひらく</button>
+    </div>
+  </div>`;
+}
+
+function planHTML(){
+  const {rows, hidden, stat}=planRows();
+  const top=planTopHTML(stat);
+  if(!rows.length){
+    return top+`<div class="pl-empty">
+      枝分かれに予定日（カレンダーの印）を入れると、ここに帯で並びます。<br>月の目標を決めても出ます。
+    </div>`+planLegendHTML(0);
+  }
+  const sc=GT_SCALES[gtScale]||GT_SCALES.week;
+  const ppd=sc.ppd, LAB=gtLabW(), t0=todayISO();
+
+  /* 横の範囲＝（先週｜いちばん早い行）〜（卒業日｜いちばん遅い行）。日曜はじまりに揃える */
+  let gs=addDays(sundayOf(t0), -7), ge=db.vision.deadline||'2026-12-31';
+  rows.forEach(r=>{ if(r.s<gs) gs=r.s; if(r.e>ge) ge=r.e; });
+  gs=sundayOf(gs); ge=addDays(ge, 2);
+  const days=Math.max(14, daysBetween(gs, ge)+1);
+  const W=Math.round(days*ppd);
+  const px=d=>Math.round(daysBetween(gs, d)*ppd);
+  gtNowX=Math.round(px(t0)+ppd/2);
+
+  /* 見出し：月の名前と、1つおきの薄い下地 */
+  let mh='', bands='', ym=gs.slice(0,7), bi=0;
+  for(let guard=0; guard<80; guard++){
+    const me=monthEndISO(ym);
+    const x1=Math.max(0, px(ym+'-01'));
+    const x2=Math.min(W, px(me)+Math.round(ppd));
+    if(x2>x1){
+      /* 端で細く切れた月は名前を出さない（隣の月名と重なって読めなくなる） */
+      if(x2-x1>=26) mh+=`<span class="gt-m" style="left:${x1}px;width:${x2-x1}px">${+ym.slice(5,7)}月</span>`;
+      if(bi%2) bands+=`<div class="gt-band" style="left:${x1}px;width:${x2-x1}px"></div>`;
+    }
+    bi++;
+    if(me>=ge) break;
+    ym=addDays(me,1).slice(0,7);
+  }
+
+  /* 目盛り：日ならすべての日、週なら週のはじまりの日。月はここを空けて月名だけで読ませる */
+  let dh='';
+  if(sc.grid==='day'){
+    for(let i=0;i<days;i++){
+      const d=addDays(gs,i), wd=parseISO(d).getDay();
+      dh+=`<span class="gt-d ${d===t0?'now':''} ${wd===0?'sun':(wd===6?'sat':'')}" style="left:${Math.round(i*ppd)}px;width:${Math.round(ppd)}px">${+d.slice(8,10)}</span>`;
+    }
+  } else if(sc.grid==='week'){
+    const thisWk=sundayOf(t0);
+    for(let i=0;i<days;i+=7){
+      const d=addDays(gs,i);
+      dh+=`<span class="gt-d ${d===thisWk?'now':''}" style="left:${Math.round(i*ppd)}px;width:${Math.round(7*ppd)}px">${+d.slice(8,10)}</span>`;
+    }
+  }
+  dh+=`<span class="gt-tdmark" style="left:${gtNowX}px"></span>`;
+
+  /* 週の勝ち条件＝その週これが取れたら勝ち、の1行。◆を押すと文が出る。
+     月ごとの目盛りでは週が詰まって印が重なるので出さない（俯瞰の邪魔になる） */
+  let wins='';
+  if(sc.grid!=='month') Object.keys(db.weeks).sort().forEach(k=>{
+    const w=db.weeks[k];
+    if(!w || !w.win || !w.win.text) return;
+    if(k<gs || k>ge) return;
+    wins+=`<button class="gt-win ${w.win.done?'ok':''}" data-act="pl-win" data-k="${k}" style="left:${Math.round(px(k)+3.5*ppd)}px" aria-label="${fmtMD(k)}の週の勝ち条件：${esc(firstLine(w.win.text))}">◆</button>`;
+  });
+
+  /* 行 */
+  let rh='';
+  rows.forEach(r=>{
+    const x1=Math.max(0, px(r.s));
+    const x2=Math.min(W, Math.max(x1+14, px(r.e)+Math.round(ppd)));
+    const attr = r.kind==='month' ? `data-act="pl-month" data-ym="${r.ym}"`
+              : r.kind==='task'  ? `data-act="pl-fold" data-id="${r.id}"`
+              : `data-act="pl-pick" data-wk="${r.wk}" data-tid="${r.tid}" data-aid="${r.aid}"`;
+    const sel = r.kind==='act' && gtSel && gtSel.aid===r.aid;
+    const range = r.s===r.e ? fmtMD(r.s) : fmtMD(r.s)+'〜'+fmtMD(r.e);
+    const kindCls = r.kind==='month' ? 'm' : (r.kind==='task' ? 'g' : 'a');
+    rh+=`<div class="gt-row ${kindCls} ${sel?'sel':''}">
+      <button class="gt-lab ${r.fin?'fin':''}" ${attr} aria-label="${esc(firstLine(r.text))} ${range}">
+        ${r.kind==='task'?`<span class="car ${gtFold.has(r.id)?'':'op'}" aria-hidden="true">▾</span>`:''}
+        <span class="tt"><span class="t">${esc(firstLine(r.text))}</span><span class="s">${esc(firstLine(r.sub))}</span></span>
+      </button>
+      <div class="gt-track" style="width:${W}px">
+        <button class="gt-bar ${r.cls} ${r.kind==='task'?'grp':''} ${sel?'sel':''}" ${attr}
+                style="left:${x1}px;width:${x2-x1}px" aria-label="${esc(firstLine(r.text))} ${range}"></button>
+        ${(r.kind==='act' && sc.grid!=='month')?`<span class="gt-tag" style="left:${x2+6}px">${range}</span>`:''}
+      </div>
+    </div>`;
+  });
+
+  return top+`<div class="pl-chart">
+    <div class="gt ${sc.grid==='month'?'nogrid':''}" style="--gtcol:${sc.grid==='day'?ppd:ppd*7}px; --gtlab:${LAB}px">
+      <div class="gt-ov" style="left:${LAB}px;width:${W}px">${bands}<div class="gt-now" style="left:${gtNowX}px"></div></div>
+      <div class="gt-row head">
+        <div class="gt-lab" style="cursor:default"><span class="tt"><span class="s">${sc.head}</span></span></div>
+        <div class="gt-track" style="width:${W}px">
+          <div class="gt-mrow">${mh}</div>
+          ${wins?`<div class="gt-wrow">${wins}</div>`:''}
+          <div class="gt-drow">${dh}</div>
+        </div>
+      </div>
+      ${rh}
+    </div>
+  </div>`+planLegendHTML(hidden)+planSheetHTML();
+}
+
+function planOpen(){ const p=document.getElementById('planPane'); return !!(p && p.classList.contains('active')); }
+function renderPlan(jump){
+  const p=document.getElementById('planPane'); if(!p) return;
+  const old=p.querySelector('.pl-chart');
+  if(old) gtScroll={ x:old.scrollLeft, y:old.scrollTop };
+  if(jump) gtJump=true;
+  p.innerHTML=planHTML();
+  gtRestoreScroll();
+  gtEnsureSel();
+}
+/* 押した行が下からせり上がった詳細に隠れていたら、その分だけ送る */
+function gtEnsureSel(){
+  const sc=document.querySelector('#planPane .pl-chart'); if(!sc || !gtSel) return;
+  const row=sc.querySelector('.gt-row.sel'), sheet=document.querySelector('.pl-sheet');
+  if(!row || !sheet) return;
+  const r=row.getBoundingClientRect(), s=sheet.getBoundingClientRect();
+  if(r.bottom>s.top) sc.scrollTop += (r.bottom-s.top)+10;
+}
+/* スクロール位置を保つ。初回・目盛りを変えた時・「今日へ」を押した時だけ今日の線へ寄せる */
 function gtRestoreScroll(){
-  const sc=pageGrad.querySelector('.gt-scroll'); if(!sc) return;
-  sc.scrollLeft = (gtScroll==null) ? Math.max(0, gtNowX-40) : gtScroll;
-  sc.addEventListener('scroll', ()=>{ gtScroll=sc.scrollLeft; }, {passive:true});
+  const sc=document.querySelector('#planPane .pl-chart'); if(!sc) return;
+  if(gtJump || !gtScroll){
+    sc.scrollLeft=Math.max(0, gtNowX-Math.min(90, sc.clientWidth*0.28));
+    if(gtScroll) sc.scrollTop=gtScroll.y;
+    gtJump=false;
+  } else {
+    sc.scrollLeft=gtScroll.x; sc.scrollTop=gtScroll.y;
+  }
 }
 
 function renderGradPage(){
@@ -2065,8 +2295,17 @@ function renderGradPage(){
     ${metersHTML(left)}
   </div>`;
 
-  /* ガント（週軸の帯）＝いつ何が走っているかの俯瞰。下の月別マイルストーンが編集側 */
-  h+=ganttHTML();
+  /* 予定表（ガント）は1画面まるごと使う別ページへ移した。ここには入口だけ置く
+     （この画面は「あと何が足りないか」に集中させ、読むものを増やさない） */
+  const plStat=planRows().stat;
+  h+=`<button class="pl-link" data-act="open-plan">
+    ${ICON_CAL}
+    <span class="tt">
+      <b>予定表をひらく</b>
+      <i>いつ何が走っているかを帯で見る${plStat.over?'（遅れ '+plStat.over+'件）':''}</i>
+    </span>
+    <span class="go">›</span>
+  </button>`;
 
   /* 月別マイルストーン */
   h+=`<div class="card"><span class="label">月別マイルストーン</span><div class="months">`;
@@ -2125,7 +2364,6 @@ function renderGradPage(){
   }
   h+=`</div>`;
   pageGrad.innerHTML=h;
-  gtRestoreScroll();
 }
 
 /* ---------- ラリーの描画（今週カードと対話ビューで共通に使う） ---------- */
@@ -2230,9 +2468,6 @@ function composerHTML(){
       <button class="btn ghost sm" data-act="thr-cancel">キャンセル</button>
       <button class="btn primary sm" data-act="thr-save">${draft.mid?'保存':'書き足す'}</button>
     </span>
-    <button type="button" class="askchip ${draft.ask?'on':''}" data-act="thr-ask" aria-pressed="${draft.ask?'true':'false'}">
-      ${ICON_SEND}<span>${draft.ask?'これはClaudeへの依頼（自分の残タスクから外す）':'これはClaudeへの依頼にする'}</span>
-    </button>
   </span>`;
 }
 /* 既読ボタン。Claudeの返事で終わっている時だけ出す（＝自分が返す番のものだけ）。
@@ -2717,26 +2952,53 @@ document.querySelector('main').addEventListener('click', e=>{
     toast(!d1 ? '予定を外しました' : (wasLater ? fmtMDW(d1)+' の予定にしました（今のタスクから外します）' : fmtMDW(d1)+' の予定にしました'));
     return;
   }
-  /* --- ガントの帯を押した --- */
-  if(act==='gt-go'){
-    gotoTab('week');                   /* 卒業まで画面から押されるので、今週の画面へ切り替える */
+  /* --- 予定表（ガント） --- */
+  if(act==='open-plan'){ openTool('plan'); return; }
+  if(act==='pl-scale'){
+    const v=btn.dataset.v;
+    if(GT_SCALES[v] && v!==gtScale){ gtScale=v; renderPlan(true); }   /* 目盛りを変えたら今日へ寄せ直す */
+    return;
+  }
+  if(act==='pl-today'){ renderPlan(true); return; }
+  if(act==='pl-hide'){ gtHideDone=!gtHideDone; renderPlan(); return; }
+  if(act==='pl-fold'){
+    const id=btn.dataset.id;
+    if(gtFold.has(id)) gtFold.delete(id); else gtFold.add(id);
+    renderPlan(); return;
+  }
+  if(act==='pl-pick'){
+    const aid=btn.dataset.aid;
+    gtSel = (gtSel && gtSel.aid===aid) ? null : { wk:btn.dataset.wk, tid:btn.dataset.tid, aid };
+    renderPlan(); return;
+  }
+  if(act==='pl-close'){ gtSel=null; renderPlan(); return; }
+  if(act==='pl-win'){
+    const w=db.weeks[btn.dataset.k];
+    if(w && w.win) toast((w.win.done?'○ ':'')+'この週の勝ち条件：'+w.win.text);
+    return;
+  }
+  /* 月の帯 → 卒業まで画面のその月をひらく */
+  if(act==='pl-month'){
+    const ym=btn.dataset.ym;
+    openMonth=ym; mItemEdit=null; mode=null; draft=null;
+    gotoTab('grad');
+    openTool('');
+    render();
+    const el=pageGrad.querySelector('.month[data-ym="'+ym+'"]');
+    if(el) el.scrollIntoView({block:'center', behavior:'smooth'});
+    return;
+  }
+  /* 詳細 → 今週の画面のその目標をひらく */
+  if(act==='pl-open'){
     viewKey=btn.dataset.wk;
     mode=null; draft=null; editKey=null;
     resetFolds();
     openGoalId=btn.dataset.tid;
     openLater.add(btn.dataset.tid);
+    gtSel=null;
+    gotoTab('week');
+    openTool('');
     render(); window.scrollTo(0,0);
-    return;
-  }
-  if(act==='gt-month'){
-    const ym=btn.dataset.ym;
-    openMonth = (openMonth===ym) ? null : ym;
-    mItemEdit=null; mode=null; draft=null;
-    render();
-    if(openMonth){
-      const el=pageGrad.querySelector('.month[data-ym="'+ym+'"]');
-      if(el) el.scrollIntoView({block:'center', behavior:'smooth'});
-    }
     return;
   }
   if(act==='fut-go'){
@@ -2952,7 +3214,7 @@ document.querySelector('main').addEventListener('click', e=>{
     const mid = act==='thr-edit' ? btn.dataset.mid : null;
     const m = mid ? threadOf(a).find(x=>x.id===mid) : null;
     if(mid && !m) return;
-    draft={ text:m?m.text:'', tag:m?m.tag:'', mid:mid||null, ask:!!a.ask };
+    draft={ text:m?m.text:'', tag:m?m.tag:'', mid:mid||null };
     mode={type:'thread', wk, tid, aid};
     openThreads.add(aid);
     render();
@@ -2968,16 +3230,6 @@ document.querySelector('main').addEventListener('click', e=>{
       c.classList.toggle('on', on);
       c.setAttribute('aria-pressed', on?'true':'false');
     });
-    return;
-  }
-  if(act==='thr-ask'){
-    /* ここで render() すると入力欄のフォーカスが外れてキーボードが閉じるので、その場で塗り替える */
-    e.stopPropagation();
-    draft.ask=!draft.ask;
-    btn.classList.toggle('on', draft.ask);
-    btn.setAttribute('aria-pressed', draft.ask?'true':'false');
-    const lab=btn.querySelector('span');
-    if(lab) lab.textContent = draft.ask ? 'これはClaudeへの依頼（自分の残タスクから外す）' : 'これはClaudeへの依頼にする';
     return;
   }
   if(act==='ask-off'){
@@ -3001,11 +3253,7 @@ document.querySelector('main').addEventListener('click', e=>{
       } else if(txt){
         a.thread=threadOf(a).concat([{ id:uid(), who:'me', text:txt, tag:draft.tag||'', at:todayISO(), seen:true }]);
       } else { mode=null; draft=null; render(); return; }
-      /* 依頼の旗はここで立てる／降ろす＝「投げた時点で自分のボールは離れる」 */
-      const was=!!a.ask;
-      if(draft.ask) a.ask=true; else delete a.ask;
-      if(!was && a.ask) msg='依頼中にしました（今日やる・達成率から外れます）';
-      else if(was && !a.ask) msg='依頼を外しました（自分のボールに戻ります）';
+      /* 依頼の旗（a.ask）はここでは触らない＝メモを書き足しても依頼中のままにする */
     }
     mode=null; draft=null; save(); render();
     toast(msg);
@@ -3329,7 +3577,6 @@ function gotoTab(name){
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('active', x.dataset.tab===name));
   document.getElementById('pageWeek').classList.toggle('active', name==='week');
   document.getElementById('pageGrad').classList.toggle('active', name==='grad');
-  if(name==='grad') gtRestoreScroll();   /* 隠れている間は横スクロールを動かせないので、出した時にもう一度寄せる */
 }
 document.getElementById('tabs').addEventListener('click', e=>{
   const b=e.target.closest('button[data-tab]'); if(!b) return;
@@ -3344,6 +3591,7 @@ const TOOLS = {
   /* 対話だけは iframe ではなく、この画面のデータをそのまま描く（同じ db を触るので別HTMLにできない） */
   talk   :{ title:'対話',       local:true        },
   drafts :{ title:'下書き',     local:true        },
+  plan   :{ title:'予定表',     local:true        },
   koekake:{ title:'声かけメモ', src:'koekake.html' },
   jikyu  :{ title:'時給計算',   src:'jikyu.html'   },
   manabi :{ title:'学んだこと', src:'manabi.html'  },
@@ -3358,6 +3606,9 @@ function currentTheme(){ return document.documentElement.getAttribute('data-them
 function sizeToolFrames(){
   const h=document.querySelector('.topbar').offsetHeight;
   document.querySelectorAll('.tool-frame').forEach(f=>{ f.style.height='calc(100dvh - '+h+'px)'; });
+  /* 予定表も1画面ぶんに固定する（中の表だけがスクロールし、見出しが上と左に貼り付く） */
+  const pl=document.getElementById('planPane');
+  if(pl) pl.style.height='calc(100dvh - '+h+'px)';
 }
 function postToTool(f){ try{ f.contentWindow.postMessage({type:'tsumiki-embed-theme', theme:currentTheme()}, '*'); }catch(e){} }
 function broadcastTheme(){ document.querySelectorAll('.tool-frame').forEach(postToTool); }
@@ -3376,16 +3627,23 @@ function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'no
   const pane=document.getElementById('toolPane');
   const talk=document.getElementById('talkPane');
   const dfts=document.getElementById('draftPane');
+  const plan=document.getElementById('planPane');
   document.body.classList.toggle('tool-local', !!(t && t.local));
+  document.body.classList.toggle('tool-plan', activeTool==='plan');   /* 予定表だけページ自体を動かさない */
   if(t && t.local){
     pane.querySelectorAll('.tool-frame').forEach(x=>x.classList.remove('active'));
     talk.classList.toggle('active', id==='talk');
     dfts.classList.toggle('active', id==='drafts');
+    plan.classList.toggle('active', id==='plan');
     if(id==='talk'){
       let seen=0; eachAct(a=>{ seen+=markSeen(a); });   /* 全部見える画面なので、開いた時点で既読にする */
       if(seen) save();
       renderTalk();
       renderTalkBadge();   /* 開いた＝既読なので、メニュー側の新着表示も消す */
+    } else if(id==='plan'){
+      sizeToolFrames();
+      gtSel=null;
+      renderPlan(true);    /* 開いた時は必ず今日が見える位置から */
     } else {
       renderDrafts();
     }
@@ -3393,6 +3651,7 @@ function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'no
   } else if(t){
     talk.classList.remove('active');
     dfts.classList.remove('active');
+    plan.classList.remove('active');
     let f=pane.querySelector('.tool-frame[data-tool="'+id+'"]');
     if(!f){   /* 初回だけ読み込む。2回目からは開いたままのものを見せる */
       f=document.createElement('iframe');
@@ -3407,12 +3666,16 @@ function openTool(id, histMode){   /* histMode: 'push'(既定) / 'replace' / 'no
   } else {
     talk.classList.remove('active');
     dfts.classList.remove('active');
+    plan.classList.remove('active');
   }
   /* URLの #jikyu などを合わせる → 端末の「戻る」でロードマップへ帰れる */
   if(histMode!=='none'){
-    const url = activeTool ? '#'+activeTool : location.pathname+location.search;
-    if(histMode==='replace') history.replaceState(null,'',url);
-    else if((location.hash||'') !== (activeTool?'#'+activeTool:'')) history.pushState(null,'',url);
+    /* 履歴が使えない開き方（埋め込み・スナップショット等）でも、画面の切り替えだけは通す */
+    try{
+      const url = activeTool ? '#'+activeTool : location.pathname+location.search;
+      if(histMode==='replace') history.replaceState(null,'',url);
+      else if((location.hash||'') !== (activeTool?'#'+activeTool:'')) history.pushState(null,'',url);
+    }catch(e){}
   }
 }
 /* 道具を開いている間の「左端から右へスワイプ＝ロードマップへ戻る」。
@@ -3452,7 +3715,11 @@ window.addEventListener('popstate', ()=>{
   const id=toolId((location.hash||'').replace('#',''));
   openTool(TOOLS[id]?id:'', 'none');
 });
-window.addEventListener('resize', ()=>{ if(activeTool) sizeToolFrames(); });
+window.addEventListener('resize', ()=>{
+  if(!activeTool) return;
+  sizeToolFrames();
+  if(planOpen()) renderPlan();   /* 見出し列の幅が画面幅で変わるので引き直す */
+});
 
 /* ===================== 金曜の振り返り通知 ===================== */
 function notifyEnabled(){ return localStorage.getItem(NKEY)==='1' && ('Notification' in window) && Notification.permission==='granted'; }
