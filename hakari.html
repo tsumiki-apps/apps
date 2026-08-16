@@ -25,11 +25,8 @@
   .wrap{max-width:680px; margin:0 auto; padding:0 16px;}
 
   /* ===== ヘッダー ===== */
-  header{padding:26px 4px 8px; text-align:center; position:relative;}
-  h1{font-size:26px; font-weight:700; letter-spacing:-.02em;}
-  .tagline{color:var(--sub); font-size:12.5px; margin-top:3px;}
-  .cloud{position:absolute; top:30px; right:6px; display:flex; align-items:center; gap:5px;
-    font-size:11px; color:var(--sub);}
+  header{padding:14px 6px 0; display:flex; justify-content:flex-end;}
+  .cloud{display:flex; align-items:center; gap:5px; font-size:11px; color:var(--sub);}
   .cloud .dot{width:8px; height:8px; border-radius:50%; background:#34c759;}
   .cloud .dot.off{background:#c7c7cc;}
 
@@ -244,7 +241,6 @@
 
 <div class="wrap">
   <header>
-    <h1>はかり</h1>
     <div class="cloud"><span class="dot off" id="cdot"></span><span id="ctxt">…</span></div>
   </header>
 
@@ -391,6 +387,23 @@
       <button class="bigbtn ghost" style="margin-top:12px" onclick="$('#hkFile').click()">📥 ファイルを選ぶ</button>
       <input type="file" id="hkFile" accept=".zip,.xml,application/zip,application/xml,text/xml" style="display:none">
       <div id="hkStatus"></div>
+    </div>
+
+    <div class="sec-head"><h2>自動同期</h2></div>
+    <div class="card">
+      <div class="steps">
+        <div class="step"><i>1</i>ショートカットApp → 新規</div>
+        <div class="step"><i>2</i>「ヘルスケアサンプルを検索」で体重と体脂肪率</div>
+        <div class="step"><i>3</i>「URLの内容を取得」を POST・JSON にして下を貼る</div>
+        <div class="step"><i>4</i>オートメーションで毎晩実行</div>
+      </div>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn sub" onclick="copyTxt(SYNC_URL,'URL')">URL</button>
+        <button class="btn sub" onclick="copyTxt('Bearer '+SUPABASE_ANON,'ヘッダの値')">ヘッダ</button>
+        <button class="btn sub" onclick="copyTxt(SYNC_TOKEN,'合い言葉')">合い言葉</button>
+      </div>
+      <button class="btn sub" style="width:100%; margin-top:8px" onclick="syncPing()">つながるか試す</button>
+      <div id="syncStatus"></div>
     </div>
 
     <div class="sec-head"><h2>データ</h2></div>
@@ -1315,6 +1328,42 @@ function editDish(id){
 function delDish(id){
   const i = db.dishes.findIndex(x=>x.id===id); if(i<0) return;
   db.dishes.splice(i,1); save(); closeOv('#ovDish'); renderDishes(); toast('🗑 削除しました');
+}
+
+/* ================= 自動同期（ショートカットApp → hakari-sync） ================= */
+const SYNC_URL   = SUPABASE_URL + '/functions/v1/hakari-sync';
+const SYNC_TOKEN = '7MUXPPiGJO3oVP8wqDBCbQg-Ue59LUCJ';
+
+function copyTxt(t, label){
+  const done = ()=> toast('📋 ' + label + 'をコピーしました');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done, ()=>fallback());
+  } else fallback();
+  function fallback(){
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){ toast('コピーできませんでした'); }
+    document.body.removeChild(ta);
+  }
+}
+// 値を送らずに呼ぶ＝何も書き込まれない。つながるかどうかだけ確かめる
+async function syncPing(){
+  const st = $('#syncStatus');
+  st.innerHTML = '<div class="hint" style="margin-top:10px">確認中…</div>';
+  try{
+    const r = await fetch(SYNC_URL, {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+SUPABASE_ANON, 'Content-Type':'application/json' },
+      body: JSON.stringify({ token: SYNC_TOKEN })
+    });
+    const j = await r.json().catch(()=>null);
+    st.innerHTML = (r.ok && j && j.ok)
+      ? '<div class="hint" style="margin-top:10px">✅ つながりました</div>'
+      : `<div class="errbox" style="margin-top:10px">${esc((j&&j.error)||('エラー '+r.status))}</div>`;
+  }catch(e){
+    st.innerHTML = `<div class="errbox" style="margin-top:10px">${esc(e.message)}</div>`;
+  }
 }
 
 /* ================= Appleヘルスケアの書き出しを取り込む =================
