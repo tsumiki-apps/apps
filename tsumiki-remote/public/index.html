@@ -184,6 +184,10 @@
   #out .ask{background:rgba(245,158,11,.13);border-left-color:#f59e0b;color:#fdf3e2}
   #out .me {background:rgba(255,255,255,.05);border-left-color:#4b525e}
   #out .dim{color:#8b93a1}
+  /* 端末が引いた区切り線（─ が端まで並んだだけの行）。桁数ぶんの長さを持つので、
+     広い幅で借りているときは画面側で2〜3行に折り返されて、ただの汚れになる。
+     意味は「区切り」だけなので、線そのものに描き直す */
+  #out .rule{display:block;height:1px;background:var(--line);margin:7px -4px}
 
   /* 端末が ┌─┬┐ で描いた表。ターミナルは「文字何個ぶん」で桁を合わせているので、
      幅がその半分しかないスマホでは必ず折り返し、罫線が二重に見えて読めなくなる
@@ -214,9 +218,18 @@
   #out .dsep{margin:6px 0;padding-top:6px;border-top:1px dashed var(--line);
     font-size:10px;color:var(--dim)}
   /* 罫線が入った中身（表・差分）は桁が崩れると意味が変わるので、折り返さず横に流す */
-  #out .dlg .draw{margin:4px 0;padding:6px 8px;border-radius:8px;background:#0b0c0f;
+  /* font-family を書き落とさないこと。<pre> はブラウザ側の既定（generic な monospace）を
+     直接持っていて、#out からの継承より強い。指定しないと等幅ですらないフォントに落ちて、
+     空白と罫線の幅が倍ちがう＝格子がまるごと崩れる（2026-08-16 実測で発覚） */
+  #out .draw{margin:4px 0;padding:6px 8px;border-radius:8px;background:#0b0c0f;
     white-space:pre;overflow-x:auto;-webkit-overflow-scrolling:touch;
-    font-size:10.5px;line-height:1.4;color:#aab2c0}
+    font-family:var(--mono);font-size:10.5px;line-height:1.4;color:#aab2c0}
+  /* 全角の字だけ、端末と同じ「半角2つぶん」に押し込む。実測（2026-08-16）では
+     罫線 ─│┌┼ とブロック █▓ はちょうど 1.000ch で端末と一致するのに、漢字・かなは
+     1.618ch、全角の丸括弧に至っては 0.849ch しかない。だから日本語のラベルが入った
+     行だけ横にズレて、格子が段ごとにガタつく。桁を持つのはこの字だけなので、
+     この字だけ幅を決め打てば格子がそろう */
+  #out .draw .fw{display:inline-block;width:2ch;text-align:center}
   /* 選択肢はそのまま押せる。指1本ぶん（44px）の高さを確保する */
   #out .dopt{
     display:flex;align-items:flex-start;gap:8px;width:100%;min-height:38px;
@@ -840,6 +853,7 @@
   function select(name) {
     current = name;
     lastText = null;   // 別のセッションに切り替えたら描き直す
+    wantWide = false;  // 幅の借りっぱなしを持ち越さない（切り替えた先はまず実測の幅で）
     localStorage.setItem('tsumiki-remote-session', name);
     el.send.disabled = false;
     renderTabs();
@@ -991,6 +1005,7 @@
   // 拾わない（拾うと、その後ろの字下げ行・空行までオレンジのベタ塗りになる。2026-08-16）
   var RE_BOX = /^ {0,3}[│┃╭╮╰╯├┤]/;
   var RE_STATUS = /^\s*[✻✽✶✳✢*]\s/;
+  var RE_RULE = /^\s*[─━]{20,}\s*$/;                // 端末が引いた区切り線だけの行
 
   function classify(line, prevCls) {
     if (!line.trim()) return prevCls;                 // 空行は直前のかたまりを続ける
@@ -1065,6 +1080,25 @@
     var w = 0;
     for (var i = 0; i < s.length; i++) w += RE_WIDE.test(s[i]) ? 2 : 1;
     return w;
+  }
+
+  // 罫線の絵を、端末と同じ桁に置き直した <pre> にする。
+  // 全角の字だけ「半角2つぶん」の箱に入れる（理由は .fw の CSS のコメント）
+  function drawPre(text) {
+    var pre = document.createElement('pre');
+    pre.className = 'draw';
+    var buf = '';
+    function flush() { if (buf) { pre.appendChild(document.createTextNode(buf)); buf = ''; } }
+    for (var i = 0; i < text.length; i++) {
+      if (!RE_WIDE.test(text[i])) { buf += text[i]; continue; }
+      flush();
+      var sp = document.createElement('span');
+      sp.className = 'fw';
+      sp.textContent = text[i];
+      pre.appendChild(sp);
+    }
+    flush();
+    return pre;
   }
 
   // 端末が折り返しただけの行をつなぎ直す。日本語はそのまま、英語は空白を挟む
@@ -1153,13 +1187,10 @@
         for (var k = 0; k < it.lines.length; k++) {
           var tbl = takeTable(it.lines, k);
           if (tbl) { box.appendChild(tableEl(tbl.rows)); k = tbl.end; continue; }
-          var pre = document.createElement('pre');
-          pre.className = 'draw';
           var buf = [];
           for (; k < it.lines.length && !takeTable(it.lines, k); k++) buf.push(it.lines[k]);
           k--;
-          pre.textContent = buf.join('\n');
-          box.appendChild(pre);
+          box.appendChild(drawPre(buf.join('\n')));
         }
         return;
       }
@@ -1310,10 +1341,7 @@
       while (buf.length && !buf[buf.length - 1].trim()) buf.pop();
       while (buf.length && !buf[0].trim()) buf.shift();
       if (!buf.length) return;
-      var pre = document.createElement('pre');
-      pre.className = 'draw';
-      pre.textContent = buf.join('\n');
-      box.appendChild(pre);
+      box.appendChild(drawPre(buf.join('\n')));
       buf = [];
     }
     pv.forEach(function (r) {
@@ -1335,6 +1363,7 @@
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
     var dlgs = [];
+    var wide = false;
     for (var i = 0; i < lines.length; i++) {
       var dlg = takeDialog(lines, i);
       if (dlg) {
@@ -1349,6 +1378,9 @@
       }
       var sbs = takeSideBySide(lines, i);
       if (sbs) {
+        // いま画面に出ている（＝答えを待っている）2段組なら、端末を広げてもらう。
+        // 下に付く案内（「Enter to select…」など）ぶんの余裕を見て終わり際かを判断する
+        if (sbs.end >= lines.length - 14) wide = true;
         // ダイアログと同じ扱い＝外の帯には乗せない。ここで分類も切っておかないと、
         // 右側の字下げ行を拾ったオレンジがこの後ろまで続いてしまう
         block = null; cls = ''; prev = '';
@@ -1365,6 +1397,11 @@
         // 確認ダイアログと同じオレンジに塗られてしまう）
         (block || frag).appendChild(tableEl(tbl.rows));
         i = tbl.end;
+        continue;
+      }
+      if (RE_RULE.test(lines[i])) {
+        block = null; cls = ''; prev = '';
+        frag.appendChild(document.createElement('div')).className = 'rule';
         continue;
       }
       var c = classify(lines[i], prev) || '';
@@ -1386,6 +1423,7 @@
     });
     el.out.textContent = '';
     el.out.appendChild(frag);
+    wantWide = wide;
   }
 
   // ------------------------------------------------ この画面に入る「桁数」を測る
@@ -1412,10 +1450,22 @@
     return Math.max(40, Math.min(120, Math.floor(avail / per)));
   }
 
+  // --------------------------------- プレビュー付きの質問のときだけ、端末を広く借りる
+  //
+  // 選択肢に絵が付く質問は、端末の幅を「左＝選択肢／右＝絵」で山分けする。スマホに
+  // 合わせた51桁だと絵の側が15桁ほどしか無く、45桁で描かれた図が Claude Code の中で
+  // 折り返されて**こちらに届く前に壊れている**（だから受け取ってから直しようがない）。
+  // 実測（2026-08-16）では 120桁にすると絵の側が44桁とれて、図はきれいなまま届く。
+  // その44桁はスマホの51桁に収まるので、横スクロールもいらない。
+  // 引き換えに、質問の上に出ている文章は120桁で折り返されたものが届く＝画面側でもう一度
+  // 折り返されて少し不格好になる。答えた瞬間に元の幅へ戻るので、その間だけの辛抱。
+  var WIDE_COLS = 120;
+  var wantWide = false;
+
   var lastText = null;
   function refreshPane(force) {
     if (!current) return Promise.resolve();
-    var cols = measureCols();
+    var cols = wantWide ? WIDE_COLS : measureCols();
     return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400'
       + (cols ? '&cols=' + cols : '')).then(function (d) {
       var stick = force || atBottom();
