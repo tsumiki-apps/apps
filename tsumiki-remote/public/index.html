@@ -987,7 +987,9 @@
   var RE_SAY = /^⏺\s/;
   var RE_RESULT = /^\s*⎿/;
   var RE_ME = /^❯\s/;
-  var RE_BOX = /^\s*[│┃╭╮╰╯├┤]/;
+  // 枠は行の頭から描かれる。深く字下げされた縦線は「右側に並んだ絵」の一部なので
+  // 拾わない（拾うと、その後ろの字下げ行・空行までオレンジのベタ塗りになる。2026-08-16）
+  var RE_BOX = /^ {0,3}[│┃╭╮╰╯├┤]/;
   var RE_STATUS = /^\s*[✻✽✶✳✢*]\s/;
 
   function classify(line, prevCls) {
@@ -1186,6 +1188,148 @@
     return box;
   }
 
+  // ------------------------------------- 選択肢とプレビューが左右に並ぶ画面（2026-08-16）
+  //
+  // Claude Code の質問は、選択肢に「プレビュー」が付くと横並びの2段組になる。
+  //   ❯ 1. 週単位                  ┌───────────────┐
+  //     2. 月単位                  │ 週            │
+  //     3. 日付（暦日）            │ W1  W2  W3    │
+  // つまり1行の中に「左＝選択肢／右＝絵」が同居する。角丸の箱（╭─╮）ではないので
+  // takeDialog は拾えず、生のまま出ていた。すると
+  //   ・選択肢が押せない（右の罫線が混ざって「1.」の行として読めない）
+  //   ・右の絵が29桁ぶん字下げされたまま流れる＝画面の大半が空白
+  //   ・│ で始まる行を「返答待ち」と見なす塗り分けが、後ろの字下げ行・空行まで
+  //     連れて行って、画面いっぱいがオレンジのベタ塗りになる
+  // が起きる（2026-08-16 報告のスクショ）。桁で切って左右に分け、
+  // 左は押せる選択肢に、右は絵として別枠に置き直す＝2段組をほどく。
+  var RE_P_TOP = /^[┌╭][─┬]+[┐╮]\s*$/;
+  var RE_P_BOT = /^[└╰][─┴]+[┘╯]\s*$/;
+
+  // 「何桁目で切るか」は端末の数え方（全角＝2桁）。文字数で切ると、左に日本語が
+  // 入っているぶんだけズレて右の箱を切り損ねる（最初これで拾えなかった）
+  function cutAt(s, col) {
+    var w = 0, i = 0;
+    for (; i < s.length && w < col; i++) w += RE_WIDE.test(s[i]) ? 2 : 1;
+    return [s.slice(0, i), s.slice(i)];
+  }
+
+  // i 行目から2段組が始まっていれば、左右に切り分けて返す。
+  // 閉じていない（描いている最中）なら null＝生のまま出す
+  function takeSideBySide(lines, i) {
+    var at = lines[i].search(/[┌╭]/);
+    if (at <= 0) return null;                       // 行頭の箱は普通の表。2段組ではない
+    if (!RE_P_TOP.test(lines[i].slice(at))) return null;
+    var c = dispw(lines[i].slice(0, at));           // 箱が始まる「桁」
+    if (!RE_OPT.test(lines[i].slice(0, at))) return null;  // 左が選択肢でなければ別物
+    var left = [lines[i].slice(0, at)], right = [], end = -1, p;
+    for (var j = i + 1; j < lines.length; j++) {
+      p = cutAt(lines[j], c);
+      left.push(p[0]);
+      if (RE_P_BOT.test(p[1])) { end = j; break; }
+      right.push(p[1]);
+    }
+    if (end < 0) return null;
+    // 箱の下にぶら下がる右側の続き（「Notes: press n to add notes」など）も連れて行く。
+    // 左が空のまま右だけ続いている間＝まだ2段組の中
+    for (var k = end + 1; k < lines.length; k++) {
+      p = cutAt(lines[k], c);
+      if (p[0].trim()) break;
+      if (p[1].trim()) right.push(p[1]);
+      end = k;
+    }
+    return { end: end, left: left, right: right };
+  }
+
+  // 左の列＝選択肢。左の列も幅が狭いので、長い選択肢は端末が折り返している。
+  // 選択肢より深く字下げされていたら、その選択肢の続き（ダイアログと同じ見分け方）
+  function sideOptions(leftLines) {
+    var items = [], cur = null;
+    leftLines.forEach(function (s) {
+      if (!s.trim()) { cur = null; return; }
+      var m = RE_OPT.exec(s);
+      var ind = s.length - s.replace(/^\s+/, '').length;
+      if (m) {
+        items.push(cur = { t: 'opt', n: m[2], sel: !!m[1], text: m[3].trim(), ind: ind });
+        return;
+      }
+      if (cur && cur.t === 'opt' && ind > cur.ind) { cur.text = joinWrapped(cur.text, s.trim()); return; }
+      items.push(cur = { t: 'p', text: s.trim(), ind: ind });
+    });
+    return items;
+  }
+
+  // 右の列＝プレビュー。外枠の │ …… │ は画面の幅を食うだけなので剥がす。
+  // 「├── ✂ ── N lines hidden ──┤」は端末の幅で2行に割れていることがあるので、
+  // ✂ を見つけたら ┤ が来るまで束ねてから読む
+  function sidePreview(rightLines) {
+    var out = [], buf = null;
+    rightLines.forEach(function (s) {
+      if (buf !== null) {
+        // 端末は桁で断ち切るだけ＝単語の途中で割れている（「12 lin」「es hidden」）。
+        // 間に空白を足すとくっつかないので、そのまま繋ぐ
+        buf += s.trim();
+        if (s.indexOf('┤') >= 0) { out.push({ sep: buf }); buf = null; }
+        return;
+      }
+      if (s.indexOf('✂') >= 0 && /^\s*├/.test(s)) {
+        buf = s.trim();
+        if (s.indexOf('┤') >= 0) { out.push({ sep: buf }); buf = null; }
+        return;
+      }
+      out.push({ line: s.replace(/^\s*│/, '').replace(/│\s*$/, '').replace(/\s+$/, '') });
+    });
+    if (buf !== null) out.push({ sep: buf });
+    return out;
+  }
+
+  function sideBySideEl(sb) {
+    var box = document.createElement('div');
+    box.className = 'dlg';
+    sideOptions(sb.left).forEach(function (it) {
+      if (it.t === 'p') {
+        var p = document.createElement('div');
+        p.className = 'dtx';
+        p.textContent = it.text;
+        box.appendChild(p);
+        return;
+      }
+      var b = document.createElement('button');
+      b.className = 'dopt' + (it.sel ? ' sel' : '');
+      b.dataset.opt = it.n;
+      b.dataset.label = it.text;
+      b.innerHTML = '<span class="dnum"></span><span class="dlab"></span>';
+      b.firstChild.textContent = it.n;
+      b.lastChild.textContent = it.text;
+      box.appendChild(b);
+    });
+    // プレビューは端末の狭い列に押し込まれて元から崩れているので、直さず
+    // 「絵」として横スクロールの別枠に置く。読みたい人だけ横に流して読む
+    var pv = sidePreview(sb.right);
+    var buf = [];
+    function flush() {
+      while (buf.length && !buf[buf.length - 1].trim()) buf.pop();
+      while (buf.length && !buf[0].trim()) buf.shift();
+      if (!buf.length) return;
+      var pre = document.createElement('pre');
+      pre.className = 'draw';
+      pre.textContent = buf.join('\n');
+      box.appendChild(pre);
+      buf = [];
+    }
+    pv.forEach(function (r) {
+      if (r.sep === undefined) { buf.push(r.line); return; }
+      flush();
+      var t = r.sep.replace(/[├┤─✂]/g, ' ').replace(/\s+/g, ' ').trim();
+      var n = /(\d+)\s*lines?\s*hidden/i.exec(t);
+      var sep = document.createElement('div');
+      sep.className = 'dsep';
+      sep.textContent = n ? '途中の' + n[1] + '行は端末に入りきらず省略されています' : t;
+      box.appendChild(sep);
+    });
+    flush();
+    return box;
+  }
+
   function renderScreen(text) {
     var lines = text.split('\n');
     var frag = document.createDocumentFragment();
@@ -1201,6 +1345,17 @@
         frag.appendChild(de);
         dlgs.push(de);
         i = dlg.end;
+        continue;
+      }
+      var sbs = takeSideBySide(lines, i);
+      if (sbs) {
+        // ダイアログと同じ扱い＝外の帯には乗せない。ここで分類も切っておかないと、
+        // 右側の字下げ行を拾ったオレンジがこの後ろまで続いてしまう
+        block = null; cls = ''; prev = '';
+        var se = sideBySideEl(sbs);
+        frag.appendChild(se);
+        dlgs.push(se);
+        i = sbs.end;
         continue;
       }
       var tbl = takeTable(lines, i);
