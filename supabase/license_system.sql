@@ -139,7 +139,9 @@ grant execute on function public.license_verify(text, text, text) to anon;
 -- ---------- キー発行（anonに出さない・SQLエディタ/MCP専用） ----------
 
 create or replace function public.license_issue(
-  p_customer text, p_app text, p_max_devices int default 3, p_note text default null
+  -- 台数の既定は 20。「端末に紐づけない」運用（Decisions/2026-08-17-license-operation-and-support-scope）
+  -- を実装改修なしで満たすため。license_devices は上限ではなく「使われ方の記録」として使う。
+  p_customer text, p_app text, p_max_devices int default 20, p_note text default null
 ) returns text
 language plpgsql
 security definer

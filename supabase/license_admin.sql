@@ -52,7 +52,8 @@ revoke execute on function public.admin_list(text) from public, authenticated;
 grant execute on function public.admin_list(text) to anon;
 
 create or replace function public.admin_issue(
-  p_secret text, p_customer text, p_app text, p_max_devices int default 3, p_note text default null
+  -- 既定20台（license_system.sql の license_issue と揃える）
+  p_secret text, p_customer text, p_app text, p_max_devices int default 20, p_note text default null
 ) returns text
 language plpgsql security definer set search_path='' as $$
 begin
