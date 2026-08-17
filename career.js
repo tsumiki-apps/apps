@@ -13,9 +13,60 @@
 
   const SUPABASE_URL  = "https://okbjqtdirrathscctyvx.supabase.co";
   const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y";
-  const TABLE         = "career_log";
+  /* career_log への読み書きは合言葉つきのRPC経由（直接テーブルは触れない） */
   const LOCAL_KEY     = "tsumikiCareerLog";       // 配列：ローカルキャッシュ兼・未同期キュー
   const SESSION_VISIT = "tsumikiCareerVisited";   // セッション中の重複visit防止
+
+  /* ---- 合言葉（Workアプリ共通の鍵） ----------------------------------
+     ・同僚の氏名・写真・面談記録が入るテーブルは anon から閉じてあり、
+       読み書きは合言葉つきのRPC経由でしか通らない。
+     ・合言葉そのものは保存せず、PBKDF2で伸ばした鍵だけを localStorage に置く。
+       同一オリジンなので Work アプリ全部でこの1つを共有＝端末ごとに1回で済む。
+     ・鍵は DB 側でも sha256 でしか保持しないので、DBを覗いても合言葉は割れない。
+  ------------------------------------------------------------------- */
+  const KEY_STORE = "tsumikiAppKey";
+  const KDF_SALT  = "tsumiki-app-lock-v1";
+  const KDF_ITER  = 150000;
+
+  async function deriveToken(pass) {
+    const enc = new TextEncoder();
+    const base = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt: enc.encode(KDF_SALT), iterations: KDF_ITER, hash: "SHA-256" }, base, 256);
+    return Array.from(new Uint8Array(bits)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  let cachedTok = null, declined = false, pendingTok = null;
+
+  /* silent=true なら聞かない（未設定なら null を返してローカル保存に留める） */
+  async function getToken(silent) {
+    if (cachedTok) return cachedTok;
+    try { cachedTok = localStorage.getItem(KEY_STORE) || null; } catch (e) {}
+    if (cachedTok) return cachedTok;
+    if (silent || declined) return null;
+    if (pendingTok) return pendingTok;
+
+    pendingTok = (async () => {
+      if (!(window.crypto && window.crypto.subtle)) { declined = true; return null; }
+      const pass = window.prompt(
+        "つみき（Work）の合言葉\n\nこの端末では初回だけ入力します。\n入力しない場合、記録はこの端末の中だけに残ります。");
+      if (!pass) { declined = true; return null; }
+      let t = null;
+      try { t = await deriveToken(pass); } catch (e) { declined = true; return null; }
+      try { localStorage.setItem(KEY_STORE, t); } catch (e) {}
+      cachedTok = t;
+      return t;
+    })();
+
+    const r = await pendingTok;
+    pendingTok = null;
+    return r;
+  }
+
+  function forgetToken() {
+    cachedTok = null; declined = false;
+    try { localStorage.removeItem(KEY_STORE); } catch (e) {}
+  }
 
   /* どのファイルがどのツールか（index.html のメニューと対応） */
   const APPS = {
@@ -82,11 +133,15 @@
     };
   }
 
+  /* 足跡の自動記録で合言葉を聞かれると鬱陶しいので、push は silent。
+     鍵が無いあいだはローカルのキューに溜まり、鍵が入った後の flushQueue で送られる。 */
   async function pushRemote(row) {
     try {
       const sb = await getSB();
       if (!sb) return false;
-      const { error } = await sb.from(TABLE).insert(row);
+      const tok = await getToken(true);
+      if (!tok) return false;
+      const { error } = await sb.rpc("career_log_add", { p_token: tok, p_row: row });
       return !error;
     } catch (e) { return false; }
   }
@@ -160,8 +215,12 @@
     try {
       const sb = await getSB();
       if (sb) {
-        const { data, error } = await sb.from(TABLE).select("*").order("created_at", { ascending: false }).limit(5000);
-        if (!error) { remote = data || []; connected = true; }
+        /* 年表を見にきた場面なので、ここは必要なら合言葉を聞く */
+        const tok = await getToken(false);
+        if (tok) {
+          const { data, error } = await sb.rpc("career_log_list", { p_token: tok });
+          if (!error) { remote = data || []; connected = true; }
+        }
       }
     } catch (e) {}
     const byId = {};
@@ -175,10 +234,17 @@
   async function remove(id) {
     const l = readLocal().filter((x) => x.id !== id);
     writeLocal(l);
-    try { const sb = await getSB(); if (sb) await sb.from(TABLE).delete().eq("id", id); } catch (e) {}
+    try {
+      const sb = await getSB();
+      const tok = await getToken(false);
+      if (sb && tok) await sb.rpc("career_log_remove", { p_token: tok, p_id: id });
+    } catch (e) {}
   }
 
   window.Career = { log, visit, getAll, remove, flushQueue, APPS, _getSB: getSB, _readLocal: readLocal };
+
+  /* Workアプリ共通の鍵。recognition / grownote / reflection / team5whys が使う */
+  window.Tsumiki = { getToken: getToken, forgetToken: forgetToken, deriveToken: deriveToken, KEY_STORE: KEY_STORE };
 
   /* 読み込み時に自動で足跡＋未同期分の再送 */
   function boot() { visit(); flushQueue(); }

@@ -1523,7 +1523,9 @@ async function psPush(){
   if(!psSb || psPushing) return;
   psPushing = true; psSetSync("同期中…");
   try {
-    const res = await psSb.from("grownote_state").upsert({ id: PS_ROW_ID, state: PSDB, updated_at: new Date().toISOString() });
+    const tok = await window.Tsumiki.getToken(false);
+    if(!tok){ psSetSync("🔒 この端末のみ"); return; }
+    const res = await psSb.rpc("app_state_save", { p_key:"grownote", p_id: PS_ROW_ID, p_token: tok, p_state: PSDB });
     if(res.error){ console.error(res.error); psSetSync("⚠ 同期失敗"); } else psSetSync("✓ 同期済み");
   } catch(e){ console.error(e); psSetSync("⚠ 同期失敗"); }
   finally { psPushing = false; }
@@ -1531,9 +1533,11 @@ async function psPush(){
 async function psPull(){
   if(!psSb) return null;
   try {
-    const res = await psSb.from("grownote_state").select("state").eq("id", PS_ROW_ID).maybeSingle();
+    const tok = await window.Tsumiki.getToken(false);
+    if(!tok) return null;
+    const res = await psSb.rpc("app_state_load", { p_key:"grownote", p_id: PS_ROW_ID, p_token: tok });
     if(res.error){ console.error(res.error); return null; }
-    if(res.data && res.data.state && res.data.state.positions) return res.data.state;
+    if(res.data && res.data.positions) return res.data;
   } catch(e){ console.error(e); }
   return null;
 }
@@ -1580,7 +1584,9 @@ async function starsPush(){
   starsPushing = true; starsSetSync("同期中…");
   try {
     const state = { items: stories, target: targetPos, _ts: starsTs };
-    const res = await psSb.from("grownote_state").upsert({ id: STARS_ROW_ID, state, updated_at: new Date().toISOString() });
+    const tok = await window.Tsumiki.getToken(false);
+    if(!tok){ starsSetSync("🔒 この端末のみ"); return; }
+    const res = await psSb.rpc("app_state_save", { p_key:"grownote", p_id: STARS_ROW_ID, p_token: tok, p_state: state });
     if(res.error){ console.error(res.error); starsSetSync("⚠ 同期失敗"); } else starsSetSync("✓ 同期済み");
   } catch(e){ console.error(e); starsSetSync("⚠ 同期失敗"); }
   finally { starsPushing = false; }
@@ -1588,9 +1594,11 @@ async function starsPush(){
 async function starsPull(){
   if(!psSb) return null;
   try {
-    const res = await psSb.from("grownote_state").select("state").eq("id", STARS_ROW_ID).maybeSingle();
+    const tok = await window.Tsumiki.getToken(false);
+    if(!tok) return null;
+    const res = await psSb.rpc("app_state_load", { p_key:"grownote", p_id: STARS_ROW_ID, p_token: tok });
     if(res.error){ console.error(res.error); return null; }
-    if(res.data && res.data.state && Array.isArray(res.data.state.items)) return res.data.state;
+    if(res.data && Array.isArray(res.data.items)) return res.data;
   } catch(e){ console.error(e); }
   return null;
 }

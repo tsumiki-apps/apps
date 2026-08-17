@@ -265,7 +265,9 @@ async function pushCloud(){
   if(!sb||pushing)return;
   pushing=true;setSync("同期中…");
   try{
-    const res=await sb.from("grownote_state").upsert({id:ROW_ID,state:DB,updated_at:new Date().toISOString()});
+    const tok=await window.Tsumiki.getToken(false);
+    if(!tok){setSync("🔒 この端末のみ");return;}
+    const res=await sb.rpc("app_state_save",{p_key:"grownote",p_id:ROW_ID,p_token:tok,p_state:DB});
     if(res.error){console.error(res.error);setSync("⚠ 同期失敗");}
     else{dirty=false;setSync("✓ 同期済み");}
   }catch(e){console.error(e);setSync("⚠ 同期失敗");}
@@ -275,12 +277,14 @@ function scheduleCloud(){ if(!sb)return; dirty=true;setSync("…");clearTimeout(
 
 async function pullCloud(){
   if(!sb)return false;
+  const tok=await window.Tsumiki.getToken(false);
+  if(!tok)return false;
   let res;
-  try{res=await sb.from("grownote_state").select("state").eq("id",ROW_ID).maybeSingle();}
+  try{res=await sb.rpc("app_state_load",{p_key:"grownote",p_id:ROW_ID,p_token:tok});}
   catch(e){console.error(e);return false;}
   if(res.error){console.error(res.error);return false;}
-  if(res.data&&res.data.state&&Array.isArray(res.data.state.members)){
-    DB=res.data.state;
+  if(res.data&&Array.isArray(res.data.members)){
+    DB=res.data;
     DB.members.forEach(m=>{if(!Array.isArray(m.sessions))m.sessions=[];});
     saveLocal();
     return true;
