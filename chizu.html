@@ -1,0 +1,1177 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-chizu.png">
+<meta name="apple-mobile-web-app-title" content="おかねのちず">
+<title>おかねのちず</title>
+<style>
+  :root{
+    color-scheme: light;
+    --paper:#fbfaf7;
+    --card:#ffffff;
+    --ink:#14130f;
+    --ink-2:#57554d;
+    --muted:#9b988f;
+    --line:#c9c5b8;
+    --hair:#eceae3;
+    --mark:#c2410c;
+    --fill-1:#e7e4da;   /* 薄い面（費用・負債） */
+    --fill-2:#3f3d36;   /* 濃い面（利益・純資産） */
+    --fill-3:#b8b4a7;   /* 中間（売上・資産の地） */
+    --fill-cash:#4b6b63; /* 現金 */
+    --fill-cap:#e6c9b6;  /* 時価総額の期待部分 */
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])){
+      color-scheme: dark;
+      --paper:#0f0f0e; --card:#1a1a18; --ink:#f5f4f0;
+      --ink-2:#b3b0a6; --muted:#807d75; --line:#4a4945; --hair:#2a2a27;
+      --mark:#f0834f;
+      --fill-1:#33322d; --fill-2:#d8d5cb; --fill-3:#605d55;
+      --fill-cash:#7fa89c; --fill-cap:#7a4f36;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --paper:#0f0f0e; --card:#1a1a18; --ink:#f5f4f0;
+    --ink-2:#b3b0a6; --muted:#807d75; --line:#4a4945; --hair:#2a2a27;
+    --mark:#f0834f;
+    --fill-1:#33322d; --fill-2:#d8d5cb; --fill-3:#605d55;
+    --fill-cash:#7fa89c; --fill-cap:#7a4f36;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:16px; line-height:1.7; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:28px 16px 96px}
+
+  header{margin:0 0 18px}
+  .kicker{font-size:11px;letter-spacing:.18em;color:var(--muted);margin:0 0 8px}
+  h1{font-size:21px;font-weight:600;margin:0 0 10px;letter-spacing:.02em}
+  .intro{font-size:13px;color:var(--ink-2);margin:0 0 18px;line-height:1.85}
+
+  /* ── 会社の切り替え ── */
+  .picker{display:flex;gap:8px;align-items:center;margin:0 0 14px}
+  .picker select{
+    flex:1;min-width:0;font-size:16px;font-family:inherit;color:var(--ink);
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px;appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+  }
+  .iconbtn{
+    flex:0 0 auto;width:44px;height:44px;border-radius:12px;
+    border:1px solid var(--line);background:var(--card);color:var(--ink-2);
+    font-size:20px;line-height:1;cursor:pointer;
+  }
+
+  /* ── タブ ── */
+  .tabs{display:flex;gap:4px;background:var(--hair);border-radius:12px;padding:4px;margin:0 0 18px}
+  .tabs button{
+    flex:1;border:0;background:transparent;color:var(--ink-2);
+    font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.04em;
+    padding:9px 4px;border-radius:9px;cursor:pointer;
+  }
+  .tabs button[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+
+  .card{
+    background:var(--card);border:1px solid var(--hair);border-radius:16px;
+    padding:20px 18px;margin:0 0 14px;
+  }
+
+  /* ── 地図 ── */
+  #mapCard{padding:16px 12px}
+  #map{width:100%;height:auto;display:block}
+  .maphead{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 6px;padding:0 6px}
+  .maphead .t{font-size:14px;font-weight:600}
+  .maphead .u{font-size:11px;color:var(--muted);letter-spacing:.08em}
+  .empty{font-size:13px;color:var(--muted);text-align:center;padding:34px 10px;line-height:1.9}
+  .ratios{display:flex;gap:8px;margin:12px 6px 0;flex-wrap:wrap}
+  .ratio{
+    flex:1 1 120px;border:1px solid var(--hair);border-radius:12px;padding:10px 12px;
+  }
+  .ratio .k{font-size:10.5px;letter-spacing:.16em;color:var(--muted);margin:0 0 2px}
+  .ratio .v{font-size:19px;font-weight:600;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+  .ratio .n{font-size:11px;color:var(--ink-2);margin:2px 0 0;line-height:1.6}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:14px 6px 0;font-size:11.5px;color:var(--ink-2)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:11px;height:11px;border-radius:3px;border:1px solid var(--line);display:inline-block}
+
+  /* ── ステップ ── */
+  .part{font-size:11px;letter-spacing:.18em;color:var(--muted);margin:26px 4px 10px}
+  .part:first-child{margin-top:0}
+  .part b{display:block;font-size:13px;letter-spacing:.02em;color:var(--ink-2);font-weight:600;margin-top:4px}
+
+  .step{
+    background:var(--card);border:1px solid var(--hair);border-radius:16px;
+    margin:0 0 10px;overflow:hidden;
+  }
+  .step.done{border-color:var(--line)}
+  .step > .head{
+    display:flex;align-items:center;gap:12px;padding:15px 16px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .step .no{
+    flex:0 0 auto;width:26px;height:26px;border-radius:50%;
+    border:1px solid var(--line);color:var(--muted);
+    font-size:11.5px;display:flex;align-items:center;justify-content:center;
+    font-variant-numeric:tabular-nums;
+  }
+  .step.done .no{background:var(--fill-2);border-color:var(--fill-2);color:var(--card)}
+  .step .ttl{flex:1;min-width:0;font-size:15px;font-weight:600;letter-spacing:.02em}
+  .step .sub{font-size:11.5px;color:var(--muted);font-weight:400;letter-spacing:0;display:block;margin-top:1px}
+  .step .chev{flex:0 0 auto;color:var(--muted);font-size:13px;transition:transform .18s}
+  .step[open] .chev{transform:rotate(90deg)}
+  .step .body{padding:0 16px 18px;border-top:1px solid var(--hair);margin-top:-1px;padding-top:16px}
+  .step .body p{font-size:13.5px;line-height:1.9;color:var(--ink-2);margin:0 0 14px}
+  .step .body p.lead{color:var(--ink)}
+  .hint{
+    font-size:12px;line-height:1.8;color:var(--ink-2);
+    background:var(--paper);border-radius:10px;padding:10px 12px;margin:0 0 14px;
+  }
+  .hint b{color:var(--ink);font-weight:600}
+
+  .fields{display:flex;flex-direction:column;gap:12px;margin:0 0 14px}
+  .field label{display:block;font-size:12px;color:var(--ink-2);margin:0 0 5px;letter-spacing:.03em}
+  .field .row{display:flex;align-items:center;gap:8px}
+  .field input[type=number]{
+    flex:1;min-width:0;font-size:16px;font-family:inherit;color:var(--ink);
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;text-align:right;font-variant-numeric:tabular-nums;
+  }
+  .field .unit{flex:0 0 auto;font-size:12px;color:var(--muted)}
+  .calc{
+    font-size:13px;color:var(--ink);background:var(--paper);
+    border:1px dashed var(--line);border-radius:10px;padding:10px 12px;margin:0 0 14px;
+    display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+  }
+  .calc .v{font-weight:600;font-variant-numeric:tabular-nums}
+  .calc .v.minus{color:var(--mark)}
+
+  textarea{
+    width:100%;font-size:16px;font-family:inherit;line-height:1.7;color:var(--ink);
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;min-height:74px;resize:vertical;
+  }
+  .memoLabel{font-size:12px;color:var(--ink-2);margin:0 0 5px;letter-spacing:.03em}
+
+  .btn{
+    width:100%;border:1px solid var(--line);background:transparent;color:var(--ink);
+    font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.04em;
+    padding:12px;border-radius:12px;cursor:pointer;margin-top:14px;
+  }
+  .btn.primary{background:var(--fill-2);border-color:var(--fill-2);color:var(--card)}
+  .btn.sub{font-weight:400;font-size:13px;color:var(--ink-2)}
+  .btn+.btn{margin-top:8px}
+
+  .flash{
+    font-size:12.5px;color:var(--mark);margin:12px 0 0;line-height:1.7;
+  }
+
+  /* ── 会社の管理 ── */
+  .co{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--hair)}
+  .co:last-of-type{border-bottom:0}
+  .co .nm{flex:1;min-width:0;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .co .mt{font-size:11px;color:var(--muted);display:block;margin-top:1px}
+  .co button{
+    flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--ink-2);
+    font-family:inherit;font-size:12px;padding:6px 10px;border-radius:9px;cursor:pointer;
+  }
+  .co .cur{font-size:11px;color:var(--mark);letter-spacing:.08em;flex:0 0 auto}
+
+  .setrow{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+  .setrow label{flex:1;font-size:13px;color:var(--ink-2)}
+  .setrow select,.setrow input[type=text]{
+    flex:0 0 auto;font-size:16px;font-family:inherit;color:var(--ink);
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 11px;
+  }
+  .setrow input[type=text]{flex:1;min-width:0}
+
+  .note{font-size:11.5px;color:var(--muted);line-height:1.8;margin:14px 0 0}
+  .foot{font-size:11px;color:var(--muted);line-height:1.9;margin:30px 4px 0}
+
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="kicker">MAP OF MONEY</p>
+    <h1>おかねのちず</h1>
+    <p class="intro">
+      『会計の地図』（近藤哲朗・沖山誠／ダイヤモンド社）を読みながら使う道具。
+      本の順番どおりに1つずつ数字を入れると、売上から時価総額までが1枚の地図につながっていく。
+      自分の事業でも、気になる会社の決算でも。
+    </p>
+  </header>
+
+  <div class="picker">
+    <select id="coSel" aria-label="会社を選ぶ"></select>
+    <button class="iconbtn" id="toCo" title="会社の管理" aria-label="会社の管理">⋯</button>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabMap" aria-selected="true">ちず</button>
+    <button role="tab" id="tabStep" aria-selected="false">よみすすめる</button>
+    <button role="tab" id="tabCo" aria-selected="false">かいしゃ</button>
+  </div>
+
+  <!-- ちず -->
+  <section id="viewMap">
+    <div class="card" id="mapCard">
+      <div class="maphead"><span class="t" id="mapName">—</span><span class="u" id="mapUnit"></span></div>
+      <div id="mapEmpty" class="empty">
+        まだ何も描かれていません。<br>
+        「よみすすめる」から第1歩＝<b>売上</b>を入れてください。
+      </div>
+      <svg id="map" viewBox="0 0 340 200" xmlns="http://www.w3.org/2000/svg" hidden></svg>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="ratios" id="ratios"></div>
+    <button class="btn sub" id="savePng">この地図を画像で保存する</button>
+  </section>
+
+  <!-- よみすすめる -->
+  <section id="viewStep" hidden>
+    <div id="steps"></div>
+  </section>
+
+  <!-- かいしゃ -->
+  <section id="viewCo" hidden>
+    <div class="card">
+      <div class="maphead"><span class="t">いま見ている会社</span></div>
+      <div class="setrow">
+        <label for="coName">名前</label>
+        <input type="text" id="coName" placeholder="つみき">
+      </div>
+      <div class="setrow">
+        <label for="coUnit">数字の単位</label>
+        <select id="coUnit">
+          <option value="1">円</option>
+          <option value="1000">千円</option>
+          <option value="1000000">百万円</option>
+          <option value="100000000">億円</option>
+        </select>
+      </div>
+      <div class="setrow">
+        <label for="coPeriod">いつの数字か</label>
+        <input type="text" id="coPeriod" placeholder="2025年度 / 2026年3月期 など">
+      </div>
+      <p class="note">
+        単位は入力するときの単位です。上場企業の決算短信は「百万円」で書かれていることが多く、
+        自分の事業なら「円」がそのまま使えます。
+      </p>
+      <button class="btn sub" id="openAll">ステップを全部ひらく（2社目からの読み解き用）</button>
+      <button class="btn sub" id="resetSteps">この会社の進みぐあいを最初に戻す</button>
+    </div>
+
+    <div class="card">
+      <div class="maphead"><span class="t">会社の一覧</span></div>
+      <div id="coList"></div>
+      <button class="btn" id="addCo">会社を足す</button>
+    </div>
+  </section>
+
+  <p class="foot">
+    数字とメモはこの端末の中だけに保存されます（クラウドには送りません）。<br>
+    ※ 本アプリは書籍の内容を収録したものではありません。読書のおともに使う自作の道具です。
+  </p>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var KEY = "kodai_chizu_v1";
+
+  /* ────────────────────────────────
+     ステップ定義（本の章立てに沿った16歩）
+     f: このステップで入れる数字 / reveals: 地図に増えるもの
+  ──────────────────────────────── */
+  var PART = {
+    1: { label:"PART 1", title:"自分は、会社にどう貢献しているか？" },
+    2: { label:"PART 2", title:"会社は社会から何を求められているか？" },
+    3: { label:"PART 3", title:"自分は、社会に何ができるのか？" }
+  };
+
+  var STEPS = [
+    { id:"sales", part:1, ttl:"売上", sub:"世の中から受け取った金額",
+      lead:"会社が1年で世の中から受け取ったお金の合計。「どれだけの人に、どれだけ価値を認めてもらえたか」の大きさそのもの。",
+      body:"地図はここから始まる。いちばん長い帯が売上で、このあと出てくるものは全部この帯の中か、この帯から生まれる。",
+      hint:"決算短信の1ページ目、いちばん上の行。「売上高」「営業収益」などと書いてある。",
+      f:[{k:"sales", l:"売上"}], reveals:["売上"] },
+
+    { id:"cost", part:1, ttl:"費用", sub:"売上をつくるために出ていったお金",
+      lead:"売上をつくるために出ていったお金の合計。仕入れ・人件費・家賃・広告など、全部ここに入る。",
+      body:"売上の帯を、費用と利益に切り分ける。どちらが長いかで、その商売の性格が見える。",
+      hint:"「売上原価」＋「販売費及び一般管理費」。ざっくりでよければ〈売上高−営業利益〉で出る。",
+      f:[{k:"cost", l:"費用の合計"}], reveals:["費用"] },
+
+    { id:"profit", part:1, ttl:"利益", sub:"残ったぶん",
+      lead:"売上から費用を引いて残ったぶん。ここは入力しない——引き算で自動的に決まる。",
+      body:"利益は「多いほど偉い」ではなく、あとで出てくる純資産に積み上がっていく元手。地図では、この帯がそのまま下へ流れていく。",
+      hint:"マイナス（赤字）なら、費用の帯が売上の帯からはみ出して描かれる。",
+      f:[], calc:"profit", reveals:["利益"] },
+
+    { id:"pl", part:1, ttl:"PL（損益計算書）", sub:"1年でいくら受け取り、いくら残ったか",
+      lead:"ここまでの〈売上・費用・利益〉を1枚にした表が、PL（損益計算書）。1年間の“流れ”を写したもの。",
+      body:"新しく入れる数字はない。地図の上半分が、そのままPLになっていることを確かめる歩。",
+      hint:"PLは「期間」の表。1年でどう動いたかを見る。次に出てくるBSは「ある一日」の写真で、性格がちがう。",
+      f:[], reveals:[] },
+
+    { id:"assets", part:1, ttl:"資産", sub:"会社が持っているもの全部",
+      lead:"現金・建物・機械・まだ回収していない売掛金まで、会社が持っているもの全部の合計。",
+      body:"ここから地図の下半分＝BSに入る。資産の帯は、売上の帯とは別のものさしで伸びる。",
+      hint:"貸借対照表の「資産合計」。",
+      f:[{k:"assets", l:"資産の合計"}], reveals:["資産"] },
+
+    { id:"liab", part:1, ttl:"負債", sub:"いつか返すぶん",
+      lead:"資産のうち、他人から借りていて、いつか返さなければならないぶん。借入金・買掛金など。",
+      body:"負債は悪者ではない。返す当てがあるなら、他人のお金で先に大きくできるという道具。",
+      hint:"貸借対照表の「負債合計」。",
+      f:[{k:"liab", l:"負債の合計"}], reveals:["負債"] },
+
+    { id:"equity", part:1, ttl:"純資産", sub:"返さなくていいぶん",
+      lead:"資産から負債を引いた残り。返さなくていい、会社自身のぶん。これも引き算で決まる。",
+      body:"毎年の利益がここに積み上がっていく。だから利益と純資産は、地図の上では点線でつながっている。",
+      hint:"貸借対照表の「純資産合計」と一致するか確かめると、入力のまちがいに気づける。",
+      f:[], calc:"equity", reveals:["純資産"] },
+
+    { id:"bs", part:1, ttl:"BS（貸借対照表）", sub:"左と右が必ず同じ長さになる",
+      lead:"左に資産、右に負債＋純資産。同じものを「何を持っているか」と「そのお金をどこから持ってきたか」の2つの目で見ているので、長さは必ず一致する。",
+      body:"新しく入れる数字はない。地図で上下2本の帯がぴったり同じ長さになっているか見てほしい。",
+      hint:"ずれていたら、資産か負債の入力がまちがっている。",
+      f:[], reveals:[] },
+
+    { id:"cash", part:1, ttl:"現金", sub:"資産の中でいちばん自由なもの",
+      lead:"資産の中で、すぐ何にでも使えるお金。利益が出ていても、現金が尽きた瞬間に会社は止まる。",
+      body:"地図では、資産の帯の中に濃い色で埋め込まれる。資産に対してどれくらいの幅があるかを見る。",
+      hint:"貸借対照表の「現金及び預金」。",
+      f:[{k:"cash", l:"現金・預金"}], reveals:["現金"] },
+
+    { id:"cf", part:1, ttl:"CF（キャッシュフロー計算書）", sub:"現金が1年でどう増減したか",
+      lead:"現金の増減を3つに分けたもの。営業＝本業で稼いだ、投資＝将来のために使った、財務＝借りた/返した。",
+      body:"3つの符号の組み合わせで、会社がいまどの局面にいるかが読める。営業プラス・投資マイナスは、稼いだお金を将来に回している姿。",
+      hint:"マイナスは頭に「−」をつけて入れる。投資キャッシュフローはたいていマイナスになる。",
+      f:[{k:"cfOp", l:"営業CF"},{k:"cfInv", l:"投資CF"},{k:"cfFin", l:"財務CF"}], reveals:["CF"] },
+
+    { id:"three", part:1, ttl:"財務3表", sub:"PL・BS・CFのつながり",
+      lead:"PLの利益はBSの純資産へ積まれ、BSの現金の動きがCFになる。3枚の表はもともと1つの地図の別々の部分。",
+      body:"ここでPART 1は終わり。地図の上半分（PL）と下半分（BS）と現金の動き（CF）が、1枚に乗っているのを確かめる。",
+      hint:"ここまでで止めても、道具としては十分に使える。上場企業を読むならPART 2へ。",
+      f:[], reveals:[] },
+
+    { id:"cap", part:2, ttl:"時価総額", sub:"市場がその会社につけた値段",
+      lead:"株価×発行済株式数。いま市場がその会社をいくらだと思っているか、という値段。",
+      body:"純資産（実際に持っているぶん）を超えた部分は、これから稼ぐだろうという期待。地図ではその差がそのまま長さになる。",
+      hint:"株価情報のページに出ている。自分の事業など未上場なら、ここは空のままでいい。",
+      f:[{k:"cap", l:"時価総額"}], reveals:["時価総額"] },
+
+    { id:"goodwill", part:2, ttl:"のれん", sub:"見えない価値に払ったぶん",
+      lead:"会社を買うとき、相手の純資産より高い金額を払った差額。ブランドや人や仕組みという、目に見えない価値の値札。",
+      body:"地図では資産の帯の中に別の色で入る。買収を重ねた会社ほど、資産の中でのれんが太くなる。",
+      hint:"貸借対照表の資産の部にある「のれん」。無ければ0。",
+      f:[{k:"goodwill", l:"のれん"}], reveals:["のれん"] },
+
+    { id:"pbr", part:2, ttl:"PBR", sub:"時価総額 ÷ 純資産",
+      lead:"持っているぶんの何倍の値段がついているか。1倍を下回ると、持っている財産より安く買えることになる。",
+      body:"入力はない。地図の下、時価総額と純資産の2本の帯の長さの比が、そのままこの数字。",
+      hint:"高い＝良い、ではない。期待が大きいぶん、外したときの落差も大きい。",
+      f:[], calc:"pbr", reveals:[] },
+
+    { id:"roe", part:2, ttl:"ROE", sub:"利益 ÷ 純資産",
+      lead:"預かった元手を1年でどれだけ増やしたか。地図の上（利益）と下（純資産）を、縦に結んで割り算したもの。",
+      body:"PART 2はここまで。売上から始まった帯が、最後は市場の評価まで一本でつながった。",
+      hint:"日本の上場企業では8%が一つの目安として語られることが多い。",
+      f:[], calc:"roe", reveals:[] },
+
+    { id:"social", part:3, ttl:"社会に何ができるか", sub:"数字の外側",
+      lead:"ここまでの地図は、会社が世の中からどう評価されたかの記録。最後の歩は、そこに自分の意思をどう乗せるか。",
+      body:"数字は入れない。この会社（あるいは自分の事業）が、どんな価値を世の中に置いていきたいのか、いまの言葉で書き残しておく。",
+      hint:"読み終えたあと、半年後に読み返すとおもしろい欄。",
+      f:[], reveals:[] }
+  ];
+
+  var FIELD_LABELS = {
+    sales:"売上", cost:"費用", assets:"資産", liab:"負債",
+    cash:"現金", cfOp:"営業CF", cfInv:"投資CF", cfFin:"財務CF",
+    cap:"時価総額", goodwill:"のれん"
+  };
+
+  /* ── 保存 ── */
+  var state = load();
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(KEY);
+      if(raw){
+        var s = JSON.parse(raw);
+        if(s && s.cos && s.cos.length) return s;
+      }
+    }catch(e){}
+    return { cur:0, cos:[ newCo("じぶんの事業", 1), newCo("れんしゅう（よその会社）", 1000000) ] };
+  }
+  function newCo(name, unit){
+    return { name:name, unit:unit||1, period:"", v:{}, done:{}, memo:{} };
+  }
+  function save(){
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function co(){ return state.cos[state.cur] || state.cos[0]; }
+
+  /* ── 計算 ── */
+  function num(k){
+    var v = co().v[k];
+    return (typeof v === "number" && isFinite(v)) ? v : null;
+  }
+  function profit(){
+    var s = num("sales"), c = num("cost");
+    if(s===null || c===null) return null;
+    return s - c;
+  }
+  function equity(){
+    var a = num("assets"), l = num("liab");
+    if(a===null || l===null) return null;
+    return a - l;
+  }
+  function pbr(){
+    var m = num("cap"), e = equity();
+    if(m===null || e===null || e<=0) return null;
+    return m / e;
+  }
+  function roe(){
+    var p = profit(), e = equity();
+    if(p===null || e===null || e<=0) return null;
+    return p / e * 100;
+  }
+  function calcVal(kind){
+    if(kind==="profit") return profit();
+    if(kind==="equity") return equity();
+    if(kind==="pbr") return pbr();
+    if(kind==="roe") return roe();
+    return null;
+  }
+  function unitName(){
+    var u = co().unit;
+    return u===1 ? "円" : u===1000 ? "千円" : u===1000000 ? "百万円" : "億円";
+  }
+  function fmt(n){
+    if(n===null || n===undefined || !isFinite(n)) return "—";
+    var neg = n < 0, a = Math.abs(n);
+    var s = (Math.round(a*100)/100).toLocaleString("ja-JP");
+    return (neg ? "−" : "") + s;
+  }
+  function isDone(id){ return !!co().done[id]; }
+
+  /* ── 地図に出すレイヤー ── */
+  function shown(name){
+    for(var i=0;i<STEPS.length;i++){
+      var st = STEPS[i];
+      if(st.reveals && st.reveals.indexOf(name)>=0){
+        if(!isDone(st.id)) return false;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* ────────────────────────────────
+     地図の描画（純SVG／画像書き出しできるよう text のみ）
+  ──────────────────────────────── */
+  var W = 340, PAD = 14, INNER = W - PAD*2;
+
+  function svgEl(tag, attrs){
+    var e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for(var k in attrs){ if(attrs[k]!==null && attrs[k]!==undefined) e.setAttribute(k, attrs[k]); }
+    return e;
+  }
+  function cssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function drawMap(){
+    var svg = document.getElementById("map");
+    var empty = document.getElementById("mapEmpty");
+    var legend = document.getElementById("legend");
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    legend.innerHTML = "";
+
+    var C = {
+      ink: cssVar("--ink"), ink2: cssVar("--ink-2"), muted: cssVar("--muted"),
+      line: cssVar("--line"), hair: cssVar("--hair"), mark: cssVar("--mark"),
+      f1: cssVar("--fill-1"), f2: cssVar("--fill-2"), f3: cssVar("--fill-3"),
+      cash: cssVar("--fill-cash"), cap: cssVar("--fill-cap"), card: cssVar("--card")
+    };
+
+    var hasSales = shown("売上") && num("sales")!==null;
+    var hasAssets = shown("資産") && num("assets")!==null;
+    var hasCap = shown("時価総額") && num("cap")!==null;
+
+    /* SVGElement には hidden プロパティが無いので属性で出し入れする */
+    if(!hasSales && !hasAssets){
+      svg.setAttribute("hidden", ""); empty.hidden = false;
+      document.getElementById("savePng").hidden = true;
+      return;
+    }
+    svg.removeAttribute("hidden"); empty.hidden = true;
+    document.getElementById("savePng").hidden = false;
+
+    /* 共通のものさし */
+    var maxes = [];
+    if(hasSales) maxes.push(Math.max(num("sales"), (num("cost")||0)));
+    if(hasAssets) maxes.push(num("assets"));
+    if(hasCap) maxes.push(num("cap"));
+    var max = Math.max.apply(null, maxes.concat([1]));
+    var sc = function(v){ return Math.max(0, (v||0) / max * INNER); };
+
+    var y = 6;
+    var BAR = 34, GAP = 9, LBL = 15;
+
+    function label(text, yy, color, anchor, xx){
+      var t = svgEl("text", {
+        x: xx===undefined ? PAD : xx, y: yy,
+        "font-size":"10.5", "font-family":"system-ui,-apple-system,sans-serif",
+        "letter-spacing":"0.06em", fill: color || C.muted,
+        "text-anchor": anchor || "start"
+      });
+      t.textContent = text;
+      return t;
+    }
+    function bar(x, yy, w, h, fill, stroke){
+      return svgEl("rect", { x:x, y:yy, width:Math.max(w,0), height:h, rx:4,
+        fill:fill, stroke:stroke||"none", "stroke-width":1 });
+    }
+    function inBar(text, x, yy, w, color){
+      if(w < 34) return null;  /* 狭すぎると読めないので出さない */
+      var t = svgEl("text", { x:x+8, y:yy+21, "font-size":"11.5",
+        "font-family":"system-ui,-apple-system,sans-serif", fill:color, "font-weight":"600" });
+      t.textContent = text;
+      return t;
+    }
+    function add(e){ if(e) svg.appendChild(e); }
+    function lg(color, name){
+      var s = document.createElement("span");
+      var i = document.createElement("i"); i.style.background = color;
+      s.appendChild(i); s.appendChild(document.createTextNode(name));
+      legend.appendChild(s);
+    }
+
+    var profitY = null, profitX = null, profitW = null;
+
+    /* ── PL ── */
+    if(hasSales){
+      var sales = num("sales");
+      add(label("売上　" + fmt(sales), y+10, C.ink2));
+      y += LBL;
+      add(bar(PAD, y, sc(sales), BAR, C.f3));
+      add(inBar(fmt(sales), PAD, y, sc(sales), C.card));
+      y += BAR + GAP;
+      lg(C.f3, "売上");
+
+      if(shown("費用") && num("cost")!==null){
+        var cost = num("cost"), p = profit();
+        add(label("費用と利益", y+10, C.ink2));
+        y += LBL;
+        add(bar(PAD, y, sc(cost), BAR, C.f1, C.line));
+        add(inBar("費用 " + fmt(cost), PAD, y, sc(cost), C.ink));
+        lg(C.f1, "費用");
+
+        if(shown("利益") && p!==null){
+          if(p >= 0){
+            profitX = PAD + sc(cost); profitW = sc(p); profitY = y;
+            add(bar(profitX, y, profitW, BAR, C.f2));
+            add(inBar("利益 " + fmt(p), profitX, y, profitW, C.card));
+            if(profitW < 34){
+              add(label("利益 " + fmt(p), y - 3, C.ink, "end", PAD + INNER));
+            }
+            lg(C.f2, "利益");
+          }else{
+            /* 赤字＝費用が売上をはみ出す */
+            var over = sc(Math.abs(p));
+            add(bar(PAD + sc(sales), y, over, BAR, C.mark));
+            add(label("赤字 " + fmt(p), y - 3, C.mark, "end", PAD + INNER));
+            profitY = y; profitX = PAD + sc(sales); profitW = over;
+            lg(C.mark, "赤字");
+          }
+        }
+        y += BAR + GAP;
+      }
+      y += 6;
+    }
+
+    /* ── BS ── */
+    if(hasAssets){
+      var assets = num("assets");
+      add(label("資産　" + fmt(assets), y+10, C.ink2));
+      if(shown("のれん") && num("goodwill")!==null && num("goodwill") > 0){
+        add(label("のれん " + fmt(num("goodwill")), y+10, C.ink2, "end", PAD + INNER));
+      }
+      y += LBL;
+      add(bar(PAD, y, sc(assets), BAR, C.f3, C.line));
+      add(inBar(fmt(assets), PAD, y, sc(assets), C.card));
+
+      /* 現金（資産の左側に内包） */
+      if(shown("現金") && num("cash")!==null){
+        var cw = Math.min(sc(num("cash")), sc(assets));
+        add(bar(PAD, y, cw, BAR, C.cash));
+        add(inBar("現金 " + fmt(num("cash")), PAD, y, cw, C.card));
+        if(cw < 34) add(label("現金 " + fmt(num("cash")), y + BAR + 11, C.cash));
+        lg(C.cash, "現金");
+      }
+      /* のれん（資産の右端に内包） */
+      if(shown("のれん") && num("goodwill")!==null && num("goodwill") > 0){
+        var gw = Math.min(sc(num("goodwill")), sc(assets));
+        add(bar(PAD + sc(assets) - gw, y, gw, BAR, C.cap, C.line));
+        add(inBar("のれん", PAD + sc(assets) - gw, y, gw, C.ink));
+        lg(C.cap, "のれん");
+      }
+      y += BAR + 4;
+
+      if(shown("負債") && num("liab")!==null){
+        var liab = num("liab"), eq = equity();
+        add(bar(PAD, y, sc(liab), BAR, C.f1, C.line));
+        add(inBar("負債 " + fmt(liab), PAD, y, sc(liab), C.ink));
+        lg(C.f1, "負債");
+        if(shown("純資産") && eq!==null){
+          var ex = PAD + sc(liab), ew = sc(eq);
+          if(eq >= 0){
+            add(bar(ex, y, ew, BAR, C.f2));
+            add(inBar("純資産 " + fmt(eq), ex, y, ew, C.card));
+            if(ew < 34) add(label("純資産 " + fmt(eq), y + BAR + 11, C.ink2, "end", PAD + INNER));
+          }else{
+            add(label("純資産 " + fmt(eq) + "（債務超過）", y + BAR + 11, C.mark, "end", PAD + INNER));
+          }
+          lg(C.f2, "純資産");
+
+          /* 利益 → 純資産 の点線 */
+          if(profitY!==null && profitW > 2 && eq >= 0){
+            var fromX = profitX + Math.max(profitW,2)/2;
+            var toX = ex + Math.max(ew,2)/2;
+            var d = "M" + fromX + " " + (profitY + BAR) +
+                    " C" + fromX + " " + (profitY + BAR + 28) + " " +
+                           toX + " " + (y - 28) + " " + toX + " " + y;
+            add(svgEl("path", { d:d, fill:"none", stroke:C.mark,
+              "stroke-width":1.2, "stroke-dasharray":"3 3", opacity:"0.55" }));
+            add(svgEl("path", { d:"M" + (toX-3.4) + " " + (y-4.5) + "L" + toX + " " + y + "L" + (toX+3.4) + " " + (y-4.5),
+              fill:"none", stroke:C.mark, "stroke-width":1.2, opacity:"0.55" }));
+          }
+        }
+        y += BAR + GAP;
+      }else{
+        y += GAP;
+      }
+      y += 6;
+    }
+
+    /* ── CF ── */
+    if(shown("CF") && (num("cfOp")!==null || num("cfInv")!==null || num("cfFin")!==null)){
+      add(label("現金の増減（CF）", y+10, C.ink2));
+      y += LBL;
+      /* ラベル列は左に固定し、帯はすべて同じ位置から右へ伸ばす
+         （プラスは濃い色・マイナスは朱。左右に振ると帯がラベルを覆うため） */
+      var cfs = [["営業", num("cfOp")], ["投資", num("cfInv")], ["財務", num("cfFin")]];
+      var cfX = PAD + 34;
+      var cfMax = 1;
+      cfs.forEach(function(c){ if(c[1]!==null) cfMax = Math.max(cfMax, Math.abs(c[1])); });
+      var cfScale = (INNER - 34 - 62) / cfMax;
+      cfs.forEach(function(c){
+        var name = c[0], v = c[1];
+        add(label(name, y+13, C.ink2));
+        if(v!==null){
+          var w = Math.max(Math.abs(v)*cfScale, 1.5);
+          add(bar(cfX, y+3, w, 13, v >= 0 ? C.f2 : C.mark));
+          add(label((v>=0?"+":"−") + fmt(Math.abs(v)), y+13, C.ink2, "start", cfX + w + 6));
+        }
+        y += 22;
+      });
+      lg(C.mark, "現金の減少");
+      y += GAP;
+    }
+
+    /* ── 時価総額 ── */
+    if(hasCap){
+      var cap = num("cap"), eq2 = equity();
+      add(label("時価総額　" + fmt(cap), y+10, C.ink2));
+      y += LBL;
+      add(bar(PAD, y, sc(cap), BAR, C.cap, C.line));
+      if(eq2!==null && eq2 > 0){
+        var ew2 = Math.min(sc(eq2), sc(cap));
+        add(bar(PAD, y, ew2, BAR, C.f2));
+        add(inBar("純資産", PAD, y, ew2, C.card));
+        var expect = cap - eq2;
+        if(expect > 0){
+          var xw = sc(expect);
+          add(inBar("期待 " + fmt(expect), PAD + ew2, y, xw, C.ink));
+          if(xw < 34) add(label("期待 " + fmt(expect), y + BAR + 11, C.ink2, "end", PAD + INNER));
+        }
+      }else{
+        add(inBar(fmt(cap), PAD, y, sc(cap), C.ink));
+      }
+      lg(C.cap, "市場の期待");
+      y += BAR + GAP;
+    }
+
+    svg.setAttribute("viewBox", "0 0 " + W + " " + Math.ceil(y + 6));
+  }
+
+  /* ────────────────────────────────
+     指標カード
+  ──────────────────────────────── */
+  function drawRatios(){
+    var box = document.getElementById("ratios");
+    box.innerHTML = "";
+    var items = [];
+    var pct = function(x, d){ return (x < 0 ? "−" : "") + Math.abs(x).toFixed(d===undefined?1:d); };
+    var p = profit();
+    if(isDone("profit") && p!==null && num("sales")){
+      var m = p / num("sales") * 100;
+      items.push({ k:"売上高利益率", v:pct(m) + "%",
+        n: m >= 0 ? "売上100のうち" + Math.round(m) + "が残っている"
+                  : "売上100につき" + Math.round(Math.abs(m)) + "の赤字" });
+    }
+    if(isDone("equity") && equity()!==null && num("assets")){
+      var eq3 = equity() / num("assets") * 100;
+      items.push({ k:"自己資本比率", v:pct(eq3) + "%",
+        n: eq3 >= 0 ? "資産のうち返さなくていいぶんの割合"
+                    : "負債が資産を超えている（債務超過）" });
+    }
+    if(isDone("pbr")){
+      var b = pbr(), eqv = equity();
+      items.push({ k:"PBR", v: b===null ? "—" : b.toFixed(2) + "倍",
+        n: b!==null ? (b<1 ? "持っている財産より安く見られている" : "持っているぶんの" + b.toFixed(1) + "倍の値段")
+           : (eqv!==null && eqv<=0 ? "純資産がマイナスなので出せない" : "時価総額と純資産が要る") });
+    }
+    if(isDone("roe")){
+      var r = roe(), eqv2 = equity();
+      items.push({ k:"ROE", v: r===null ? "—" : pct(r) + "%",
+        n: r!==null ? (r >= 0 ? "元手を1年でこれだけ増やした" : "元手をこれだけ減らした")
+           : (eqv2!==null && eqv2<=0 ? "純資産がマイナスなので出せない" : "利益と純資産が要る") });
+    }
+    box.hidden = items.length === 0;
+    items.forEach(function(it){
+      var d = document.createElement("div");
+      d.className = "ratio";
+      d.innerHTML = '<p class="k"></p><p class="v"></p><p class="n"></p>';
+      d.querySelector(".k").textContent = it.k;
+      d.querySelector(".v").textContent = it.v;
+      d.querySelector(".n").textContent = it.n;
+      box.appendChild(d);
+    });
+  }
+
+  /* ────────────────────────────────
+     ステップ画面
+  ──────────────────────────────── */
+  function renderSteps(){
+    var box = document.getElementById("steps");
+    var openIds = [];
+    box.querySelectorAll("details[open]").forEach(function(d){ openIds.push(d.dataset.id); });
+    box.innerHTML = "";
+
+    var curPart = null;
+    STEPS.forEach(function(st, i){
+      if(st.part !== curPart){
+        curPart = st.part;
+        var h = document.createElement("p");
+        h.className = "part";
+        h.innerHTML = PART[curPart].label + "<b></b>";
+        h.querySelector("b").textContent = PART[curPart].title;
+        box.appendChild(h);
+      }
+
+      var d = document.createElement("details");
+      d.className = "step" + (isDone(st.id) ? " done" : "");
+      d.dataset.id = st.id;
+      if(openIds.indexOf(st.id) >= 0) d.open = true;
+
+      var s = document.createElement("summary");
+      s.className = "head";
+      s.innerHTML = '<span class="no"></span><span class="ttl"><span class="tx"></span><span class="sub"></span></span><span class="chev">›</span>';
+      s.querySelector(".no").textContent = isDone(st.id) ? "✓" : (i+1);
+      s.querySelector(".tx").textContent = st.ttl;
+      s.querySelector(".sub").textContent = st.sub;
+      d.appendChild(s);
+
+      var b = document.createElement("div");
+      b.className = "body";
+
+      var p1 = document.createElement("p"); p1.className = "lead"; p1.textContent = st.lead; b.appendChild(p1);
+      var p2 = document.createElement("p"); p2.textContent = st.body; b.appendChild(p2);
+
+      if(st.hint){
+        var h2 = document.createElement("div");
+        h2.className = "hint";
+        h2.innerHTML = "<b>どこを見る？</b><br>";
+        h2.appendChild(document.createTextNode(st.hint));
+        b.appendChild(h2);
+      }
+
+      if(st.f && st.f.length){
+        var fs = document.createElement("div");
+        fs.className = "fields";
+        st.f.forEach(function(f){
+          var w = document.createElement("div");
+          w.className = "field";
+          var lab = document.createElement("label");
+          lab.textContent = f.l;
+          lab.setAttribute("for", "in_" + f.k);
+          var row = document.createElement("div");
+          row.className = "row";
+          var inp = document.createElement("input");
+          inp.type = "number"; inp.inputMode = "decimal"; inp.id = "in_" + f.k;
+          inp.step = "any"; inp.placeholder = "0";
+          if(num(f.k) !== null) inp.value = num(f.k);
+          inp.addEventListener("input", function(){
+            var v = inp.value === "" ? null : parseFloat(inp.value);
+            if(v === null || isNaN(v)) delete co().v[f.k];
+            else co().v[f.k] = v;
+            save(); drawMap(); drawRatios(); updateCalcs();
+          });
+          var u = document.createElement("span");
+          u.className = "unit"; u.textContent = unitName();
+          row.appendChild(inp); row.appendChild(u);
+          w.appendChild(lab); w.appendChild(row);
+          fs.appendChild(w);
+        });
+        b.appendChild(fs);
+      }
+
+      if(st.calc){
+        var c = document.createElement("div");
+        c.className = "calc";
+        c.dataset.calc = st.calc;
+        c.innerHTML = '<span class="l"></span><span class="v"></span>';
+        b.appendChild(c);
+      }
+
+      var ml = document.createElement("p");
+      ml.className = "memoLabel";
+      ml.textContent = st.id === "social" ? "この会社が世の中に置いていきたいもの" : "気づいたこと";
+      b.appendChild(ml);
+      var ta = document.createElement("textarea");
+      ta.value = co().memo[st.id] || "";
+      ta.placeholder = "本を読んで思ったこと、自分の事業に当てはめると…";
+      ta.addEventListener("input", function(){ co().memo[st.id] = ta.value; save(); });
+      b.appendChild(ta);
+
+      var btn = document.createElement("button");
+      btn.className = "btn" + (isDone(st.id) ? " sub" : " primary");
+      btn.textContent = isDone(st.id) ? "この歩をもどす" : "読んだ・入れた（地図に足す）";
+      btn.addEventListener("click", function(){
+        if(isDone(st.id)) delete co().done[st.id];
+        else co().done[st.id] = true;
+        save();
+        renderSteps(); drawMap(); drawRatios();
+        if(co().done[st.id] && st.reveals && st.reveals.length){
+          flash(d, "地図に「" + st.reveals.join("・") + "」が増えました。");
+        }
+        var nd = document.querySelector('details[data-id="' + st.id + '"]');
+        if(nd) nd.open = true;
+      });
+      b.appendChild(btn);
+
+      d.appendChild(b);
+      box.appendChild(d);
+    });
+
+    updateCalcs();
+  }
+
+  function flash(container, msg){
+    var el = container.querySelector(".flash");
+    if(!el){
+      el = document.createElement("p");
+      el.className = "flash";
+      container.querySelector(".body").appendChild(el);
+    }
+    el.textContent = msg + "　→ 上の「ちず」で見られます";
+  }
+
+  function updateCalcs(){
+    document.querySelectorAll(".calc").forEach(function(c){
+      var kind = c.dataset.calc;
+      var v = calcVal(kind), lab = "", txt = "—", minus = false;
+      if(kind === "profit"){
+        lab = "売上 − 費用 ＝ 利益";
+        if(v!==null){ txt = fmt(v) + " " + unitName(); minus = v < 0; }
+      }else if(kind === "equity"){
+        lab = "資産 − 負債 ＝ 純資産";
+        if(v!==null){ txt = fmt(v) + " " + unitName(); minus = v < 0; }
+      }else if(kind === "pbr"){
+        lab = "時価総額 ÷ 純資産 ＝ PBR";
+        if(v!==null) txt = v.toFixed(2) + " 倍";
+      }else if(kind === "roe"){
+        lab = "利益 ÷ 純資産 ＝ ROE";
+        if(v!==null){ txt = (v<0 ? "−" : "") + Math.abs(v).toFixed(1) + " %"; minus = v < 0; }
+      }
+      c.querySelector(".l").textContent = lab;
+      var vv = c.querySelector(".v");
+      vv.textContent = txt;
+      vv.className = "v" + (minus ? " minus" : "");
+    });
+  }
+
+  /* ────────────────────────────────
+     会社の管理
+  ──────────────────────────────── */
+  function renderCoSelect(){
+    var sel = document.getElementById("coSel");
+    sel.innerHTML = "";
+    state.cos.forEach(function(c, i){
+      var o = document.createElement("option");
+      o.value = i; o.textContent = c.name || "（名前なし）";
+      if(i === state.cur) o.selected = true;
+      sel.appendChild(o);
+    });
+    document.getElementById("mapName").textContent = co().name || "（名前なし）";
+    document.getElementById("mapUnit").textContent =
+      (co().period ? co().period + " ・ " : "") + "単位：" + unitName();
+  }
+
+  function renderCoView(){
+    document.getElementById("coName").value = co().name || "";
+    document.getElementById("coUnit").value = String(co().unit);
+    document.getElementById("coPeriod").value = co().period || "";
+
+    var list = document.getElementById("coList");
+    list.innerHTML = "";
+    state.cos.forEach(function(c, i){
+      var row = document.createElement("div");
+      row.className = "co";
+      var nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = c.name || "（名前なし）";
+      var mt = document.createElement("span");
+      mt.className = "mt";
+      var cnt = Object.keys(c.done || {}).length;
+      mt.textContent = cnt + " / " + STEPS.length + " 歩" + (c.period ? " ・ " + c.period : "");
+      nm.appendChild(mt);
+      row.appendChild(nm);
+
+      if(i === state.cur){
+        var cur = document.createElement("span");
+        cur.className = "cur"; cur.textContent = "表示中";
+        row.appendChild(cur);
+      }else{
+        var b1 = document.createElement("button");
+        b1.textContent = "見る";
+        b1.addEventListener("click", function(){ state.cur = i; save(); renderAll(); });
+        row.appendChild(b1);
+      }
+      var b2 = document.createElement("button");
+      b2.textContent = "消す";
+      b2.addEventListener("click", function(){
+        if(state.cos.length <= 1){ alert("最後の1社は消せません。"); return; }
+        if(!confirm("「" + (c.name || "（名前なし）") + "」の数字とメモを消します。よろしいですか？")) return;
+        state.cos.splice(i, 1);
+        if(state.cur >= state.cos.length) state.cur = state.cos.length - 1;
+        save(); renderAll();
+      });
+      row.appendChild(b2);
+      list.appendChild(row);
+    });
+  }
+
+  /* ────────────────────────────────
+     画像で保存
+  ──────────────────────────────── */
+  function savePng(){
+    var svg = document.getElementById("map");
+    var vb = svg.getAttribute("viewBox").split(" ");
+    var w = parseFloat(vb[2]), h = parseFloat(vb[3]);
+    var scale = 3, padTop = 46, padBottom = 16;
+
+    var clone = svg.cloneNode(true);
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", w);
+    clone.setAttribute("height", h);
+    var xml = new XMLSerializer().serializeToString(clone);
+    var url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+
+    var cv = document.createElement("canvas");
+    cv.width = w * scale;
+    cv.height = (h + padTop + padBottom) * scale;
+    var ctx = cv.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = cssVar("--card") || "#fff";
+    ctx.fillRect(0, 0, w, h + padTop + padBottom);
+
+    ctx.fillStyle = cssVar("--ink");
+    ctx.font = "600 14px system-ui,-apple-system,sans-serif";
+    ctx.fillText(co().name || "", 14, 26);
+    ctx.fillStyle = cssVar("--muted");
+    ctx.font = "10px system-ui,-apple-system,sans-serif";
+    ctx.fillText((co().period ? co().period + " ・ " : "") + "単位：" + unitName(), 14, 40);
+
+    var img = new Image();
+    img.onload = function(){
+      ctx.drawImage(img, 0, padTop, w, h);
+      cv.toBlob(function(blob){
+        if(!blob){ alert("画像を作れませんでした。"); return; }
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "おかねのちず_" + (co().name || "map") + ".png";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(a.href); }, 3000);
+      }, "image/png");
+    };
+    img.onerror = function(){ alert("画像を作れませんでした。"); };
+    img.src = url;
+  }
+
+  /* ────────────────────────────────
+     画面の切り替え
+  ──────────────────────────────── */
+  var TABS = [["tabMap","viewMap"],["tabStep","viewStep"],["tabCo","viewCo"]];
+  function showTab(id){
+    TABS.forEach(function(t){
+      var on = t[0] === id;
+      document.getElementById(t[0]).setAttribute("aria-selected", on ? "true" : "false");
+      document.getElementById(t[1]).hidden = !on;
+    });
+    if(id === "tabCo") renderCoView();
+    window.scrollTo(0, 0);
+  }
+
+  function renderAll(){
+    renderCoSelect();
+    drawMap();
+    drawRatios();
+    renderSteps();
+    renderCoView();
+  }
+
+  /* ── イベント ── */
+  document.getElementById("coSel").addEventListener("change", function(e){
+    state.cur = parseInt(e.target.value, 10) || 0; save(); renderAll();
+  });
+  document.getElementById("toCo").addEventListener("click", function(){ showTab("tabCo"); });
+  TABS.forEach(function(t){
+    document.getElementById(t[0]).addEventListener("click", function(){ showTab(t[0]); });
+  });
+  document.getElementById("coName").addEventListener("input", function(e){
+    co().name = e.target.value; save(); renderCoSelect(); renderCoView();
+  });
+  document.getElementById("coUnit").addEventListener("change", function(e){
+    co().unit = parseInt(e.target.value, 10) || 1; save(); renderCoSelect(); renderSteps(); drawMap();
+  });
+  document.getElementById("coPeriod").addEventListener("input", function(e){
+    co().period = e.target.value; save(); renderCoSelect();
+  });
+  document.getElementById("addCo").addEventListener("click", function(){
+    var n = prompt("会社の名前", "");
+    if(n === null) return;
+    state.cos.push(newCo(n || "名前なし", co().unit));
+    state.cur = state.cos.length - 1;
+    save(); renderAll(); showTab("tabCo");
+  });
+  document.getElementById("openAll").addEventListener("click", function(){
+    STEPS.forEach(function(s){ co().done[s.id] = true; });
+    save(); renderAll(); showTab("tabStep");
+  });
+  document.getElementById("resetSteps").addEventListener("click", function(){
+    if(!confirm("この会社の「読んだ」印を全部もどします。数字とメモは残ります。")) return;
+    co().done = {}; save(); renderAll();
+  });
+  document.getElementById("savePng").addEventListener("click", savePng);
+
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){
+    drawMap();
+  });
+
+  renderAll();
+  showTab("tabMap");
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
