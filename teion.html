@@ -1,0 +1,1074 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-teion.png">
+<meta name="apple-mobile-web-app-title" content="ていおん">
+<title>ていおん — 低温調理の設定</title>
+<style>
+  :root{
+    color-scheme: light;
+    --paper:#fbfaf7;
+    --card:#ffffff;
+    --surface:#f2f0ea;
+    --ink:#14130f;
+    --ink-2:#57554d;
+    --muted:#9b988f;
+    --line:#c9c5b8;
+    --hair:#eceae3;
+    --mark:#c2410c;
+    --ok:#3f6b4b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])){
+      color-scheme: dark;
+      --paper:#0f0f0e; --card:#1a1a18; --surface:#232320; --ink:#f5f4f0;
+      --ink-2:#b3b0a6; --muted:#807d75; --line:#4a4945; --hair:#2a2a27;
+      --mark:#f0834f; --ok:#7fae8c;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --paper:#0f0f0e; --card:#1a1a18; --surface:#232320; --ink:#f5f4f0;
+    --ink-2:#b3b0a6; --muted:#807d75; --line:#4a4945; --hair:#2a2a27;
+    --mark:#f0834f; --ok:#7fae8c;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  button,summary{-webkit-user-select:none; user-select:none}
+  html,body{margin:0; padding:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:16px; line-height:1.7; -webkit-text-size-adjust:100%;
+    overflow-x:hidden;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:36px 18px 90px}
+
+  header{margin:0 0 20px}
+  .kicker{font-size:11px; letter-spacing:.18em; color:var(--muted); margin:0 0 8px}
+  h1{font-size:23px; font-weight:600; margin:0 0 10px; letter-spacing:.03em}
+  .intro{font-size:13px; color:var(--ink-2); margin:0; line-height:1.85}
+
+  /* ── タブ ── */
+  nav.tabs{
+    display:flex; gap:6px; overflow-x:auto; margin:22px -18px 22px; padding:0 18px 2px;
+    scrollbar-width:none;
+  }
+  nav.tabs::-webkit-scrollbar{display:none}
+  nav.tabs button{
+    flex:0 0 auto; -webkit-appearance:none; appearance:none;
+    font-family:inherit; font-size:12.5px; font-weight:600; letter-spacing:.02em;
+    color:var(--ink-2); background:var(--card); white-space:nowrap;
+    border:1px solid var(--hair); border-radius:999px;
+    padding:9px 13px; min-height:42px; cursor:pointer;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  nav.tabs button[aria-selected="true"]{
+    background:var(--ink); color:var(--paper); border-color:var(--ink);
+  }
+  section[hidden]{display:none}
+
+  /* ── 共通パーツ ── */
+  .card{
+    background:var(--card); border:1px solid var(--hair);
+    border-radius:16px; padding:18px 16px; margin:0 0 14px;
+  }
+  .lbl{
+    font-size:11px; letter-spacing:.16em; color:var(--muted);
+    margin:0 0 10px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+  }
+  .lbl .hint{letter-spacing:.02em; font-size:11.5px}
+  .chips{display:flex; flex-wrap:wrap; gap:7px}
+  .chips.g4{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
+  .chips.g6{display:grid; grid-template-columns:repeat(6,1fr); gap:6px}
+  .chips.g5{display:grid; grid-template-columns:repeat(5,1fr); gap:6px}
+  .chip{
+    -webkit-appearance:none; appearance:none; font-family:inherit;
+    font-size:14px; font-weight:500; color:var(--ink-2); white-space:nowrap;
+    background:var(--surface); border:1px solid transparent; border-radius:11px;
+    padding:0 10px; min-height:44px; min-width:0; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:background .12s ease, color .12s ease;
+  }
+  .chips:not(.g4):not(.g5):not(.g6) .chip{min-width:52px; padding:0 12px}
+  .chips.g6 .chip,.chips.g5 .chip{font-size:13px}
+  .chip[aria-pressed="true"]{background:var(--ink); color:var(--paper); font-weight:600}
+
+  .note{font-size:12.5px; color:var(--muted); line-height:1.75; margin:10px 0 0}
+  .note strong{color:var(--ink-2); font-weight:600}
+
+  /* ── 結果 ── */
+  .result{
+    background:var(--ink); color:var(--paper);
+    border:1px solid var(--ink); border-radius:18px;
+    padding:22px 18px 18px; margin:0 0 14px;
+  }
+  .result .rk{font-size:11px; letter-spacing:.18em; opacity:.62; margin:0 0 12px}
+  .big{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin:0 0 4px}
+  .big .t{font-size:34px; font-weight:600; letter-spacing:.01em; line-height:1.15}
+  .big .u{font-size:14px; opacity:.7}
+  .split{
+    display:flex; gap:0; margin:16px 0 0; border-top:1px solid rgba(255,255,255,.16);
+  }
+  .split div{
+    flex:1 1 0; min-width:0; padding:13px 4px 0; text-align:center;
+  }
+  .split div + div{border-left:1px solid rgba(255,255,255,.16)}
+  .split .sv{font-size:16px; font-weight:600; display:block; line-height:1.4}
+  .split .sl{font-size:10.5px; opacity:.62; letter-spacing:.06em; display:block}
+  .finish{
+    margin:16px 0 0; padding:13px 14px; border-radius:12px;
+    background:rgba(255,255,255,.09); font-size:13px; line-height:1.7;
+  }
+  .finish b{font-size:19px; font-weight:600; letter-spacing:.02em}
+  .texture{font-size:13px; line-height:1.8; margin:14px 0 0; opacity:.86}
+
+  .warn{
+    display:flex; gap:9px; align-items:flex-start;
+    font-size:12.5px; line-height:1.75; margin:14px 0 0;
+    padding:12px 13px; border-radius:12px;
+    background:rgba(255,255,255,.09);
+  }
+  .warn .m{flex:0 0 auto; font-weight:700}
+  .card .warn{background:var(--surface); color:var(--ink-2)}
+  .card .warn .m{color:var(--mark)}
+
+  /* ── タイマー ── */
+  .btn{
+    -webkit-appearance:none; appearance:none; font-family:inherit;
+    font-size:14px; font-weight:600; letter-spacing:.04em;
+    background:var(--card); color:var(--ink);
+    border:1px solid var(--line); border-radius:12px;
+    padding:0 18px; min-height:46px; width:100%; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    transition:opacity .15s ease;
+  }
+  .btn:active{opacity:.6}
+  .btn.ghost{background:transparent; border-color:var(--hair); color:var(--ink-2); font-weight:500}
+  .btn.row{width:auto; flex:1 1 0; min-width:0}
+  .btnrow{display:flex; gap:9px; margin:12px 0 0}
+
+  .timer{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:18px 16px; margin:0 0 14px; text-align:center;
+  }
+  .timer.done{border-color:var(--mark)}
+  .timer .tk{font-size:11px; letter-spacing:.16em; color:var(--muted); margin:0 0 8px}
+  .timer .tv{
+    font-size:38px; font-weight:600; line-height:1.1; letter-spacing:.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .timer.done .tv{color:var(--mark)}
+  .timer .tm{font-size:12.5px; color:var(--muted); margin:6px 0 0}
+  .bar{height:4px; border-radius:99px; background:var(--surface); overflow:hidden; margin:14px 0 0}
+  .bar i{display:block; height:100%; background:var(--ink); width:0; transition:width .5s linear}
+
+  /* ── 味つけ ── */
+  .filters{display:flex; gap:7px; flex-wrap:wrap; margin:0 0 14px}
+  .rc{
+    background:var(--card); border:1px solid var(--hair); border-radius:14px;
+    margin:0 0 10px; overflow:hidden;
+  }
+  .rc summary{
+    list-style:none; cursor:pointer; padding:14px 15px; min-height:58px;
+    display:flex; align-items:center; gap:11px; color:var(--ink);
+  }
+  .rc summary::-webkit-details-marker{display:none}
+  .rc summary::marker{content:''}
+  .rc summary:active{background:var(--surface)}
+  .rc .num{
+    flex:0 0 auto; width:26px; height:26px; border-radius:8px; background:var(--surface);
+    display:flex; align-items:center; justify-content:center;
+    font-size:11.5px; font-weight:600; color:var(--ink-2);
+  }
+  .rc .rn{flex:1 1 auto; min-width:0; font-size:14.5px; font-weight:600; line-height:1.45}
+  .rc .rt{
+    flex:0 0 auto; font-size:11.5px; font-weight:600; color:var(--ink-2);
+    background:var(--surface); border-radius:7px; padding:3px 8px; letter-spacing:.02em;
+  }
+  .rc .cv{font-size:14px; color:var(--muted); flex:0 0 auto; transition:transform .2s ease}
+  .rc[open] .cv{transform:rotate(90deg)}
+  .rc .body{padding:0 15px 16px; border-top:1px solid var(--hair); margin-top:-1px}
+  .rc .body dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:7px 12px; font-size:13px}
+  .rc .body dt{color:var(--muted); font-size:11.5px; letter-spacing:.06em; padding-top:3px; white-space:nowrap}
+  .rc .body dd{margin:0; line-height:1.75; color:var(--ink)}
+  .rc .body .why{
+    font-size:12.5px; color:var(--ink-2); line-height:1.8;
+    margin:13px 0 0; padding:11px 12px; background:var(--surface); border-radius:10px;
+  }
+  .rc .body .go{margin:11px 0 0}
+
+  /* ── 入力 ── */
+  .field{display:flex; align-items:center; gap:10px; margin:0 0 10px}
+  .field label{flex:1 1 auto; font-size:13.5px; color:var(--ink-2); min-width:0}
+  .field input{
+    flex:0 0 108px; width:108px; font-family:inherit; font-size:16px; text-align:right;
+    background:var(--surface); color:var(--ink); border:1px solid transparent;
+    border-radius:10px; padding:10px 12px; min-height:44px;
+  }
+  .field input:focus{outline:none; border-color:var(--line)}
+  .field .unit{flex:0 0 auto; font-size:13px; color:var(--muted); width:26px}
+  .out{
+    display:flex; gap:0; margin:14px 0 0; padding:14px 0 0;
+    border-top:1px solid var(--hair);
+  }
+  .out div{flex:1 1 0; min-width:0; text-align:center}
+  .out div + div{border-left:1px solid var(--hair)}
+  .out .ov{font-size:22px; font-weight:600; display:block; line-height:1.3}
+  .out .ol{font-size:11px; color:var(--muted); letter-spacing:.06em; display:block}
+
+  /* ── 読み物 ── */
+  h2{font-size:15px; font-weight:600; margin:26px 0 12px; letter-spacing:.03em}
+  h2:first-child{margin-top:0}
+  .card h3{font-size:13.5px; font-weight:600; margin:0 0 8px; letter-spacing:.02em}
+  .card h3 + p{margin-top:0}
+  .card p{font-size:13.5px; line-height:1.85; color:var(--ink-2); margin:0 0 10px}
+  .card p:last-child{margin-bottom:0}
+  .card p b{color:var(--ink); font-weight:600}
+  ol.steps{margin:0; padding:0 0 0 0; list-style:none; counter-reset:s}
+  ol.steps li{
+    counter-increment:s; position:relative; padding:0 0 14px 32px;
+    font-size:13.5px; line-height:1.8; color:var(--ink-2);
+  }
+  ol.steps li:last-child{padding-bottom:0}
+  ol.steps li::before{
+    content:counter(s); position:absolute; left:0; top:3px;
+    width:22px; height:22px; border-radius:7px; background:var(--surface);
+    display:flex; align-items:center; justify-content:center;
+    font-size:11.5px; font-weight:600; color:var(--ink-2);
+  }
+  ol.steps li b{color:var(--ink); font-weight:600}
+  ul.dots{margin:0; padding:0 0 0 17px; font-size:13.5px; line-height:1.85; color:var(--ink-2)}
+  ul.dots li{margin:0 0 7px}
+  ul.dots li:last-child{margin-bottom:0}
+  ul.dots b{color:var(--ink); font-weight:600}
+
+  .tw{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -16px; padding:0 16px}
+  table{border-collapse:collapse; font-size:13px; width:100%; min-width:260px}
+  th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--hair); white-space:nowrap}
+  th{font-size:11px; letter-spacing:.08em; color:var(--muted); font-weight:500}
+  td:last-child,th:last-child{text-align:right}
+  tr:last-child td{border-bottom:0}
+  td.n{font-variant-numeric:tabular-nums}
+
+  .src{
+    font-size:11.5px; color:var(--muted); line-height:1.85;
+    margin:26px 0 0; padding:16px 0 0; border-top:1px solid var(--hair);
+  }
+  .src a{color:var(--ink-2)}
+  .src p{margin:0 0 6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="kicker">TEION</p>
+  <h1>ていおん</h1>
+  <p class="intro">低温調理は「温度が食感を、時間が安全を」決める。食材と厚みと温度を選ぶと、BONIQの加熱時間基準表そのままの設定時間と、できあがりの時刻が出ます。</p>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-tab="calc">設定</button>
+  <button role="tab" aria-selected="false" data-tab="taste">味つけ</button>
+  <button role="tab" aria-selected="false" data-tab="prep">下ごしらえ</button>
+  <button role="tab" aria-selected="false" data-tab="keep">保存</button>
+  <button role="tab" aria-selected="false" data-tab="safe">安全</button>
+</nav>
+
+<!-- ══════════ 設定を出す ══════════ -->
+<section id="calc">
+  <div id="timerBox"></div>
+
+  <div class="card">
+    <p class="lbl">食材</p>
+    <div class="chips g4" id="meatChips"></div>
+    <p class="note" id="meatNote"></p>
+  </div>
+
+  <div class="card">
+    <p class="lbl">厚み <span class="hint">いちばん短い辺を測る（cm）</span></p>
+    <div class="chips g6" id="thChips"></div>
+    <p class="note">5cm×4cm×3cm の肉なら、使うのは <strong>3cm</strong>。熱は表面から中心へ進むので、いちばん短い辺が中心までの最短ルートになります。<br>袋に肉を重ねて入れたら、<strong>重ねた合計の厚み</strong>で計算します（2cmの胸肉を2枚重ねたら4cm）。</p>
+  </div>
+
+  <div class="card">
+    <p class="lbl">温度 <span class="hint" id="tempHint"></span></p>
+    <div class="chips g5" id="tempChips"></div>
+  </div>
+
+  <div id="result"></div>
+</section>
+
+<!-- ══════════ 味つけ ══════════ -->
+<section id="taste" hidden>
+  <div class="card">
+    <p class="lbl">味つけの原則</p>
+    <p style="font-size:13.5px;line-height:1.85;color:var(--ink-2);margin:0">BONIQの比較実験では、<b style="color:var(--ink)">塩は「加熱後に袋の中でなじませる」のがいちばん柔らかくジューシー</b>でした。最初から塩を強く効かせると浸透圧（＝濃い側が水を引っぱる力）で肉が締まります。酸（レモン・酢）と香り（ハーブ・薬味・ごま油）も、加熱前に長く入れると食感が変わって香りも飛ぶので、基本は<b style="color:var(--ink)">後がけ</b>。逆に麹・味噌・ヨーグルトは酵素と乳で柔らかくするので<b style="color:var(--ink)">加熱前</b>に入れます。</p>
+  </div>
+
+  <div class="filters" id="tasteFilters"></div>
+  <div id="tasteList"></div>
+</section>
+
+<!-- ══════════ 下ごしらえ ══════════ -->
+<section id="prep" hidden>
+  <h2>塩糖水（ブライン）を作る</h2>
+  <div class="card">
+    <p class="lbl">水の量から、塩と砂糖を出す</p>
+    <div class="field">
+      <label for="brineW">水</label>
+      <input id="brineW" type="number" inputmode="decimal" value="300" min="0" step="10">
+      <span class="unit">ml</span>
+    </div>
+    <div class="out">
+      <div><span class="ov" id="brineS">15</span><span class="ol">塩 g</span></div>
+      <div><span class="ov" id="brineSu">15</span><span class="ol">砂糖 g</span></div>
+    </div>
+    <p class="note">どちらも水の <strong>5%</strong>。3%でも効きますが、<strong>5%を超えると逆に脱水してパサつく</strong>ので計量は省かないこと。<br>漬ける時間は、胸肉1枚まるごとで1〜2時間（しっとり狙いなら4時間〜一晩）、そぎ切りなら30分〜1時間。<strong>漬け汁は使い回さず捨てる</strong>。</p>
+  </div>
+
+  <h2>ドライブライン（塩をすり込む）</h2>
+  <div class="card">
+    <p class="lbl">肉の重さから、塩を出す</p>
+    <div class="field">
+      <label for="dryW">肉の重さ</label>
+      <input id="dryW" type="number" inputmode="decimal" value="300" min="0" step="10">
+      <span class="unit">g</span>
+    </div>
+    <div class="out">
+      <div><span class="ov" id="dryS">3.0</span><span class="ol">塩 g（1%）</span></div>
+      <div><span class="ov" id="dryS2">3.9</span><span class="ol">濃いめ（1.3%）</span></div>
+    </div>
+    <p class="note">水っぽくならず、味が凝縮して旨味が濃く出ます。冷蔵庫で30分〜。<br><strong>使い分け</strong>：ジューシーさ最優先・弁当や作り置き＝塩糖水／鶏の味を濃く楽しむ・手軽さ重視＝ドライブラインか、加熱後の塩なじませ。</p>
+  </div>
+
+  <h2>下処理は必ず要るのか</h2>
+  <div class="card">
+    <p>低温調理（60〜63℃）そのものが水分の流出を大きく抑えるので、<b>「絶対に必要」ではありません</b>。BONIQの比較実験では、下処理より<b>加熱後に袋の中で塩をなじませる方法が、いちばん柔らかくジューシー</b>という結果も出ています。</p>
+    <p>平日の夜にすぐ食べるなら「加熱後に塩」。前の晩から仕込めて最高のしっとり感を狙うなら「塩糖水」。ここだけ決めれば十分です。</p>
+  </div>
+
+  <h2>厚みを整える</h2>
+  <div class="card">
+    <ul class="dots">
+      <li><b>厚い部分は開くか叩いて、2cm（最大でも3cm）に揃える</b>。加熱時間は重さではなく厚みで決まるので、ここが安全マージンの本体です。</li>
+      <li>測るのは<b>いちばん短い辺</b>。厚みが均一なほど、生っぽい中心が残りません。</li>
+      <li>袋に<b>複数枚を重ねない</b>。重ねるなら合計の厚みで時間を取り直します。</li>
+      <li>袋の口を汚さない（湯から出ている部分は殺菌されないため、取り出すとき触ると危ない）。口は外側に折り返してから入れる。</li>
+      <li>空気は水圧で抜く（袋を沈めながら閉じる）。浮くならラック等で押さえ、<b>袋の口は常に湯面より上</b>に。</li>
+      <li>袋は<b>耐熱表記のあるもの</b>を使う。耐冷表記しかない袋は不可。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════ 保存と再加熱 ══════════ -->
+<section id="keep" hidden>
+  <h2>加熱が終わったら</h2>
+  <div class="card">
+    <ol class="steps">
+      <li><b>袋のまま氷水に浸けて急冷する。</b>食材が浮かないよう完全に沈める。芯まで冷えたら冷蔵庫・冷凍庫へ。</li>
+      <li><b>すぐ食べるなら90分以内。</b>加熱後に塩をなじませるための常温放置も<b>1時間以内</b>。</li>
+      <li><b>保存するなら、急冷してできるだけ早く5℃以下。</b>熱いまま冷蔵庫に入れない（庫内が上がって周りの食材が傷む）。</li>
+    </ol>
+    <div class="warn"><span class="m">なぜ</span><span>セレウス菌・ウェルシュ菌・ボツリヌス菌は、増えて芽胞（＝硬い殻をかぶった休眠状態）を作ると<b>100℃で長時間煮ても死にません</b>。増やさないことが唯一の対策で、増えるのは「調理後の食品を10〜54℃に長く置いたとき」です。</span></div>
+  </div>
+
+  <h2>保存の目安</h2>
+  <div class="card">
+    <div class="tw">
+      <table>
+        <tr><th>置き方</th><th>BONIQ公式</th><th>安全側で見るなら</th></tr>
+        <tr><td>冷蔵</td><td class="n">3日ほど</td><td class="n">2〜3日</td></tr>
+        <tr><td>冷凍</td><td class="n">1ヶ月ほど</td><td class="n">2週間</td></tr>
+      </table>
+    </div>
+    <p class="note">いずれも<strong>未開封で、袋の中に菌が出ていない場合</strong>に限ります。開封したら当日〜翌日。<br><strong>保存中に袋がふくらんだら、絶対に食べない</strong>（菌によるガスが出ている可能性）。<br>常温保存は不可。冷凍を開封したら再冷凍しない。</p>
+  </div>
+
+  <h2>再加熱の設定を出す</h2>
+  <div class="card">
+    <div class="field">
+      <label for="reheatT">一次加熱（最初に調理した）温度</label>
+      <input id="reheatT" type="number" inputmode="numeric" value="60" min="50" max="90" step="1">
+      <span class="unit">℃</span>
+    </div>
+    <div class="tw" style="margin-top:14px">
+      <table id="reheatTable"></table>
+    </div>
+    <p class="note">湯せん（BONIQ）に戻す設定です。<strong>電子レンジ直はムラと過加熱で食感を壊す</strong>ので勧められていません（一次加熱が75℃以上だったものは、すでにコラーゲンが変性しているのでレンジも許容。卵は不可）。<br>サラダチキンやローストビーフのように冷たいままで食べられるものは、冷蔵から出してそのまま食べられます。</p>
+    <div class="warn"><span class="m">迷ったら</span><span>子ども・高齢者・妊娠中・免疫が落ちている人が食べるなら、食感より安全を取って<b>中心75℃・1分以上</b>まで再加熱してください。</span></div>
+  </div>
+
+  <div class="card">
+    <p class="lbl">再加熱の決まりごと</p>
+    <ul class="dots">
+      <li>再加熱の前に<b>芯温が5℃以上になったもの</b>は、12時間以内に食べ切る。</li>
+      <li>再加熱の前に<b>芯温が10℃以上になったもの</b>、いつ作ったか分からないものは<b>捨てる</b>。</li>
+      <li>一度再加熱したものは、<b>もう一度冷蔵・冷凍しない</b>。</li>
+      <li>再加熱したら<b>2時間以内</b>に食べる。</li>
+      <li>上の表は厚さ1〜3cm程度の肉を想定した目安。様子を見ながら行う。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════ 安全のルール ══════════ -->
+<section id="safe" hidden>
+  <div class="card">
+    <p><b>低温調理が危険なのではありません。</b>危ないのは「肉を休ませる」「余熱で火を通す」「串を刺して熱かったらOK」といった、<b>芯温を管理しない・根拠のない方法</b>のほうです。低温調理は、温度と時間と厚みの関係が数字で決まっている、むしろ再現性の高い調理法です。</p>
+  </div>
+
+  <h2>BONIQの7つのポイント</h2>
+  <div class="card">
+    <ol class="steps">
+      <li><b>清潔な手と道具で。</b>食中毒の大半は外からの持ち込みです。</li>
+      <li><b>新鮮な食材を使う。</b>基準表は一般に流通している新鮮な食材が前提。</li>
+      <li><b>食材を汚染させない。</b>肉や魚の下処理はビニール手袋を。触った手で袋やスイッチに触らない。肉を切ったまな板でそのまま野菜を切らない。冷蔵の食材は常温に戻さない。</li>
+      <li><b>加熱時間基準表の温度・時間を守る。</b>「温度：時間：厚み」の相関で安全が決まります。</li>
+      <li><b>袋の上部を汚さない。</b>湯から出ている部分は殺菌されないので、取り出すときに触ると危険。</li>
+      <li><b>正しい方法で加熱する。</b>耐熱表記のある袋を使う。肉を重ねるならその合計の厚みで時間を取る。</li>
+      <li><b>調理後、保存するなら急冷する。</b>完全に氷水に沈めて冷やしてから冷蔵・冷凍へ。</li>
+    </ol>
+  </div>
+
+  <h2>やってはいけない判断</h2>
+  <div class="card">
+    <ul class="dots">
+      <li><b>試しにこれくらい、で時間を決める</b> → 安全レベルまで加熱できたか不明。</li>
+      <li><b>見た目で火が通ったと判断する</b> → 同じ不明。</li>
+      <li><b>芯温計で設定温度に達したら終了する</b> → <b>これがいちばん間違えやすい</b>。芯温が届いてから、その温度を保つ時間が別に要ります。</li>
+      <li><b>金串を刺して熱かったらOK</b>／<b>アルミホイルで余熱で火を通す</b> → どちらも根拠がない。</li>
+      <li><b>沸騰した湯に入れて火を止め、放置する</b> → 温度が保てず殺菌不足になりやすい。自家製サラダチキンの食中毒の典型パターン。</li>
+    </ul>
+  </div>
+
+  <h2>厚生労働省の「75℃1分と同等」の条件</h2>
+  <div class="card">
+    <p style="margin-bottom:12px">中心部で、下のどれかを満たせば同等の殺菌とされます。<b>「中心部がその温度に達してから」の保持時間</b>で、芯まで届くまでの時間は別に要ることに注意。</p>
+    <div class="tw">
+      <table>
+        <tr><th>中心温度</th><th>保持時間</th></tr>
+        <tr><td class="n">75℃</td><td class="n">1分</td></tr>
+        <tr><td class="n">70℃</td><td class="n">3分</td></tr>
+        <tr><td class="n">69℃</td><td class="n">4分</td></tr>
+        <tr><td class="n">68℃</td><td class="n">5分</td></tr>
+        <tr><td class="n">67℃</td><td class="n">8分</td></tr>
+        <tr><td class="n">66℃</td><td class="n">11分</td></tr>
+        <tr><td class="n">65℃</td><td class="n">15分</td></tr>
+        <tr><td class="n">63℃</td><td class="n">30分</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>ピンク色は生焼けか</h2>
+  <div class="card">
+    <p><b>規定の温度×時間を満たしていれば安全です。</b>ミオグロビン（＝肉の赤い色素）は80℃以上で褐色に変わるため、低温調理では中心がピンクのまま残ります。生姜や玉ねぎの酵素で赤みが出る「ピンキング」もあります。</p>
+    <p>ただし<b>透明なピンク・ぶよぶよ・刺した竹串が冷たい・赤い汁</b>は加熱不足のサインなので、中心75℃1分まで再加熱してください。</p>
+  </div>
+
+  <h2>この人たちには温度を上げる</h2>
+  <div class="card">
+    <p>高齢の方・小さな子ども・妊娠中の方・免疫が落ちている方が食べるときは、<b>このアプリの推奨に従わず、すべての肉で中心温度75℃・1分以上</b>に加熱してください。BONIQも厚生労働省も同じことを言っています。</p>
+  </div>
+
+  <div class="src">
+    <p>加熱時間の数値は BONIQ「低温調理 加熱時間基準表」（2026年2月17日版 PDF）から。保存・再加熱・7つのポイント・厚みの測りかたは BONIQ「低温調理のルール 〜7つのポイント〜」（2026年7月15日改定）と「基準表 算出方法と根拠」から。</p>
+    <p>芯温到達の実測（鶏むね約300g・厚さ約3cm を63℃で加熱→芯温63℃まで平均68分）は内閣府食品安全委員会。同等加熱条件の表は厚生労働省。</p>
+    <p><a href="https://boniq.jp/pdf/ttguide.pdf">boniq.jp/pdf/ttguide.pdf</a>（最新版はここで確認）</p>
+    <p>最終的な安全は調理環境や食材にも左右されます。設定を大きく変えず、迷ったら温度を上げる側に倒してください。</p>
+  </div>
+</section>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ══════════════════════════════════════════════
+   BONIQ 低温調理 加熱時間基準表（2026年2月17日版）
+   設定時間 ＝ 芯温が設定温度に達する時間 ＋ その温度で殺菌される時間
+   横軸＝厚み(cm) / 末尾の | の後ろは「芯温保持」＝厚み5.5cm超で芯温計を使う場合に保つ時間
+   ══════════════════════════════════════════════ */
+const TH = [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5];
+const HOT  = '0:10 0:25 0:40 0:55 1:20 1:35 2:05 2:35 3:05 3:35 4:05|0:05'; // 65〜69℃ 共通行
+const HOT2 = '0:10 0:20 0:40 0:55 1:20 1:35 2:05 2:35 3:05 3:35 4:05|0:05'; // 70℃ 行
+
+const MEAT = {
+  chicken:{
+    name:'鶏肉', short:'鶏',
+    hint:'57〜70℃',
+    note:'代表格のカンピロバクターだけでなく、より耐熱性の高いリステリア・サルモネラまで考慮して算出された表です。',
+    rows:{
+      57:'1:55 2:10 2:25 2:40 3:05 3:20 3:50 4:20 4:50 5:20 5:50|1:50',
+      58:'1:20 1:35 1:50 2:05 2:30 2:45 3:15 3:45 4:15 4:45 5:15|1:15',
+      59:'0:55 1:10 1:25 1:40 2:05 2:20 2:50 3:20 3:50 4:20 4:50|0:50',
+      60:'0:40 0:50 1:10 1:25 1:50 2:05 2:35 3:05 3:35 4:05 4:35|0:35',
+      61:'0:25 0:40 0:55 1:10 1:35 1:50 2:20 2:50 3:20 3:50 4:20|0:20',
+      62:'0:20 0:35 0:50 1:05 1:30 1:45 2:15 2:45 3:15 3:45 4:15|0:15',
+      63:'0:15 0:30 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      64:'0:15 0:25 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      65:HOT, 66:HOT, 67:HOT, 68:HOT2, 69:HOT2, 70:HOT2
+    },
+    texture:{
+      57:'表の下限。とろけるように柔らかいが、生っぽさが残る温度帯。厚みを2cm以下に揃え、時間を1分も削らないこと。',
+      58:'非常にしっとり。ここから「火が入った」歯ごたえが少し出はじめる。',
+      59:'しっとり寄り。60℃の一歩手前で、口当たりはまだとろける側。',
+      60:'BONIQが「間違いない」とする定番。極めてジューシーで柔らかく、サラダチキンの理想形。ぐにゃっとした食感がわずかに残る。',
+      61:'低温調理でも中心61℃以上が望ましい、と専門家が挙げる安全側の下限。60℃の食感をほぼ保ったまま余裕が増える。',
+      62:'60℃台のジューシーさと、63℃の安心感のあいだ。',
+      63:'厚労省の「63℃30分＝75℃1分と同等」に一致する安心ライン。歯切れが良くなりつつ、ジューシーさは十分。作り置き・弁当・子ども向けの標準。',
+      64:'63℃よりわずかに締まる。作り置きの余裕をもう少し取りたいとき。',
+      65:'身がやや引き締まり歯切れ良好。アクチンが縮みはじめる手前で、ジューシーさはまだ保たれる。',
+      66:'アクチンの変性帯に入る。ここから水分が抜けはじめる。',
+      67:'さらに締まる。繊維を感じはじめる。',
+      68:'しっかりした歯ごたえ。しっとり感より安全を優先する温度。',
+      69:'ウェルダン手前。パサつきやすくなる。',
+      70:'ウェルダン領域。安全は最も厚いが、低温調理の利点はほぼ無くなる。'
+    }
+  },
+  beef:{
+    name:'牛肉・ラム', short:'牛',
+    hint:'55〜70℃',
+    note:'腸管出血性大腸菌（O157など）とリステリアを考慮し、国際安全基準＝菌を100万分の1にするレベルで算出された表です。',
+    rows:{
+      55:'3:45 4:00 4:15 4:30 4:55 5:10 5:40 6:10 6:40 7:10 7:40|3:40',
+      56:'2:35 2:50 3:05 3:20 3:45 4:00 4:30 5:00 5:30 6:00 6:30|2:30',
+      57:'1:50 2:05 2:20 2:35 3:00 3:15 3:45 4:15 4:45 5:15 5:45|1:45',
+      58:'1:15 1:25 1:45 2:00 2:25 2:40 3:10 3:40 4:10 4:40 5:10|1:10',
+      59:'0:50 1:05 1:20 1:35 2:00 2:15 2:45 3:15 3:45 4:15 4:45|0:45',
+      60:'0:35 0:50 1:05 1:20 1:45 2:00 2:30 3:00 3:30 4:00 4:30|0:30',
+      61:'0:30 0:45 1:00 1:15 1:40 1:55 2:25 2:55 3:25 3:55 4:25|0:25',
+      62:'0:20 0:35 0:50 1:05 1:30 1:45 2:15 2:45 3:15 3:45 4:15|0:15',
+      63:'0:20 0:30 0:50 1:05 1:30 1:45 2:15 2:45 3:15 3:45 4:15|0:15',
+      64:'0:15 0:30 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      65:HOT, 66:HOT, 67:HOT, 68:HOT, 69:HOT, 70:HOT2
+    },
+    texture:{
+      55:'かなりレア寄り。時間が長くかかるぶん、厚みの見積もりを間違えないこと。',
+      56:'レア。とろりとした舌ざわり。',
+      57:'ミディアムレアの定番。ステーキならここか58℃。',
+      58:'ミディアムレア。厚さ2cmのステーキで2時間が基準例として挙げられている設定。',
+      59:'ミディアムレア〜ミディアム。',
+      60:'ミディアム。ローストビーフの定番帯。',
+      61:'ミディアム。締まりが出はじめる。',
+      62:'ミディアムウェル寄り。',
+      63:'ミディアムウェル。厚労省の63℃30分ラインと同じ温度。',
+      64:'ウェル寄り。赤みはかなり退く。',
+      65:'ウェル。歯ごたえがしっかり出る。',
+      66:'アクチンが縮み、肉汁が抜けはじめる。',
+      67:'しっかり火の通った食感。',
+      68:'ウェルダン寄り。',
+      69:'ウェルダン。',
+      70:'ウェルダン。安全最優先の設定。'
+    }
+  },
+  pork:{
+    name:'豚肉・ジビエ', short:'豚',
+    hint:'61〜70℃',
+    note:'厚労省の「中心63℃で30分、またはこれと同等以上」を温度ごとに算出した表です。E型肝炎ウイルスのリスクがあるため、60℃以下は表そのものがありません。',
+    rows:{
+      61:'1:25 1:35 1:55 2:10 2:35 2:50 3:20 3:50 4:20 4:50 5:20|1:20',
+      62:'0:55 1:10 1:25 1:40 2:05 2:20 2:50 3:20 3:50 4:20 4:50|0:50',
+      63:'0:35 0:50 1:05 1:20 1:45 2:00 2:30 3:00 3:30 4:00 4:30|0:30',
+      64:'0:30 0:45 1:00 1:15 1:40 1:55 2:25 2:55 3:25 3:55 4:25|0:25',
+      65:'0:25 0:40 0:55 1:10 1:35 1:50 2:20 2:50 3:20 3:50 4:20|0:20',
+      66:'0:20 0:35 0:50 1:05 1:30 1:45 2:15 2:45 3:15 3:45 4:15|0:15',
+      67:'0:15 0:30 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      68:'0:15 0:30 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      69:'0:15 0:25 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      70:'0:10 0:25 0:40 0:55 1:20 1:35 2:05 2:35 3:05 3:35 4:05|0:05'
+    },
+    texture:{
+      61:'表の下限。しっとり柔らかいが、時間はいちばん長い。',
+      62:'しっとり。ロースやヒレのやわらかさが最も出る帯。',
+      63:'厚労省の加熱食肉製品の基準（63℃30分）と同じ温度。豚の標準。',
+      64:'63℃よりわずかに締まる。',
+      65:'歯切れが出てくる。',
+      66:'締まりはじめる。',
+      67:'しっかりした食感。',
+      68:'ウェル寄り。',
+      69:'ウェル。',
+      70:'ウェルダン。'
+    }
+  },
+  fish:{
+    name:'魚（生食用でない）', short:'魚',
+    hint:'55〜70℃',
+    note:'腸炎ビブリオとリステリアを考慮した表です。寄生虫（アニサキス等）は加熱温度によっては別対応が要ります。',
+    rows:{
+      55:'3:35 3:50 4:05 4:20 4:45 5:00 5:30 6:00 6:30 7:00 7:30|3:30',
+      56:'2:25 2:40 2:55 3:10 3:35 3:50 4:20 4:50 5:20 5:50 6:20|2:20',
+      57:'1:40 1:55 2:10 2:25 2:50 3:05 3:35 4:05 4:35 5:05 5:35|1:35',
+      58:'1:10 1:20 1:40 1:55 2:20 2:35 3:05 3:35 4:05 4:35 5:05|1:05',
+      59:'0:50 1:00 1:20 1:35 2:00 2:15 2:45 3:15 3:45 4:15 4:45|0:45',
+      60:'0:35 0:50 1:05 1:20 1:45 2:00 2:30 3:00 3:30 4:00 4:30|0:30',
+      61:'0:25 0:40 0:55 1:10 1:35 1:50 2:20 2:50 3:20 3:50 4:20|0:20',
+      62:'0:20 0:35 0:50 1:05 1:30 1:45 2:15 2:45 3:15 3:45 4:15|0:15',
+      63:'0:15 0:30 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      64:'0:15 0:30 0:45 1:00 1:25 1:40 2:10 2:40 3:10 3:40 4:10|0:10',
+      65:HOT, 66:HOT, 67:HOT, 68:HOT, 69:HOT, 70:HOT2
+    },
+    texture:{
+      55:'とろりと生に近い口当たり。',
+      56:'とろり。脂ののった魚が映える。',
+      57:'しっとり、ほろりの手前。',
+      58:'ほろりとほぐれはじめる。サーモンの定番帯。',
+      59:'ほろり。',
+      60:'ほろりとしっかりの境目。',
+      61:'身が立ってくる。',
+      62:'しっかりめ。',
+      63:'火の通った白身の食感。',
+      64:'しっかり。',
+      65:'締まる。',
+      66:'締まる。パサつきはじめる。',
+      67:'しっかり。',
+      68:'ウェル寄り。',
+      69:'ウェル。',
+      70:'ウェルダン。'
+    }
+  }
+};
+
+/* ── ユーティリティ ── */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+function toMin(hm){ const p = hm.split(':'); return (+p[0])*60 + (+p[1]); }
+function fmtDur(m){
+  const h = Math.floor(m/60), mm = m%60;
+  if(h===0) return mm + '分';
+  if(mm===0) return h + '時間';
+  return h + '時間' + String(mm).padStart(2,'0') + '分';
+}
+function fmtClock(d){
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ── 状態 ── */
+const KEY = 'teion_v1';
+const state = Object.assign({ meat:'chicken', temp:60, th:2, favs:[], filter:'all', timer:null }, load());
+function load(){
+  try{ return JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ return {}; }
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+}
+
+/* ══════════ タブ ══════════ */
+$$('nav.tabs button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    $$('nav.tabs button').forEach(x=>x.setAttribute('aria-selected', String(x===b)));
+    ['calc','taste','prep','keep','safe'].forEach(id=>{
+      $('#'+id).hidden = (id !== b.dataset.tab);
+    });
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+});
+
+/* ══════════ 食材・厚み・温度のチップ ══════════ */
+function buildMeat(){
+  $('#meatChips').innerHTML = Object.keys(MEAT).map(k=>
+    '<button class="chip" data-meat="'+k+'" aria-pressed="'+(k===state.meat)+'">'+esc(MEAT[k].short)+'</button>'
+  ).join('');
+  $('#meatNote').innerHTML = '<strong>'+esc(MEAT[state.meat].name)+'</strong>　'+esc(MEAT[state.meat].note);
+  $('#meatChips').querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      state.meat = b.dataset.meat;
+      const temps = Object.keys(MEAT[state.meat].rows).map(Number);
+      if(temps.indexOf(state.temp) < 0){
+        // いちばん近い温度に寄せる
+        state.temp = temps.reduce((a,c)=> Math.abs(c-state.temp) < Math.abs(a-state.temp) ? c : a, temps[0]);
+      }
+      save(); buildMeat(); buildTemp(); render();
+    });
+  });
+}
+function buildTh(){
+  $('#thChips').innerHTML = TH.map(t=>
+    '<button class="chip" data-th="'+t+'" aria-pressed="'+(t===state.th)+'">'+t+'</button>'
+  ).join('');
+  $('#thChips').querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{ state.th = +b.dataset.th; save(); buildTh(); render(); });
+  });
+}
+function buildTemp(){
+  const m = MEAT[state.meat];
+  $('#tempHint').textContent = m.hint;
+  $('#tempChips').innerHTML = Object.keys(m.rows).map(t=>
+    '<button class="chip" data-temp="'+t+'" aria-pressed="'+(+t===state.temp)+'">'+t+'℃</button>'
+  ).join('');
+  $('#tempChips').querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{ state.temp = +b.dataset.temp; save(); buildTemp(); render(); });
+  });
+}
+
+/* ══════════ 結果 ══════════ */
+function lookup(){
+  const row = MEAT[state.meat].rows[state.temp];
+  const parts = row.split('|');
+  const cells = parts[0].trim().split(/\s+/);
+  const i = TH.indexOf(state.th);
+  return { total: toMin(cells[i]), hold: toMin(parts[1]) };
+}
+
+function noteFor(){
+  const m = state.meat, t = state.temp, out = [];
+  if(m==='chicken' && t<=59){
+    out.push(['低め','厚労省が示す同等条件（63℃30分）より下の温度です。BONIQの基準表は満たしますが、<b>中心61℃以上を勧める専門家もいます</b>。厚みを2cm以下に揃え、時間を1分も削らないこと。']);
+  }
+  if(m==='chicken' && t===63){
+    out.push(['◎','厚労省の「63℃30分＝75℃1分と同等」と一致する温度。作り置き・弁当・子ども向けの標準にできます。']);
+  }
+  if(m==='pork' && t===61){
+    out.push(['下限','豚・ジビエは60℃以下がE型肝炎ウイルスの危険温度帯とされるため、表は61℃から始まります。']);
+  }
+  if(m==='fish' && t<=60){
+    out.push(['寄生虫','<b>60℃以下はアニサキスの予防にならない</b>。−20℃で24時間以上（家庭用冷凍庫 約−18℃なら48時間以上）の冷凍が別に必要です。']);
+  }
+  if(state.th>=4){
+    out.push(['厚い','この厚みは芯まで届くのに時間がかかります。開くか半分にして<b>2〜3cm</b>に整えたほうが、安全にも食感にも有利です。']);
+  }
+  return out;
+}
+
+function render(){
+  const r = lookup();
+  const m = MEAT[state.meat];
+  const reach = r.total - r.hold;
+  const now = new Date();
+  const fin = new Date(now.getTime() + r.total*60000);
+
+  let html = '<div class="result">';
+  html += '<p class="rk">BONIQ 設定</p>';
+  html += '<div class="big"><span class="t">'+state.temp+'℃</span><span class="t">'+fmtDur(r.total)+'</span></div>';
+  html += '<div class="split">'
+       +  '<div><span class="sv">約'+fmtDur(reach)+'</span><span class="sl">芯まで届く</span></div>'
+       +  '<div><span class="sv">'+fmtDur(r.hold)+'</span><span class="sl">そこから殺菌</span></div>'
+       +  '<div><span class="sv">'+state.th+'cm</span><span class="sl">厚み</span></div>'
+       +  '</div>';
+  html += '<div class="finish">いま入れたら → <b>'+fmtClock(fin)+'</b> にできあがり<span style="opacity:.6"> （'+fmtClock(now)+' 現在）</span></div>';
+  html += '<p class="texture">'+esc(m.texture[state.temp])+'</p>';
+  noteFor().forEach(n=>{
+    html += '<div class="warn"><span class="m">'+n[0]+'</span><span>'+n[1]+'</span></div>';
+  });
+  html += '</div>';
+
+  html += '<div class="btnrow"><button class="btn" id="startTimer">この時間でタイマーを始める</button></div>';
+
+  html += '<div class="card" style="margin-top:14px"><p class="lbl">この時間の中身</p>'
+       +  '<p style="font-size:13.5px;line-height:1.85;color:var(--ink-2);margin:0">'
+       +  '設定時間は<b style="color:var(--ink)">「芯温が設定温度に達する時間」＋「その温度で安全なレベルまで殺菌される時間」</b>の足し算です。'
+       +  '芯温計で'+state.temp+'℃に達したのを確認しても、そこで止めてはいけません。'
+       +  'この設定なら、達したあと<b style="color:var(--ink)">'+fmtDur(r.hold)+'</b>は保つ必要があります。</p>'
+       +  '<p class="note">厚みが5.5cmを超える場合は表の外です。芯温計を肉の中心に刺し、'+state.temp+'℃に達してから<b>'+fmtDur(r.hold)+'</b>保ってください。</p>'
+       +  '</div>';
+
+  $('#result').innerHTML = html;
+  $('#startTimer').addEventListener('click', ()=>{
+    state.timer = {
+      end: Date.now() + r.total*60000,
+      start: Date.now(),
+      label: MEAT[state.meat].short + ' ' + state.temp + '℃ / ' + state.th + 'cm'
+    };
+    save(); renderTimer();
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+}
+
+/* ══════════ タイマー ══════════ */
+let beeped = false;
+function renderTimer(){
+  const box = $('#timerBox');
+  const t = state.timer;
+  if(!t){ box.innerHTML = ''; return; }
+  const left = t.end - Date.now();
+  const done = left <= 0;
+  const secs = Math.max(0, Math.ceil(left/1000));
+  const h = Math.floor(secs/3600), mm = Math.floor((secs%3600)/60), ss = secs%60;
+  const disp = done ? 'できあがり'
+    : (h>0 ? h+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0')
+           : mm+':'+String(ss).padStart(2,'0'));
+  const total = t.end - t.start;
+  const pct = done ? 100 : Math.max(0, Math.min(100, (1 - left/total) * 100));
+
+  box.innerHTML =
+    '<div class="timer'+(done?' done':'')+'">'
+    + '<p class="tk">'+esc(t.label)+'</p>'
+    + '<div class="tv">'+disp+'</div>'
+    + '<p class="tm">'+(done ? '氷水で急冷するか、90分以内に食べてください' : fmtClock(new Date(t.end))+' にできあがり')+'</p>'
+    + '<div class="bar"><i style="width:'+pct.toFixed(1)+'%"></i></div>'
+    + '<div class="btnrow"><button class="btn ghost row" id="stopTimer">'+(done?'閉じる':'やめる')+'</button></div>'
+    + '</div>';
+  $('#stopTimer').addEventListener('click', ()=>{
+    state.timer = null; beeped = false; save(); renderTimer();
+  });
+
+  if(done && !beeped){ beeped = true; beep(); }
+}
+function beep(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    const ctx = new AC();
+    [0, .35, .7].forEach(d=>{
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = 880;
+      g.gain.setValueAtTime(0, ctx.currentTime + d);
+      g.gain.linearRampToValueAtTime(.25, ctx.currentTime + d + .02);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + d + .25);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + .3);
+    });
+  }catch(e){}
+}
+setInterval(()=>{ if(state.timer) renderTimer(); }, 1000);
+
+/* ══════════════════════════════════════════════
+   味つけ（胸肉1枚 300g あたり）
+   ══════════════════════════════════════════════ */
+const TASTES = [
+  { n:'プレーン塩（基本のサラダチキン）', tag:'すぐ', temp:'60℃',
+    ing:'塩3g（肉の1%）／こしょう少々／好みでオリーブ油 小1',
+    when:'塩は加熱後、袋の中でなじませる',
+    why:'低温調理のジューシーさを最も素直に味わえる形。最初から塩を効かせないぶん、肉が締まらない。',
+    go:'そのままスライス、サラダ、サンドイッチ' },
+  { n:'塩糖水ブライン（基本の下ごしらえ）', tag:'すぐ', temp:'60〜63℃',
+    ing:'水100ml＋塩5g＋砂糖5g',
+    when:'加熱前に2〜4時間漬け、水気を拭いて袋へ',
+    why:'塩が筋原繊維の一部を溶かして密な凝集を妨げ、肉が自重の10〜25%の水を抱え込む。保水は最大になるが、鶏本来の味はやや薄まる。',
+    go:'冷しゃぶ風、棒棒鶏' },
+  { n:'和風・しょうゆ麹', tag:'作り置き', temp:'63℃',
+    ing:'しょうゆ麹 大2（またはしょうゆ大1＋みりん大1）',
+    when:'加熱前に袋へ',
+    why:'麹の酵素がたんぱく質を分解して柔らかくし、旨味も出す。63℃なら厚労省の同等条件と一致するので作り置きの標準にできる。',
+    go:'丼、弁当、おにぎりの具' },
+  { n:'中華・よだれ鶏', tag:'すぐ', temp:'60〜63℃',
+    ing:'加熱は塩2g／たれ＝しょうゆ大1・酢大1・ラー油小1・砂糖小1・すりごま・刻みねぎ',
+    when:'塩は加熱後、たれは食べる直前にかける',
+    why:'酢と香味は加熱すると香りが飛ぶ。後がけにすると香りが立つ。',
+    go:'前菜、ビールのつまみ' },
+  { n:'中華・ねぎ塩ごま油', tag:'すぐ', temp:'60℃',
+    ing:'塩2g／白ねぎみじん・ごま油大1・鶏がらスープの素 小1/2',
+    when:'塩は加熱後、ねぎ油は後和え',
+    why:'ごま油は揮発しやすいので、加熱に付き合わせない。',
+    go:'丼、麺のトッピング' },
+  { n:'韓国風ヤンニョム', tag:'作り置き', temp:'63℃',
+    ing:'コチュジャン大1・しょうゆ小2・砂糖小1・にんにく少々・ごま油',
+    when:'ソースは加熱後に和える',
+    why:'糖分が多いので加熱前に入れると焦げやすい。しっかり味なので日持ち中も飽きない。',
+    go:'ビビンバ、サンチュ巻き' },
+  { n:'カオマンガイ風', tag:'作り置き', temp:'63℃',
+    ing:'加熱は塩2g＋しょうが・にんにく／たれ＝ナンプラー小2・砂糖小1・レモン・唐辛子',
+    when:'香味は加熱前でも可、たれは後がけ',
+    why:'しょうが・にんにくは加熱前でもよいが、ピンキング（薬味の酵素で肉が赤く見える現象）の一因になる。',
+    go:'ご飯にのせて丼' },
+  { n:'洋風ハーブ', tag:'すぐ', temp:'60℃',
+    ing:'塩3g・こしょう・乾燥ハーブ（オレガノ／タイム）小1・オリーブ油小1',
+    when:'塩は加熱後、乾燥ハーブは加熱前でも可',
+    why:'乾燥ハーブは生ハーブより香りが飛びにくいので、加熱前に入れて全体に移してもよい。',
+    go:'サラダ、サンド、パスタ' },
+  { n:'カレー（タンドリー風）', tag:'作り置き', temp:'63℃',
+    ing:'カレー粉大1・塩麹大1（またはヨーグルト大2＋塩2g）',
+    when:'加熱前に袋へ',
+    why:'麹の酵素・ヨーグルトの乳が柔らかくする。スパイスが効くので作り置きでも飽きない。',
+    go:'サンド、カレー、弁当' },
+  { n:'レモンバター', tag:'すぐ', temp:'60℃',
+    ing:'塩2g／加熱後にバター10g・レモン汁小2・こしょう',
+    when:'塩は加熱後、レモンバターは温かいうちに絡める',
+    why:'酸を加熱前に長く入れるとたんぱく質が変性して食感が変わる。後入れで爽やかさが立つ。',
+    go:'メインおかず、パン' },
+  { n:'梅しそ', tag:'すぐ', temp:'60〜63℃',
+    ing:'塩1.5g／加熱後に叩き梅1個分・大葉・少量のめんつゆ',
+    when:'塩は加熱後、梅しそは和える',
+    why:'梅の酸と大葉の香りは、どちらも加熱に弱い。',
+    go:'冷菜、弁当、そうめんの具' },
+  { n:'味噌漬け', tag:'作り置き', temp:'63℃',
+    ing:'味噌大1・みりん大1・砂糖小1',
+    when:'加熱前に袋へ',
+    why:'コクが乗り、味噌の塩分と発酵が保存性にも働く。ただし後で焼くと焦げやすい。',
+    go:'おにぎり、焼きおにぎり、丼' },
+  { n:'塩麹（うま味系）', tag:'作り置き', temp:'60〜63℃',
+    ing:'塩麹大1（肉の10%が目安）',
+    when:'加熱前に袋へ。一晩置くとさらに柔らかい',
+    why:'酵素で柔らかくし、同時に旨味を足す。麹系のなかでいちばん素直な味。',
+    go:'サラダ、和え物、スープ' }
+];
+
+function buildFilters(){
+  const fs = [['all','すべて'],['すぐ','すぐ食べる'],['作り置き','作り置き']];
+  $('#tasteFilters').innerHTML = fs.map(f=>
+    '<button class="chip" data-f="'+f[0]+'" aria-pressed="'+(f[0]===state.filter)+'">'+f[1]+'</button>'
+  ).join('') + '<button class="chip" data-f="fav" aria-pressed="'+(state.filter==='fav')+'">★ お気に入り</button>';
+  $('#tasteFilters').querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{ state.filter = b.dataset.f; save(); buildFilters(); buildTastes(); });
+  });
+}
+
+function buildTastes(){
+  const list = TASTES.map((t,i)=>({t:t,i:i})).filter(o=>{
+    if(state.filter==='all') return true;
+    if(state.filter==='fav') return state.favs.indexOf(o.i) >= 0;
+    return o.t.tag === state.filter;
+  });
+  if(!list.length){
+    $('#tasteList').innerHTML = '<div class="card"><p style="margin:0;font-size:13.5px;color:var(--muted)">まだお気に入りがありません。カードを開いて★を押すと、ここに並びます。</p></div>';
+    return;
+  }
+  $('#tasteList').innerHTML = list.map(o=>{
+    const t = o.t, i = o.i, fav = state.favs.indexOf(i) >= 0;
+    return '<details class="rc">'
+      + '<summary>'
+      +   '<span class="num">'+(i+1)+'</span>'
+      +   '<span class="rn">'+esc(t.n)+'</span>'
+      +   '<span class="rt">'+esc(t.temp)+'</span>'
+      +   '<span class="cv">›</span>'
+      + '</summary>'
+      + '<div class="body"><dl>'
+      +   '<dt>分量</dt><dd>'+esc(t.ing)+'</dd>'
+      +   '<dt>入れる時</dt><dd>'+esc(t.when)+'</dd>'
+      +   '<dt>展開</dt><dd>'+esc(t.go)+'</dd>'
+      + '</dl>'
+      + '<p class="why">'+esc(t.why)+'</p>'
+      + '<div class="go"><button class="btn ghost" data-fav="'+i+'">'+(fav?'★ お気に入り':'☆ お気に入りに入れる')+'</button></div>'
+      + '</div></details>';
+  }).join('');
+
+  $('#tasteList').querySelectorAll('[data-fav]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const i = +b.dataset.fav, k = state.favs.indexOf(i);
+      if(k>=0) state.favs.splice(k,1); else state.favs.push(i);
+      save();
+      // お気に入り絞り込み中だけ作り直す（それ以外は開いたカードを閉じない）
+      if(state.filter==='fav') buildTastes();
+      else b.textContent = (k>=0) ? '☆ お気に入りに入れる' : '★ お気に入り';
+    });
+  });
+}
+
+/* ══════════ 下ごしらえの計算 ══════════ */
+function calcBrine(){
+  const w = parseFloat($('#brineW').value) || 0;
+  const g = w * 0.05;
+  $('#brineS').textContent  = (Math.round(g*10)/10).toString();
+  $('#brineSu').textContent = (Math.round(g*10)/10).toString();
+}
+function calcDry(){
+  const w = parseFloat($('#dryW').value) || 0;
+  $('#dryS').textContent  = (Math.round(w*0.01*10)/10).toFixed(1);
+  $('#dryS2').textContent = (Math.round(w*0.013*10)/10).toFixed(1);
+}
+$('#brineW').addEventListener('input', calcBrine);
+$('#dryW').addEventListener('input', calcDry);
+
+/* ══════════ 再加熱 ══════════ */
+function calcReheat(){
+  const t = parseInt($('#reheatT').value, 10);
+  const base = isNaN(t) ? 60 : t;
+  const low = Math.max(55, base - 5);
+  const lowNote = (base - 5 < 55) ? '（55℃を下回らないので55℃）' : '';
+  $('#reheatTable').innerHTML =
+    '<tr><th>状態</th><th>食べ方</th><th>設定</th></tr>'
+  + '<tr><td>冷蔵から</td><td>そのまま食べる</td><td class="n">'+base+'℃ / 15〜20分</td></tr>'
+  + '<tr><td>冷蔵から</td><td>仕上げに焼く</td><td class="n">'+low+'℃ / 15〜20分'+lowNote+'</td></tr>'
+  + '<tr><td>冷凍から</td><td>そのまま食べる</td><td class="n">'+base+'℃ / 25〜30分</td></tr>'
+  + '<tr><td>冷凍から</td><td>仕上げに焼く</td><td class="n">'+low+'℃ / 25〜30分'+lowNote+'</td></tr>';
+}
+$('#reheatT').addEventListener('input', calcReheat);
+
+/* ══════════ 起動 ══════════ */
+buildMeat(); buildTh(); buildTemp(); render(); renderTimer();
+buildFilters(); buildTastes();
+calcBrine(); calcDry(); calcReheat();
+
+// 時刻表示を分がまたいだら更新する（できあがり予定時刻がずれないように）
+setInterval(()=>{ if(!$('#calc').hidden) render(); }, 60000);
+
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
