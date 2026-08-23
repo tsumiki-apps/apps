@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-dakkobakari.png">
+<meta name="apple-mobile-web-app-title" content="だっこばかり">
+<title>だっこばかり — ふたりの体重記録</title>
+<style>
+  :root{
+    --bg:#f6f4f0; --card:#ffffff; --ink:#1d1d1f; --sub:#6e6e73;
+    --line:#e7e2da; --accent:#8a6a4a; --accent-soft:#f2ebe2;
+    --dog:#c0793d; --dog-soft:#fbf0e5;
+    --human:#4a7fb5; --human-soft:#eaf1f8;
+    --lo:#3f8f6f; --hi:#c2584f;
+    --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{overscroll-behavior-y:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    padding:env(safe-area-inset-top) 0 calc(40px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:600px; margin:0 auto; padding:0 16px;}
+
+  header{padding:20px 4px 4px; display:flex; align-items:baseline; gap:9px;}
+  header h1{font-size:19px; font-weight:700; letter-spacing:.01em;}
+  header .sub{font-size:11.5px; color:var(--sub); margin-left:auto;}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px; margin-top:12px;}
+  .sec-head{display:flex; align-items:baseline; gap:8px; margin:24px 2px 6px;}
+  .sec-head h2{font-size:14.5px; font-weight:700;}
+  .sec-head .sh-sub{margin-left:auto; font-size:11.5px; color:var(--sub);}
+  .muted{color:var(--sub); font-size:12.5px;}
+
+  /* ===== 入力 ===== */
+  .steps{display:flex; flex-direction:column; gap:12px;}
+  .step{display:flex; align-items:center; gap:10px;}
+  .step .no{flex:0 0 auto; width:22px; height:22px; border-radius:50%;
+    background:var(--accent-soft); color:var(--accent); font-size:11.5px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; margin-top:2px;}
+  .step .body{flex:1; min-width:0;}
+  .step .lb{font-size:13px; font-weight:600; line-height:1.45;}
+  .step .lb em{font-style:normal; color:var(--sub); font-weight:400; font-size:11.5px; margin-left:5px;}
+  .inrow{display:flex; align-items:center; gap:6px; margin-top:6px;}
+  input[type=number],input[type=date],input[type=text]{
+    font-family:inherit; font-size:17px; color:var(--ink); background:var(--bg);
+    border:1px solid var(--line); border-radius:12px; padding:10px 12px;
+    font-variant-numeric:tabular-nums; -webkit-appearance:none; appearance:none;}
+  input[type=number]{width:118px; text-align:right; font-weight:700; letter-spacing:-.01em;}
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none; margin:0;}
+  input[type=date]{width:100%; font-size:16px; font-weight:600;}
+  input[type=text]{width:100%; font-size:16px;}
+  input:focus{outline:none; border-color:var(--accent);}
+  .unit{font-size:13px; color:var(--sub);}
+
+  .datebox{display:flex; align-items:center; gap:8px;}
+  .datebox .dlabel{font-size:12.5px; color:var(--sub); flex:0 0 auto;}
+  .datebox .today{flex:0 0 auto; border:1px solid var(--line); background:var(--card);
+    color:var(--sub); font-family:inherit; font-size:12px; font-weight:600;
+    border-radius:10px; padding:8px 11px; cursor:pointer;}
+
+  /* ===== 計算結果 ===== */
+  .result{margin-top:14px; border-top:1px dashed var(--line); padding-top:14px;
+    display:flex; gap:10px;}
+  .rbox{flex:1; min-width:0; border-radius:15px; padding:11px 12px; text-align:center;}
+  .rbox.dog{background:var(--dog-soft);}
+  .rbox.human{background:var(--human-soft);}
+  .rbox .rn{font-size:11.5px; font-weight:600; color:var(--sub);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .rbox .rv{font-size:27px; font-weight:700; letter-spacing:-.03em; line-height:1.25;
+    font-variant-numeric:tabular-nums;}
+  .rbox .rv small{font-size:13px; font-weight:600; margin-left:2px; letter-spacing:0;}
+  .rbox.dog .rv{color:var(--dog);} .rbox.human .rv{color:var(--human);}
+  .rbox .rv.blank{color:#cdc7bd; font-size:22px;}
+  .rbox .rd{font-size:11px; color:var(--sub); font-variant-numeric:tabular-nums;}
+  .rbox .rd .up{color:var(--hi);} .rbox .rd .dn{color:var(--lo);}
+
+  .warn{margin-top:11px; background:#fdf3e2; color:#95590f; border-radius:12px;
+    padding:9px 12px; font-size:12.5px; line-height:1.55;}
+
+  .bigbtn{width:100%; margin-top:12px; padding:15px; border-radius:16px; border:none;
+    font-size:15.5px; font-weight:700; font-family:inherit; cursor:pointer;
+    background:var(--accent); color:#fff; transition:transform .1s ease;}
+  .bigbtn:active{transform:scale(.98);}
+  .bigbtn:disabled{opacity:.35;}
+  .btnrow{display:flex; gap:8px;}
+  .btn{border:1px solid var(--line); background:var(--card); color:var(--ink);
+    border-radius:12px; font-size:13px; font-weight:600; font-family:inherit;
+    padding:10px 14px; cursor:pointer; transition:transform .1s ease;}
+  .btn:active{transform:scale(.97);}
+  .btn.danger{color:var(--hi); border-color:#f0dcd9; background:#fdf1f0;}
+  .editing-note{margin-top:10px; background:var(--accent-soft); color:var(--accent);
+    border-radius:12px; padding:9px 12px; font-size:12.5px; display:flex; align-items:center; gap:8px;}
+  .editing-note button{margin-left:auto; border:none; background:none; color:var(--accent);
+    font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; text-decoration:underline;}
+
+  /* ===== 切替タブ ===== */
+  .switch{display:flex; background:var(--accent-soft); border-radius:13px; padding:3px; gap:3px;}
+  .switch button{flex:1; border:none; background:none; font-family:inherit; font-size:13px;
+    font-weight:600; color:var(--sub); padding:8px 4px; border-radius:10px; cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .switch button.on{background:var(--card); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .range{display:flex; gap:6px; margin-top:10px;}
+  .range button{flex:1; border:1px solid var(--line); background:var(--card); color:var(--sub);
+    font-family:inherit; font-size:12px; font-weight:600; padding:7px 2px; border-radius:10px; cursor:pointer;}
+  .range button.on{border-color:var(--accent); color:var(--accent); background:var(--accent-soft);}
+
+  /* ===== 最軽・最重 ===== */
+  .peaks{display:flex; gap:9px; margin-top:12px;}
+  .peak{flex:1; min-width:0; border:1px solid var(--line); border-radius:14px; padding:10px 11px;}
+  .peak.lo{border-color:#cfe6db; background:#f1f8f5;}
+  .peak.hi{border-color:#f0dcd9; background:#fdf3f2;}
+  .peak .pl{font-size:11px; font-weight:700; letter-spacing:.02em;}
+  .peak.lo .pl{color:var(--lo);} .peak.hi .pl{color:var(--hi);}
+  .peak .pv{font-size:20px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+  .peak .pv small{font-size:12px; font-weight:600; margin-left:1px;}
+  .peak .pd{font-size:11px; color:var(--sub); font-variant-numeric:tabular-nums;}
+
+  /* ===== グラフ ===== */
+  .chart{margin-top:14px;}
+  .chart svg{display:block; width:100%; height:auto; overflow:visible;}
+  .empty{padding:26px 8px; text-align:center; color:var(--sub); font-size:13px; line-height:1.8;}
+
+  /* ===== 履歴 ===== */
+  .item{background:var(--card); border:1px solid var(--line); border-radius:15px;
+    padding:11px 13px; margin-top:8px;}
+  .item .i1{display:flex; align-items:center; gap:8px;}
+  .item .idate{font-size:12.5px; font-weight:700; color:var(--sub); font-variant-numeric:tabular-nums;}
+  .item .tags{display:flex; gap:4px; margin-left:auto; flex-wrap:wrap; justify-content:flex-end;}
+  .tag{font-size:10px; font-weight:700; border-radius:999px; padding:2px 7px; white-space:nowrap;}
+  .tag.lo{background:#e8f4ee; color:var(--lo);} .tag.hi{background:#fbe9e7; color:var(--hi);}
+  .item .i2{display:flex; gap:8px; margin-top:7px;}
+  .vcell{flex:1; min-width:0; display:flex; align-items:baseline; gap:5px;}
+  .vcell .vn{font-size:11px; color:var(--sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .vcell .vv{margin-left:auto; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .vcell.dog .vv{color:var(--dog);} .vcell.human .vv{color:var(--human);}
+  .item .i3{display:flex; gap:8px; margin-top:9px; align-items:center;}
+  .item .i3 .memo{font-size:11px; color:var(--sub); font-variant-numeric:tabular-nums;
+    flex:1; min-width:0; line-height:1.45;}
+  .item .i3 .acts{margin-left:auto; display:flex; gap:6px; flex:0 0 auto;}
+  .item .i3 button{border:1px solid var(--line); background:var(--card); color:var(--sub);
+    font-family:inherit; font-size:12px; font-weight:600; border-radius:10px;
+    padding:7px 13px; cursor:pointer; white-space:nowrap;}
+  .item .i3 button.del{color:var(--hi); border-color:#f0dcd9;}
+  .more{width:100%; margin-top:10px; border:1px solid var(--line); background:var(--card);
+    color:var(--sub); font-family:inherit; font-size:12.5px; font-weight:600;
+    border-radius:12px; padding:10px; cursor:pointer;}
+
+  /* ===== 設定 ===== */
+  details.settings{margin-top:26px;}
+  details.settings summary{list-style:none; cursor:pointer; font-size:12.5px; color:var(--sub);
+    padding:10px 4px; display:flex; align-items:center; gap:6px;}
+  details.settings summary::-webkit-details-marker{display:none;}
+  .fld{margin-top:11px;}
+  .fld label{display:block; font-size:11.5px; color:var(--sub); margin-bottom:5px;}
+  .foot{text-align:center; color:var(--sub); font-size:11px; margin-top:26px; line-height:1.8;}
+
+  .toast{position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom));
+    transform:translateX(-50%) translateY(14px); z-index:80;
+    background:rgba(29,29,31,.93); color:#fff; font-size:13px; font-weight:600;
+    padding:11px 20px; border-radius:999px; opacity:0; pointer-events:none;
+    transition:opacity .22s ease, transform .22s ease; white-space:nowrap;}
+  .toast.on{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>だっこばかり</h1>
+    <div class="sub">だっこで、ふたりぶん</div>
+  </header>
+
+  <!-- ===== 入力 ===== -->
+  <div class="card">
+    <div class="datebox">
+      <span class="dlabel">日付</span>
+      <input type="date" id="fDate">
+      <button class="today" id="btnToday">今日</button>
+    </div>
+
+    <div class="steps" style="margin-top:14px">
+      <div class="step">
+        <div class="no">1</div>
+        <div class="body">
+          <div class="lb"><span id="lbHuman">おかあさん</span>だけで乗る<em>ひとりの体重</em></div>
+          <div class="inrow">
+            <input type="number" id="fHuman" inputmode="decimal" step="0.1" min="0" max="300" placeholder="0.0">
+            <span class="unit">kg</span>
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="no">2</div>
+        <div class="body">
+          <div class="lb"><span id="lbDog">わんこ</span>をだっこして乗る<em>ふたり合わせて</em></div>
+          <div class="inrow">
+            <input type="number" id="fTotal" inputmode="decimal" step="0.1" min="0" max="300" placeholder="0.0">
+            <span class="unit">kg</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="result">
+      <div class="rbox dog">
+        <div class="rn" id="rnDog">わんこ</div>
+        <div class="rv" id="rvDog">—</div>
+        <div class="rd" id="rdDog">&nbsp;</div>
+      </div>
+      <div class="rbox human">
+        <div class="rn" id="rnHuman">おかあさん</div>
+        <div class="rv" id="rvHuman">—</div>
+        <div class="rd" id="rdHuman">&nbsp;</div>
+      </div>
+    </div>
+
+    <div id="warn" class="warn" style="display:none"></div>
+    <div id="editNote" class="editing-note" style="display:none">
+      <span id="editNoteText"></span><button id="btnCancelEdit">やめる</button>
+    </div>
+    <button class="bigbtn" id="btnSave" disabled>この日の記録を保存</button>
+  </div>
+
+  <!-- ===== グラフ ===== -->
+  <div class="sec-head"><h2>うつりかわり</h2><div class="sh-sub" id="graphCount"></div></div>
+  <div class="card">
+    <div class="switch">
+      <button id="swDog" class="on">わんこ</button>
+      <button id="swHuman">おかあさん</button>
+    </div>
+    <div class="range" id="rangeBar">
+      <button data-r="30">1か月</button>
+      <button data-r="90">3か月</button>
+      <button data-r="365">1年</button>
+      <button data-r="0" class="on">ぜんぶ</button>
+    </div>
+    <div class="peaks" id="peaks"></div>
+    <div class="chart" id="chart"></div>
+  </div>
+
+  <!-- ===== 履歴 ===== -->
+  <div class="sec-head"><h2>これまでの記録</h2><div class="sh-sub" id="logCount"></div></div>
+  <div id="logs"></div>
+  <button class="more" id="btnMore" style="display:none">もっと見る</button>
+
+  <!-- ===== 設定 ===== -->
+  <details class="settings">
+    <summary>⚙️ 設定（呼び名・バックアップ）</summary>
+    <div class="card">
+      <div class="fld">
+        <label>ひとの呼び名（体重計に単体で乗る人）</label>
+        <input type="text" id="setHuman" maxlength="8" placeholder="おかあさん">
+      </div>
+      <div class="fld">
+        <label>わんこの呼び名（だっこされる子）</label>
+        <input type="text" id="setDog" maxlength="8" placeholder="わんこ">
+      </div>
+      <div class="btnrow" style="margin-top:14px">
+        <button class="btn" id="btnExport">書き出し</button>
+        <button class="btn" id="btnImport">読み込み</button>
+        <button class="btn danger" id="btnClear">全部消す</button>
+      </div>
+      <input type="file" id="fileInput" accept="application/json" style="display:none">
+      <div class="muted" style="margin-top:11px">
+        記録はこのブラウザの中だけに保存されます。機種変えの前に「書き出し」でファイルを保存しておくと安心です。
+      </div>
+    </div>
+  </details>
+
+  <div class="foot">だっこばかり<br>ひとりの体重と、だっこして乗った体重から、ふたりぶんを出します。</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  'use strict';
+  var KEY = 'dakkobakari_v1';
+  var DEF_HUMAN = 'おかあさん', DEF_DOG = 'わんこ';
+
+  // ===== データ =====
+  var state = load();
+  function load(){
+    try{
+      var raw = localStorage.getItem(KEY);
+      if(!raw) return {v:1, names:{human:DEF_HUMAN, dog:DEF_DOG}, logs:[]};
+      var d = JSON.parse(raw);
+      if(!d || typeof d!=='object') throw 0;
+      d.names = d.names || {};
+      d.names.human = d.names.human || DEF_HUMAN;
+      d.names.dog = d.names.dog || DEF_DOG;
+      d.logs = Array.isArray(d.logs) ? d.logs : [];
+      return d;
+    }catch(e){
+      return {v:1, names:{human:DEF_HUMAN, dog:DEF_DOG}, logs:[]};
+    }
+  }
+  function save(){
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); }
+    catch(e){ toast('保存できませんでした'); }
+  }
+
+  // ===== 小道具 =====
+  var $ = function(id){ return document.getElementById(id); };
+  function todayStr(){
+    var d = new Date();
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  }
+  function pad(n){ return (n<10?'0':'')+n; }
+  function r1(n){ return Math.round(n*10)/10; }
+  function fmt(n){ return r1(n).toFixed(1); }
+  function mdOf(s){ var p = String(s).split('-'); return (+p[1])+'/'+(+p[2]); }
+  function ymdOf(s){ var p = String(s).split('-'); return p[0].slice(2)+'.'+(+p[1])+'.'+(+p[2]); }
+  function dogOf(l){ return r1(l.total - l.human); }
+  function sortedAsc(){
+    return state.logs.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  }
+  var toastTimer = null;
+  function toast(msg){
+    var t = $('toast'); t.textContent = msg; t.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 1900);
+  }
+
+  // ===== 入力まわり =====
+  var editingDate = null;   // 編集中の日付（null＝新規）
+
+  function num(el){
+    var v = parseFloat(el.value);
+    return isFinite(v) ? v : null;
+  }
+
+  function refreshResult(){
+    var h = num($('fHuman')), t = num($('fTotal')), date = $('fDate').value;
+    var warn = $('warn'), ok = false, msg = '';
+
+    if(h !== null && t !== null){
+      var d = r1(t - h);
+      if(t <= h){
+        msg = 'だっこして乗ったほうが軽くなっています。数字が入れ替わっていないか見てみてください。';
+      }else{
+        ok = true;
+        setBox('Dog', d, prevOf(date, 'dog'));
+        setBox('Human', r1(h), prevOf(date, 'human'));
+      }
+    }
+    if(!ok){
+      blank('Dog');
+      if(h !== null && t === null){ setBox('Human', r1(h), prevOf(date, 'human')); }
+      else { blank('Human'); }
+    }
+    warn.style.display = msg ? 'block' : 'none';
+    warn.textContent = msg;
+
+    var exists = !!findByDate(date);
+    $('btnSave').disabled = !(ok && date);
+    $('btnSave').textContent = (exists && date) ? 'この日の記録を上書きする' : 'この日の記録を保存';
+  }
+
+  function setBox(which, val, prev){
+    $('rv'+which).classList.remove('blank');
+    $('rv'+which).innerHTML = fmt(val)+'<small>kg</small>';
+    var el = $('rd'+which);
+    if(prev === null){ el.innerHTML = '&nbsp;'; return; }
+    var d = r1(val - prev.value);
+    if(d === 0){ el.innerHTML = '前回（'+mdOf(prev.date)+'）と同じ'; return; }
+    var cls = d > 0 ? 'up' : 'dn';
+    el.innerHTML = '前回（'+mdOf(prev.date)+'）より <span class="'+cls+'">'+(d>0?'+':'')+fmt(d)+'kg</span>';
+  }
+
+  function blank(which){
+    var el = $('rv'+which);
+    el.classList.add('blank'); el.textContent = '—';
+    $('rd'+which).innerHTML = '&nbsp;';
+  }
+
+  // 指定日より前の、いちばん近い記録
+  function prevOf(date, who){
+    if(!date) return null;
+    var arr = sortedAsc().filter(function(l){ return l.date < date; });
+    if(!arr.length) return null;
+    var l = arr[arr.length-1];
+    return {date:l.date, value: who === 'dog' ? dogOf(l) : r1(l.human)};
+  }
+
+  function findByDate(d){
+    for(var i=0;i<state.logs.length;i++) if(state.logs[i].date === d) return state.logs[i];
+    return null;
+  }
+
+  $('btnToday').addEventListener('click', function(){
+    $('fDate').value = todayStr(); refreshResult();
+  });
+  $('fDate').addEventListener('change', refreshResult);
+  $('fHuman').addEventListener('input', refreshResult);
+  $('fTotal').addEventListener('input', refreshResult);
+
+  $('btnSave').addEventListener('click', function(){
+    var date = $('fDate').value, h = num($('fHuman')), t = num($('fTotal'));
+    if(!date || h === null || t === null || t <= h) return;
+    var ex = findByDate(date);
+    if(ex && editingDate !== date){
+      if(!confirm(mdOf(date)+' の記録はすでにあります。上書きしますか？')) return;
+    }
+    if(editingDate && editingDate !== date){
+      // 日付を変えて保存＝元の日付の記録は消す
+      state.logs = state.logs.filter(function(l){ return l.date !== editingDate; });
+      ex = findByDate(date);
+    }
+    if(ex){ ex.human = r1(h); ex.total = r1(t); }
+    else { state.logs.push({date:date, human:r1(h), total:r1(t)}); }
+    save();
+    editingDate = null;
+    $('editNote').style.display = 'none';
+    $('fHuman').value = ''; $('fTotal').value = '';
+    $('fDate').value = todayStr();
+    $('fHuman').blur(); $('fTotal').blur();
+    refreshResult(); render();
+    toast(mdOf(date)+' の記録を保存しました');
+  });
+
+  $('btnCancelEdit').addEventListener('click', function(){
+    editingDate = null;
+    $('editNote').style.display = 'none';
+    $('fHuman').value = ''; $('fTotal').value = '';
+    $('fDate').value = todayStr();
+    refreshResult();
+  });
+
+  function startEdit(date){
+    var l = findByDate(date); if(!l) return;
+    editingDate = date;
+    $('fDate').value = l.date;
+    $('fHuman').value = l.human;
+    $('fTotal').value = l.total;
+    $('editNoteText').textContent = ymdOf(date)+' の記録をなおしています';
+    $('editNote').style.display = 'flex';
+    refreshResult();
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  function removeLog(date){
+    if(!confirm(ymdOf(date)+' の記録を消しますか？')) return;
+    state.logs = state.logs.filter(function(l){ return l.date !== date; });
+    if(editingDate === date){
+      editingDate = null; $('editNote').style.display = 'none';
+      $('fHuman').value = ''; $('fTotal').value = '';
+    }
+    save(); refreshResult(); render();
+    toast('記録を消しました');
+  }
+
+  // ===== 表示の状態 =====
+  var view = 'dog';   // dog | human
+  var range = 0;      // 0=ぜんぶ
+  var listLimit = 12;
+
+  $('swDog').addEventListener('click', function(){ view='dog'; syncSwitch(); render(); });
+  $('swHuman').addEventListener('click', function(){ view='human'; syncSwitch(); render(); });
+  function syncSwitch(){
+    $('swDog').classList.toggle('on', view==='dog');
+    $('swHuman').classList.toggle('on', view==='human');
+  }
+  Array.prototype.forEach.call($('rangeBar').querySelectorAll('button'), function(b){
+    b.addEventListener('click', function(){
+      range = +b.dataset.r;
+      Array.prototype.forEach.call($('rangeBar').querySelectorAll('button'), function(x){
+        x.classList.toggle('on', x === b);
+      });
+      render();
+    });
+  });
+
+  function valueOf(l){ return view === 'dog' ? dogOf(l) : r1(l.human); }
+  function colorOf(){ return view === 'dog' ? '#c0793d' : '#4a7fb5'; }
+
+  function inRange(logs){
+    if(!range) return logs;
+    var from = new Date();
+    from.setDate(from.getDate() - range);
+    var s = from.getFullYear()+'-'+pad(from.getMonth()+1)+'-'+pad(from.getDate());
+    return logs.filter(function(l){ return l.date >= s; });
+  }
+
+  // ===== グラフ =====
+  function drawChart(logs){
+    var box = $('chart');
+    if(!logs.length){
+      box.innerHTML = '<div class="empty">まだ記録がありません。<br>上の1と2に体重を入れると、ここにグラフが出ます。</div>';
+      return;
+    }
+    if(logs.length === 1){
+      var only = logs[0];
+      box.innerHTML = '<div class="empty">記録が1回だけです。<br>'+
+        ymdOf(only.date)+' … <b>'+fmt(valueOf(only))+'kg</b><br>'+
+        'もう1回はかると、線でつながります。</div>';
+      return;
+    }
+
+    var W = 320, H = 174, PL = 32, PR = 14, PT = 22, PB = 32;
+    var iw = W - PL - PR, ih = H - PT - PB;
+    var vals = logs.map(valueOf);
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var span = max - min;
+    if(span < 0.4){ var c=(max+min)/2; min = c-0.2; max = c+0.2; span = 0.4; }
+    var lo = min - span*0.22, hi = max + span*0.22;
+
+    var t0 = new Date(logs[0].date).getTime();
+    var t1 = new Date(logs[logs.length-1].date).getTime();
+    var tspan = t1 - t0;
+    function px(l){
+      if(tspan <= 0) return PL + iw/2;
+      return PL + (new Date(l.date).getTime() - t0) / tspan * iw;
+    }
+    function py(v){ return PT + (hi - v) / (hi - lo) * ih; }
+
+    var pts = logs.map(function(l){ return {x:px(l), y:py(valueOf(l)), v:valueOf(l), date:l.date}; });
+    var line = pts.map(function(p,i){ return (i?'L':'M')+p.x.toFixed(1)+','+p.y.toFixed(1); }).join(' ');
+    var area = line+' L'+pts[pts.length-1].x.toFixed(1)+','+(PT+ih)+' L'+pts[0].x.toFixed(1)+','+(PT+ih)+' Z';
+    var col = colorOf();
+
+    // 目盛り（3本）
+    var grid = '', labels = '';
+    for(var g=0; g<3; g++){
+      var gv = lo + (hi - lo) * (g/2);
+      var gy = py(gv);
+      grid += '<line x1="'+PL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+gy.toFixed(1)+'" stroke="#eae5dd" stroke-width="1"/>';
+      labels += '<text x="'+(PL-6)+'" y="'+(gy+3.5).toFixed(1)+'" text-anchor="end" font-size="9" fill="#a09a92">'+fmt(gv)+'</text>';
+    }
+
+    // 最軽・最重
+    var iMin = vals.indexOf(min), iMax = vals.indexOf(max);
+    var dots = '', marks = '';
+    pts.forEach(function(p,i){
+      if(i === iMin || i === iMax) return;
+      dots += '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="2.6" fill="#fff" stroke="'+col+'" stroke-width="1.6"/>';
+    });
+    function mark(i, color, label, above){
+      var p = pts[i];
+      var ly = above ? p.y - 11 : p.y + 16;
+      var anchor = 'middle', lx = p.x;
+      if(lx < PL + 22){ anchor = 'start'; lx = PL; }
+      else if(lx > W - PR - 22){ anchor = 'end'; lx = W - PR; }
+      marks += '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="7" fill="'+color+'" opacity=".14"/>'+
+        '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="4" fill="'+color+'" stroke="#fff" stroke-width="1.6"/>'+
+        '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="'+anchor+'" font-size="9.5" font-weight="700" '+
+        'fill="'+color+'" stroke="#fff" stroke-width="2.6" paint-order="stroke" stroke-linejoin="round">'+
+        label+' '+fmt(p.v)+'</text>';
+    }
+    if(iMax !== iMin){
+      mark(iMax, '#c2584f', '最重', true);
+      mark(iMin, '#3f8f6f', '最軽', false);
+    }else{
+      mark(iMax, col, '', true);
+    }
+
+    // 横軸ラベル（最初・最後・まん中）
+    var xl = '';
+    [0, Math.floor((pts.length-1)/2), pts.length-1].filter(function(v,i,a){ return a.indexOf(v)===i; })
+      .forEach(function(i){
+        var p = pts[i], anchor = 'middle', x = p.x;
+        if(i === 0){ anchor = 'start'; x = PL; }
+        if(i === pts.length-1){ anchor = 'end'; x = W - PR; }
+        xl += '<text x="'+x.toFixed(1)+'" y="'+(H-10)+'" text-anchor="'+anchor+'" font-size="9" fill="#a09a92">'+mdOf(p.date)+'</text>';
+      });
+
+    box.innerHTML =
+      '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="体重のうつりかわり">'+
+        '<defs><linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1">'+
+          '<stop offset="0%" stop-color="'+col+'" stop-opacity=".18"/>'+
+          '<stop offset="100%" stop-color="'+col+'" stop-opacity="0"/>'+
+        '</linearGradient></defs>'+
+        grid + labels +
+        '<path d="'+area+'" fill="url(#gfill)"/>'+
+        '<path d="'+line+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'+
+        dots + marks + xl +
+      '</svg>';
+  }
+
+  // ===== 最軽・最重カード =====
+  function drawPeaks(logs){
+    var box = $('peaks');
+    if(logs.length < 2){ box.innerHTML = ''; return; }
+    var vals = logs.map(valueOf);
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var lmin = logs[vals.indexOf(min)], lmax = logs[vals.indexOf(max)];
+    box.innerHTML =
+      '<div class="peak lo"><div class="pl">最軽</div>'+
+        '<div class="pv">'+fmt(min)+'<small>kg</small></div>'+
+        '<div class="pd">'+ymdOf(lmin.date)+'</div></div>'+
+      '<div class="peak hi"><div class="pl">最重</div>'+
+        '<div class="pv">'+fmt(max)+'<small>kg</small></div>'+
+        '<div class="pd">'+ymdOf(lmax.date)+'</div></div>';
+  }
+
+  // ===== 履歴 =====
+  function drawLogs(){
+    var box = $('logs');
+    var asc = sortedAsc();
+    if(!asc.length){
+      box.innerHTML = '<div class="card"><div class="empty">まだ記録がありません。</div></div>';
+      $('btnMore').style.display = 'none';
+      $('logCount').textContent = '';
+      return;
+    }
+    // 全期間の最軽・最重（それぞれの対象ごと）
+    var dv = asc.map(dogOf), hv = asc.map(function(l){ return r1(l.human); });
+    var peak = {
+      dogMin: asc[dv.indexOf(Math.min.apply(null, dv))].date,
+      dogMax: asc[dv.indexOf(Math.max.apply(null, dv))].date,
+      humanMin: asc[hv.indexOf(Math.min.apply(null, hv))].date,
+      humanMax: asc[hv.indexOf(Math.max.apply(null, hv))].date
+    };
+    var same = asc.length < 2;
+
+    var desc = asc.slice().reverse();
+    var shown = desc.slice(0, listLimit);
+    var html = shown.map(function(l, i){
+      var idx = asc.indexOf(l);
+      var prev = idx > 0 ? asc[idx-1] : null;
+      var tags = '';
+      if(!same){
+        if(l.date === peak.dogMin) tags += '<span class="tag lo">'+esc(state.names.dog)+' 最軽</span>';
+        if(l.date === peak.dogMax) tags += '<span class="tag hi">'+esc(state.names.dog)+' 最重</span>';
+        if(l.date === peak.humanMin) tags += '<span class="tag lo">'+esc(state.names.human)+' 最軽</span>';
+        if(l.date === peak.humanMax) tags += '<span class="tag hi">'+esc(state.names.human)+' 最重</span>';
+      }
+      var memo = '';
+      if(prev){
+        var dd = r1(dogOf(l) - dogOf(prev)), dh = r1(l.human - prev.human);
+        memo = '前回比 '+esc(state.names.dog)+' '+(dd>0?'+':'')+fmt(dd)+' / '+
+               esc(state.names.human)+' '+(dh>0?'+':'')+fmt(dh);
+      }else{
+        memo = 'はじめの記録';
+      }
+      return '<div class="item">'+
+        '<div class="i1"><div class="idate">'+ymdOf(l.date)+'</div><div class="tags">'+tags+'</div></div>'+
+        '<div class="i2">'+
+          '<div class="vcell dog"><span class="vn">'+esc(state.names.dog)+'</span><span class="vv">'+fmt(dogOf(l))+'</span></div>'+
+          '<div class="vcell human"><span class="vn">'+esc(state.names.human)+'</span><span class="vv">'+fmt(l.human)+'</span></div>'+
+        '</div>'+
+        '<div class="i3"><span class="memo">'+memo+'</span>'+
+          '<span class="acts">'+
+            '<button data-edit="'+l.date+'">なおす</button>'+
+            '<button class="del" data-del="'+l.date+'">消す</button>'+
+          '</span></div>'+
+      '</div>';
+    }).join('');
+    box.innerHTML = html;
+    $('logCount').textContent = asc.length+'回';
+    $('btnMore').style.display = desc.length > listLimit ? 'block' : 'none';
+    $('btnMore').textContent = 'もっと見る（あと'+(desc.length - listLimit)+'回）';
+
+    Array.prototype.forEach.call(box.querySelectorAll('[data-edit]'), function(b){
+      b.addEventListener('click', function(){ startEdit(b.dataset.edit); });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('[data-del]'), function(b){
+      b.addEventListener('click', function(){ removeLog(b.dataset.del); });
+    });
+  }
+  $('btnMore').addEventListener('click', function(){ listLimit += 12; drawLogs(); });
+
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // ===== 名前 =====
+  function applyNames(){
+    var h = state.names.human, d = state.names.dog;
+    $('lbHuman').textContent = h; $('lbDog').textContent = d;
+    $('rnHuman').textContent = h; $('rnDog').textContent = d;
+    $('swHuman').textContent = h; $('swDog').textContent = d;
+    $('setHuman').value = h === DEF_HUMAN ? '' : h;
+    $('setDog').value = d === DEF_DOG ? '' : d;
+    $('setHuman').placeholder = DEF_HUMAN;
+    $('setDog').placeholder = DEF_DOG;
+    document.title = 'だっこばかり — '+d+'と'+h+'の体重記録';
+  }
+  $('setHuman').addEventListener('change', function(){
+    state.names.human = ($('setHuman').value || '').trim() || DEF_HUMAN;
+    save(); applyNames(); render(); refreshResult();
+  });
+  $('setDog').addEventListener('change', function(){
+    state.names.dog = ($('setDog').value || '').trim() || DEF_DOG;
+    save(); applyNames(); render(); refreshResult();
+  });
+
+  // ===== バックアップ =====
+  $('btnExport').addEventListener('click', function(){
+    var blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'dakkobakari-'+todayStr()+'.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 400);
+  });
+  $('btnImport').addEventListener('click', function(){ $('fileInput').click(); });
+  $('fileInput').addEventListener('change', function(){
+    var f = this.files && this.files[0]; if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      try{
+        var d = JSON.parse(rd.result);
+        if(!d || !Array.isArray(d.logs)) throw 0;
+        var ok = d.logs.every(function(l){
+          return l && typeof l.date === 'string' && isFinite(l.human) && isFinite(l.total);
+        });
+        if(!ok) throw 0;
+        if(!confirm('いまの記録を、読み込んだ'+d.logs.length+'件で置きかえます。よろしいですか？')) return;
+        state = {v:1,
+          names:{human:(d.names&&d.names.human)||DEF_HUMAN, dog:(d.names&&d.names.dog)||DEF_DOG},
+          logs:d.logs.map(function(l){ return {date:l.date, human:r1(+l.human), total:r1(+l.total)}; })};
+        save(); applyNames(); render(); refreshResult();
+        toast('読み込みました');
+      }catch(e){ alert('このファイルは読み込めませんでした。'); }
+    };
+    rd.readAsText(f);
+    this.value = '';
+  });
+  $('btnClear').addEventListener('click', function(){
+    if(!state.logs.length){ toast('消す記録がありません'); return; }
+    if(!confirm('記録を全部消します。もとに戻せません。よろしいですか？')) return;
+    if(!confirm('本当に全部消しますか？')) return;
+    state.logs = [];
+    save(); render(); refreshResult();
+    toast('全部消しました');
+  });
+
+  // ===== 描画 =====
+  function render(){
+    var asc = sortedAsc();
+    var shown = inRange(asc);
+    drawPeaks(shown);
+    drawChart(shown);
+    $('graphCount').textContent = shown.length ? shown.length+'回ぶん' : '';
+    drawLogs();
+  }
+
+  // 起動
+  $('fDate').value = todayStr();
+  applyNames(); syncSwitch(); render(); refreshResult();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
