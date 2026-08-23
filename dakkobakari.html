@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="apple-touch-icon" href="icons/icon-dakkobakari.png">
 <meta name="apple-mobile-web-app-title" content="だっこばかり">
-<title>だっこばかり — 2人の体重記録</title>
+<title>だっこばかり — 3人の体重記録</title>
 <style>
   :root{
     --bg:#f6f4f0; --card:#ffffff; --ink:#1d1d1f; --sub:#6e6e73;
     --line:#e7e2da; --accent:#8a6a4a; --accent-soft:#f2ebe2;
     --dog:#c0793d; --dog-soft:#fbf0e5;
     --human:#4a7fb5; --human-soft:#eaf1f8;
+    --nori:#5c8a6a; --nori-soft:#ecf3ee;
     --lo:#3f8f6f; --hi:#c2584f;
     --radius:20px;
   }
@@ -45,10 +46,12 @@
   .step .no{flex:0 0 auto; width:22px; height:22px; border-radius:50%;
     background:var(--accent-soft); color:var(--accent); font-size:11.5px; font-weight:700;
     display:flex; align-items:center; justify-content:center; margin-top:2px;}
+  .step.opt .no{background:#f0efec; color:#a09a92;}
   .step .body{flex:1; min-width:0;}
   .step .lb{font-size:13px; font-weight:600; line-height:1.45;}
   .step .lb em{font-style:normal; color:var(--sub); font-weight:400; font-size:11.5px; margin-left:5px;}
   .inrow{display:flex; align-items:center; gap:6px; margin-top:6px;}
+  .divider{border-top:1px dashed var(--line); margin:2px 0 0;}
   input[type=number],input[type=date],input[type=text]{
     font-family:inherit; font-size:17px; color:var(--ink); background:var(--bg);
     border:1px solid var(--line); border-radius:12px; padding:10px 12px;
@@ -69,19 +72,25 @@
 
   /* ===== 計算結果 ===== */
   .result{margin-top:14px; border-top:1px dashed var(--line); padding-top:14px;
-    display:flex; gap:10px;}
-  .rbox{flex:1; min-width:0; border-radius:15px; padding:11px 12px; text-align:center;}
+    display:flex; gap:9px;}
+  .rbox{flex:1; min-width:0; border-radius:15px; padding:11px 10px; text-align:center;}
   .rbox.dog{background:var(--dog-soft);}
   .rbox.human{background:var(--human-soft);}
+  .rbox.nori{background:var(--nori-soft);}
   .rbox .rn{font-size:11.5px; font-weight:600; color:var(--sub);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .rbox .rv{font-size:27px; font-weight:700; letter-spacing:-.03em; line-height:1.25;
-    font-variant-numeric:tabular-nums;}
+    font-variant-numeric:tabular-nums; white-space:nowrap;}
   .rbox .rv small{font-size:13px; font-weight:600; margin-left:2px; letter-spacing:0;}
-  .rbox.dog .rv{color:var(--dog);} .rbox.human .rv{color:var(--human);}
-  .rbox .rv.blank{color:#cdc7bd; font-size:22px;}
+  .rbox.dog .rv{color:var(--dog);} .rbox.human .rv{color:var(--human);} .rbox.nori .rv{color:var(--nori);}
   .rbox .rd{font-size:11px; color:var(--sub); font-variant-numeric:tabular-nums;}
   .rbox .rd .up{color:var(--hi);} .rbox .rd .dn{color:var(--lo);}
+  .result.three .rbox{padding:10px 6px;}
+  .result.three .rn{font-size:10.5px;}
+  .result.three .rv{font-size:21px;}
+  .result.three .rv small{font-size:11px;}
+  .result.three .rd{font-size:10px;}
+  .result .hint{flex:1; text-align:center; color:#b6b0a7; font-size:12.5px; padding:14px 4px;}
 
   .warn{margin-top:11px; background:#fdf3e2; color:#95590f; border-radius:12px;
     padding:9px 12px; font-size:12.5px; line-height:1.55;}
@@ -100,12 +109,13 @@
   .editing-note{margin-top:10px; background:var(--accent-soft); color:var(--accent);
     border-radius:12px; padding:9px 12px; font-size:12.5px; display:flex; align-items:center; gap:8px;}
   .editing-note button{margin-left:auto; border:none; background:none; color:var(--accent);
-    font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; text-decoration:underline;}
+    font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; text-decoration:underline;
+    flex:0 0 auto;}
 
   /* ===== 切替タブ ===== */
   .switch{display:flex; background:var(--accent-soft); border-radius:13px; padding:3px; gap:3px;}
-  .switch button{flex:1; border:none; background:none; font-family:inherit; font-size:13px;
-    font-weight:600; color:var(--sub); padding:8px 4px; border-radius:10px; cursor:pointer;
+  .switch button{flex:1; min-width:0; border:none; background:none; font-family:inherit; font-size:13px;
+    font-weight:600; color:var(--sub); padding:8px 2px; border-radius:10px; cursor:pointer;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .switch button.on{background:var(--card); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.06);}
   .range{display:flex; gap:6px; margin-top:10px;}
@@ -133,15 +143,16 @@
   .item{background:var(--card); border:1px solid var(--line); border-radius:15px;
     padding:11px 13px; margin-top:8px;}
   .item .i1{display:flex; align-items:center; gap:8px;}
-  .item .idate{font-size:12.5px; font-weight:700; color:var(--sub); font-variant-numeric:tabular-nums;}
+  .item .idate{font-size:12.5px; font-weight:700; color:var(--sub); font-variant-numeric:tabular-nums;
+    flex:0 0 auto;}
   .item .tags{display:flex; gap:4px; margin-left:auto; flex-wrap:wrap; justify-content:flex-end;}
   .tag{font-size:10px; font-weight:700; border-radius:999px; padding:2px 7px; white-space:nowrap;}
   .tag.lo{background:#e8f4ee; color:var(--lo);} .tag.hi{background:#fbe9e7; color:var(--hi);}
-  .item .i2{display:flex; gap:8px; margin-top:7px;}
-  .vcell{flex:1; min-width:0; display:flex; align-items:baseline; gap:5px;}
+  .item .i2{display:flex; flex-wrap:wrap; gap:6px 10px; margin-top:7px;}
+  .vcell{flex:1 1 calc(50% - 10px); min-width:0; display:flex; align-items:baseline; gap:5px;}
   .vcell .vn{font-size:11px; color:var(--sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .vcell .vv{margin-left:auto; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums;}
-  .vcell.dog .vv{color:var(--dog);} .vcell.human .vv{color:var(--human);}
+  .vcell.dog .vv{color:var(--dog);} .vcell.human .vv{color:var(--human);} .vcell.nori .vv{color:var(--nori);}
   .item .i3{display:flex; gap:8px; margin-top:9px; align-items:center;}
   .item .i3 .memo{font-size:11px; color:var(--sub); font-variant-numeric:tabular-nums;
     flex:1; min-width:0; line-height:1.45;}
@@ -208,24 +219,24 @@
           </div>
         </div>
       </div>
+      <div class="divider"></div>
+      <div class="step opt">
+        <div class="no">3</div>
+        <div class="body">
+          <div class="lb"><span id="lbNori">のりちゃん</span>が乗る<em>測った日だけでOK</em></div>
+          <div class="inrow">
+            <input type="number" id="fNori" inputmode="decimal" step="0.1" min="0" max="300" placeholder="0.0">
+            <span class="unit">kg</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="result">
-      <div class="rbox dog">
-        <div class="rn" id="rnDog">ロイくん</div>
-        <div class="rv blank" id="rvDog">—</div>
-        <div class="rd" id="rdDog">&nbsp;</div>
-      </div>
-      <div class="rbox human">
-        <div class="rn" id="rnHuman">みーちゃん</div>
-        <div class="rv blank" id="rvHuman">—</div>
-        <div class="rd" id="rdHuman">&nbsp;</div>
-      </div>
-    </div>
+    <div class="result" id="result"></div>
 
     <div id="warn" class="warn" style="display:none"></div>
     <div id="editNote" class="editing-note" style="display:none">
-      <span id="editNoteText"></span><button id="btnCancelEdit">やめる</button>
+      <span id="editNoteText"></span><button id="btnCancelEdit">入力を消す</button>
     </div>
     <button class="bigbtn" id="btnSave" disabled>この日の記録を保存</button>
   </div>
@@ -233,9 +244,10 @@
   <!-- ===== グラフ ===== -->
   <div class="sec-head"><h2>移り変わり</h2><div class="sh-sub" id="graphCount"></div></div>
   <div class="card">
-    <div class="switch">
-      <button id="swDog" class="on">ロイくん</button>
-      <button id="swHuman">みーちゃん</button>
+    <div class="switch" id="switchBar">
+      <button data-v="dog" class="on">ロイくん</button>
+      <button data-v="human">みーちゃん</button>
+      <button data-v="nori">のりちゃん</button>
     </div>
     <div class="range" id="rangeBar">
       <button data-r="30">1ヶ月</button>
@@ -257,12 +269,16 @@
     <summary>⚙️ 設定（呼び名・バックアップ）</summary>
     <div class="card">
       <div class="fld">
-        <label>人の呼び名（体重計に1人で乗る人）</label>
+        <label>抱っこする人の呼び名（1と2に乗る人）</label>
         <input type="text" id="setHuman" maxlength="8" placeholder="みーちゃん">
       </div>
       <div class="fld">
         <label>犬の呼び名（抱っこされる子）</label>
         <input type="text" id="setDog" maxlength="8" placeholder="ロイくん">
+      </div>
+      <div class="fld">
+        <label>もう1人の呼び名（3に乗る人）</label>
+        <input type="text" id="setNori" maxlength="8" placeholder="のりちゃん">
       </div>
       <div class="btnrow" style="margin-top:14px">
         <button class="btn" id="btnExport">書き出し</button>
@@ -287,7 +303,7 @@
 (function(){
   'use strict';
   var KEY = 'dakkobakari_v1';
-  var DEF_HUMAN = 'みーちゃん', DEF_DOG = 'ロイくん';
+  var DEF = {human:'みーちゃん', dog:'ロイくん', nori:'のりちゃん'};
 
   /* ===== 3人で共有（Supabase・ゆずわり等と同じ1行ブロブ） ===== */
   var SUPABASE_URL = 'https://okbjqtdirrathscctyvx.supabase.co';
@@ -297,43 +313,87 @@
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
   var cloudReady = false, pushTimer = null;
 
+  // ===== 小道具 =====
+  function $(id){ return document.getElementById(id); }
+  function pad(n){ return (n<10?'0':'')+n; }
+  function todayStr(){ var d = new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+  function r1(n){ return Math.round(n*10)/10; }
+  function fmt(n){ return r1(n).toFixed(1); }
+  function mdOf(s){ var p = String(s).split('-'); return (+p[1])+'/'+(+p[2]); }
+  function ymdOf(s){ var p = String(s).split('-'); return p[0].slice(2)+'.'+(+p[1])+'.'+(+p[2]); }
+  function isDate(s){ return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  var toastTimer = null;
+  function toast(msg){
+    var t = $('toast'); t.textContent = msg; t.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 1900);
+  }
+  function w(n){ var v = +n; return (isFinite(v) && v > 0 && v <= 300) ? r1(v) : null; }
+
   // ===== データ =====
+  // 1件＝{date, human, total, ts, nori, tsNori}
+  //   human/total … 抱っこする人の体重と、抱っこして乗った体重（ts＝その更新時刻）
+  //   nori         … もう1人の体重（tsNori＝その更新時刻）
+  //   ※ 2つの組は別々に突き合わせるので、別々の端末から同じ日に足しても消し合わない
+  var VIEWS = ['dog','human','nori'];
   var state = load();
 
-  function blank(){ return {v:2, names:{human:DEF_HUMAN, dog:DEF_DOG}, namesTs:0, logs:[], deleted:{}, updatedAt:0}; }
+  function blank(){
+    return {v:3, names:{human:DEF.human, dog:DEF.dog, nori:DEF.nori}, namesTs:0, logs:[], deleted:{}, updatedAt:0};
+  }
 
   function normalize(d){
     var out = blank();
     if(!d || typeof d !== 'object') return out;
     var n = d.names || {};
-    var h = n.human, g = n.dog;
-    // 旧バージョンの既定の呼び名は、今の呼び名に置きかえる
-    if(!h || h === 'おかあさん') h = DEF_HUMAN;
-    if(!g || g === 'わんこ') g = DEF_DOG;
-    out.names = {human:String(h).slice(0,8), dog:String(g).slice(0,8)};
+    var h = n.human, g = n.dog, o = n.nori;
+    if(!h || h === 'おかあさん') h = DEF.human;     // 旧バージョンの既定を今の呼び名に
+    if(!g || g === 'わんこ') g = DEF.dog;
+    if(!o) o = DEF.nori;
+    out.names = {human:String(h).slice(0,8), dog:String(g).slice(0,8), nori:String(o).slice(0,8)};
     out.namesTs = +d.namesTs || 0;
+
     var seen = {};
     (Array.isArray(d.logs) ? d.logs : []).forEach(function(l){
-      if(!l || typeof l.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(l.date)) return;
-      var hv = +l.human, tv = +l.total;
-      if(!isFinite(hv) || !isFinite(tv) || tv <= hv) return;
-      var rec = {date:l.date, human:r1(hv), total:r1(tv), ts:(+l.ts || 1)};
-      if(!seen[l.date] || rec.ts > seen[l.date].ts) seen[l.date] = rec;
+      if(!l || !isDate(l.date)) return;
+      var hv = w(l.human), tv = w(l.total), nv = w(l.nori);
+      if(hv === null || tv === null || tv <= hv) tv = null;   // 組にならない合計は捨てる
+      if(hv === null && nv === null) return;
+      var rec = {date:l.date, human:hv, total:tv, ts:(hv===null?0:(+l.ts||1)),
+                 nori:nv, tsNori:(nv===null?0:(+l.tsNori|| +l.ts ||1))};
+      var cur = seen[l.date];
+      if(!cur) seen[l.date] = rec;
+      else seen[l.date] = mergeRec(cur, rec);
     });
     out.logs = Object.keys(seen).sort().map(function(k){ return seen[k]; });
+
     var del = d.deleted && typeof d.deleted === 'object' ? d.deleted : {};
-    Object.keys(del).sort().forEach(function(k){
-      if(/^\d{4}-\d{2}-\d{2}$/.test(k) && +del[k] > 0) out.deleted[k] = +del[k];
-    });
+    Object.keys(del).sort().forEach(function(k){ if(isDate(k) && +del[k] > 0) out.deleted[k] = +del[k]; });
     out.updatedAt = +d.updatedAt || 0;
     return out;
   }
 
-  // 2つの状態を突き合わせる（日付ごとに新しい方を採用・削除も日時で判定）
+  // 同じ日の2件を、組ごとに新しい方で合成する
+  function mergeRec(a, b){
+    var m = {date:a.date};
+    if((b.ts||0) > (a.ts||0)){ m.human = b.human; m.total = b.total; m.ts = b.ts||0; }
+    else { m.human = a.human; m.total = a.total; m.ts = a.ts||0; }
+    if((b.tsNori||0) > (a.tsNori||0)){ m.nori = b.nori; m.tsNori = b.tsNori||0; }
+    else { m.nori = a.nori; m.tsNori = a.tsNori||0; }
+    return m;
+  }
+  function recEmpty(l){ return l.human === null && l.nori === null; }
+  function recStamp(l){ return Math.max(l.ts||0, l.tsNori||0); }
+
   function merge(a, b){
     var out = blank();
-    if((b.namesTs||0) > (a.namesTs||0)){ out.names = {human:b.names.human, dog:b.names.dog}; out.namesTs = b.namesTs||0; }
-    else { out.names = {human:a.names.human, dog:a.names.dog}; out.namesTs = a.namesTs||0; }
+    if((b.namesTs||0) > (a.namesTs||0)){ out.names = {human:b.names.human, dog:b.names.dog, nori:b.names.nori}; out.namesTs = b.namesTs||0; }
+    else { out.names = {human:a.names.human, dog:a.names.dog, nori:a.names.nori}; out.namesTs = a.namesTs||0; }
 
     var del = {};
     [a.deleted||{}, b.deleted||{}].forEach(function(m){
@@ -342,15 +402,16 @@
 
     var byDate = {};
     (a.logs||[]).concat(b.logs||[]).forEach(function(l){
-      var cur = byDate[l.date];
-      if(!cur || (l.ts||0) > (cur.ts||0)) byDate[l.date] = {date:l.date, human:l.human, total:l.total, ts:l.ts||0};
+      byDate[l.date] = byDate[l.date] ? mergeRec(byDate[l.date], l) : l;
     });
     Object.keys(byDate).sort().forEach(function(d){
-      if((del[d]||0) >= byDate[d].ts) return;   // 消したほうが新しければ復活させない
-      out.logs.push(byDate[d]);
+      var rec = byDate[d];
+      if((del[d]||0) >= recStamp(rec)) return;   // 消したほうが新しければ復活させない
+      if(recEmpty(rec)) return;
+      out.logs.push(rec);
     });
 
-    var cut = Date.now() - 180*86400000;        // 半年たった削除の印は片づける
+    var cut = Date.now() - 180*86400000;         // 半年たった削除の印は片づける
     Object.keys(del).sort().forEach(function(d){ if(del[d] >= cut) out.deleted[d] = del[d]; });
 
     out.updatedAt = Math.max(a.updatedAt||0, b.updatedAt||0);
@@ -358,8 +419,8 @@
   }
 
   function canon(st){
-    return JSON.stringify([st.names.human, st.names.dog, st.namesTs,
-      st.logs.map(function(l){ return [l.date, l.human, l.total, l.ts]; }),
+    return JSON.stringify([st.names.human, st.names.dog, st.names.nori, st.namesTs,
+      st.logs.map(function(l){ return [l.date, l.human, l.total, l.ts, l.nori, l.tsNori]; }),
       Object.keys(st.deleted).sort().map(function(k){ return [k, st.deleted[k]]; })]);
   }
 
@@ -371,10 +432,7 @@
     state.updatedAt = Date.now();
     try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
   }
-  function commit(){          // 手元に保存 → クラウドへ送る
-    saveLocal();
-    schedulePush();
-  }
+  function commit(){ saveLocal(); schedulePush(); }
 
   // ===== クラウド =====
   function setSync(on, label){
@@ -421,159 +479,155 @@
         function(payload){ if(payload.new && payload.new.state) applyRemote(payload.new.state); })
       .subscribe();
   }
-  // 画面に戻ってきた・回線が戻った時は取り直す
-  document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState === 'visible' && cloudReady) refetch();
-  });
-  window.addEventListener('online', function(){ cloudReady ? refetch() : loadRemote(); });
   function refetch(){
+    if(!sb) return;
     sb.from(TABLE).select('state').eq('id', ROW).maybeSingle()
       .then(function(res){ if(!res.error && res.data && res.data.state){ setSync(true); applyRemote(res.data.state); } })
       .catch(function(e){ console.warn(e); });
   }
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && cloudReady) refetch();
+  });
+  window.addEventListener('online', function(){ cloudReady ? refetch() : loadRemote(); });
 
-  // ===== 小道具 =====
-  function $(id){ return document.getElementById(id); }
-  function todayStr(){
-    var d = new Date();
-    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  // ===== 値の取り出し =====
+  function valOf(l, v){
+    if(v === 'dog')   return (l.human !== null && l.total !== null) ? r1(l.total - l.human) : null;
+    if(v === 'human') return l.human !== null ? r1(l.human) : null;
+    return l.nori !== null ? r1(l.nori) : null;
   }
-  function pad(n){ return (n<10?'0':'')+n; }
-  function r1(n){ return Math.round(n*10)/10; }
-  function fmt(n){ return r1(n).toFixed(1); }
-  function mdOf(s){ var p = String(s).split('-'); return (+p[1])+'/'+(+p[2]); }
-  function ymdOf(s){ var p = String(s).split('-'); return p[0].slice(2)+'.'+(+p[1])+'.'+(+p[2]); }
-  function dogOf(l){ return r1(l.total - l.human); }
+  function nameOf(v){ return v === 'dog' ? state.names.dog : v === 'human' ? state.names.human : state.names.nori; }
+  function colorOf(v){ return v === 'dog' ? '#c0793d' : v === 'human' ? '#4a7fb5' : '#5c8a6a'; }
   function sortedAsc(){
     return state.logs.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
   }
-  var toastTimer = null;
-  function toast(msg){
-    var t = $('toast'); t.textContent = msg; t.classList.add('on');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 1900);
-  }
-  function esc(s){
-    return String(s).replace(/[&<>"']/g, function(c){
-      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-    });
-  }
-
-  // ===== 入力まわり =====
-  var editingDate = null;   // 編集中の日付（null＝新規）
-
-  function num(el){
-    var v = parseFloat(el.value);
-    return isFinite(v) ? v : null;
-  }
-
-  function refreshResult(){
-    var h = num($('fHuman')), t = num($('fTotal')), date = $('fDate').value;
-    var warn = $('warn'), ok = false, msg = '';
-
-    if(h !== null && t !== null){
-      if(t <= h){
-        msg = '抱っこして乗った方が軽くなっています。数字が入れ替わっていないか見てみてください。';
-      }else{
-        ok = true;
-        setBox('Dog', r1(t - h), prevOf(date, 'dog'));
-        setBox('Human', r1(h), prevOf(date, 'human'));
-      }
-    }
-    if(!ok){
-      clearBox('Dog');
-      if(h !== null && t === null){ setBox('Human', r1(h), prevOf(date, 'human')); }
-      else { clearBox('Human'); }
-    }
-    warn.style.display = msg ? 'block' : 'none';
-    warn.textContent = msg;
-
-    var exists = !!findByDate(date);
-    $('btnSave').disabled = !(ok && date);
-    $('btnSave').textContent = (exists && date) ? 'この日の記録を上書きする' : 'この日の記録を保存';
-  }
-
-  function setBox(which, val, prev){
-    var el = $('rv'+which);
-    el.classList.remove('blank');
-    el.innerHTML = fmt(val)+'<small>kg</small>';
-    var d0 = $('rd'+which);
-    if(prev === null){ d0.innerHTML = '&nbsp;'; return; }
-    var d = r1(val - prev.value);
-    if(d === 0){ d0.innerHTML = '前回（'+mdOf(prev.date)+'）と同じ'; return; }
-    d0.innerHTML = '前回（'+mdOf(prev.date)+'）より <span class="'+(d>0?'up':'dn')+'">'+(d>0?'+':'')+fmt(d)+'kg</span>';
-  }
-  function clearBox(which){
-    var el = $('rv'+which);
-    el.classList.add('blank'); el.textContent = '—';
-    $('rd'+which).innerHTML = '&nbsp;';
-  }
-
-  // 指定日より前の、いちばん近い記録
-  function prevOf(date, who){
-    if(!date) return null;
-    var arr = sortedAsc().filter(function(l){ return l.date < date; });
-    if(!arr.length) return null;
-    var l = arr[arr.length-1];
-    return {date:l.date, value: who === 'dog' ? dogOf(l) : r1(l.human)};
-  }
-
+  function logsFor(v){ return sortedAsc().filter(function(l){ return valOf(l, v) !== null; }); }
   function findByDate(d){
     for(var i=0;i<state.logs.length;i++) if(state.logs[i].date === d) return state.logs[i];
     return null;
   }
+  // 指定日より前の、いちばん近い記録
+  function prevOf(date, v){
+    if(!date) return null;
+    var arr = logsFor(v).filter(function(l){ return l.date < date; });
+    if(!arr.length) return null;
+    var l = arr[arr.length-1];
+    return {date:l.date, value:valOf(l, v)};
+  }
 
-  $('btnToday').addEventListener('click', function(){
-    $('fDate').value = todayStr(); refreshResult();
-  });
-  $('fDate').addEventListener('change', refreshResult);
+  // ===== 入力まわり =====
+  var editingDate = null;
+
+  function num(el){ var v = parseFloat(el.value); return isFinite(v) ? v : null; }
+
+  function refreshResult(){
+    var h = num($('fHuman')), t = num($('fTotal')), n = num($('fNori'));
+    var date = $('fDate').value, msg = '';
+
+    if(h === null && t !== null) msg = '1（'+state.names.human+'だけの体重）も入れてください。引き算ができません。';
+    else if(h !== null && t !== null && t <= h) msg = '抱っこして乗った方が軽くなっています。数字が入れ替わっていないか見てみてください。';
+
+    var pairOk = (h !== null && t !== null && t > h);
+    var humanOk = (h !== null);
+    var noriOk = (n !== null && n > 0);
+
+    var parts = [];
+    if(pairOk) parts.push({v:'dog', val:r1(t - h)});
+    if(humanOk) parts.push({v:'human', val:r1(h)});
+    if(noriOk) parts.push({v:'nori', val:r1(n)});
+
+    var box = $('result');
+    box.classList.toggle('three', parts.length === 3);
+    if(!parts.length){
+      box.innerHTML = '<div class="hint">体重を入れると、ここに出ます</div>';
+    }else{
+      box.innerHTML = parts.map(function(p){
+        var prev = prevOf(date, p.v), rd = '&nbsp;';
+        if(prev){
+          var d = r1(p.val - prev.value);
+          rd = (d === 0) ? '前回（'+mdOf(prev.date)+'）と同じ'
+             : '前回（'+mdOf(prev.date)+'）より <span class="'+(d>0?'up':'dn')+'">'+(d>0?'+':'')+fmt(d)+'kg</span>';
+        }
+        return '<div class="rbox '+p.v+'"><div class="rn">'+esc(nameOf(p.v))+'</div>'+
+          '<div class="rv">'+fmt(p.val)+'<small>kg</small></div><div class="rd">'+rd+'</div></div>';
+      }).join('');
+    }
+
+    if(!msg && !parts.length && date && findByDate(date)){
+      msg = '数字がすべて空です。この日の記録ごと消すときは、下の一覧の「消す」を押してください。';
+    }
+    $('warn').style.display = msg ? 'block' : 'none';
+    $('warn').textContent = msg;
+
+    var canSave = !msg && (humanOk || noriOk) && !!date;
+    $('btnSave').disabled = !canSave;
+    $('btnSave').textContent = (date && findByDate(date)) ? 'この日の記録を上書きする' : 'この日の記録を保存';
+  }
+
+  // その日にすでに記録があれば入力欄に読み込む（あとから1人分だけ足せるように）
+  function loadDateIntoForm(){
+    var date = $('fDate').value;
+    var l = date ? findByDate(date) : null;
+    if(l){
+      editingDate = date;
+      $('fHuman').value = l.human === null ? '' : l.human;
+      $('fTotal').value = l.total === null ? '' : l.total;
+      $('fNori').value  = l.nori  === null ? '' : l.nori;
+      $('editNoteText').textContent = ymdOf(date)+' の記録を読み込みました。足したり直したりできます';
+      $('editNote').style.display = 'flex';
+    }else{
+      editingDate = null;
+      $('fHuman').value = ''; $('fTotal').value = ''; $('fNori').value = '';
+      $('editNote').style.display = 'none';
+    }
+    refreshResult();
+  }
+
+  $('btnToday').addEventListener('click', function(){ $('fDate').value = todayStr(); loadDateIntoForm(); });
+  $('fDate').addEventListener('change', loadDateIntoForm);
   $('fHuman').addEventListener('input', refreshResult);
   $('fTotal').addEventListener('input', refreshResult);
+  $('fNori').addEventListener('input', refreshResult);
 
   $('btnSave').addEventListener('click', function(){
-    var date = $('fDate').value, h = num($('fHuman')), t = num($('fTotal'));
-    if(!date || h === null || t === null || t <= h) return;
+    var date = $('fDate').value, h = num($('fHuman')), t = num($('fTotal')), n = num($('fNori'));
+    if(!date) return;
+    var hv = (h !== null) ? r1(h) : null;
+    var tv = (hv !== null && t !== null && t > hv) ? r1(t) : null;
+    var nv = (n !== null && n > 0) ? r1(n) : null;
+    if(hv === null && nv === null) return;
+
     var ex = findByDate(date);
     if(ex && editingDate !== date){
       if(!confirm(mdOf(date)+' の記録はすでにあります。上書きしますか？')) return;
     }
     var now = Date.now();
-    if(editingDate && editingDate !== date){
-      // 日付を変えて保存＝元の日付の記録は消す
-      state.logs = state.logs.filter(function(l){ return l.date !== editingDate; });
-      state.deleted[editingDate] = now;
-      ex = findByDate(date);
+    if(!ex){ ex = {date:date, human:null, total:null, ts:0, nori:null, tsNori:0}; state.logs.push(ex); }
+    if(ex.human !== hv || ex.total !== tv){ ex.human = hv; ex.total = tv; ex.ts = hv === null ? 0 : now; }
+    if(ex.nori !== nv){ ex.nori = nv; ex.tsNori = nv === null ? 0 : now; }
+    if(recEmpty(ex)){
+      state.logs = state.logs.filter(function(l){ return l.date !== date; });
+      state.deleted[date] = now;
+    }else{
+      delete state.deleted[date];
     }
-    if(ex){ ex.human = r1(h); ex.total = r1(t); ex.ts = now; }
-    else { state.logs.push({date:date, human:r1(h), total:r1(t), ts:now}); }
-    delete state.deleted[date];
     commit();
-    editingDate = null;
-    $('editNote').style.display = 'none';
-    $('fHuman').value = ''; $('fTotal').value = '';
-    $('fDate').value = todayStr();
-    $('fHuman').blur(); $('fTotal').blur();
-    refreshResult(); render();
+    $('fDate').value = date;
+    $('fHuman').blur(); $('fTotal').blur(); $('fNori').blur();
+    loadDateIntoForm(); render();
     toast(mdOf(date)+' の記録を保存しました');
   });
 
   $('btnCancelEdit').addEventListener('click', function(){
     editingDate = null;
+    $('fHuman').value = ''; $('fTotal').value = ''; $('fNori').value = '';
     $('editNote').style.display = 'none';
-    $('fHuman').value = ''; $('fTotal').value = '';
-    $('fDate').value = todayStr();
     refreshResult();
   });
 
   function startEdit(date){
-    var l = findByDate(date); if(!l) return;
-    editingDate = date;
-    $('fDate').value = l.date;
-    $('fHuman').value = l.human;
-    $('fTotal').value = l.total;
-    $('editNoteText').textContent = ymdOf(date)+' の記録を直しています';
-    $('editNote').style.display = 'flex';
-    refreshResult();
+    $('fDate').value = date;
+    loadDateIntoForm();
     window.scrollTo({top:0, behavior:'smooth'});
   }
 
@@ -581,25 +635,26 @@
     if(!confirm(ymdOf(date)+' の記録を消しますか？（3人全員の画面から消えます）')) return;
     state.logs = state.logs.filter(function(l){ return l.date !== date; });
     state.deleted[date] = Date.now();
-    if(editingDate === date){
-      editingDate = null; $('editNote').style.display = 'none';
-      $('fHuman').value = ''; $('fTotal').value = '';
-    }
-    commit(); refreshResult(); render();
+    commit();
+    if($('fDate').value === date) loadDateIntoForm();
+    render();
     toast('記録を消しました');
   }
 
   // ===== 表示の状態 =====
-  var view = 'dog';   // dog | human
-  var range = 0;      // 0=全部
+  var view = 'dog';
+  var range = 0;
   var listLimit = 12;
 
-  $('swDog').addEventListener('click', function(){ view='dog'; syncSwitch(); render(); });
-  $('swHuman').addEventListener('click', function(){ view='human'; syncSwitch(); render(); });
-  function syncSwitch(){
-    $('swDog').classList.toggle('on', view==='dog');
-    $('swHuman').classList.toggle('on', view==='human');
-  }
+  Array.prototype.forEach.call($('switchBar').querySelectorAll('button'), function(b){
+    b.addEventListener('click', function(){
+      view = b.dataset.v;
+      Array.prototype.forEach.call($('switchBar').querySelectorAll('button'), function(x){
+        x.classList.toggle('on', x === b);
+      });
+      render();
+    });
+  });
   Array.prototype.forEach.call($('rangeBar').querySelectorAll('button'), function(b){
     b.addEventListener('click', function(){
       range = +b.dataset.r;
@@ -609,9 +664,6 @@
       render();
     });
   });
-
-  function valueOf(l){ return view === 'dog' ? dogOf(l) : r1(l.human); }
-  function colorOf(){ return view === 'dog' ? '#c0793d' : '#4a7fb5'; }
 
   function inRange(logs){
     if(!range) return logs;
@@ -625,20 +677,20 @@
   function drawChart(logs){
     var box = $('chart');
     if(!logs.length){
-      box.innerHTML = '<div class="empty">まだ記録がありません。<br>上の1と2に体重を入れると、ここにグラフが出ます。</div>';
+      box.innerHTML = '<div class="empty">'+esc(nameOf(view))+'の記録がまだありません。<br>体重を入れて保存すると、ここにグラフが出ます。</div>';
       return;
     }
     if(logs.length === 1){
       var only = logs[0];
       box.innerHTML = '<div class="empty">記録が1回だけです。<br>'+
-        ymdOf(only.date)+' … <b>'+fmt(valueOf(only))+'kg</b><br>'+
+        ymdOf(only.date)+' … <b>'+fmt(valOf(only, view))+'kg</b><br>'+
         'もう1回測ると、線でつながります。</div>';
       return;
     }
 
     var W = 320, H = 174, PL = 32, PR = 14, PT = 22, PB = 32;
     var iw = W - PL - PR, ih = H - PT - PB;
-    var vals = logs.map(valueOf);
+    var vals = logs.map(function(l){ return valOf(l, view); });
     var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
     var span = max - min;
     if(span < 0.4){ var c=(max+min)/2; min = c-0.2; max = c+0.2; span = 0.4; }
@@ -653,10 +705,10 @@
     }
     function py(v){ return PT + (hi - v) / (hi - lo) * ih; }
 
-    var pts = logs.map(function(l){ return {x:px(l), y:py(valueOf(l)), v:valueOf(l), date:l.date}; });
+    var pts = logs.map(function(l){ return {x:px(l), y:py(valOf(l, view)), v:valOf(l, view), date:l.date}; });
     var line = pts.map(function(p,i){ return (i?'L':'M')+p.x.toFixed(1)+','+p.y.toFixed(1); }).join(' ');
     var area = line+' L'+pts[pts.length-1].x.toFixed(1)+','+(PT+ih)+' L'+pts[0].x.toFixed(1)+','+(PT+ih)+' Z';
-    var col = colorOf();
+    var col = colorOf(view);
 
     var grid = '', labels = '';
     for(var g=0; g<3; g++){
@@ -717,7 +769,7 @@
   function drawPeaks(logs){
     var box = $('peaks');
     if(logs.length < 2){ box.innerHTML = ''; return; }
-    var vals = logs.map(valueOf);
+    var vals = logs.map(function(l){ return valOf(l, view); });
     var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
     var lmin = logs[vals.indexOf(min)], lmax = logs[vals.indexOf(max)];
     box.innerHTML =
@@ -739,42 +791,36 @@
       $('logCount').textContent = '';
       return;
     }
-    var dv = asc.map(dogOf), hv = asc.map(function(l){ return r1(l.human); });
-    var peak = {
-      dogMin: asc[dv.indexOf(Math.min.apply(null, dv))].date,
-      dogMax: asc[dv.indexOf(Math.max.apply(null, dv))].date,
-      humanMin: asc[hv.indexOf(Math.min.apply(null, hv))].date,
-      humanMax: asc[hv.indexOf(Math.max.apply(null, hv))].date
-    };
-    var same = asc.length < 2;
+    // それぞれの最軽・最重（全期間）
+    var peak = {};
+    VIEWS.forEach(function(v){
+      var ls = logsFor(v);
+      if(ls.length < 2) return;
+      var vals = ls.map(function(l){ return valOf(l, v); });
+      peak[v] = {min:ls[vals.indexOf(Math.min.apply(null, vals))].date,
+                 max:ls[vals.indexOf(Math.max.apply(null, vals))].date};
+    });
 
     var desc = asc.slice().reverse();
     var shown = desc.slice(0, listLimit);
     box.innerHTML = shown.map(function(l){
-      var idx = asc.indexOf(l);
-      var prev = idx > 0 ? asc[idx-1] : null;
-      var tags = '';
-      if(!same){
-        if(l.date === peak.dogMin) tags += '<span class="tag lo">'+esc(state.names.dog)+' 最軽</span>';
-        if(l.date === peak.dogMax) tags += '<span class="tag hi">'+esc(state.names.dog)+' 最重</span>';
-        if(l.date === peak.humanMin) tags += '<span class="tag lo">'+esc(state.names.human)+' 最軽</span>';
-        if(l.date === peak.humanMax) tags += '<span class="tag hi">'+esc(state.names.human)+' 最重</span>';
-      }
-      var memo;
-      if(prev){
-        var dd = r1(dogOf(l) - dogOf(prev)), dh = r1(l.human - prev.human);
-        memo = '前回比 '+esc(state.names.dog)+' '+(dd>0?'+':'')+fmt(dd)+' / '+
-               esc(state.names.human)+' '+(dh>0?'+':'')+fmt(dh);
-      }else{
-        memo = '最初の記録';
-      }
+      var tags = '', cells = '', memo = [];
+      VIEWS.forEach(function(v){
+        var val = valOf(l, v);
+        if(val === null) return;
+        cells += '<div class="vcell '+v+'"><span class="vn">'+esc(nameOf(v))+'</span>'+
+                 '<span class="vv">'+fmt(val)+'</span></div>';
+        if(peak[v]){
+          if(l.date === peak[v].min) tags += '<span class="tag lo">'+esc(nameOf(v))+' 最軽</span>';
+          if(l.date === peak[v].max) tags += '<span class="tag hi">'+esc(nameOf(v))+' 最重</span>';
+        }
+        var prev = prevOf(l.date, v);
+        if(prev){ var d = r1(val - prev.value); memo.push(esc(nameOf(v))+' '+(d>0?'+':'')+fmt(d)); }
+      });
       return '<div class="item">'+
         '<div class="i1"><div class="idate">'+ymdOf(l.date)+'</div><div class="tags">'+tags+'</div></div>'+
-        '<div class="i2">'+
-          '<div class="vcell dog"><span class="vn">'+esc(state.names.dog)+'</span><span class="vv">'+fmt(dogOf(l))+'</span></div>'+
-          '<div class="vcell human"><span class="vn">'+esc(state.names.human)+'</span><span class="vv">'+fmt(l.human)+'</span></div>'+
-        '</div>'+
-        '<div class="i3"><span class="memo">'+memo+'</span>'+
+        '<div class="i2">'+cells+'</div>'+
+        '<div class="i3"><span class="memo">'+(memo.length ? '前回比 '+memo.join(' / ') : '最初の記録')+'</span>'+
           '<span class="acts">'+
             '<button data-edit="'+l.date+'">直す</button>'+
             '<button class="del" data-del="'+l.date+'">消す</button>'+
@@ -796,22 +842,29 @@
 
   // ===== 呼び名 =====
   function applyNames(){
-    var h = state.names.human, d = state.names.dog;
-    $('lbHuman').textContent = h; $('lbDog').textContent = d;
-    $('rnHuman').textContent = h; $('rnDog').textContent = d;
-    $('swHuman').textContent = h; $('swDog').textContent = d;
-    if(document.activeElement !== $('setHuman')) $('setHuman').value = h === DEF_HUMAN ? '' : h;
-    if(document.activeElement !== $('setDog')) $('setDog').value = d === DEF_DOG ? '' : d;
-    document.title = 'だっこばかり — '+d+'と'+h+'の体重記録';
+    $('lbHuman').textContent = state.names.human;
+    $('lbDog').textContent = state.names.dog;
+    $('lbNori').textContent = state.names.nori;
+    Array.prototype.forEach.call($('switchBar').querySelectorAll('button'), function(b){
+      b.textContent = nameOf(b.dataset.v);
+    });
+    [['setHuman','human'],['setDog','dog'],['setNori','nori']].forEach(function(p){
+      if(document.activeElement !== $(p[0])){
+        $(p[0]).value = state.names[p[1]] === DEF[p[1]] ? '' : state.names[p[1]];
+      }
+    });
+    document.title = 'だっこばかり — '+state.names.dog+'と'+state.names.human+'の体重記録';
   }
   function onNameChange(){
-    state.names.human = ($('setHuman').value || '').trim().slice(0,8) || DEF_HUMAN;
-    state.names.dog = ($('setDog').value || '').trim().slice(0,8) || DEF_DOG;
+    state.names.human = ($('setHuman').value || '').trim().slice(0,8) || DEF.human;
+    state.names.dog   = ($('setDog').value   || '').trim().slice(0,8) || DEF.dog;
+    state.names.nori  = ($('setNori').value  || '').trim().slice(0,8) || DEF.nori;
     state.namesTs = Date.now();
     commit(); applyNames(); render(); refreshResult();
   }
-  $('setHuman').addEventListener('change', onNameChange);
-  $('setDog').addEventListener('change', onNameChange);
+  ['setHuman','setDog','setNori'].forEach(function(id){
+    $(id).addEventListener('change', onNameChange);
+  });
 
   // ===== バックアップ =====
   $('btnExport').addEventListener('click', function(){
@@ -832,7 +885,7 @@
         if(!d.logs.length) throw 0;
         if(!confirm('読み込んだ'+d.logs.length+'件を、いまの記録に足し合わせます。（同じ日は新しい方が残ります）')) return;
         state = merge(state, d);
-        commit(); applyNames(); render(); refreshResult();
+        commit(); applyNames(); render(); loadDateIntoForm();
         toast('読み込みました');
       }catch(e){ alert('このファイルは読み込めませんでした。'); }
     };
@@ -846,14 +899,13 @@
     var now = Date.now();
     state.logs.forEach(function(l){ state.deleted[l.date] = now; });
     state.logs = [];
-    commit(); render(); refreshResult();
+    commit(); render(); loadDateIntoForm();
     toast('全部消しました');
   });
 
   // ===== 描画 =====
   function render(){
-    var asc = sortedAsc();
-    var shown = inRange(asc);
+    var shown = inRange(logsFor(view));
     drawPeaks(shown);
     drawChart(shown);
     $('graphCount').textContent = shown.length ? shown.length+'回分' : '';
@@ -862,7 +914,7 @@
 
   // 起動
   $('fDate').value = todayStr();
-  applyNames(); syncSwitch(); render(); refreshResult();
+  applyNames(); render(); loadDateIntoForm();
   loadRemote();
 })();
 </script>
