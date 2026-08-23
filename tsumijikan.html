@@ -120,6 +120,10 @@
   .btn.ghost{background:transparent;}
   .btn[disabled]{opacity:.45; cursor:default;}
   .btn.big svg{width:20px; height:20px; flex:none;}
+  .go-row{display:flex; gap:9px;}
+  .go-row .go{flex:1;}
+  .btn.by-time{width:60px; flex:none; color:var(--ink-mid); padding:0;}
+  .btn.by-time svg{width:22px; height:22px;}
   .linkbtn{
     appearance:none; border:0; background:none; color:var(--ink-soft); font-family:inherit;
     font-size:.82rem; font-weight:700; cursor:pointer; padding:8px 6px; text-decoration:underline; text-underline-offset:3px;
@@ -150,7 +154,11 @@
   .run-name{font-family:var(--serif); font-size:1.22rem; font-weight:700; display:flex; align-items:center; gap:9px; margin-top:9px;}
   .run-name .dot{width:11px; height:11px; border-radius:50%; flex:none; filter:brightness(var(--chip-bright));}
   .run-clock{font-family:var(--serif); font-size:2.7rem; font-weight:700; line-height:1.1; letter-spacing:.01em; margin:2px 0 2px;}
-  .run-sub{font-size:.83rem; color:var(--ink-soft); margin-bottom:14px;}
+  .run-sub{font-size:.95rem; font-weight:700; color:var(--ink-mid); margin-bottom:14px;}
+  .ar{color:var(--ink-soft); font-weight:400; padding:0 1px;}
+  .done-time{font-size:1.06rem; font-weight:700; color:var(--ink-mid); margin:-4px 0 11px;}
+  .done-time b{color:var(--accent-2); margin-left:7px;}
+  .calc{text-align:center; font-size:1.15rem; font-weight:700; color:var(--accent-2); padding:2px 0 1px;}
   .band{
     display:flex; gap:8px; align-items:flex-start; background:var(--warn-wash); color:var(--warn);
     border-radius:12px; padding:9px 12px; font-size:.82rem; font-weight:700; margin:10px 0 2px; line-height:1.45;
@@ -571,6 +579,7 @@ function startTick(){
     const r = running(); if(!r) return;
     const ms = elapsed();
     const c = document.getElementById('clock'); if(c) c.textContent = fmtClock(ms);
+    const nw = document.getElementById('runNow'); if(nw) nw.textContent = fmtHM(Date.now());
     const l = document.getElementById('liveAdd'); if(l) l.textContent = '＋'+fmtClock(ms);
     /* 12時間を超えた瞬間だけ、止め忘れの帯を出すために計測カードを描き直す */
     if(ms >= LONG_MS && !document.getElementById('longBand')) renderTimer();
@@ -593,8 +602,8 @@ function render(){
 const ICO_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>';
 const SVG = 'viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"';
 const ICO_X    = '<svg '+SVG+'><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const ICO_PLUS = '<svg '+SVG+'><path d="M12 5v14M5 12h14"/></svg>';
 const ICO_DL   = '<svg '+SVG+'><path d="M12 4v11m0 0l-4-4m4 4l4-4"/><path d="M5 19h14"/></svg>';
+const ICO_CLOCK= '<svg '+SVG+'><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>';
 const ICO_TRASH= '<svg '+SVG+'><path d="M4 7h16M9 7V5h6v2M7 7l1 12h8l1-12"/></svg>';
 const ICO_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>';
 
@@ -614,7 +623,8 @@ function renderTimer(){
     el.innerHTML =
       '<div class="run-name">'+dot(projColor(r.pid))+'<span>'+esc(projName(r.pid))+'</span></div>'+
       '<div class="run-clock tnum" id="clock">'+fmtClock(ms)+'</div>'+
-      '<div class="run-sub">'+(dayStart(r.start)===dayStart(Date.now())?'':fmtMD(r.start)+' ')+fmtHM(r.start)+' 〜</div>'+
+      '<div class="run-sub tnum">'+(dayStart(r.start)===dayStart(Date.now())?'':fmtMD(r.start)+' ')+
+        fmtHM(r.start)+' <span class="ar">→</span> <span id="runNow">'+fmtHM(Date.now())+'</span></div>'+
       band+
       '<button class="btn big stop" data-act="stop">'+ICO_STOP+'おわる</button>'+
       '<div style="text-align:center"><button class="linkbtn" data-act="cancel">取り消す</button></div>';
@@ -626,9 +636,11 @@ function renderTimer(){
     const j = justStopped;
     el.innerHTML =
       '<div class="done-line">'+dot(projColor(j.pid))+
-        '<span>'+esc(projName(j.pid))+' <b>'+esc(fmtDur(j.ms))+'</b></span>'+
+        '<span>'+esc(projName(j.pid))+'</span>'+
         '<span class="spacer"></span>'+
         '<button class="iconbtn" data-act="done-close" aria-label="とじる">'+ICO_X+'</button></div>'+
+      '<div class="done-time tnum">'+fmtHM(j.st)+' <span class="ar">→</span> '+fmtHM(j.en)+
+        ' <b>'+esc(fmtDur(j.ms))+'</b></div>'+
       '<input type="text" id="memoIn" placeholder="メモ" maxlength="200">';
     stopTick();
     return;
@@ -651,7 +663,10 @@ function renderTimer(){
   ).join('');
   el.innerHTML =
     '<div class="pick">'+chips+'<button class="chip add" data-act="focus-add">＋</button></div>'+
-    '<button class="btn big go" data-act="start">'+ICO_PLAY+'はじめる</button>';
+    '<div class="go-row">'+
+      '<button class="btn big go" data-act="start">'+ICO_PLAY+'はじめる</button>'+
+      '<button class="btn big by-time" data-act="add-entry" aria-label="時刻を入れて記録する">'+ICO_CLOCK+'</button>'+
+    '</div>';
   stopTick();
 }
 /* いちばん最後に計測したプロジェクト（次もそれを選んでおくと1タップで始められる） */
@@ -736,7 +751,7 @@ function renderRecords(){
   const shown = list.slice(0, recLimit);
   const head =
     '<div class="card-head"><span class="spacer"></span>'+
-      '<button class="iconbtn" data-act="add-entry" aria-label="記録を手で足す">'+ICO_PLUS+'</button>'+
+      '<button class="iconbtn" data-act="add-entry" aria-label="時刻を入れて記録する">'+ICO_CLOCK+'</button>'+
       '<button class="iconbtn" data-act="copy" aria-label="CSVで書き出す">'+ICO_DL+'</button></div>';
 
   if(!shown.length){                       /* 何も無いカードは出さない */
@@ -816,7 +831,7 @@ function stopRun(silent){
   if(ms >= 30000){                        /* 30秒未満は押し間違いとみなして捨てる */
     const e = normEntry({ id:uid(), pid:r.pid, start:r.start, end, memo:'', createdAt:nowISO(), updatedAt:nowISO() });
     db.entries.push(e);
-    justStopped = { id:e.id, pid:e.pid, ms };
+    justStopped = { id:e.id, pid:e.pid, ms, st:r.start, en:end };
     save();
     if(!silent){ render(); return; }
   }else{
@@ -874,13 +889,31 @@ function openEntrySheet(id){
       '<input type="date" id="fDate" value="'+iso(new Date(base.start))+'">'+
       '<div class="two">'+
         '<input type="time" id="fStart" value="'+z2(new Date(base.start).getHours())+':'+z2(new Date(base.start).getMinutes())+'">'+
-        '<span class="tilde">〜</span>'+
+        '<span class="tilde">→</span>'+
         '<input type="time" id="fEnd" value="'+z2(new Date(base.end).getHours())+':'+z2(new Date(base.end).getMinutes())+'">'+
       '</div>'+
+      '<div class="calc tnum" id="fCalc"></div>'+
       '<input type="text" id="fMemo" placeholder="メモ" maxlength="200" value="'+esc(base.memo)+'">'+
     '</div>'+
     '<div class="sheet-foot"><button class="btn big go" data-act="save-entry">保存</button></div>'
   );
+  calcSheet();
+}
+/* 入れた時刻から、そのあいだの時間をその場で出す（保存と同じ計算） */
+function sheetRange(){
+  const d = document.getElementById('fDate'), a = document.getElementById('fStart'), b = document.getElementById('fEnd');
+  if(!d || !a || !b) return null;
+  const s = toMs(d.value, a.value);
+  let e = toMs(d.value, b.value);
+  if(s==null || e==null) return null;
+  const over = e < s;
+  if(over) e += 86400000;                        /* 日をまたいだ */
+  return { s, e, over };
+}
+function calcSheet(){
+  const el = document.getElementById('fCalc'); if(!el) return;
+  const r = sheetRange();
+  el.textContent = r ? fmtDur(r.e-r.s) + (r.over ? '（翌日まで）' : '') : '—';
 }
 function saveEntrySheet(){
   const pid = document.getElementById('fPid').value;
@@ -888,10 +921,9 @@ function saveEntrySheet(){
   const st = document.getElementById('fStart').value;
   const en = document.getElementById('fEnd').value;
   const memo = document.getElementById('fMemo').value;
-  const s = toMs(date, st);
-  let e2 = toMs(date, en);
-  if(s==null || e2==null){ toast('時刻を確かめてください'); return; }
-  if(e2 < s) e2 += 86400000;                       /* 日またぎ */
+  const r = sheetRange();
+  if(!r){ toast('時刻を確かめてください'); return; }
+  const s = r.s, e2 = r.e;
   const cur = sheet.id ? db.entries.find(x=>x.id===sheet.id) : null;
   if(cur){
     cur.pid = pid; cur.start = s; cur.end = e2; cur.memo = String(memo||'').slice(0,200);
@@ -1038,6 +1070,9 @@ document.getElementById('sheet').addEventListener('click', e=>{
     sheet.color = t.dataset.c;
     document.querySelectorAll('#swatches .sw').forEach(s=>s.classList.toggle('on', s.dataset.c===sheet.color));
   }
+});
+document.getElementById('sheet').addEventListener('input', e=>{
+  if(e.target && /^(fDate|fStart|fEnd)$/.test(e.target.id)) calcSheet();
 });
 document.getElementById('sheetMask').addEventListener('click', closeSheet);
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && sheet) closeSheet(); });
