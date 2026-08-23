@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="apple-touch-icon" href="icons/icon-dakkobakari.png">
 <meta name="apple-mobile-web-app-title" content="だっこばかり">
-<title>だっこばかり — ふたりの体重記録</title>
+<title>だっこばかり — 2人の体重記録</title>
 <style>
   :root{
     --bg:#f6f4f0; --card:#ffffff; --ink:#1d1d1f; --sub:#6e6e73;
@@ -27,7 +27,10 @@
 
   header{padding:20px 4px 4px; display:flex; align-items:baseline; gap:9px;}
   header h1{font-size:19px; font-weight:700; letter-spacing:.01em;}
-  header .sub{font-size:11.5px; color:var(--sub); margin-left:auto;}
+  header .sync{margin-left:auto; display:flex; align-items:center; gap:5px;
+    font-size:11px; color:var(--sub); white-space:nowrap;}
+  header .sync .dot{width:8px; height:8px; border-radius:50%; background:#34c759; flex:0 0 auto;}
+  header .sync .dot.off{background:#c7c7cc;}
 
   .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
     padding:16px; margin-top:12px;}
@@ -173,7 +176,7 @@
 
   <header>
     <h1>だっこばかり</h1>
-    <div class="sub">だっこで、ふたりぶん</div>
+    <div class="sync" id="syncBadge"><span class="dot off"></span><span id="syncTxt">この端末だけ</span></div>
   </header>
 
   <!-- ===== 入力 ===== -->
@@ -188,7 +191,7 @@
       <div class="step">
         <div class="no">1</div>
         <div class="body">
-          <div class="lb"><span id="lbHuman">おかあさん</span>だけで乗る<em>ひとりの体重</em></div>
+          <div class="lb"><span id="lbHuman">みーちゃん</span>だけで乗る<em>1人の体重</em></div>
           <div class="inrow">
             <input type="number" id="fHuman" inputmode="decimal" step="0.1" min="0" max="300" placeholder="0.0">
             <span class="unit">kg</span>
@@ -198,7 +201,7 @@
       <div class="step">
         <div class="no">2</div>
         <div class="body">
-          <div class="lb"><span id="lbDog">わんこ</span>をだっこして乗る<em>ふたり合わせて</em></div>
+          <div class="lb"><span id="lbDog">ロイくん</span>を抱っこして乗る<em>2人合わせて</em></div>
           <div class="inrow">
             <input type="number" id="fTotal" inputmode="decimal" step="0.1" min="0" max="300" placeholder="0.0">
             <span class="unit">kg</span>
@@ -209,13 +212,13 @@
 
     <div class="result">
       <div class="rbox dog">
-        <div class="rn" id="rnDog">わんこ</div>
-        <div class="rv" id="rvDog">—</div>
+        <div class="rn" id="rnDog">ロイくん</div>
+        <div class="rv blank" id="rvDog">—</div>
         <div class="rd" id="rdDog">&nbsp;</div>
       </div>
       <div class="rbox human">
-        <div class="rn" id="rnHuman">おかあさん</div>
-        <div class="rv" id="rvHuman">—</div>
+        <div class="rn" id="rnHuman">みーちゃん</div>
+        <div class="rv blank" id="rvHuman">—</div>
         <div class="rd" id="rdHuman">&nbsp;</div>
       </div>
     </div>
@@ -228,17 +231,17 @@
   </div>
 
   <!-- ===== グラフ ===== -->
-  <div class="sec-head"><h2>うつりかわり</h2><div class="sh-sub" id="graphCount"></div></div>
+  <div class="sec-head"><h2>移り変わり</h2><div class="sh-sub" id="graphCount"></div></div>
   <div class="card">
     <div class="switch">
-      <button id="swDog" class="on">わんこ</button>
-      <button id="swHuman">おかあさん</button>
+      <button id="swDog" class="on">ロイくん</button>
+      <button id="swHuman">みーちゃん</button>
     </div>
     <div class="range" id="rangeBar">
-      <button data-r="30">1か月</button>
-      <button data-r="90">3か月</button>
+      <button data-r="30">1ヶ月</button>
+      <button data-r="90">3ヶ月</button>
       <button data-r="365">1年</button>
-      <button data-r="0" class="on">ぜんぶ</button>
+      <button data-r="0" class="on">全部</button>
     </div>
     <div class="peaks" id="peaks"></div>
     <div class="chart" id="chart"></div>
@@ -254,12 +257,12 @@
     <summary>⚙️ 設定（呼び名・バックアップ）</summary>
     <div class="card">
       <div class="fld">
-        <label>ひとの呼び名（体重計に単体で乗る人）</label>
-        <input type="text" id="setHuman" maxlength="8" placeholder="おかあさん">
+        <label>人の呼び名（体重計に1人で乗る人）</label>
+        <input type="text" id="setHuman" maxlength="8" placeholder="みーちゃん">
       </div>
       <div class="fld">
-        <label>わんこの呼び名（だっこされる子）</label>
-        <input type="text" id="setDog" maxlength="8" placeholder="わんこ">
+        <label>犬の呼び名（抱っこされる子）</label>
+        <input type="text" id="setDog" maxlength="8" placeholder="ロイくん">
       </div>
       <div class="btnrow" style="margin-top:14px">
         <button class="btn" id="btnExport">書き出し</button>
@@ -268,46 +271,169 @@
       </div>
       <input type="file" id="fileInput" accept="application/json" style="display:none">
       <div class="muted" style="margin-top:11px">
-        記録はこのブラウザの中だけに保存されます。機種変えの前に「書き出し」でファイルを保存しておくと安心です。
+        記録は3人で共有しています。呼び名の変更・削除・「全部消す」も、3人全員の画面に反映されます。
+        「書き出し」で手元にバックアップのファイルを残せます。
       </div>
     </div>
   </details>
 
-  <div class="foot">だっこばかり<br>ひとりの体重と、だっこして乗った体重から、ふたりぶんを出します。</div>
+  <div class="foot">だっこばかり<br>1人の体重と、抱っこして乗った体重から、2人分を出します。</div>
 </div>
 
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (function(){
   'use strict';
   var KEY = 'dakkobakari_v1';
-  var DEF_HUMAN = 'おかあさん', DEF_DOG = 'わんこ';
+  var DEF_HUMAN = 'みーちゃん', DEF_DOG = 'ロイくん';
+
+  /* ===== 3人で共有（Supabase・ゆずわり等と同じ1行ブロブ） ===== */
+  var SUPABASE_URL = 'https://okbjqtdirrathscctyvx.supabase.co';
+  var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+  var TABLE = 'dakkobakari_state', ROW = 'family';
+  var sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+  var cloudReady = false, pushTimer = null;
 
   // ===== データ =====
   var state = load();
-  function load(){
-    try{
-      var raw = localStorage.getItem(KEY);
-      if(!raw) return {v:1, names:{human:DEF_HUMAN, dog:DEF_DOG}, logs:[]};
-      var d = JSON.parse(raw);
-      if(!d || typeof d!=='object') throw 0;
-      d.names = d.names || {};
-      d.names.human = d.names.human || DEF_HUMAN;
-      d.names.dog = d.names.dog || DEF_DOG;
-      d.logs = Array.isArray(d.logs) ? d.logs : [];
-      return d;
-    }catch(e){
-      return {v:1, names:{human:DEF_HUMAN, dog:DEF_DOG}, logs:[]};
-    }
+
+  function blank(){ return {v:2, names:{human:DEF_HUMAN, dog:DEF_DOG}, namesTs:0, logs:[], deleted:{}, updatedAt:0}; }
+
+  function normalize(d){
+    var out = blank();
+    if(!d || typeof d !== 'object') return out;
+    var n = d.names || {};
+    var h = n.human, g = n.dog;
+    // 旧バージョンの既定の呼び名は、今の呼び名に置きかえる
+    if(!h || h === 'おかあさん') h = DEF_HUMAN;
+    if(!g || g === 'わんこ') g = DEF_DOG;
+    out.names = {human:String(h).slice(0,8), dog:String(g).slice(0,8)};
+    out.namesTs = +d.namesTs || 0;
+    var seen = {};
+    (Array.isArray(d.logs) ? d.logs : []).forEach(function(l){
+      if(!l || typeof l.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(l.date)) return;
+      var hv = +l.human, tv = +l.total;
+      if(!isFinite(hv) || !isFinite(tv) || tv <= hv) return;
+      var rec = {date:l.date, human:r1(hv), total:r1(tv), ts:(+l.ts || 1)};
+      if(!seen[l.date] || rec.ts > seen[l.date].ts) seen[l.date] = rec;
+    });
+    out.logs = Object.keys(seen).sort().map(function(k){ return seen[k]; });
+    var del = d.deleted && typeof d.deleted === 'object' ? d.deleted : {};
+    Object.keys(del).sort().forEach(function(k){
+      if(/^\d{4}-\d{2}-\d{2}$/.test(k) && +del[k] > 0) out.deleted[k] = +del[k];
+    });
+    out.updatedAt = +d.updatedAt || 0;
+    return out;
   }
-  function save(){
-    try{ localStorage.setItem(KEY, JSON.stringify(state)); }
-    catch(e){ toast('保存できませんでした'); }
+
+  // 2つの状態を突き合わせる（日付ごとに新しい方を採用・削除も日時で判定）
+  function merge(a, b){
+    var out = blank();
+    if((b.namesTs||0) > (a.namesTs||0)){ out.names = {human:b.names.human, dog:b.names.dog}; out.namesTs = b.namesTs||0; }
+    else { out.names = {human:a.names.human, dog:a.names.dog}; out.namesTs = a.namesTs||0; }
+
+    var del = {};
+    [a.deleted||{}, b.deleted||{}].forEach(function(m){
+      Object.keys(m).forEach(function(d){ if((+m[d]||0) > (del[d]||0)) del[d] = +m[d]; });
+    });
+
+    var byDate = {};
+    (a.logs||[]).concat(b.logs||[]).forEach(function(l){
+      var cur = byDate[l.date];
+      if(!cur || (l.ts||0) > (cur.ts||0)) byDate[l.date] = {date:l.date, human:l.human, total:l.total, ts:l.ts||0};
+    });
+    Object.keys(byDate).sort().forEach(function(d){
+      if((del[d]||0) >= byDate[d].ts) return;   // 消したほうが新しければ復活させない
+      out.logs.push(byDate[d]);
+    });
+
+    var cut = Date.now() - 180*86400000;        // 半年たった削除の印は片づける
+    Object.keys(del).sort().forEach(function(d){ if(del[d] >= cut) out.deleted[d] = del[d]; });
+
+    out.updatedAt = Math.max(a.updatedAt||0, b.updatedAt||0);
+    return out;
+  }
+
+  function canon(st){
+    return JSON.stringify([st.names.human, st.names.dog, st.namesTs,
+      st.logs.map(function(l){ return [l.date, l.human, l.total, l.ts]; }),
+      Object.keys(st.deleted).sort().map(function(k){ return [k, st.deleted[k]]; })]);
+  }
+
+  function load(){
+    try{ return normalize(JSON.parse(localStorage.getItem(KEY))); }
+    catch(e){ return blank(); }
+  }
+  function saveLocal(){
+    state.updatedAt = Date.now();
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function commit(){          // 手元に保存 → クラウドへ送る
+    saveLocal();
+    schedulePush();
+  }
+
+  // ===== クラウド =====
+  function setSync(on, label){
+    var dot = document.querySelector('#syncBadge .dot');
+    if(dot) dot.classList.toggle('off', !on);
+    $('syncTxt').textContent = label || (on ? '3人で同期' : 'この端末だけ');
+  }
+  function schedulePush(){
+    if(!sb || !cloudReady) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushCloud, 500);
+  }
+  function pushCloud(){
+    if(!sb || !cloudReady) return;
+    sb.from(TABLE).upsert({id:ROW, state:state, updated_at:new Date().toISOString()})
+      .then(function(res){ if(res && res.error){ console.warn(res.error); setSync(false); } })
+      .catch(function(e){ console.warn(e); setSync(false); });
+  }
+  function applyRemote(raw){
+    var remote = normalize(raw);
+    var merged = merge(state, remote);
+    var changed = canon(merged) !== canon(state);
+    state = merged;
+    saveLocal();
+    if(changed){ applyNames(); render(); refreshResult(); }
+    if(canon(merged) !== canon(remote)) schedulePush();   // 相手に足りない分を返す
+  }
+  function loadRemote(){
+    if(!sb) return;
+    sb.from(TABLE).select('state').eq('id', ROW).maybeSingle()
+      .then(function(res){
+        if(res.error){ console.warn(res.error); setSync(false); return; }
+        cloudReady = true; setSync(true);
+        if(res.data && res.data.state) applyRemote(res.data.state);
+        else pushCloud();
+        subscribeRealtime();
+      })
+      .catch(function(e){ console.warn(e); setSync(false); });
+  }
+  function subscribeRealtime(){
+    if(!sb) return;
+    sb.channel('dakkobakari-rt')
+      .on('postgres_changes', {event:'*', schema:'public', table:TABLE, filter:'id=eq.'+ROW},
+        function(payload){ if(payload.new && payload.new.state) applyRemote(payload.new.state); })
+      .subscribe();
+  }
+  // 画面に戻ってきた・回線が戻った時は取り直す
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && cloudReady) refetch();
+  });
+  window.addEventListener('online', function(){ cloudReady ? refetch() : loadRemote(); });
+  function refetch(){
+    sb.from(TABLE).select('state').eq('id', ROW).maybeSingle()
+      .then(function(res){ if(!res.error && res.data && res.data.state){ setSync(true); applyRemote(res.data.state); } })
+      .catch(function(e){ console.warn(e); });
   }
 
   // ===== 小道具 =====
-  var $ = function(id){ return document.getElementById(id); };
+  function $(id){ return document.getElementById(id); }
   function todayStr(){
     var d = new Date();
     return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
@@ -327,6 +453,11 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 1900);
   }
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
 
   // ===== 入力まわり =====
   var editingDate = null;   // 編集中の日付（null＝新規）
@@ -341,19 +472,18 @@
     var warn = $('warn'), ok = false, msg = '';
 
     if(h !== null && t !== null){
-      var d = r1(t - h);
       if(t <= h){
-        msg = 'だっこして乗ったほうが軽くなっています。数字が入れ替わっていないか見てみてください。';
+        msg = '抱っこして乗った方が軽くなっています。数字が入れ替わっていないか見てみてください。';
       }else{
         ok = true;
-        setBox('Dog', d, prevOf(date, 'dog'));
+        setBox('Dog', r1(t - h), prevOf(date, 'dog'));
         setBox('Human', r1(h), prevOf(date, 'human'));
       }
     }
     if(!ok){
-      blank('Dog');
+      clearBox('Dog');
       if(h !== null && t === null){ setBox('Human', r1(h), prevOf(date, 'human')); }
-      else { blank('Human'); }
+      else { clearBox('Human'); }
     }
     warn.style.display = msg ? 'block' : 'none';
     warn.textContent = msg;
@@ -364,17 +494,16 @@
   }
 
   function setBox(which, val, prev){
-    $('rv'+which).classList.remove('blank');
-    $('rv'+which).innerHTML = fmt(val)+'<small>kg</small>';
-    var el = $('rd'+which);
-    if(prev === null){ el.innerHTML = '&nbsp;'; return; }
+    var el = $('rv'+which);
+    el.classList.remove('blank');
+    el.innerHTML = fmt(val)+'<small>kg</small>';
+    var d0 = $('rd'+which);
+    if(prev === null){ d0.innerHTML = '&nbsp;'; return; }
     var d = r1(val - prev.value);
-    if(d === 0){ el.innerHTML = '前回（'+mdOf(prev.date)+'）と同じ'; return; }
-    var cls = d > 0 ? 'up' : 'dn';
-    el.innerHTML = '前回（'+mdOf(prev.date)+'）より <span class="'+cls+'">'+(d>0?'+':'')+fmt(d)+'kg</span>';
+    if(d === 0){ d0.innerHTML = '前回（'+mdOf(prev.date)+'）と同じ'; return; }
+    d0.innerHTML = '前回（'+mdOf(prev.date)+'）より <span class="'+(d>0?'up':'dn')+'">'+(d>0?'+':'')+fmt(d)+'kg</span>';
   }
-
-  function blank(which){
+  function clearBox(which){
     var el = $('rv'+which);
     el.classList.add('blank'); el.textContent = '—';
     $('rd'+which).innerHTML = '&nbsp;';
@@ -408,14 +537,17 @@
     if(ex && editingDate !== date){
       if(!confirm(mdOf(date)+' の記録はすでにあります。上書きしますか？')) return;
     }
+    var now = Date.now();
     if(editingDate && editingDate !== date){
       // 日付を変えて保存＝元の日付の記録は消す
       state.logs = state.logs.filter(function(l){ return l.date !== editingDate; });
+      state.deleted[editingDate] = now;
       ex = findByDate(date);
     }
-    if(ex){ ex.human = r1(h); ex.total = r1(t); }
-    else { state.logs.push({date:date, human:r1(h), total:r1(t)}); }
-    save();
+    if(ex){ ex.human = r1(h); ex.total = r1(t); ex.ts = now; }
+    else { state.logs.push({date:date, human:r1(h), total:r1(t), ts:now}); }
+    delete state.deleted[date];
+    commit();
     editingDate = null;
     $('editNote').style.display = 'none';
     $('fHuman').value = ''; $('fTotal').value = '';
@@ -439,26 +571,27 @@
     $('fDate').value = l.date;
     $('fHuman').value = l.human;
     $('fTotal').value = l.total;
-    $('editNoteText').textContent = ymdOf(date)+' の記録をなおしています';
+    $('editNoteText').textContent = ymdOf(date)+' の記録を直しています';
     $('editNote').style.display = 'flex';
     refreshResult();
     window.scrollTo({top:0, behavior:'smooth'});
   }
 
   function removeLog(date){
-    if(!confirm(ymdOf(date)+' の記録を消しますか？')) return;
+    if(!confirm(ymdOf(date)+' の記録を消しますか？（3人全員の画面から消えます）')) return;
     state.logs = state.logs.filter(function(l){ return l.date !== date; });
+    state.deleted[date] = Date.now();
     if(editingDate === date){
       editingDate = null; $('editNote').style.display = 'none';
       $('fHuman').value = ''; $('fTotal').value = '';
     }
-    save(); refreshResult(); render();
+    commit(); refreshResult(); render();
     toast('記録を消しました');
   }
 
   // ===== 表示の状態 =====
   var view = 'dog';   // dog | human
-  var range = 0;      // 0=ぜんぶ
+  var range = 0;      // 0=全部
   var listLimit = 12;
 
   $('swDog').addEventListener('click', function(){ view='dog'; syncSwitch(); render(); });
@@ -499,7 +632,7 @@
       var only = logs[0];
       box.innerHTML = '<div class="empty">記録が1回だけです。<br>'+
         ymdOf(only.date)+' … <b>'+fmt(valueOf(only))+'kg</b><br>'+
-        'もう1回はかると、線でつながります。</div>';
+        'もう1回測ると、線でつながります。</div>';
       return;
     }
 
@@ -525,7 +658,6 @@
     var area = line+' L'+pts[pts.length-1].x.toFixed(1)+','+(PT+ih)+' L'+pts[0].x.toFixed(1)+','+(PT+ih)+' Z';
     var col = colorOf();
 
-    // 目盛り（3本）
     var grid = '', labels = '';
     for(var g=0; g<3; g++){
       var gv = lo + (hi - lo) * (g/2);
@@ -534,7 +666,6 @@
       labels += '<text x="'+(PL-6)+'" y="'+(gy+3.5).toFixed(1)+'" text-anchor="end" font-size="9" fill="#a09a92">'+fmt(gv)+'</text>';
     }
 
-    // 最軽・最重
     var iMin = vals.indexOf(min), iMax = vals.indexOf(max);
     var dots = '', marks = '';
     pts.forEach(function(p,i){
@@ -560,7 +691,6 @@
       mark(iMax, col, '', true);
     }
 
-    // 横軸ラベル（最初・最後・まん中）
     var xl = '';
     [0, Math.floor((pts.length-1)/2), pts.length-1].filter(function(v,i,a){ return a.indexOf(v)===i; })
       .forEach(function(i){
@@ -571,7 +701,7 @@
       });
 
     box.innerHTML =
-      '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="体重のうつりかわり">'+
+      '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="体重の移り変わり">'+
         '<defs><linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1">'+
           '<stop offset="0%" stop-color="'+col+'" stop-opacity=".18"/>'+
           '<stop offset="100%" stop-color="'+col+'" stop-opacity="0"/>'+
@@ -583,7 +713,7 @@
       '</svg>';
   }
 
-  // ===== 最軽・最重カード =====
+  // ===== 最軽・最重 =====
   function drawPeaks(logs){
     var box = $('peaks');
     if(logs.length < 2){ box.innerHTML = ''; return; }
@@ -609,7 +739,6 @@
       $('logCount').textContent = '';
       return;
     }
-    // 全期間の最軽・最重（それぞれの対象ごと）
     var dv = asc.map(dogOf), hv = asc.map(function(l){ return r1(l.human); });
     var peak = {
       dogMin: asc[dv.indexOf(Math.min.apply(null, dv))].date,
@@ -621,7 +750,7 @@
 
     var desc = asc.slice().reverse();
     var shown = desc.slice(0, listLimit);
-    var html = shown.map(function(l, i){
+    box.innerHTML = shown.map(function(l){
       var idx = asc.indexOf(l);
       var prev = idx > 0 ? asc[idx-1] : null;
       var tags = '';
@@ -631,13 +760,13 @@
         if(l.date === peak.humanMin) tags += '<span class="tag lo">'+esc(state.names.human)+' 最軽</span>';
         if(l.date === peak.humanMax) tags += '<span class="tag hi">'+esc(state.names.human)+' 最重</span>';
       }
-      var memo = '';
+      var memo;
       if(prev){
         var dd = r1(dogOf(l) - dogOf(prev)), dh = r1(l.human - prev.human);
         memo = '前回比 '+esc(state.names.dog)+' '+(dd>0?'+':'')+fmt(dd)+' / '+
                esc(state.names.human)+' '+(dh>0?'+':'')+fmt(dh);
       }else{
-        memo = 'はじめの記録';
+        memo = '最初の記録';
       }
       return '<div class="item">'+
         '<div class="i1"><div class="idate">'+ymdOf(l.date)+'</div><div class="tags">'+tags+'</div></div>'+
@@ -647,12 +776,11 @@
         '</div>'+
         '<div class="i3"><span class="memo">'+memo+'</span>'+
           '<span class="acts">'+
-            '<button data-edit="'+l.date+'">なおす</button>'+
+            '<button data-edit="'+l.date+'">直す</button>'+
             '<button class="del" data-del="'+l.date+'">消す</button>'+
           '</span></div>'+
       '</div>';
     }).join('');
-    box.innerHTML = html;
     $('logCount').textContent = asc.length+'回';
     $('btnMore').style.display = desc.length > listLimit ? 'block' : 'none';
     $('btnMore').textContent = 'もっと見る（あと'+(desc.length - listLimit)+'回）';
@@ -666,32 +794,24 @@
   }
   $('btnMore').addEventListener('click', function(){ listLimit += 12; drawLogs(); });
 
-  function esc(s){
-    return String(s).replace(/[&<>"']/g, function(c){
-      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-    });
-  }
-
-  // ===== 名前 =====
+  // ===== 呼び名 =====
   function applyNames(){
     var h = state.names.human, d = state.names.dog;
     $('lbHuman').textContent = h; $('lbDog').textContent = d;
     $('rnHuman').textContent = h; $('rnDog').textContent = d;
     $('swHuman').textContent = h; $('swDog').textContent = d;
-    $('setHuman').value = h === DEF_HUMAN ? '' : h;
-    $('setDog').value = d === DEF_DOG ? '' : d;
-    $('setHuman').placeholder = DEF_HUMAN;
-    $('setDog').placeholder = DEF_DOG;
+    if(document.activeElement !== $('setHuman')) $('setHuman').value = h === DEF_HUMAN ? '' : h;
+    if(document.activeElement !== $('setDog')) $('setDog').value = d === DEF_DOG ? '' : d;
     document.title = 'だっこばかり — '+d+'と'+h+'の体重記録';
   }
-  $('setHuman').addEventListener('change', function(){
-    state.names.human = ($('setHuman').value || '').trim() || DEF_HUMAN;
-    save(); applyNames(); render(); refreshResult();
-  });
-  $('setDog').addEventListener('change', function(){
-    state.names.dog = ($('setDog').value || '').trim() || DEF_DOG;
-    save(); applyNames(); render(); refreshResult();
-  });
+  function onNameChange(){
+    state.names.human = ($('setHuman').value || '').trim().slice(0,8) || DEF_HUMAN;
+    state.names.dog = ($('setDog').value || '').trim().slice(0,8) || DEF_DOG;
+    state.namesTs = Date.now();
+    commit(); applyNames(); render(); refreshResult();
+  }
+  $('setHuman').addEventListener('change', onNameChange);
+  $('setDog').addEventListener('change', onNameChange);
 
   // ===== バックアップ =====
   $('btnExport').addEventListener('click', function(){
@@ -708,17 +828,11 @@
     var rd = new FileReader();
     rd.onload = function(){
       try{
-        var d = JSON.parse(rd.result);
-        if(!d || !Array.isArray(d.logs)) throw 0;
-        var ok = d.logs.every(function(l){
-          return l && typeof l.date === 'string' && isFinite(l.human) && isFinite(l.total);
-        });
-        if(!ok) throw 0;
-        if(!confirm('いまの記録を、読み込んだ'+d.logs.length+'件で置きかえます。よろしいですか？')) return;
-        state = {v:1,
-          names:{human:(d.names&&d.names.human)||DEF_HUMAN, dog:(d.names&&d.names.dog)||DEF_DOG},
-          logs:d.logs.map(function(l){ return {date:l.date, human:r1(+l.human), total:r1(+l.total)}; })};
-        save(); applyNames(); render(); refreshResult();
+        var d = normalize(JSON.parse(rd.result));
+        if(!d.logs.length) throw 0;
+        if(!confirm('読み込んだ'+d.logs.length+'件を、いまの記録に足し合わせます。（同じ日は新しい方が残ります）')) return;
+        state = merge(state, d);
+        commit(); applyNames(); render(); refreshResult();
         toast('読み込みました');
       }catch(e){ alert('このファイルは読み込めませんでした。'); }
     };
@@ -727,10 +841,12 @@
   });
   $('btnClear').addEventListener('click', function(){
     if(!state.logs.length){ toast('消す記録がありません'); return; }
-    if(!confirm('記録を全部消します。もとに戻せません。よろしいですか？')) return;
+    if(!confirm('記録を全部消します。3人全員の画面から消え、元に戻せません。よろしいですか？')) return;
     if(!confirm('本当に全部消しますか？')) return;
+    var now = Date.now();
+    state.logs.forEach(function(l){ state.deleted[l.date] = now; });
     state.logs = [];
-    save(); render(); refreshResult();
+    commit(); render(); refreshResult();
     toast('全部消しました');
   });
 
@@ -740,13 +856,14 @@
     var shown = inRange(asc);
     drawPeaks(shown);
     drawChart(shown);
-    $('graphCount').textContent = shown.length ? shown.length+'回ぶん' : '';
+    $('graphCount').textContent = shown.length ? shown.length+'回分' : '';
     drawLogs();
   }
 
   // 起動
   $('fDate').value = todayStr();
   applyNames(); syncSwitch(); render(); refreshResult();
+  loadRemote();
 })();
 </script>
 <!-- tsumiki-back-button -->
