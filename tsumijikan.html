@@ -89,11 +89,14 @@
   .muted{color:var(--ink-soft); font-size:.8rem;}
 
   /* PC・タブレット幅：横をつかう。計測とまとめを左、グラフと記録を右に置いて一望できるようにする */
-  @media (min-width:760px) and (max-width:1079px){ main{max-width:720px;} }
+  @media (min-width:760px) and (max-width:1079px){ main{max-width:760px;} }
+
+  /* 広い画面は横幅を使い切る。1080px〜は2列、1440px〜は3列。
+     入力欄や帯は伸ばしすぎず、増えた幅は「日ごとのグラフ」と「記録の一覧」に配る。 */
   @media (min-width:1080px){
     main{
-      max-width:1180px; padding:22px 20px calc(env(safe-area-inset-bottom) + 44px); gap:18px;
-      grid-template-columns:minmax(0,400px) minmax(0,1fr);
+      max-width:none; padding:22px 24px calc(env(safe-area-inset-bottom) + 44px); gap:18px;
+      grid-template-columns:minmax(320px,380px) minmax(0,1fr);
       grid-template-areas:
         "timer days"
         "sum   rec"
@@ -101,7 +104,17 @@
     }
     #timerCard{grid-area:timer;} #sumCard{grid-area:sum;} #daysCard{grid-area:days;}
     #recCard{grid-area:rec;} #projCard{grid-area:proj;}
+    .topbar{padding-left:24px; padding-right:24px;}
   }
+  @media (min-width:1440px){
+    main{
+      grid-template-columns:minmax(320px,380px) minmax(0,1fr) minmax(300px,360px);
+      grid-template-areas:
+        "timer days proj"
+        "sum   rec  proj";
+    }
+  }
+  @media (min-width:1920px){ main{gap:22px;} }
 
   /* ---------- ボタン ---------- */
   .btn{
@@ -154,11 +167,24 @@
   .run-name{font-family:var(--serif); font-size:1.22rem; font-weight:700; display:flex; align-items:center; gap:9px; margin-top:9px;}
   .run-name .dot{width:11px; height:11px; border-radius:50%; flex:none; filter:brightness(var(--chip-bright));}
   .run-clock{font-family:var(--serif); font-size:2.7rem; font-weight:700; line-height:1.1; letter-spacing:.01em; margin:2px 0 2px;}
-  .run-sub{font-size:.95rem; font-weight:700; color:var(--ink-mid); margin-bottom:14px;}
+  /* 時刻の行は押せる＝直せる。えんぴつを小さく添えて分からせる */
+  .run-sub, .done-time{
+    display:inline-flex; align-items:center; gap:5px; font-weight:700; color:var(--ink-mid);
+    background:none; border:0; padding:5px 9px 5px 0; margin:0 0 10px -1px; font-family:inherit;
+    cursor:pointer; border-radius:9px; text-align:left;
+  }
+  .run-sub{font-size:.98rem;}
+  .done-time{font-size:1.06rem; margin-top:-4px;}
+  .run-sub:active, .done-time:active{background:var(--surface-2);}
+  .pen{width:15px !important; height:15px !important; color:var(--ink-soft); margin-left:3px;}
+  .caret{width:15px !important; height:15px !important; color:var(--line-2); margin-left:5px; flex:none;}
   .ar{color:var(--ink-soft); font-weight:400; padding:0 1px;}
-  .done-time{font-size:1.06rem; font-weight:700; color:var(--ink-mid); margin:-4px 0 11px;}
   .done-time b{color:var(--accent-2); margin-left:7px;}
   .calc{text-align:center; font-size:1.15rem; font-weight:700; color:var(--accent-2); padding:2px 0 1px;}
+  .nowbox{flex:1; min-width:0; border:1px dashed var(--line-2); border-radius:11px; padding:10px 12px;
+    color:var(--ink-soft); font-size:16px; text-align:center;}
+  .run-edit-name{display:flex; align-items:center; gap:9px; font-weight:700; margin:-4px 0 12px;}
+  .run-edit-name .dot{width:10px; height:10px; border-radius:50%; flex:none; filter:brightness(var(--chip-bright));}
   .band{
     display:flex; gap:8px; align-items:flex-start; background:var(--warn-wash); color:var(--warn);
     border-radius:12px; padding:9px 12px; font-size:.82rem; font-weight:700; margin:10px 0 2px; line-height:1.45;
@@ -193,7 +219,8 @@
   #daysCard{padding:15px 15px 11px;}
   .days{display:flex; align-items:flex-end; gap:3px; height:126px;}
   .day{flex:1; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; height:100%; cursor:default;}
-  .day .stack{display:flex; flex-direction:column-reverse; border-radius:5px 5px 2px 2px; overflow:hidden; min-height:2px; background:var(--surface-2);}
+  .day .bars{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:flex-end;}
+  .day .stack{display:flex; flex-direction:column-reverse; flex:none; border-radius:5px 5px 2px 2px; overflow:hidden; min-height:3px; background:var(--surface-2);}
   .day .stack i{display:block; filter:brightness(var(--chip-bright));}
   .day .lb{font-size:.6rem; color:var(--ink-soft); text-align:center; margin-top:5px; line-height:1.2; font-variant-numeric:tabular-nums;}
   .day.today .lb{color:var(--accent-2); font-weight:700;}
@@ -215,7 +242,7 @@
   .rec:active{background:var(--surface-2);}
   .rec .dot{width:9px; height:9px; border-radius:50%; grid-row:1; filter:brightness(var(--chip-bright));}
   .rec .nm{font-size:.92rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
-  .rec .v{font-size:.92rem; font-weight:700; white-space:nowrap;}
+  .rec .v{font-size:.92rem; font-weight:700; white-space:nowrap; display:inline-flex; align-items:center;}
   .rec .sub{grid-column:2 / span 2; font-size:.78rem; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .rec.fresh{background:var(--accent-wash); border-radius:10px;}
   .more{width:100%; margin-top:12px;}
@@ -230,7 +257,7 @@
   .pline:active{background:var(--surface-2);}
   .pline .dot{width:11px; height:11px; border-radius:50%; flex:none; filter:brightness(var(--chip-bright));}
   .pline .nm{font-weight:700; font-size:.94rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1;}
-  .pline .v{font-size:.84rem; color:var(--ink-soft); white-space:nowrap;}
+  .pline .v{font-size:.84rem; color:var(--ink-soft); white-space:nowrap; display:inline-flex; align-items:center;}
   .pline.arch .nm{color:var(--ink-soft); font-weight:600;}
   .addrow{display:flex; gap:8px; margin-top:13px;}
   .addrow input{flex:1;}
@@ -266,6 +293,11 @@
   .sheet-foot .btn.big{min-height:50px;}
   .sheet .iconbtn{width:38px; height:38px;}
   .sheet .iconbtn[data-act="del-entry"], .sheet .iconbtn[data-act="del-proj"]{color:var(--warn);}
+
+  /* 広い画面ではグラフを高く（この位置＝基本の .days より後ろに置かないと効かない） */
+  @media (min-width:1080px){ #daysCard{padding:18px 20px 13px;} .days{height:186px;} }
+  @media (min-width:1440px){ .days{height:216px;} }
+  @media (min-width:1920px){ .days{height:250px;} }
 
   /* ---------- トースト ---------- */
   .toast{
@@ -604,6 +636,8 @@ const SVG = 'viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentCol
 const ICO_X    = '<svg '+SVG+'><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICO_DL   = '<svg '+SVG+'><path d="M12 4v11m0 0l-4-4m4 4l4-4"/><path d="M5 19h14"/></svg>';
 const ICO_CLOCK= '<svg '+SVG+'><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>';
+const ICO_PEN  = '<svg '+SVG+' class="pen"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/></svg>';
+const ICO_CARET= '<svg '+SVG+' class="caret"><path d="M9 5l7 7-7 7"/></svg>';
 const ICO_TRASH= '<svg '+SVG+'><path d="M4 7h16M9 7V5h6v2M7 7l1 12h8l1-12"/></svg>';
 const ICO_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>';
 
@@ -623,8 +657,8 @@ function renderTimer(){
     el.innerHTML =
       '<div class="run-name">'+dot(projColor(r.pid))+'<span>'+esc(projName(r.pid))+'</span></div>'+
       '<div class="run-clock tnum" id="clock">'+fmtClock(ms)+'</div>'+
-      '<div class="run-sub tnum">'+(dayStart(r.start)===dayStart(Date.now())?'':fmtMD(r.start)+' ')+
-        fmtHM(r.start)+' <span class="ar">→</span> <span id="runNow">'+fmtHM(Date.now())+'</span></div>'+
+      '<button class="run-sub tnum" data-act="edit-start">'+(dayStart(r.start)===dayStart(Date.now())?'':fmtMD(r.start)+' ')+
+        fmtHM(r.start)+' <span class="ar">→</span> <span id="runNow">'+fmtHM(Date.now())+'</span>'+ICO_PEN+'</button>'+
       band+
       '<button class="btn big stop" data-act="stop">'+ICO_STOP+'おわる</button>'+
       '<div style="text-align:center"><button class="linkbtn" data-act="cancel">取り消す</button></div>';
@@ -639,8 +673,9 @@ function renderTimer(){
         '<span>'+esc(projName(j.pid))+'</span>'+
         '<span class="spacer"></span>'+
         '<button class="iconbtn" data-act="done-close" aria-label="とじる">'+ICO_X+'</button></div>'+
-      '<div class="done-time tnum">'+fmtHM(j.st)+' <span class="ar">→</span> '+fmtHM(j.en)+
-        ' <b>'+esc(fmtDur(j.ms))+'</b></div>'+
+      '<button class="done-time tnum" data-act="edit-entry" data-id="'+j.id+'">'+
+        fmtHM(j.st)+' <span class="ar">→</span> '+fmtHM(j.en)+
+        ' <b>'+esc(fmtDur(j.ms))+'</b>'+ICO_PEN+'</button>'+
       '<input type="text" id="memoIn" placeholder="メモ" maxlength="200">';
     stopTick();
     return;
@@ -715,11 +750,15 @@ function renderSummary(){
 }
 
 /* ---------- 日ごとの積み上げ（直近14日） ---------- */
+function dayCount(){
+  const w = window.innerWidth;
+  return w >= 1920 ? 45 : (w >= 1080 ? 30 : 14);
+}
 function renderDays(){
   const el = document.getElementById('daysCard');
   if(!db.entries.length){ el.style.display='none'; el.innerHTML=''; return; }   /* まだ何も無いときは出さない */
   el.style.display='';
-  const N = 14;
+  const N = dayCount();
   const t0 = dayStart(Date.now());
   const days = [];
   for(let i=N-1; i>=0; i--){
@@ -729,15 +768,15 @@ function renderDays(){
   }
   const max = Math.max(1, ...days.map(d=>d.total));
   const bars = days.map(d=>{
-    const h = d.total ? Math.max(3, Math.round(d.total/max*112)) : 2;
+    const h = d.total ? Math.max(2, d.total/max*100) : 0;          /* カードの高さに対する割合 */
     const segs = d.rows.map(r=>{
-      const sh = Math.max(1, Math.round(r.ms/d.total*h));
-      return '<i style="height:'+sh+'px;background:'+projColor(r.pid)+'"></i>';
+      const sh = Math.max(1, r.ms/d.total*100);                    /* 棒の中での割合 */
+      return '<i style="height:'+sh.toFixed(2)+'%;background:'+projColor(r.pid)+'"></i>';
     }).join('');
     const dd = new Date(d.s);
     const isToday = d.s === t0;
     return '<div class="day '+(isToday?'today':'')+'" title="'+fmtMD(d.s)+' '+esc(d.total?fmtDur(d.total):'0分')+'">'+
-      '<div class="stack" style="height:'+h+'px">'+segs+'</div>'+
+      '<div class="bars"><div class="stack" style="height:'+h.toFixed(2)+'%">'+segs+'</div></div>'+
       '<div class="lb">'+(dd.getDate()===1||isToday ? (dd.getMonth()+1)+'/'+dd.getDate() : dd.getDate())+'</div>'+
     '</div>';
   }).join('');
@@ -774,7 +813,7 @@ function renderRecords(){
     html += '<button class="rec '+(justStopped&&justStopped.id===e.id?'fresh':'')+'" data-act="edit-entry" data-id="'+e.id+'">'+
         dot(projColor(e.pid))+
         '<span class="nm">'+esc(projName(e.pid))+'</span>'+
-        '<span class="v tnum">'+esc(fmtDur(durOf(e)))+'</span>'+
+        '<span class="v tnum">'+esc(fmtDur(durOf(e)))+ICO_CARET+'</span>'+
         '<span class="sub">'+fmtHM(e.start)+' → '+fmtHM(e.end)+over+memo+'</span>'+
       '</button>';
   });
@@ -796,7 +835,7 @@ function renderProjects(){
   const line = p =>
     '<button class="pline '+(p.status==='archived'?'arch':'')+'" data-act="edit-proj" data-id="'+p.id+'">'+
       dot(p.color)+'<span class="nm">'+esc(p.name)+'</span>'+
-      '<span class="v tnum">'+esc(totalOf(p.id)?fmtDur(totalOf(p.id)):'—')+'</span>'+
+      '<span class="v tnum">'+esc(totalOf(p.id)?fmtDur(totalOf(p.id)):'—')+ICO_CARET+'</span>'+
     '</button>';
 
   el.innerHTML =
@@ -942,6 +981,46 @@ function delEntry(){
   if(justStopped && justStopped.id===id) justStopped = null;
   save(); closeSheet(); render(); toast('削除しました');
 }
+/* 計測中の「はじめ」をさかのぼって直す。タイマーを押し忘れて後から始めたとき用 */
+function openRunSheet(){
+  const r = running(); if(!r) return;
+  sheet = { kind:'run' };
+  const d = new Date(r.start);
+  openSheet(
+    '<div class="sheet-top"><span class="spacer"></span>'+
+      '<button class="iconbtn" data-act="close" aria-label="とじる">'+ICO_X+'</button></div>'+
+    '<div class="run-edit-name">'+dot(projColor(r.pid))+'<span>'+esc(projName(r.pid))+'</span></div>'+
+    '<div class="grid">'+
+      '<input type="date" id="rDate" value="'+iso(d)+'">'+
+      '<div class="two">'+
+        '<input type="time" id="rStart" value="'+z2(d.getHours())+':'+z2(d.getMinutes())+'">'+
+        '<span class="tilde">→</span>'+
+        '<span class="nowbox">いま</span>'+
+      '</div>'+
+      '<div class="calc tnum" id="rCalc"></div>'+
+    '</div>'+
+    '<div class="sheet-foot"><button class="btn big go" data-act="save-run">保存</button></div>'
+  );
+  calcRun();
+}
+function runStartMs(){
+  const d=document.getElementById('rDate'), t=document.getElementById('rStart');
+  return (d&&t) ? toMs(d.value, t.value) : null;
+}
+function calcRun(){
+  const el=document.getElementById('rCalc'); if(!el) return;
+  const s=runStartMs();
+  if(s==null){ el.textContent='—'; return; }
+  el.textContent = s > Date.now() ? 'これからの時刻です' : fmtDur(Date.now()-s);
+}
+function saveRunSheet(){
+  const s = runStartMs();
+  if(s==null){ toast('時刻を確かめてください'); return; }
+  if(s > Date.now()){ toast('これからの時刻は入れられません'); return; }
+  db.run = { pid:db.run.pid, start:s, upd:nowISO() };
+  save(); closeSheet(); render();
+}
+
 function openProjSheet(id){
   const p = projById(id);
   if(!p) return;
@@ -1027,6 +1106,7 @@ document.getElementById('page').addEventListener('click', e=>{
   else if(a==='start'){ startRun(pickId); }
   else if(a==='stop'){ stopRun(); }
   else if(a==='cancel'){ if(confirm('取り消しますか？')) cancelRun(); }
+  else if(a==='edit-start'){ openRunSheet(); }
   else if(a==='done-close'){ justStopped = null; render(); }
   else if(a==='focus-add'){
     const i = document.querySelector('#projCard .newproj') || document.querySelector('.newproj');
@@ -1062,6 +1142,7 @@ document.getElementById('sheet').addEventListener('click', e=>{
   const a = t.dataset.act;
   if(a==='close') closeSheet();
   else if(a==='save-entry') saveEntrySheet();
+  else if(a==='save-run') saveRunSheet();
   else if(a==='del-entry') delEntry();
   else if(a==='save-proj') saveProjSheet();
   else if(a==='arch-proj') archProj();
@@ -1072,10 +1153,27 @@ document.getElementById('sheet').addEventListener('click', e=>{
   }
 });
 document.getElementById('sheet').addEventListener('input', e=>{
-  if(e.target && /^(fDate|fStart|fEnd)$/.test(e.target.id)) calcSheet();
+  if(!e.target) return;
+  if(/^(fDate|fStart|fEnd)$/.test(e.target.id)) calcSheet();
+  if(/^(rDate|rStart)$/.test(e.target.id)) calcRun();
 });
 document.getElementById('sheetMask').addEventListener('click', closeSheet);
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && sheet) closeSheet(); });
+
+/* 画面の幅が変わったら、日ごとのグラフの日数を引き直す */
+let resizeT=null, lastW=window.innerWidth;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeT);
+  resizeT = setTimeout(()=>{
+    if(Math.abs(window.innerWidth-lastW) < 40) return;
+    lastW = window.innerWidth; renderDays();
+  }, 180);
+});
+[1080,1920].forEach(w=>{
+  const mq = window.matchMedia('(min-width:'+w+'px)');
+  const on = ()=>{ lastW = window.innerWidth; renderDays(); };
+  if(mq.addEventListener) mq.addEventListener('change', on); else if(mq.addListener) mq.addListener(on);
+});
 
 /* 戻ってきたときにクラウドを読み直す（別の端末で始めた／止めたぶんを拾う） */
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ loadRemote(); render(); } });
