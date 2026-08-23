@@ -264,6 +264,67 @@
   .rc-title { font-size: 14.5px; font-weight: 700; word-break: break-word; }
   .rc-sub { font-size: 12.5px; color: var(--sub); word-break: break-word; }
   .rc-at { font-size: 11px; color: var(--ghost); }
+
+  /* ===== PC（広い画面）＝横幅を使い切るレイアウト ===== */
+  /* カード一覧は横並びのグリッド。列数は幅にまかせて自動で増える。 */
+  .grid { display: grid; gap: 10px; align-items: start; }
+  .grid > .empty { grid-column: 1 / -1; }
+
+  @media (min-width: 860px) {
+    body { padding-bottom: 40px; }
+    .wrap { max-width: 1600px; padding: 0 28px; }
+
+    /* ヘッダーは1行に。縦の余白を節約して一覧を上に出す */
+    header {
+      display: flex; align-items: center; gap: 12px;
+      text-align: left; padding: 26px 4px 4px;
+    }
+    h1 { margin: 0; font-size: 23px; }
+    .tagline { font-size: 13px; padding-bottom: 1px; }
+    .sync { margin: 0 0 0 auto; }
+
+    /* 追加フォーム：入力は左に伸ばし、追加ボタンは右に固定 */
+    .add-card {
+      display: grid; grid-template-columns: 1fr auto; column-gap: 16px;
+      padding: 14px 16px;
+    }
+    .add-card input { grid-column: 1; grid-row: 1; }
+    .add-card textarea { grid-column: 1; grid-row: 2; min-height: 46px; }
+    .add-foot { grid-column: 2; grid-row: 1 / span 2; align-self: center; margin-top: 0; }
+    .add-btn { padding: 11px 24px; }
+
+    /* フィルターは上に貼り付いて、スクロールしても切り替えられる */
+    .chips {
+      position: sticky; top: 0; z-index: 5;
+      background: var(--bg); padding: 12px 0 12px; flex-wrap: wrap; overflow: visible;
+    }
+
+    /* 一覧を複数列に。1列あたり最低320pxで、入るだけ列を作る */
+    .grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+    .card { margin-bottom: 0; }
+    .empty { padding: 60px 20px; }
+    .done-toggle { padding: 18px 4px 10px; }
+
+    /* シートは下からではなく中央のダイアログに */
+    .overlay { align-items: center; }
+    .sheet {
+      max-width: 560px; border-radius: 20px; max-height: 84vh;
+      padding: 20px 20px 18px; box-shadow: 0 18px 50px rgba(36,35,33,.22);
+    }
+  }
+
+  /* マウスがある環境だけホバーの手ざわりを出す */
+  @media (hover: hover) and (pointer: fine) {
+    .icon-btn:hover { background: var(--surface); color: var(--text); }
+    .chip:hover { border-color: var(--ghost); color: var(--text); }
+    .chip.on:hover { color: var(--card); }
+    .card:hover { border-color: var(--ghost); }
+    .add-note:hover { background: var(--surface); }
+    .st-opt:hover { border-color: var(--ghost); }
+    .add-btn:hover:not(:disabled) { opacity: .85; }
+    .c-title, .c-meta { transition: opacity .12s; }
+    .c-title:hover, .c-meta:hover { opacity: .72; }
+  }
 </style>
 </head>
 <body>
@@ -284,7 +345,7 @@
 
   <div class="chips" id="chips"></div>
 
-  <main id="list"></main>
+  <main id="list" class="grid"></main>
 
   <div id="doneWrap"></div>
 
@@ -702,7 +763,7 @@ function renderDone(){
   const items = doneItems().slice().sort((a,b)=>(b.doneAt||b.updated||0)-(a.doneAt||a.updated||0));
   if(!items.length){ el.innerHTML=''; return; }
   let html = '<button class="done-toggle'+(doneOpen?' open':'')+'" id="doneToggle">'+svg('chev',14)+'✅ 完了済み（'+items.length+'）</button>';
-  if(doneOpen) html += items.map(cardHTML).join('');
+  if(doneOpen) html += '<div class="grid">' + items.map(cardHTML).join('') + '</div>';
   el.innerHTML = html;
   document.getElementById('doneToggle').onclick = ()=>{ doneOpen=!doneOpen; renderDone(); };
   if(doneOpen) bindCardEvents(el);
