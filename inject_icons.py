@@ -28,6 +28,7 @@ TITLES = {
     "shirofuchi":  "しろふち",
     "ironokoshi":  "いろのこし",
     "hiyou":       "費用図鑑",
+    "tsumijikan":  "つみじかん",
     "dakkobakari": "だっこばかり",
 }
 
