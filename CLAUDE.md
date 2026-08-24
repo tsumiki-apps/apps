@@ -46,9 +46,16 @@
    正しい仕様＝左端エッジスワイプのみで戻る。見える「‹ つみき」ボタンは置かない。
    apple-touch-icon も毎回注入。→ 詳細 `mistakes.md`(2026-06-03/06-07)
 
-4. **モバイル幅375pxで動作確認**（ユーザーは主にiPhone）。横はみ出し・ラベル縦折れ・
-   タップ領域、数値入力は font-size 16px 以上（iOS自動ズーム防止）、新要素のサイズ/余白/
-   角丸が既存と統一されているか。→ 詳細 `Preferences/app-verification.md`
+4. ⭐ **アプリは毎回「8幅すべて対応」で作る**（ユーザー明示指定 2026-08-24・言われなくても毎回）。
+   対象幅＝**320 / 375 / 390 / 430 / 768 / 1024 / 1440 / 1920 px**。
+   1つのCSSが伸縮するレスポンシブ（**ブレイクポイントは 600 と 900 の2本**）・本文は `max-width` で中央寄せ・
+   **固定px幅を作らない**（`%`/`flex`/`grid`/`clamp()`）・表とコードは `overflow-x:auto` のラッパー。
+   **iPhone必須**＝入力欄 `font-size:16px` 以上／`env(safe-area-inset-*)`／`100vh` でなく `100dvh`／
+   タップ 44×44px／横向きOK／キーボードで入力欄が隠れない。
+   **確認は「幅375pxのiframeに入れて実測」**（`--window-size=375` は macOSの最小幅500pxに無視されて嘘をつく）。
+   各幅で `getBoundingClientRect().right > clientWidth` が0件・`scrollWidth <= clientWidth`。
+   **報告は8幅それぞれ OK/NG＋直した箇所の一覧。崩れが残るなら「残っている」と正直に書く。**
+   → 詳細 `Preferences/delivery-device-support.md`, `Preferences/app-verification.md`
 
 5. **tsumiki-apps.com の墨の流体シミュレーションには、指示がない限り触らない**。
    対象＝`~/tsumiki-portfolio/ink-fluid.js` と `style.css` の `.ink-fluid` 周り。
@@ -70,6 +77,15 @@
   原則1問ずつ・選択肢3〜4個・最後の番号に「ほかの案」。→ 詳細 `Preferences/ask-question-format.md`
 - 専門用語は「用語（＝かんたんに言うと◯◯）」の形でやさしい解説をセットで。
 - 完了報告は ①何を変更 ②どう変更 ③どう動作したか を簡潔な箇条書きで。失敗・スキップは正直に。
+
+8. ⭐ **つみきロゴは必ず「立体（アイソメ）の公式のもの」を毎回使う**（ユーザー明示指定 2026-08-24・例外なし）。
+   正本＝`~/制作物/index.html` ヘッダーの `<svg class="mark" viewBox="0 0 100 100">`（積み木3つのアイソメ／
+   `rect rx=24 fill=#242321`／線 `#F4F2EE` 4.5／**各面は背景色で塗る**＝`fill="none"` にすると立体に見えない）。
+   名刺 `名刺_Tsumiki/meishi.html` も同一座標（配色だけ違う）。**座標ごとコピーする**。
+   **しない**＝CSSで四角を並べた簡易キューブを自作／絵文字🧱で代用／平面に簡略化／角度・個数を変える。
+   書体もセットで**公式＝Zen Maru Gothic**（明朝など好みで選ばない）。
+   ※アプリ「アイコン」（黒背景＋白線画）は**別物** → `Preferences/app-icon-design.md`
+   → 詳細・SVG全文 `Preferences/tsumiki-official-logo.md`
 
 6. **ここは PUBLIC リポジトリ**（`tsumiki-apps/apps`）。**受託案件のソースとお客様の実データを置かない**。
    2026-08-03、受託ソースごと実在キャスト24名の氏名・NG日が公開されていた。実名は `App.tsx` や
