@@ -1054,15 +1054,33 @@
   // i 行目から表が始まっていれば、中身と終わりの行番号を返す。
   // 途中で表でない行が来たら諦めて null＝生のまま出す。表を描いている最中
   // （下の罫線がまだ来ていない）も同じで、出来かけを表に組むとガタつくため
+  // ⚠️ **表のマス目の中でも折り返す**。区切り線（├─┼─┤）を挟まずに続く行は、
+  // 新しい行ではなく**前の行の続き**（`…/ki` の次のマスに `bobako.html` が落ちる）。
+  // ここを繋がないと、表に並んだ公開URLがどれも半分のまま＝写しても開けない
   function takeTable(lines, i) {
     if (!RE_T_TOP.test(lines[i])) return null;
-    var rows = [];
+    var rows = [], widths = [], cont = false;
     for (var j = i + 1; j < lines.length; j++) {
       if (RE_T_BOT.test(lines[j])) return rows.length ? { end: j, rows: rows } : null;
-      if (RE_T_MID.test(lines[j])) continue;
+      if (RE_T_MID.test(lines[j])) { cont = false; continue; }   // 区切り線＝ここから新しい行
       var m = RE_T_ROW.exec(lines[j]);
       if (!m) return null;
-      rows.push(m[1].split('│').map(function (c) { return c.trim(); }));
+      var raw = m[1].split('│');
+      var cells = raw.map(function (c) { return c.trim(); });
+      raw.forEach(function (c, k) { widths[k] = Math.max(widths[k] || 0, dispw(c) - 2); });
+      if (cont && rows.length) {
+        var prev = rows[rows.length - 1];
+        cells.forEach(function (c, k) {
+          if (!c) return;
+          // マスの幅いっぱいまで埋まっていたなら字の途中で割られた＝詰めて繋ぐ。
+          // そうでなければ言葉の間で割られている＝空白を返す
+          var p = prev[k] || '';
+          prev[k] = p + (p && dispw(p) < widths[k] ? ' ' : '') + c;
+        });
+      } else {
+        rows.push(cells);
+      }
+      cont = true;
     }
     return null;
   }
@@ -1072,11 +1090,14 @@
     wrap.className = 'tblwrap';
     var table = document.createElement('table');
     table.className = 'tbl';
+    // 見出しが「合言葉」なら、その列は中身まるごとが合言葉。形が変わっていても札を出せる
+    var valCol = (rows[0] || []).map(function (h) { return RE_KEY_HEAD.test(h); });
     rows.forEach(function (cells, ri) {
       var tr = document.createElement('tr');
-      cells.forEach(function (text) {
+      cells.forEach(function (text, ci) {
         var cell = document.createElement(ri === 0 ? 'th' : 'td');
-        cell.textContent = text;
+        // 表に並ぶのは「お渡しするURL・合言葉」であることが多い。ここにも札を出す
+        addText(cell, text, ri > 0 && valCol[ci]);
         tr.appendChild(cell);
       });
       table.appendChild(tr);
@@ -1397,6 +1418,10 @@
   var RE_URL_HEAD = new RegExp('^[' + URL_CH + ']+');
   // 文の終わりの句読点・閉じ括弧は値の一部でないことがほとんどなので落とす
   var RE_URL_TRIM = /[.,;:!?)\]}'"]+$/;
+  // 行き先として形になっているか＝ドメインに「.」と2字以上の末尾がある（`https://fo` は無い）
+  var RE_HOST_OK = /^(?:https?:\/\/)?[^\/]*[A-Za-z0-9-]\.[A-Za-z]{2,}(?:[:\/?#]|$)/;
+  // 札を出すのは「中身のある値」だけ。◯◯ や ●● のような**例のための印**には出さない
+  var RE_REAL = /[A-Za-z0-9ぁ-んァ-ヶー一-龠]/;
   // 合言葉は URL ほど強く削らない。「!」や「.」で終わるパスワードは珍しくないので残す
   var RE_VAL_TRIM = /[,;:'"）」』)\]}]+$/;
 
@@ -1407,6 +1432,18 @@
   //     こちらは形が決まっていない合言葉（日本語の言葉など）でも拾える。
   //     `key:` `token:` のような普通の英単語は入れない（ログや JSON が札だらけになる）
   var RE_KEY = /[A-Z0-9]{4,}(?:-[A-Z0-9]{4,}){2,}/g;
+  //  ③ ハイフンの無い一続きの合言葉＝`BKZX8JLV` `GUGZEV9UA5`。お客様にお渡しするのは
+  //     たいていこの形で、名前を付けずに書かれることも多い（実画面で12回出ていた）。
+  //     ただし**英字だけ・数字だけは弾く**（`APPLESCRIPT` `20030112` が当たってしまう）。
+  //     長い並びの一部（URLの中・16進の途中）も弾く＝前後の字を見て判断する
+  var RE_KEY_BARE = /[A-Z0-9]{8,12}/g;
+  var RE_KEY_EDGE = /[A-Za-z0-9_.\/=-]/;
+
+  // つみきのURLは `https://` を省いて書かれることがある。ここは**行き先を絞る**のが肝で、
+  // 「ドメインらしきもの」を拾うと `幅375px.jpeg` の `375px.jp` まで札を付けてしまう（実際に出た）
+  var SITE = '(?:[A-Za-z0-9-]+\\.)*(?:tsumiki-apps\\.com|[A-Za-z0-9-]+\\.github\\.io)';
+  var RE_SITE = new RegExp(SITE + '(?:/[' + URL_CH + ']*)?', 'g');
+  var RE_KEY_HEAD = /^(?:合言葉|あいことば|プロダクトキー|ライセンスキー|パスワード|キー|コード)$/i;
   var KEY_LABEL = '(?:合言葉|あいことば|プロダクトキー|ライセンスキー|パスワード|product key|license key)';
   var VAL_CH = '[^\\s、。「」『』（）()`]+';
   // 囲い方は3通り。Claude は合言葉を `　` で囲んで書くことが多いので、これを外さない
@@ -1431,13 +1468,31 @@
   // 「桁いっぱいまで届いた行」の末尾が URL の途中で、次の行がその続きに見えるときだけ繋ぐ。
   // 端末が長い単語を割るときは必ず幅ぴったりまで埋まるので、これが「割られた」印になる。
   // 迷ったら繋がない＝今まで通り行が分かれるだけで、文章が壊れることはない
+  // ⚠️ 端末の桁がそのまま折り返し幅とは限らない。**`⎿` の結果の枠はもっと狭い幅**で折り返される。
+  // 桁だけを見ていると、この中のURLが切れたまま残る（実画面で7本が切れていた）。
+  // そこで「同じ枠の中でいちばん長い行」を、その場の折り返し幅として使う
+  function wrapLimits(lines, cols) {
+    var lim = [], i, j, end, w;
+    for (i = 0; i < lines.length; i++) lim[i] = cols;
+    for (i = 0; i < lines.length; i++) {
+      if (!/^\s*⎿/.test(lines[i])) continue;
+      end = i + 1;                                    // 字下げの続くあいだが1つの枠
+      while (end < lines.length && /^\s/.test(lines[end]) && lines[end].trim()) end++;
+      for (j = i, w = 0; j < end; j++) w = Math.max(w, dispw(lines[j]));
+      for (j = i; j < end; j++) lim[j] = Math.min(cols, w);
+      i = end - 1;
+    }
+    return lim;
+  }
+
   function joinUrlWraps(lines, cols) {
     if (!cols) return lines;
+    var lim = wrapLimits(lines, cols);
     var out = [];
     for (var i = 0; i < lines.length; i++) {
       var cur = lines[i];
       var lastW = dispw(lines[i]);
-      while (i + 1 < lines.length && lastW >= cols - 1) {
+      while (i + 1 < lines.length && lastW >= lim[i] - 1) {
         var tail = RE_URL_TAIL.exec(cur);
         if (!tail || !tail[0]) break;                 // 行末が URL の途中ではない
         var body = lines[i + 1].replace(/^\s+/, '');
@@ -1538,6 +1593,11 @@
     var hits = [], m;
     function push(at, raw, kind) {
       raw = raw.replace(kind === 'url' ? RE_URL_TRIM : RE_VAL_TRIM, '');
+      // 中身の無い「例」には札を出さない（説明文の `合言葉：◯◯` に札が付いていた）
+      if (kind === 'val' && !RE_REAL.test(raw)) return;
+      // 行の端で切れて繋ぎ直せなかったURL（`https://fo` など）には札を出さない。
+      // 押しても開けないものを渡すくらいなら、ただの字のままのほうがまし
+      if (kind === 'url' && !RE_HOST_OK.test(raw)) return;
       if (raw) hits.push({ i: at, j: at + raw.length, s: raw, k: kind });
     }
     RE_URL.lastIndex = 0;
@@ -1547,6 +1607,20 @@
     }
     RE_KEY.lastIndex = 0;
     while ((m = RE_KEY.exec(text))) push(m.index, m[0], 'val');
+    RE_KEY_BARE.lastIndex = 0;
+    while ((m = RE_KEY_BARE.exec(text))) {
+      var k = m[0];
+      if (!/[A-Z]/.test(k) || !/[0-9]/.test(k)) continue;        // 英字だけ・数字だけは合言葉ではない
+      if (RE_KEY_EDGE.test(text.charAt(m.index - 1))
+          || RE_KEY_EDGE.test(text.charAt(m.index + k.length))) continue;   // 長い並びの一部
+      push(m.index, k, 'val');
+    }
+    RE_SITE.lastIndex = 0;
+    while ((m = RE_SITE.exec(text))) {
+      // `https://` の途中や、メールアドレスの後半を二重に拾わない
+      if (/[A-Za-z0-9._~:\/@-]/.test(text.charAt(m.index - 1))) continue;
+      push(m.index, m[0], 'url');
+    }
     RE_LABELED.lastIndex = 0;
     while ((m = RE_LABELED.exec(text))) {
       var v = m[1] || m[2] || m[3] || m[5] || m[6] || m[7];   // 囲いの中
@@ -1568,9 +1642,14 @@
     return out;
   }
 
-  // 1行ぶんの文字を「文章＋リンク／合言葉＋写す札」に組み直して足す
-  function addText(parent, text) {
+  // 1行ぶんの文字を「文章＋リンク／合言葉＋写す札」に組み直して足す。
+  // asVal＝表の「合言葉」の列など、**中身まるごとが値だと分かっている**とき
+  function addText(parent, text, asVal) {
     var hits = findTargets(text);
+    if (!hits.length && asVal && text.trim() && RE_REAL.test(text.trim())) {
+      hits = [{ i: text.indexOf(text.trim()), j: 0, s: text.trim(), k: 'val' }];
+      hits[0].j = hits[0].i + hits[0].s.length;
+    }
     if (!hits.length) { parent.appendChild(document.createTextNode(text)); return; }
     var at = 0;
     hits.forEach(function (h) {
@@ -1579,7 +1658,8 @@
       if (h.k === 'url') {
         var a = document.createElement('a');
         a.className = 'lnk';
-        a.href = h.s;
+        // 写す字は見えているまま。開く先だけ `https://` を補う（無いと相対リンクになって開けない）
+        a.href = /^https?:\/\//.test(h.s) ? h.s : 'https://' + h.s;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         a.textContent = h.s;
