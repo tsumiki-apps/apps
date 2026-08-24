@@ -206,11 +206,16 @@
           <button data-v="phone">スマホ</button>
         </div>
       </div>
-      <div class="item">顔の置きかた
+      <div class="item">画面と顔の置きかた
         <div class="seg" id="segPlace">
-          <button data-v="side" class="on">よこに並べる</button>
-          <button data-v="overlay">右下にかさねる</button>
+          <button data-v="wide" class="on">いっぱい</button>
+          <button data-v="overlay">かさねる</button>
+          <button data-v="side">よこ</button>
         </div>
+        <span class="hint" style="display:block; margin-top:4px">
+          <b>いっぱい</b>＝操作画面をフレームいっぱいに広げ、字幕と顔をその中に重ねる（横幅の89%）。
+          <b>かさねる</b>＝字幕は下の帯のまま、顔だけ画面に重ねる。
+          <b>よこ</b>＝画面と顔を横に並べる（お手本の図のかたち・横幅の79%）。</span>
       </div>
       <div class="item">顔の大きさ<span class="v" id="vFaceScale">100%</span>
         <input type="range" id="rFaceScale" min="60" max="150" value="100"></div>
@@ -268,7 +273,7 @@
       <li>「画面をえらぶ」→ <b>ウィンドウ</b> のタブから、そのアプリを選ぶ</li>
       <li>「カメラとマイクを使う」を押して許可する</li>
       <li>左上のタイトルを、その動画に合わせて書き換える（例：つみき あきま 使い方）</li>
-      <li>プレビューを見ながら、顔の大きさと位置をととのえる</li>
+      <li>プレビューを見ながら、置きかた（いっぱい／かさねる／よこ）と顔の大きさをととのえる</li>
       <li>「収録をはじめる」→ 3・2・1 のあと始まります</li>
       <li>話しながら操作する。話した言葉は、そのまま画面の下に字幕として入ります</li>
       <li>考える時間がほしいときは「一時停止」（動画は1本のままつながります）</li>
@@ -340,7 +345,7 @@
   let lastDuration = 0;
 
   const cfg = {
-    layout:'auto', place:'side', faceScale:1.00, faceRadius:0.07,
+    layout:'auto', place:'wide', faceScale:1.00, faceRadius:0.07,
     faceX:0, faceY:0, faceZoom:1.00, devRadius:22,
     bg:'#FFFFFF', shadow:'soft', mirror:false,
     title:'つみき アプリ取り扱い説明動画', caption:true
@@ -378,23 +383,39 @@
 
   function layout(){
     const m = metrics();
-    if(!ready(screenVideo)) return { m, dev:null, face:null };
+    if(!ready(screenVideo)) return { m, dev:null, face:null, wide:false };
     const vw = screenVideo.videoWidth, vh = screenVideo.videoHeight;
     const portrait = vh > vw * 1.05;
     const mode = cfg.layout === 'auto' ? (portrait ? 'phone' : 'pc') : cfg.layout;
+
+    /* いっぱい：ヘッダーの下からフレームの下まで全部を操作画面に使い、
+       字幕と顔はその画面の中に重ねる。16:9 の画面は高さで頭打ちになるので、
+       下の帯をやめたぶんだけ横にも大きくなる。縦長（スマホ）では効かないので
+       ふつうの並びに落とす。 */
+    if(cfg.place === 'wide' && mode === 'pc'){
+      const bottom = H - M, bandH = bottom - m.top;
+      const d = fitSize(vw, vh, W - 2*M, bandH);
+      const dev = { x:(W-d.w)/2, y:m.top + (bandH-d.h)/2, w:d.w, h:d.h };
+      const inset = 26;
+      const s = Math.round(d.h * 0.28 * cfg.faceScale);
+      return { m, wide:true, inset, dev,
+        face:{ x:dev.x+dev.w-inset-s, y:dev.y+dev.h-inset-s, s } };
+    }
+
     const s = Math.round(m.bandH * (mode === 'phone' ? 0.45 : 0.36) * cfg.faceScale);
     const gap = mode === 'phone' ? 64 : 24;
 
+    // 「いっぱい」は縦長の画面では効かない。顔を重ねるとアプリを隠すので、横並びに落とす。
     if(cfg.place === 'overlay'){
       const d = fitSize(vw, vh, W - 2*M, m.bandH);
+      const dev = { x:(W-d.w)/2, y:m.bottom-d.h, w:d.w, h:d.h };
       const so = Math.round(s * 0.74);
-      return { m,
-        dev:{ x:(W-d.w)/2, y:m.bottom-d.h, w:d.w, h:d.h },
-        face:{ x: W-M-28-so, y: m.bottom-28-so, s: so } };
+      return { m, wide:false, dev,
+        face:{ x:dev.x+dev.w-26-so, y:dev.y+dev.h-26-so, s: so } };
     }
     const d = fitSize(vw, vh, W - 2*M - gap - s, m.bandH);
     const total = d.w + gap + s, left = (W - total)/2;
-    return { m,
+    return { m, wide:false,
       dev:{ x:left, y:m.bottom-d.h, w:d.w, h:d.h },
       face:{ x:left + d.w + gap, y:m.bottom - s, s } };
   }
@@ -496,22 +517,43 @@
     if(cur) out.push(cur);
     return out.slice(-maxLines);
   }
-  function drawCaption(){
+  function drawCaption(L){
     if(!cfg.caption) return;
-    const x = M, y = CAP_TOP, w = W - 2*M, h = CAP_H, r = 20;
-    panel(x,y,w,h,r);                      // 画面・顔と同じ影をつけて、帯も紙から浮かせる
-    ctx.save();
-    ctx.fillStyle = 'rgba(36,35,33,.055)';
-    rr(ctx,x,y,w,h,r); ctx.fill();
-    ctx.restore();
+    const over = !!(L && L.wide && L.dev);
+    let x, y, w, h, r;
+    if(over){
+      h = 88; r = 18;
+      const inset = L.inset;
+      x = L.dev.x + inset;
+      y = L.dev.y + L.dev.h - inset - h;
+      w = L.dev.w - inset*2 - (L.face ? L.face.s + 20 : 0);
+      if(w < 480) w = L.dev.w - inset*2;      // 画面が細いときは顔の下も使う
+    } else {
+      x = M; y = CAP_TOP; w = W - 2*M; h = CAP_H; r = 20;
+    }
+    if(over){
+      // 操作画面の上に置くので、うっすら透かして下の画面が気配だけ見えるようにする
+      ctx.save();
+      ctx.shadowColor = 'rgba(28,24,18,.30)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+      ctx.fillStyle = 'rgba(255,255,255,.92)';
+      rr(ctx,x,y,w,h,r); ctx.fill();
+      ctx.restore();
+    } else {
+      panel(x,y,w,h,r);                      // 画面・顔と同じ影をつけて、帯も紙から浮かせる
+      ctx.save();
+      ctx.fillStyle = 'rgba(36,35,33,.055)';
+      rr(ctx,x,y,w,h,r); ctx.fill();
+      ctx.restore();
+    }
     hairline(x,y,w,h,r);
     const t = performance.now() < capUntil ? capText : '';
     if(!t) return;
+    const px = over ? 34 : CAP_PX, lh = over ? 42 : CAP_LH;
     ctx.save();
     ctx.fillStyle = '#242321';
-    ctx.font = '500 ' + CAP_PX + 'px "Zen Maru Gothic", -apple-system, sans-serif';
+    ctx.font = '500 ' + px + 'px "Zen Maru Gothic", -apple-system, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const lines = wrapText(t, w - 96, 2), lh = CAP_LH;
+    const lines = wrapText(t, w - 76, 2);
     const y0 = y + h/2 - (lines.length - 1) * lh/2;
     lines.forEach((l,idx) => ctx.fillText(l, x + w/2, y0 + idx*lh));
     ctx.restore();
@@ -554,7 +596,7 @@
       ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
     }
 
-    drawCaption();
+    drawCaption(L);
 
     frameCount++;
     const now = performance.now();
