@@ -191,16 +191,22 @@
 
   /* 端末の中の URL。長いものは桁でぶつ切りにされて次の行へ落ちるので、なぞって
      コピーすると切れ目に改行が入り、そのままでは開けないURLになる（実害はここ）。
-     切れた行を繋ぎ直したうえで、指1本で確実に取れるよう「コピー」の札を横に置く（2026-08-24） */
+     切れた行を繋ぎ直したうえで、指1本で確実に取れるよう写す札を横に置く（2026-08-24） */
   #out .lnk{color:#7dd3fc;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+  /* 札は字ではなく絵。等幅の行の中で場所を取らず、意味も一目で分かる。
+     ⚠️ 見た目を大きくすると行がガタつくので、大きくするのは「指の当たり判定」だけ
+     （::after で外側へ広げる）。小さい札は押したつもりで外していることがある */
   #out .lcp{
-    display:inline-block;vertical-align:baseline;margin:0 3px;padding:1px 7px;
-    border:1px solid var(--line);border-radius:999px;background:#161a20;
-    color:#aab2c0;font-family:inherit;font-size:9.5px;line-height:1.5;
-    white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none;
+    position:relative;display:inline-flex;align-items:center;justify-content:center;
+    vertical-align:-4px;margin:0 1px;padding:0;width:20px;height:20px;
+    border:0;border-radius:6px;background:transparent;color:#8b93a1;
+    cursor:pointer;-webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent;
   }
-  #out .lcp:active{background:#222833;color:#eef3ee}
-  #out .lcp.done{border-color:#22c55e;color:#22c55e;background:rgba(34,197,94,.12)}
+  #out .lcp::after{content:'';position:absolute;top:-11px;right:-9px;bottom:-11px;left:-9px}
+  #out .lcp svg{width:14px;height:14px;display:block;pointer-events:none}
+  #out .lcp:active{background:rgba(255,255,255,.1);color:#eef3ee}
+  #out .lcp.done{color:#22c55e}
 
   /* 端末が ┌─┬┐ で描いた表。ターミナルは「文字何個ぶん」で桁を合わせているので、
      幅がその半分しかないスマホでは必ず折り返し、罫線が二重に見えて読めなくなる
@@ -1407,7 +1413,16 @@
     return out;
   }
 
-  // 1行ぶんの文字を「文章＋リンク＋コピーの札」に組み直して足す
+  // 札の絵。写す前は「紙が2枚重なった」印、写したあとはチェック
+  var ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<rect x="9" y="9" width="12" height="12" rx="2"/>'
+    + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var ICON_DONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<polyline points="20 6 9 17 4 12"/></svg>';
+
+  // 1行ぶんの文字を「文章＋リンク＋写す札」に組み直して足す
   function addText(parent, text) {
     RE_URL.lastIndex = 0;
     var at = 0, m;
@@ -1426,7 +1441,9 @@
       b.className = 'lcp';
       b.type = 'button';
       b.dataset.copy = raw;
-      b.textContent = 'コピー';
+      b.title = 'リンクをコピー';
+      b.setAttribute('aria-label', 'リンクをコピー');
+      b.innerHTML = ICON_COPY;
       parent.appendChild(b);
       at = m.index + raw.length;
       RE_URL.lastIndex = at;
@@ -1543,6 +1560,24 @@
   var paneCols = 0;
 
   var lastText = null;
+  var touching = false;
+  var touchTimer = null;
+  el.out.addEventListener('touchstart', function () {
+    clearTimeout(touchTimer);
+    touching = true;
+    // 指を離した合図が来ないことがある（ブラウザに操作を持っていかれたときなど）。
+    // そのまま止めっぱなしにすると画面が固まって見えるので、必ず自分で戻す
+    touchTimer = setTimeout(function () { touching = false; }, 3000);
+  }, { passive: true });
+  ['touchend', 'touchcancel'].forEach(function (ev) {
+    // 指を離した瞬間ではなく少し待つ。touchend と click のあいだに描き直しが
+    // 割り込むと、やはり押したものが消えてしまう
+    el.out.addEventListener(ev, function () {
+      clearTimeout(touchTimer);
+      touchTimer = setTimeout(function () { touching = false; }, 500);
+    }, { passive: true });
+  });
+
   function refreshPane(force) {
     if (!current) return Promise.resolve();
     var cols = wantWide ? WIDE_COLS : measureCols();
@@ -1551,7 +1586,9 @@
       + (cols ? '&cols=' + cols : '')).then(function (d) {
       var stick = force || atBottom();
       var text = d.text || '(空)';
-      if (text !== lastText) { lastText = text; renderScreen(text); }
+      // 指を置いているあいだは描き直さない。押そうとしていた札が描き直しで消えると
+      // 「押したのに何も起きない」になる。次の取得（2秒後）で追いつく
+      if (text !== lastText && !touching) { lastText = text; renderScreen(text); }
       if (stick) el.out.scrollTop = el.out.scrollHeight;
       if (panes[current] !== text) { panes[current] = text; snapDirty = true; }
       saveSnap();
@@ -1638,51 +1675,84 @@
     toast(b.dataset.opt + '「' + (b.dataset.label || '') + '」を選びました');
   });
 
-  // クリップボードの正式な口（navigator.clipboard）は https のときしか使えない。
-  // Tailscale の IP（http://100.x.x.x:8787）で開いていると undefined なので、
-  // 隠した入力欄を選んで写す昔ながらの道も持っておく
-  function copyText(s) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(s);
-    }
-    return new Promise(function (resolve, reject) {
-      var ta = document.createElement('textarea');
-      ta.value = s;
-      ta.contentEditable = 'true';      // iOS はこれが無いと選択させてくれない
-      ta.readOnly = false;
-      // 画面の外に飛ばすと iOS が選択を嫌がるので、見えない大きさでその場に置く。
-      // font-size:16px は、一瞬でも自動ズームが入らないようにするため
-      ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px';
-      document.body.appendChild(ta);
+  // ------------------------------------------------ クリップボードへ写す
+  //
+  // iPhone は「どう開いているか」で通る道が変わる。https（Tailscale の名前）なら
+  // 正式な口（navigator.clipboard）が使えるが、http（Tailscale の IP）だとそもそも
+  // 無い。ホーム画面から起動したPWAでは正式な口が黙って空振りすることもある。
+  // どちらか片方に賭けると「押したのに何も写らない」になるので、両方やる（2026-08-24）。
+
+  // 昔ながらの道＝見えない入力欄に字を入れて、選んで、写す。
+  // ⚠️ opacity:0 や 1px 四方に潰すと iOS は「見えていない」と見なして選択してくれない。
+  //    画面の外へ出すだけにする（潰していたのが、写らなかった原因のひとつ）
+  function legacyCopy(s) {
+    var ta = document.createElement('textarea');
+    ta.value = s;
+    ta.setAttribute('readonly', '');    // キーボードを出さない
+    ta.contentEditable = 'true';        // iOS はこれが無いと選ばせてくれない
+    ta.style.cssText = 'position:absolute;left:-9999px;top:'
+      + (window.pageYOffset || 0) + 'px;width:6em;height:3em;padding:0;border:0;'
+      + 'outline:0;box-shadow:none;background:transparent;font-size:16px';
+    document.body.appendChild(ta);
+    var ok = false;
+    try {
       var range = document.createRange();
       range.selectNodeContents(ta);
       var sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
+      try { ta.focus({ preventScroll: true }); } catch (e2) { ta.focus(); }
       ta.setSelectionRange(0, s.length);
-      var ok = false;
-      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      ok = document.execCommand('copy');
       sel.removeAllRanges();
-      document.body.removeChild(ta);
-      if (ok) resolve(); else reject(new Error('この開き方ではコピーできません'));
-    });
+    } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
   }
 
-  // URL の横の「コピー」の札。押した札そのものを一瞬だけ緑にする＝
-  // どのリンクを取ったのかが分かる（トーストだけだと取り違えに気づけない）
+  function copyText(s) {
+    if (!s) return Promise.reject(new Error('コピーするものがありません'));
+    var ok = legacyCopy(s);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(s).catch(function (e) {
+        if (ok) return;                 // 片方が通っていればそれでいい
+        throw e;
+      });
+    }
+    return ok ? Promise.resolve() : Promise.reject(new Error('コピーできません'));
+  }
+
+  // どうしても写せなかったとき用。そのリンクの字を「選んだ状態」にしておく＝
+  // 長押しで iOS の「コピー」を出せば取れる。何も起きないよりはるかにまし
+  function selectLink(node) {
+    if (!node || node.nodeType !== 1) return false;
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(node);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // URL の横の札。写したら、押した札そのものがチェックに変わる＝
+  // どのリンクを取ったのかが分かる（言い添えだけだと取り違えに気づけない）
   el.out.addEventListener('click', function (e) {
     var b = e.target.closest('.lcp');
     if (!b) return;
+    var link = b.previousSibling;       // 直前に置いた <a>
     copyText(b.dataset.copy || '').then(function () {
       b.classList.add('done');
-      b.textContent = 'コピーした';
+      b.innerHTML = ICON_DONE;
       toast('リンクをコピーしました');
       setTimeout(function () {
         b.classList.remove('done');
-        b.textContent = 'コピー';
-      }, 1600);
-    }, function (err) {
-      toast(err.message || 'コピーできませんでした');
+        b.innerHTML = ICON_COPY;
+      }, 2000);
+    }, function () {
+      if (selectLink(link)) toast('選んであります。長押しして「コピー」を選んでください', 3600);
+      else toast('コピーできませんでした', 2600);
     });
   });
 
