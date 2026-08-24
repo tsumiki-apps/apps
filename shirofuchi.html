@@ -48,8 +48,8 @@
 
   /* ---- プレビュー ---- */
   .stage{flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding-bottom:16px;}
-  .frame{background:#fff; overflow:hidden; box-shadow:0 12px 34px rgba(36,35,33,.15); border-radius:5px;}
-  .frame > *{width:100%; height:100%; object-fit:cover; display:block;}
+  .frame{position:relative; background:#fff; overflow:hidden; box-shadow:0 12px 34px rgba(36,35,33,.15); border-radius:5px;}
+  .frame > *{position:absolute; object-fit:cover; display:block;}
 
   /* ---- 操作パネル ---- */
   .panel{flex:0 0 auto; background:var(--card); border:1px solid var(--line);
@@ -145,9 +145,11 @@
 
 <script>
 /* =========================================================
-   しろふち — 9:16の写真/動画に白いふちをつけて「写真」に保存する
-   ・出来上がりは元と同じ縦横比。ふちは4辺とも同じ太さ（％は横幅きじゅん）
-   ・中身は cover（はみ出した分だけごくわずかに切れる）でふちを均一に保つ
+   しろふち — どんな比率の写真/動画も 9:16 の白い台紙にのせて「写真」に保存する
+   ・出来上がりはいつも 9:16（たて長）。ふちの太さは出来上がりの横幅に対する％
+   ・写真は切らずに全部のせる（横位置なら上下に、9:16より細長いなら左右に白がふえる）
+   ・ただし切れるのが 3% までで収まるとき（＝ほぼ9:16の写真）は、
+     いままで通り4辺のふちをぴったりそろえる（cover）
    ・画面は1画面ぴったり（スクロールなし）。プレビューの大きさはJSで実測して決める
    ========================================================= */
 const el = id => document.getElementById(id);
@@ -176,20 +178,43 @@ if(!(rad >= 0 && rad <= 24)) rad = 2;
 el('w').value = pct;
 el('r').value = rad;
 
+/* ---------- 出来上がりの形 ----------
+   いつも 9:16（たて長）の白い台紙。その真ん中に写真をのせる。
+   写真が台紙とちがう比率なら、あまった場所はぜんぶ白になる（＝白い背景）。 */
+const AR = 9 / 16;          // 出来上がりの 横 ÷ たて
+const CROP_MAX = 0.03;      // これ以内しか切れないなら、4辺のふちをそろえる（＝いままでの見た目）
+
+/* 台紙（W×H）の中で、写真をどこに・どの大きさで置くかを求める。
+   もどり値の x,y,w,h は写真の場所。s は元の写真にかかる倍率（出来上がりサイズを決めるのに使う） */
+function geom(W, H, sw, sh){
+  const b  = W * pct / 100;
+  const iw = Math.max(1, W - b * 2), ih = Math.max(1, H - b * 2);
+  const sc = Math.max(iw / sw, ih / sh);                        // ふち内いっぱいに満たす倍率
+  const crop = Math.max(sw * sc / iw, sh * sc / ih) - 1;         // そのとき切れる割合
+  if(crop <= CROP_MAX) return {x:b, y:b, w:iw, h:ih, s:sc};      // ほぼ9:16 → 4辺そろえる
+  const sf = Math.min(iw / sw, ih / sh);                         // それ以外 → 切らずに全部のせる
+  const w = sw * sf, h = sh * sf;
+  return {x:(W - w) / 2, y:(H - h) / 2, w, h, s:sf};
+}
+
 /* プレビューの大きさは、余った場所を実測してぴったり収まるように決める（＝スクロールしない） */
 function layout(){
   el('wv').textContent = pct.toFixed(1) + '%';
   el('rv').textContent = Math.round(rad) + '%';
   const f = el('frame'), st = el('stage');
   if(!srcW || !srcH || !st.clientWidth) return;
-  const ar = srcW / srcH;
-  const w = Math.floor(Math.min(st.clientWidth, st.clientHeight * ar));
+  const w = Math.floor(Math.min(st.clientWidth, st.clientHeight * AR));
+  const h = Math.round(w / AR);
   f.style.width  = w + 'px';
-  f.style.height = Math.floor(w / ar) + 'px';
-  const px = w * pct / 100;
-  f.style.padding = px + 'px';
+  f.style.height = h + 'px';
   const kid = f.firstElementChild;
-  if(kid) kid.style.borderRadius = ((w - px * 2) * rad / 100) + 'px';
+  if(!kid) return;
+  const g = geom(w, h, srcW, srcH);
+  kid.style.left   = g.x + 'px';
+  kid.style.top    = g.y + 'px';
+  kid.style.width  = g.w + 'px';
+  kid.style.height = g.h + 'px';
+  kid.style.borderRadius = (g.w * rad / 100) + 'px';
 }
 el('w').addEventListener('input', e => {
   pct = parseFloat(e.target.value);
@@ -279,17 +304,16 @@ function roundPath(ctx, x, y, w, h, r){
 }
 
 function paint(ctx, src, W, H){
-  const b = Math.round(W * pct / 100);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, W, H);
-  const iw = Math.max(1, W - b * 2), ih = Math.max(1, H - b * 2);
   const sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight;
-  const s = Math.max(iw / sw, ih / sh);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);                 // 台紙ぜんぶを白でぬる（＝白い背景）
+  const g = geom(W, H, sw, sh);
+  const s = Math.max(g.w / sw, g.h / sh);   // 置き場所を満たす倍率（切らない側では ぴったり一致）
   const dw = sw * s, dh = sh * s;
   ctx.save();
-  roundPath(ctx, b, b, iw, ih, iw * rad / 100);
+  roundPath(ctx, g.x, g.y, g.w, g.h, g.w * rad / 100);
   ctx.clip();
-  ctx.drawImage(src, b + (iw - dw) / 2, b + (ih - dh) / 2, dw, dh);
+  ctx.drawImage(src, g.x + (g.w - dw) / 2, g.y + (g.h - dh) / 2, dw, dh);
   ctx.restore();
 }
 
@@ -351,9 +375,17 @@ function stamp(){
   return 'shirofuchi_' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
 
+/* 出来上がり（9:16の台紙）の大きさ。写真が元の細かさのまま入るサイズを選ぶ。
+   geom は比率だけで決まるので、仮の1000pxで倍率を出して逆算できる */
+function outSize(){
+  const s = geom(1000, 1000 / AR, srcW, srcH).s / 1000;
+  const W = Math.max(2, Math.round(1 / s));
+  return {W, H: Math.max(2, Math.round(W / AR))};
+}
+
 function makeImage(){
   // iOS の canvas 上限（約16.7M画素）を超えないように縮小する
-  let W = srcW, H = srcH;
+  let {W, H} = outSize();
   const maxPx = 16700000;
   if(W * H > maxPx){ const k = Math.sqrt(maxPx / (W * H)); W = Math.round(W * k); H = Math.round(H * k); }
   const c = document.createElement('canvas');
@@ -378,8 +410,8 @@ function makeVideo(onProgress){
     if(!mime || !HTMLCanvasElement.prototype.captureStream){
       return reject(new Error('この端末では動画のふちづけに対応していません（写真は使えます）'));
     }
-    // 書き出しサイズ（長辺1920まで・H.264のため偶数に）
-    let W = srcW, H = srcH;
+    // 書き出しサイズ（9:16の台紙・長辺1920まで・H.264のため偶数に）
+    let {W, H} = outSize();
     const k = Math.min(1, 1920 / Math.max(W, H));
     W = Math.max(2, Math.round(W * k / 2) * 2);
     H = Math.max(2, Math.round(H * k / 2) * 2);
