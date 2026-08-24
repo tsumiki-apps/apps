@@ -65,6 +65,9 @@
   → 詳細・最新は `~/ObsidianVault/Knowledge/claude-codex-integration.md`、運用方針は `Decisions/2026-06-17-claude-codex-env-operation.md`。
 
 ## 説明・報告のしかた
+- **選ばせたいときは選択UI（AskUserQuestion）を使わない。本文に番号つきで選択肢を出し、チャット欄に数字で返してもらう**
+  （Kodai は外出先から**つみきリモート**で見ており、あのパネルはタップも確定もできない）。
+  原則1問ずつ・選択肢3〜4個・最後の番号に「ほかの案」。→ 詳細 `Preferences/ask-question-format.md`
 - 専門用語は「用語（＝かんたんに言うと◯◯）」の形でやさしい解説をセットで。
 - 完了報告は ①何を変更 ②どう変更 ③どう動作したか を簡潔な箇条書きで。失敗・スキップは正直に。
 
