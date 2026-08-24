@@ -189,6 +189,19 @@
      意味は「区切り」だけなので、線そのものに描き直す */
   #out .rule{display:block;height:1px;background:var(--line);margin:7px -4px}
 
+  /* 端末の中の URL。長いものは桁でぶつ切りにされて次の行へ落ちるので、なぞって
+     コピーすると切れ目に改行が入り、そのままでは開けないURLになる（実害はここ）。
+     切れた行を繋ぎ直したうえで、指1本で確実に取れるよう「コピー」の札を横に置く（2026-08-24） */
+  #out .lnk{color:#7dd3fc;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+  #out .lcp{
+    display:inline-block;vertical-align:baseline;margin:0 3px;padding:1px 7px;
+    border:1px solid var(--line);border-radius:999px;background:#161a20;
+    color:#aab2c0;font-family:inherit;font-size:9.5px;line-height:1.5;
+    white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none;
+  }
+  #out .lcp:active{background:#222833;color:#eef3ee}
+  #out .lcp.done{border-color:#22c55e;color:#22c55e;background:rgba(34,197,94,.12)}
+
   /* 端末が ┌─┬┐ で描いた表。ターミナルは「文字何個ぶん」で桁を合わせているので、
      幅がその半分しかないスマホでは必ず折り返し、罫線が二重に見えて読めなくなる
      （2026-08-12）。折り返さず横スクロールにすると今度は全体が見えない。
@@ -1358,8 +1371,73 @@
     return box;
   }
 
+  // ------------------------------------------------------- 端末の中の URL を拾う
+  //
+  // 端末は「桁」で文字をぶつ切りにする。URL は空白の無い一続きなので、幅に入りきらないと
+  // 途中で切られて次の行へ落ちる。目で読むぶんには繋がって見えるが、なぞってコピーすると
+  // 切れ目に改行が入り、そのままでは開けないURLになる（2026-08-24 報告）。
+  // ここで ①切れた行を繋ぎ直し ②リンクに描き直して「コピー」の札を添える。
+  var RE_URL = /https?:\/\/[^\s"'<>`|\\^{}（）「」『』【】、。]+/g;
+  var RE_URL_TAIL = /https?:\/\/[^\s"'<>`|\\^{}（）「」『』【】、。]*$/;
+  var RE_URL_HEAD = /^[A-Za-z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+/;
+  // 文の終わりの句読点・閉じ括弧は URL の一部でないことがほとんどなので落とす
+  var RE_URL_TRIM = /[.,;:!?)\]}'"]+$/;
+
+  // 「桁いっぱいまで届いた行」の末尾が URL の途中で、次の行がその続きに見えるときだけ繋ぐ。
+  // 端末が長い単語を割るときは必ず幅ぴったりまで埋まるので、これが「割られた」印になる。
+  // 迷ったら繋がない＝今まで通り行が分かれるだけで、文章が壊れることはない
+  function joinUrlWraps(lines, cols) {
+    if (!cols) return lines;
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      var cur = lines[i];
+      var lastW = dispw(lines[i]);
+      while (i + 1 < lines.length && lastW >= cols - 1) {
+        var tail = RE_URL_TAIL.exec(cur);
+        if (!tail || !tail[0]) break;                 // 行末が URL の途中ではない
+        var body = lines[i + 1].replace(/^\s+/, '');
+        // 次の行が別のかたまりの始まり（⏺ ⎿ ❯ 罫線・空行）なら、続きではない
+        if (!body || !RE_URL_HEAD.test(body)) break;
+        cur += body;
+        lastW = dispw(lines[i + 1]);
+        i++;
+      }
+      out.push(cur);
+    }
+    return out;
+  }
+
+  // 1行ぶんの文字を「文章＋リンク＋コピーの札」に組み直して足す
+  function addText(parent, text) {
+    RE_URL.lastIndex = 0;
+    var at = 0, m;
+    while ((m = RE_URL.exec(text))) {
+      var raw = m[0].replace(RE_URL_TRIM, '');
+      if (!raw) { RE_URL.lastIndex = m.index + m[0].length; continue; }
+      if (m.index > at) parent.appendChild(document.createTextNode(text.slice(at, m.index)));
+      var a = document.createElement('a');
+      a.className = 'lnk';
+      a.href = raw;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = raw;
+      parent.appendChild(a);
+      var b = document.createElement('button');
+      b.className = 'lcp';
+      b.type = 'button';
+      b.dataset.copy = raw;
+      b.textContent = 'コピー';
+      parent.appendChild(b);
+      at = m.index + raw.length;
+      RE_URL.lastIndex = at;
+    }
+    if (at < text.length) parent.appendChild(document.createTextNode(text.slice(at)));
+  }
+
   function renderScreen(text) {
-    var lines = text.split('\n');
+    // 桁数は「取りに行ったとき」に決まるが、起動直後は保存しておいた画面を先に出す＝
+    // まだ分かっていない。そのときは今この場で測る（同じ端末・同じ幅なので前回と同じ値になる）
+    var lines = joinUrlWraps(text.split('\n'), paneCols || measureCols());
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
     var dlgs = [];
@@ -1411,7 +1489,7 @@
         frag.appendChild(block);
         cls = c;
       }
-      block.appendChild(document.createTextNode(lines[i] + '\n'));
+      addText(block, lines[i] + '\n');
       prev = c;
     }
     // 押せるのは一番下の枠だけ。履歴に残った古い枠まで押せると、
@@ -1461,11 +1539,14 @@
   // 折り返されて少し不格好になる。答えた瞬間に元の幅へ戻るので、その間だけの辛抱。
   var WIDE_COLS = 120;
   var wantWide = false;
+  // いま出ている画面が「何桁で」描かれたものか。URL の折り返しを見分けるのに要る
+  var paneCols = 0;
 
   var lastText = null;
   function refreshPane(force) {
     if (!current) return Promise.resolve();
     var cols = wantWide ? WIDE_COLS : measureCols();
+    if (cols) paneCols = cols;
     return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400'
       + (cols ? '&cols=' + cols : '')).then(function (d) {
       var stick = force || atBottom();
@@ -1555,6 +1636,54 @@
     if (!b || b.disabled) return;
     sendText(b.dataset.opt, true);
     toast(b.dataset.opt + '「' + (b.dataset.label || '') + '」を選びました');
+  });
+
+  // クリップボードの正式な口（navigator.clipboard）は https のときしか使えない。
+  // Tailscale の IP（http://100.x.x.x:8787）で開いていると undefined なので、
+  // 隠した入力欄を選んで写す昔ながらの道も持っておく
+  function copyText(s) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(s);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = s;
+      ta.contentEditable = 'true';      // iOS はこれが無いと選択させてくれない
+      ta.readOnly = false;
+      // 画面の外に飛ばすと iOS が選択を嫌がるので、見えない大きさでその場に置く。
+      // font-size:16px は、一瞬でも自動ズームが入らないようにするため
+      ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px';
+      document.body.appendChild(ta);
+      var range = document.createRange();
+      range.selectNodeContents(ta);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      ta.setSelectionRange(0, s.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      sel.removeAllRanges();
+      document.body.removeChild(ta);
+      if (ok) resolve(); else reject(new Error('この開き方ではコピーできません'));
+    });
+  }
+
+  // URL の横の「コピー」の札。押した札そのものを一瞬だけ緑にする＝
+  // どのリンクを取ったのかが分かる（トーストだけだと取り違えに気づけない）
+  el.out.addEventListener('click', function (e) {
+    var b = e.target.closest('.lcp');
+    if (!b) return;
+    copyText(b.dataset.copy || '').then(function () {
+      b.classList.add('done');
+      b.textContent = 'コピーした';
+      toast('リンクをコピーしました');
+      setTimeout(function () {
+        b.classList.remove('done');
+        b.textContent = 'コピー';
+      }, 1600);
+    }, function (err) {
+      toast(err.message || 'コピーできませんでした');
+    });
   });
 
   el.tokenSave.onclick = function () {
