@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="apple-touch-icon" href="icons/icon-tehodoki.png">
+<meta name="apple-mobile-web-app-title" content="てほどき">
+<title>てほどき — 説明動画をそのまま撮る</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3;
+    --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+    --accent:#8C6A46; --warn:#B4553F;
+    --radius:20px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
+  body{
+    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--paper); color:var(--ink);
+    line-height:1.78; padding:env(safe-area-inset-top) 16px 72px;
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:980px; margin:0 auto;}
+  header{padding:40px 4px 22px; text-align:center;}
+  .kicker{color:var(--sub); font-size:11.5px; letter-spacing:.18em; margin-bottom:12px;}
+  h1{font-size:30px; font-weight:700; letter-spacing:.02em; line-height:1.24;}
+  .tagline{color:#3a3833; font-size:14px; margin-top:10px;}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px 18px 20px; margin-top:16px;}
+  .card h2{font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:4px;}
+  .card h2 .n{flex:0 0 auto; width:22px; height:22px; border-radius:8px; background:var(--surface);
+    color:var(--sub); font-size:12px; display:flex; align-items:center; justify-content:center;}
+  .hint{color:var(--sub); font-size:12.5px; line-height:1.7; margin-top:6px;}
+  .hint b{color:var(--ink); font-weight:500;}
+
+  .row{display:flex; flex-wrap:wrap; gap:10px; margin-top:12px;}
+  button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card);
+    color:var(--ink); border-radius:999px; padding:11px 20px; font-size:14px; font-weight:500;
+    transition:transform .12s ease, border-color .15s ease, background .15s ease;}
+  button:active{transform:scale(.97);}
+  button:disabled{opacity:.4; cursor:default;}
+  @media(hover:hover){ button:not(:disabled):hover{border-color:var(--ghost);} }
+  button.primary{background:var(--ink); color:#FBFAF7; border-color:var(--ink);}
+  button.rec{background:#B4553F; color:#fff; border-color:#B4553F; font-weight:700; padding:13px 28px;}
+  button.done{background:var(--surface); border-color:var(--line);}
+  .ok{color:#5C7A54; font-size:12.5px; font-weight:500;}
+
+  select, input[type=text]{font:inherit; font-size:16px; padding:9px 12px; border:1px solid var(--line);
+    border-radius:12px; background:#fff; color:var(--ink); max-width:100%;}
+  label.field{display:block; font-size:12.5px; color:var(--sub); margin-top:12px;}
+  label.field select{display:block; width:100%; margin-top:5px;}
+
+  .stagebox{margin-top:16px; background:var(--surface); border-radius:var(--radius); padding:10px;
+    border:1px solid var(--line); position:relative;}
+  canvas#stage{display:block; width:100%; height:auto; border-radius:12px; background:#fff;
+    box-shadow:0 2px 10px rgba(36,35,33,.10);}
+  .badge-live{position:absolute; top:20px; left:20px; display:none; align-items:center; gap:7px;
+    background:rgba(180,85,63,.94); color:#fff; font-size:12px; font-weight:700; letter-spacing:.04em;
+    padding:6px 13px; border-radius:999px;}
+  .badge-live .dot{width:8px; height:8px; border-radius:50%; background:#fff; animation:bl 1.1s infinite;}
+  @keyframes bl{0%,100%{opacity:1}50%{opacity:.25}}
+  body.recording .badge-live{display:flex;}
+  .countdown{position:absolute; inset:10px; display:none; align-items:center; justify-content:center;
+    background:rgba(251,250,247,.86); border-radius:12px; font-size:88px; font-weight:700; color:var(--ink);}
+  body.counting .countdown{display:flex;}
+
+  .warnbar{display:none; margin-top:12px; background:#FBEAE5; border:1px solid #E4B7A9; color:#8E3E2C;
+    border-radius:14px; padding:11px 14px; font-size:13px; line-height:1.7;}
+  .warnbar.on{display:block;}
+
+  .controls{display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:14px;}
+  .timer{font-variant-numeric:tabular-nums; font-size:26px; font-weight:700; letter-spacing:.04em;
+    min-width:96px;}
+  .meta{color:var(--sub); font-size:12px;}
+
+  .tune{display:grid; grid-template-columns:1fr 1fr; gap:14px 18px; margin-top:14px;}
+  @media(max-width:560px){ .tune{grid-template-columns:1fr;} }
+  .tune .item{font-size:12.5px; color:var(--sub);}
+  .tune .item .v{color:var(--ink); font-weight:500; float:right; font-variant-numeric:tabular-nums;}
+  input[type=range]{width:100%; margin-top:4px; accent-color:var(--accent);}
+  .seg{display:inline-flex; background:var(--surface); border-radius:999px; padding:3px; gap:2px; margin-top:5px;}
+  .seg button{border:none; background:transparent; padding:7px 14px; font-size:13px; border-radius:999px;}
+  .seg button.on{background:var(--card); box-shadow:0 1px 4px rgba(36,35,33,.10); font-weight:700;}
+  .chk{display:flex; align-items:flex-start; gap:9px; margin-top:12px; font-size:13.5px; cursor:pointer;}
+  .chk input{width:18px; height:18px; margin-top:4px; accent-color:var(--accent); flex:0 0 auto;}
+  .swatches{display:flex; gap:8px; margin-top:6px;}
+  .swatches button{width:36px; height:36px; padding:0; border-radius:11px; border:1px solid var(--line);}
+  .swatches button.on{outline:2px solid var(--ink); outline-offset:2px;}
+
+  #result{display:none;}
+  #result.on{display:block;}
+  video#playback{width:100%; border-radius:14px; background:#111; margin-top:12px; display:block;}
+  .tx{margin-top:12px; background:#fff; border:1px solid var(--line); border-radius:14px;
+    max-height:260px; overflow:auto; padding:12px 14px; font-size:13.5px; line-height:1.9;}
+  .tx p{margin:0 0 6px;}
+  .tx .t{color:var(--ghost); font-size:11.5px; font-variant-numeric:tabular-nums; margin-right:8px;}
+  .tx .empty{color:var(--sub);}
+  .tx .interim{color:var(--sub);}
+
+  details{margin-top:16px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:4px 18px;}
+  details summary{cursor:pointer; font-size:14px; font-weight:700; padding:14px 0; list-style:none;}
+  details summary::-webkit-details-marker{display:none;}
+  details summary::before{content:"› "; color:var(--ghost);}
+  details[open] summary::before{content:"⌄ ";}
+  details ol, details ul{margin:0 0 16px 20px; font-size:13.5px; line-height:1.9;}
+  details li{margin-bottom:4px;}
+  details .sub{color:var(--sub); font-size:12.5px;}
+
+  #unsupported{display:none; background:#FBEAE5; border-color:#E4B7A9;}
+  #unsupported.on{display:block;}
+  footer{text-align:center; color:var(--ghost); font-size:11.5px; margin-top:40px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="kicker">つみき</div>
+    <h1>てほどき</h1>
+    <p class="tagline">アプリの画面と自分の顔を、白い紙の上でひとつに。<br>撮り終わったら、もう説明動画になっています。</p>
+  </header>
+
+  <div class="card" id="unsupported">
+    <h2>このアプリは Mac の Chrome で使います</h2>
+    <p class="hint">画面を録る仕組み（画面共有）が、いまのブラウザでは使えません。
+      MacBook の <b>Google Chrome</b> で開いてください。iPhone や Safari では動きません。</p>
+  </div>
+
+  <div class="card" id="setup">
+    <h2><span class="n">1</span>撮るものを決める</h2>
+    <p class="hint">撮りたいアプリのウィンドウを先に開いておいてください。
+      iPhone の画面を撮るときは、下の「使い方」を見てから QuickTime で映してください。<br>
+      <b>「画面全体」ではなく「ウィンドウ」を選ぶ</b>と、このページが映り込みません。</p>
+    <div class="row">
+      <button class="primary" id="btnScreen">画面をえらぶ</button>
+      <span class="ok" id="okScreen"></span>
+    </div>
+    <div class="row" style="margin-top:14px;">
+      <button class="primary" id="btnCam">カメラとマイクを使う</button>
+      <span class="ok" id="okCam"></span>
+    </div>
+    <label class="field" id="fCam" hidden>カメラ<select id="selCam"></select></label>
+    <label class="field" id="fMic" hidden>マイク<select id="selMic"></select></label>
+  </div>
+
+  <div class="stagebox">
+    <canvas id="stage" width="1920" height="1080"></canvas>
+    <div class="badge-live"><span class="dot"></span>収録中</div>
+    <div class="countdown" id="cd">3</div>
+  </div>
+  <div class="warnbar" id="warn"></div>
+
+  <div class="card">
+    <h2><span class="n">2</span>収録</h2>
+    <div class="controls">
+      <button class="rec" id="btnRec" disabled>収録をはじめる</button>
+      <button id="btnPause" disabled>一時停止</button>
+      <button id="btnStop" disabled>おわる</button>
+      <span class="timer" id="timer">00:00</span>
+    </div>
+    <p class="meta" id="meta">スペースキー＝はじめる／一時停止　　esc ＝ おわる</p>
+    <label class="chk"><input type="checkbox" id="cbTx" checked>
+      <span>話した内容を文字にする<br>
+        <span class="hint" style="margin:0">Chrome の音声認識を使います（無料）。音声は Google のサーバーを通ります。
+        誤変換はあるので、下書きとして使ってください。</span></span></label>
+    <label class="chk"><input type="checkbox" id="cbCap" checked>
+      <span>その文字を、画面の下に字幕として出す<br>
+        <span class="hint" style="margin:0">動画に焼き込まれます。話した少しあとに出て、しばらくすると消えます。</span></span></label>
+    <label class="chk"><input type="checkbox" id="cbLong">
+      <span>長時間モード（20分を超えるとき）<br>
+        <span class="hint" style="margin:0">保存先を先に選んで、録りながら直接そのファイルに書き込みます。
+        そのかわり、撮ったあとその場で再生して確認することはできません。</span></span></label>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>見た目をととのえる</h2>
+    <label class="field">左上のタイトル（空にすると、ロゴごと出ません）
+      <input type="text" id="inTitle" value="つみき アプリ取り扱い説明動画" maxlength="40"
+             style="width:100%; display:block; margin-top:5px;"></label>
+    <div class="tune">
+      <div class="item">レイアウト
+        <div class="seg" id="segLayout">
+          <button data-v="auto" class="on">おまかせ</button>
+          <button data-v="pc">パソコン</button>
+          <button data-v="phone">スマホ</button>
+        </div>
+      </div>
+      <div class="item">顔の置きかた
+        <div class="seg" id="segPlace">
+          <button data-v="side" class="on">よこに並べる</button>
+          <button data-v="overlay">右下にかさねる</button>
+        </div>
+      </div>
+      <div class="item">顔の大きさ<span class="v" id="vFaceScale">100%</span>
+        <input type="range" id="rFaceScale" min="60" max="150" value="100"></div>
+      <div class="item">顔の角の丸み<span class="v" id="vFaceRadius">7%</span>
+        <input type="range" id="rFaceRadius" min="0" max="50" value="7"></div>
+      <div class="item">顔の位置（よこ）<span class="v" id="vFaceX">0</span>
+        <input type="range" id="rFaceX" min="-25" max="25" value="0"></div>
+      <div class="item">顔の位置（たて）<span class="v" id="vFaceY">0</span>
+        <input type="range" id="rFaceY" min="-25" max="25" value="0"></div>
+      <div class="item">顔の寄り（ズーム）<span class="v" id="vFaceZoom">1.00倍</span>
+        <input type="range" id="rFaceZoom" min="100" max="220" value="100"></div>
+      <div class="item">画面の角の丸み<span class="v" id="vDevRadius">22</span>
+        <input type="range" id="rDevRadius" min="0" max="48" value="22"></div>
+      <div class="item">背景の色
+        <div class="swatches" id="swBg">
+          <button data-v="#FFFFFF" class="on" style="background:#FFFFFF"></button>
+          <button data-v="#FAF8F4" style="background:#FAF8F4"></button>
+          <button data-v="#F4F2EE" style="background:#F4F2EE"></button>
+          <button data-v="#F1F3F2" style="background:#F1F3F2"></button>
+        </div>
+      </div>
+      <div class="item">かげ
+        <div class="seg" id="segShadow">
+          <button data-v="soft" class="on">やわらかい</button>
+          <button data-v="none">なし</button>
+        </div>
+      </div>
+    </div>
+    <label class="chk"><input type="checkbox" id="cbMirror">
+      <span>顔を左右反転する（鏡のように写す）</span></label>
+  </div>
+
+  <div class="card" id="result">
+    <h2><span class="n">4</span>できあがり</h2>
+    <p class="hint" id="resultNote"></p>
+    <video id="playback" controls playsinline></video>
+    <div class="row">
+      <button class="primary" id="btnSave">動画を保存する</button>
+      <button id="btnAgain">もう一度撮る</button>
+    </div>
+    <h2 style="margin-top:22px"><span class="n">＋</span>話した内容</h2>
+    <div class="tx" id="tx"><p class="empty">まだありません。</p></div>
+    <div class="row">
+      <button id="btnCopyTx">文章をコピー</button>
+      <button id="btnTxt">.txt で保存</button>
+      <button id="btnSrt">字幕(.srt)で保存</button>
+    </div>
+  </div>
+
+  <details>
+    <summary>使い方</summary>
+    <ol>
+      <li>撮りたいアプリのウィンドウを開いておく</li>
+      <li>「画面をえらぶ」→ <b>ウィンドウ</b> のタブから、そのアプリを選ぶ</li>
+      <li>「カメラとマイクを使う」を押して許可する</li>
+      <li>左上のタイトルを、その動画に合わせて書き換える（例：つみき あきま 使い方）</li>
+      <li>プレビューを見ながら、顔の大きさと位置をととのえる</li>
+      <li>「収録をはじめる」→ 3・2・1 のあと始まります</li>
+      <li>話しながら操作する。話した言葉は、そのまま画面の下に字幕として入ります</li>
+      <li>考える時間がほしいときは「一時停止」（動画は1本のままつながります）</li>
+      <li>「おわる」→ 保存</li>
+    </ol>
+    <p class="sub" style="margin:0 0 16px">
+      ※ 収録中は <b>この Chrome ウィンドウを隠さない</b>でください。<br>
+      ブラウザは、隠されると絵を描くのをやめてしまいます（カクカクした動画になります）。
+      隠れたときは画面に赤い警告が出ます。</p>
+  </details>
+
+  <details>
+    <summary>iPhone の画面を撮るには</summary>
+    <ol>
+      <li>iPhone を <b>ケーブルで Mac につなぐ</b>（「信頼しますか？」は「信頼」）</li>
+      <li>Mac で <b>QuickTime Player</b> を開く</li>
+      <li>メニューの ファイル →「<b>新規ムービー収録</b>」</li>
+      <li>録画ボタンの<b>となりの小さい ⌄ </b>を押して、カメラを <b>iPhone</b> に変える</li>
+      <li>iPhone の画面が Mac に映ります（<b>QuickTime の録画ボタンは押さない</b>）</li>
+      <li>てほどきに戻って「画面をえらぶ」→ ウィンドウ → QuickTime Player</li>
+    </ol>
+    <p class="sub" style="margin:0 0 16px">
+      ※ iPhone から出る音（アプリの効果音など）は録音されません。自分の声だけが入ります。<br>
+      ※ 縦長の画面だと、自動で「スマホ」のレイアウトに切り替わります。</p>
+  </details>
+
+  <details>
+    <summary>できあがったファイルについて</summary>
+    <ul>
+      <li>いまの Chrome では <b>.mp4</b> で保存されます。QuickTime でもそのまま開けるので、
+        お客様に渡すファイルとして使えます。</li>
+      <li>もし .webm になった場合は、QuickTime では開けません。Chrome にドラッグすれば再生できます。
+        渡すときは .mp4 に変換してください。</li>
+      <li>字幕は<b>動画に焼き込まれています</b>。別ファイルの字幕（.srt）も出せるので、
+        YouTube に載せるときはそちらを使うと文字を大きくできます。</li>
+      <li>読み上げた言葉のテキスト（.txt）は、そのまま文章の取扱説明書のもとになります。</li>
+    </ul>
+  </details>
+
+  <footer>つみき — てほどき</footer>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const W = 1920, H = 1080;
+
+  /* ---------- 対応チェック ---------- */
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || typeof MediaRecorder === 'undefined'){
+    $('#unsupported').classList.add('on');
+    $('#setup').style.opacity = .4;
+    $('#btnScreen').disabled = true; $('#btnCam').disabled = true;
+  }
+
+  /* ---------- 状態 ---------- */
+  const cv = $('#stage'), ctx = cv.getContext('2d', { alpha:false });
+  const screenVideo = document.createElement('video');
+  const camVideo = document.createElement('video');
+  [screenVideo, camVideo].forEach(v => { v.muted = true; v.playsInline = true; v.autoplay = true; });
+
+  let screenStream = null, camStream = null;
+  let recorder = null, chunks = [], mime = '', ext = 'webm';
+  let recState = 'idle';           // idle | counting | recording | paused
+  let startedAt = 0, pausedAccum = 0, pausedAt = 0;
+  let audioCtx = null, mixDest = null, wakeLock = null;
+  let fileWriter = null, writeChain = Promise.resolve();
+  let resultBlob = null, resultName = '';
+  let lastDuration = 0;
+
+  const cfg = {
+    layout:'auto', place:'side', faceScale:1.00, faceRadius:0.07,
+    faceX:0, faceY:0, faceZoom:1.00, devRadius:22,
+    bg:'#FFFFFF', shadow:'soft', mirror:false,
+    title:'つみき アプリ取り扱い説明動画', caption:true
+  };
+
+  /* 画面の割りつけ（1920x1080・お手本の図に合わせた実寸） */
+  const M = 40;            // 外側の余白
+  const TOP = 136;         // ヘッダーの下＝中身のはじまり
+  const TOP_NOTITLE = 48;  // タイトルなしのとき
+  const BAND_BOTTOM = 884; // 中身の下端（字幕ありのとき）
+  const CAP_TOP = 912, CAP_H = 124;
+  const FULL_BOTTOM = CAP_TOP + CAP_H;
+
+  /* ---------- 描画 ---------- */
+  function rr(c,x,y,w,h,r){
+    r = Math.max(0, Math.min(r, Math.min(w,h)/2));
+    if(c.roundRect){ c.beginPath(); c.roundRect(x,y,w,h,r); return; }
+    c.beginPath();
+    c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.quadraticCurveTo(x+w,y,x+w,y+r);
+    c.lineTo(x+w,y+h-r); c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    c.lineTo(x+r,y+h); c.quadraticCurveTo(x,y+h,x,y+h-r);
+    c.lineTo(x,y+r); c.quadraticCurveTo(x,y,x+r,y); c.closePath();
+  }
+  const ready = v => v.videoWidth > 0 && v.videoHeight > 0;
+  function fitSize(vw,vh,mw,mh){ const s = Math.min(mw/vw, mh/vh); return { w: vw*s, h: vh*s }; }
+
+  function metrics(){
+    const hasTitle = !!cfg.title.trim();
+    const top = hasTitle ? TOP : TOP_NOTITLE;
+    const bottom = cfg.caption ? BAND_BOTTOM : FULL_BOTTOM;
+    return { hasTitle, top, bottom, bandH: bottom - top };
+  }
+
+  function layout(){
+    const m = metrics();
+    if(!ready(screenVideo)) return { m, dev:null, face:null };
+    const vw = screenVideo.videoWidth, vh = screenVideo.videoHeight;
+    const portrait = vh > vw * 1.05;
+    const mode = cfg.layout === 'auto' ? (portrait ? 'phone' : 'pc') : cfg.layout;
+    const s = Math.round(m.bandH * (mode === 'phone' ? 0.66 : 0.535) * cfg.faceScale);
+    const gap = mode === 'phone' ? 64 : 24;
+
+    if(cfg.place === 'overlay'){
+      const d = fitSize(vw, vh, W - 2*M, m.bandH);
+      const so = Math.round(s * 0.74);
+      return { m,
+        dev:{ x:(W-d.w)/2, y:m.bottom-d.h, w:d.w, h:d.h },
+        face:{ x: W-M-28-so, y: m.bottom-28-so, s: so } };
+    }
+    const d = fitSize(vw, vh, W - 2*M - gap - s, m.bandH);
+    const total = d.w + gap + s, left = (W - total)/2;
+    return { m,
+      dev:{ x:left, y:m.bottom-d.h, w:d.w, h:d.h },
+      face:{ x:left + d.w + gap, y:m.bottom - s, s } };
+  }
+
+  function faceCrop(){
+    const vw = camVideo.videoWidth, vh = camVideo.videoHeight;
+    if(!vw) return null;
+    const size = Math.min(vw,vh) / cfg.faceZoom;
+    let x = vw/2 + cfg.faceX*vw - size/2;
+    let y = vh/2 + cfg.faceY*vh - size/2;
+    x = Math.max(0, Math.min(vw - size, x));
+    y = Math.max(0, Math.min(vh - size, y));
+    return { x, y, w:size, h:size };
+  }
+
+  function panel(x,y,w,h,radius){
+    if(cfg.shadow === 'soft'){
+      ctx.save();
+      ctx.shadowColor = 'rgba(42,38,32,.16)';
+      ctx.shadowBlur = 46; ctx.shadowOffsetY = 14;
+      ctx.fillStyle = '#ffffff';
+      rr(ctx,x,y,w,h,radius); ctx.fill();
+      ctx.restore();
+    }
+  }
+  function hairline(x,y,w,h,radius){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(36,35,33,.10)'; ctx.lineWidth = 2;
+    rr(ctx,x,y,w,h,radius); ctx.stroke();
+    ctx.restore();
+  }
+
+  /* 左上：つみきのしるし＋タイトル */
+  function drawHeader(){
+    const t = cfg.title.trim();
+    if(!t) return;
+    // 積み木の絵は 100 座標系で x26..74 / y28..74 に収まっている。その高さを MH に合わせる。
+    const MH = 64, k = MH / 46, MW = 48 * k;
+    const CY = 76, left = 70;
+    const ox = left - 26 * k, oy = (CY - MH/2) - 28 * k;
+    ctx.save();
+    ctx.strokeStyle = '#242321'; ctx.lineWidth = 6.4 * k;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    [[26,52],[52,52],[39,28]].forEach(([bx,by]) => {
+      rr(ctx, ox + bx*k, oy + by*k, 22*k, 22*k, 4.5*k); ctx.stroke();
+    });
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = '#242321';
+    ctx.font = '700 52px "Zen Maru Gothic", -apple-system, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t, left + MW + 58, CY + 3);
+    ctx.restore();
+  }
+
+  /* 下：話した言葉の字幕 */
+  let capText = '', capUntil = 0;
+  function wrapText(text, maxW, maxLines){
+    const out = []; let cur = '';
+    for(const ch of text){
+      const t = cur + ch;
+      if(cur && ctx.measureText(t).width > maxW){ out.push(cur); cur = ch; }
+      else cur = t;
+    }
+    if(cur) out.push(cur);
+    return out.slice(-maxLines);
+  }
+  function drawCaption(){
+    if(!cfg.caption) return;
+    const x = M, y = CAP_TOP, w = W - 2*M, h = CAP_H, r = 20;
+    ctx.save();
+    ctx.fillStyle = 'rgba(36,35,33,.055)';
+    rr(ctx,x,y,w,h,r); ctx.fill();
+    ctx.restore();
+    hairline(x,y,w,h,r);
+    const t = performance.now() < capUntil ? capText : '';
+    if(!t) return;
+    ctx.save();
+    ctx.fillStyle = '#242321';
+    ctx.font = '500 46px "Zen Maru Gothic", -apple-system, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const lines = wrapText(t, w - 110, 2), lh = 56;
+    const y0 = y + h/2 - (lines.length - 1) * lh/2;
+    lines.forEach((l,idx) => ctx.fillText(l, x + w/2, y0 + idx*lh));
+    ctx.restore();
+  }
+
+  let frameCount = 0, fpsWindow = performance.now(), fps = 0;
+
+  function render(){
+    ctx.fillStyle = cfg.bg;
+    ctx.fillRect(0,0,W,H);
+    drawHeader();
+
+    const L = layout();
+    if(L.dev){
+      const d = L.dev;
+      panel(d.x, d.y, d.w, d.h, cfg.devRadius);
+      ctx.save(); rr(ctx,d.x,d.y,d.w,d.h,cfg.devRadius); ctx.clip();
+      ctx.fillStyle = '#ffffff'; ctx.fill();
+      if(screenVideo.readyState >= 2) ctx.drawImage(screenVideo, d.x, d.y, d.w, d.h);
+      ctx.restore();
+      hairline(d.x, d.y, d.w, d.h, cfg.devRadius);
+
+      if(ready(camVideo)){
+        const f = L.face, fr = f.s * cfg.faceRadius, c = faceCrop();
+        panel(f.x, f.y, f.s, f.s, fr);
+        ctx.save(); rr(ctx,f.x,f.y,f.s,f.s,fr); ctx.clip();
+        ctx.fillStyle = '#ffffff'; ctx.fill();
+        if(cfg.mirror){
+          ctx.translate(f.x + f.s/2, 0); ctx.scale(-1,1); ctx.translate(-(f.x + f.s/2), 0);
+        }
+        if(camVideo.readyState >= 2 && c) ctx.drawImage(camVideo, c.x, c.y, c.w, c.h, f.x, f.y, f.s, f.s);
+        ctx.restore();
+        hairline(f.x, f.y, f.s, f.s, fr);
+      }
+    } else {
+      ctx.fillStyle = '#CFCAC2';
+      ctx.font = '600 40px "Zen Maru Gothic", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('「画面をえらぶ」を押すと、ここに映ります', W/2, (L.m.top + L.m.bottom)/2);
+      ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+    }
+
+    drawCaption();
+
+    frameCount++;
+    const now = performance.now();
+    if(now - fpsWindow >= 1000){
+      fps = frameCount * 1000 / (now - fpsWindow);
+      frameCount = 0; fpsWindow = now;
+      checkHealth();
+    }
+  }
+  window.__tehodokiRender = render;   // 動作確認用
+
+  /* rAF と Worker タイマーの二本立てで描画を回す（片方が止まっても続くように） */
+  let lastDraw = 0;
+  function tick(){
+    const now = performance.now();
+    if(now - lastDraw >= 30){ lastDraw = now; render(); }
+  }
+  (function loop(){ tick(); requestAnimationFrame(loop); })();
+  try{
+    const src = "let id=null;onmessage=e=>{clearInterval(id);if(e.data>0)id=setInterval(()=>postMessage(0),e.data);};";
+    const w = new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})));
+    w.onmessage = tick;
+    w.postMessage(30);
+  }catch(e){}
+
+  /* ---------- 隠れ検知 ---------- */
+  function checkHealth(){
+    if(recState !== 'recording') { setWarn(''); return; }
+    if(document.hidden){
+      setWarn('⚠️ この Chrome ウィンドウが隠れています。前に出してください。このままだと動画がカクカクになります。');
+    } else if(fps < 15){
+      setWarn('⚠️ 描画が遅れています（' + fps.toFixed(0) + ' コマ/秒）。ほかのアプリを閉じるか、ウィンドウを前に出してください。');
+    } else {
+      setWarn('');
+    }
+  }
+  function setWarn(msg){
+    const el = $('#warn');
+    if(msg){ el.textContent = msg; el.classList.add('on'); }
+    else { el.classList.remove('on'); }
+  }
+  document.addEventListener('visibilitychange', () => { checkHealth(); if(document.hidden && recState==='recording') beep(300,0.12); });
+
+  /* ---------- 入力の取得 ---------- */
+  $('#btnScreen').addEventListener('click', async () => {
+    try{
+      const s = await navigator.mediaDevices.getDisplayMedia({
+        video:{ frameRate:{ ideal:30, max:30 } }, audio:true
+      });
+      if(screenStream) screenStream.getTracks().forEach(t => t.stop());
+      screenStream = s;
+      screenVideo.srcObject = s;
+      await screenVideo.play().catch(()=>{});
+      s.getVideoTracks()[0].addEventListener('ended', () => {
+        if(recState === 'recording' || recState === 'paused') stopRec();
+        $('#okScreen').textContent = '共有が止まりました。もう一度えらんでください';
+        screenStream = null; screenVideo.srcObject = null; updateButtons();
+      });
+      const label = s.getVideoTracks()[0].label || 'えらびました';
+      $('#okScreen').textContent = '✓ ' + label;
+      $('#btnScreen').textContent = '画面をえらび直す';
+      updateButtons();
+    }catch(err){
+      if(err && err.name !== 'NotAllowedError') $('#okScreen').textContent = 'えらべませんでした（' + err.name + '）';
+    }
+  });
+
+  async function openCam(){
+    const vId = $('#selCam').value, aId = $('#selMic').value;
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: Object.assign({ width:{ideal:1920}, height:{ideal:1080}, frameRate:{ideal:30} },
+                           vId ? { deviceId:{ exact:vId } } : {}),
+      audio: Object.assign({ echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+                           aId ? { deviceId:{ exact:aId } } : {})
+    });
+    if(camStream) camStream.getTracks().forEach(t => t.stop());
+    camStream = s;
+    camVideo.srcObject = s;
+    await camVideo.play().catch(()=>{});
+    $('#okCam').textContent = '✓ 使えます';
+    $('#btnCam').textContent = 'カメラを選び直す';
+    await fillDevices();
+    $('#fCam').hidden = false; $('#fMic').hidden = false;
+    updateButtons();
+  }
+  $('#btnCam').addEventListener('click', () => {
+    openCam().catch(err => { $('#okCam').textContent = '使えませんでした（' + err.name + '）'; });
+  });
+  $('#selCam').addEventListener('change', () => openCam().catch(()=>{}));
+  $('#selMic').addEventListener('change', () => openCam().catch(()=>{}));
+
+  async function fillDevices(){
+    const ds = await navigator.mediaDevices.enumerateDevices();
+    const fill = (sel, kind) => {
+      const cur = sel.value;
+      sel.innerHTML = '';
+      ds.filter(d => d.kind === kind).forEach((d,i) => {
+        const o = document.createElement('option');
+        o.value = d.deviceId; o.textContent = d.label || (kind === 'videoinput' ? 'カメラ ' : 'マイク ') + (i+1);
+        sel.appendChild(o);
+      });
+      const track = camStream && camStream.getTracks().find(t => t.kind === (kind === 'videoinput' ? 'video' : 'audio'));
+      const id = track && track.getSettings ? track.getSettings().deviceId : '';
+      sel.value = cur || id || (sel.options[0] ? sel.options[0].value : '');
+    };
+    fill($('#selCam'), 'videoinput');
+    fill($('#selMic'), 'audioinput');
+  }
+
+  function updateButtons(){
+    const ok = !!screenStream && !!camStream;
+    $('#btnRec').disabled = !ok || recState !== 'idle';
+  }
+
+  /* ---------- 音 ---------- */
+  function beep(freq, dur){
+    try{
+      const a = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx = a;
+      const o = a.createOscillator(), g = a.createGain();
+      o.frequency.value = freq; o.type = 'sine';
+      g.gain.setValueAtTime(0.0001, a.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.16, a.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+      o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + dur + 0.02);
+    }catch(e){}
+  }
+
+  /* ---------- 形式えらび ---------- */
+  function pickMime(){
+    const cands = [
+      ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','mp4'],
+      ['video/mp4','mp4'],
+      ['video/webm;codecs=vp9,opus','webm'],
+      ['video/webm;codecs=vp8,opus','webm'],
+      ['video/webm','webm']
+    ];
+    for(const [m,e] of cands){ if(MediaRecorder.isTypeSupported(m)) return [m,e]; }
+    return ['','webm'];
+  }
+
+  /* ---------- 収録 ---------- */
+  const elapsed = () => (recState === 'paused' ? pausedAt : performance.now()) - startedAt - pausedAccum;
+  const pad = (n,l) => String(n).padStart(l,'0');
+  const fmt = ms => { const t = Math.max(0, Math.floor(ms/1000)); return pad(Math.floor(t/60),2) + ':' + pad(t%60,2); };
+  const srtT = ms => { ms = Math.max(0,ms); const t = Math.floor(ms/1000);
+    return pad(Math.floor(t/3600),2)+':'+pad(Math.floor(t%3600/60),2)+':'+pad(t%60,2)+','+pad(Math.floor(ms%1000),3); };
+
+  function stamp(){
+    const d = new Date(), p = n => pad(n,2);
+    return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  async function startRec(){
+    if(recState !== 'idle' || !screenStream || !camStream) return;
+
+    [mime, ext] = pickMime();
+    resultName = 'てほどき-' + stamp() + '.' + ext;
+    fileWriter = null; writeChain = Promise.resolve(); chunks = []; resultBlob = null;
+
+    if($('#cbLong').checked && window.showSaveFilePicker){
+      try{
+        const handle = await window.showSaveFilePicker({
+          suggestedName: resultName,
+          types:[{ description:'動画', accept:{ ['video/'+ext]:['.'+ext] } }]
+        });
+        fileWriter = await handle.createWritable();
+      }catch(e){ return; }   // キャンセル
+    }
+
+    // 音をまぜる（マイク＋もしあれば画面の音）
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') await audioCtx.resume();
+    mixDest = audioCtx.createMediaStreamDestination();
+    const micTracks = camStream.getAudioTracks();
+    if(micTracks.length){
+      audioCtx.createMediaStreamSource(new MediaStream([micTracks[0]])).connect(mixDest);
+    }
+    const sysTracks = screenStream.getAudioTracks();
+    if(sysTracks.length){
+      const g = audioCtx.createGain(); g.gain.value = 0.85;
+      audioCtx.createMediaStreamSource(new MediaStream([sysTracks[0]])).connect(g).connect(mixDest);
+    }
+
+    const canvasStream = cv.captureStream(30);
+    const mixed = new MediaStream([...canvasStream.getVideoTracks(), ...mixDest.stream.getAudioTracks()]);
+
+    recorder = new MediaRecorder(mixed, Object.assign(
+      { videoBitsPerSecond: 5000000, audioBitsPerSecond: 128000 },
+      mime ? { mimeType: mime } : {}
+    ));
+    recorder.ondataavailable = e => {
+      if(!e.data || !e.data.size) return;
+      if(fileWriter) writeChain = writeChain.then(() => fileWriter.write(e.data)).catch(()=>{});
+      else chunks.push(e.data);
+    };
+    recorder.onstop = finishRec;
+
+    // 3・2・1
+    recState = 'counting';
+    document.body.classList.add('counting');
+    updateButtons();
+    for(let i = 3; i >= 1; i--){
+      $('#cd').textContent = i; beep(660, 0.10);
+      await new Promise(r => setTimeout(r, 900));
+      if(recState !== 'counting'){ document.body.classList.remove('counting'); return; }
+    }
+    document.body.classList.remove('counting');
+    beep(990, 0.20);
+
+    try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+
+    startedAt = performance.now(); pausedAccum = 0; pausedAt = 0;
+    lines = []; interim = ''; capText = ''; capUntil = 0; renderTx();
+    recorder.start(1000);
+    recState = 'recording';
+    document.body.classList.add('recording');
+    if($('#cbTx').checked) startSR();
+    $('#result').classList.remove('on');
+    $('#btnRec').disabled = true; $('#btnPause').disabled = false; $('#btnStop').disabled = false;
+    $('#btnPause').textContent = '一時停止';
+    tickTimer();
+  }
+
+  function pauseRec(){
+    if(recState === 'recording'){
+      recorder.pause(); pausedAt = performance.now(); recState = 'paused';
+      stopSR(); setWarn('');
+      $('#btnPause').textContent = 'つづける';
+      document.body.classList.remove('recording');
+    } else if(recState === 'paused'){
+      pausedAccum += performance.now() - pausedAt;
+      recorder.resume(); recState = 'recording';
+      if($('#cbTx').checked) startSR();
+      $('#btnPause').textContent = '一時停止';
+      document.body.classList.add('recording');
+      beep(880, 0.12);
+    }
+  }
+
+  function stopRec(){
+    if(recState === 'counting'){ recState = 'idle'; document.body.classList.remove('counting'); updateButtons(); return; }
+    if(recState !== 'recording' && recState !== 'paused') return;
+    lastDuration = elapsed();
+    stopSR();
+    try{ recorder.stop(); }catch(e){}
+    recState = 'idle';
+    document.body.classList.remove('recording');
+    setWarn('');
+    beep(440, 0.22);
+    if(wakeLock){ try{ wakeLock.release(); }catch(e){} wakeLock = null; }
+    $('#btnPause').disabled = true; $('#btnStop').disabled = true;
+    updateButtons();
+  }
+
+  async function finishRec(){
+    const secs = Math.max(1, Math.round(lastDuration/1000));
+    if(fileWriter){
+      await writeChain;
+      try{ await fileWriter.close(); }catch(e){}
+      fileWriter = null;
+      $('#resultNote').textContent = '選んだ場所に保存しました（' + resultName + '／' + fmt(secs*1000) + '）。長時間モードなので、ここでの再生確認はできません。';
+      $('#playback').style.display = 'none';
+      $('#btnSave').style.display = 'none';
+    } else {
+      resultBlob = new Blob(chunks, { type: mime || 'video/webm' });
+      const mb = (resultBlob.size/1048576).toFixed(1);
+      $('#resultNote').textContent = fmt(secs*1000) + '／' + mb + 'MB／' + ext.toUpperCase() +
+        (ext === 'webm' ? '（QuickTime では開けません。Chrome にドラッグすると再生できます）' : '');
+      const pb = $('#playback');
+      pb.style.display = 'block';
+      pb.src = URL.createObjectURL(resultBlob);
+      $('#btnSave').style.display = '';
+    }
+    $('#result').classList.add('on');
+    $('#result').scrollIntoView({ behavior:'smooth', block:'start' });
+    renderTx();
+  }
+
+  function tickTimer(){
+    if(recState !== 'recording' && recState !== 'paused'){ $('#timer').textContent = '00:00'; return; }
+    $('#timer').textContent = fmt(elapsed());
+    setTimeout(tickTimer, 250);
+  }
+
+  $('#btnRec').addEventListener('click', () => startRec());
+  $('#btnPause').addEventListener('click', pauseRec);
+  $('#btnStop').addEventListener('click', stopRec);
+  $('#btnAgain').addEventListener('click', () => {
+    $('#result').classList.remove('on');
+    $('#playback').removeAttribute('src');
+    updateButtons();
+    window.scrollTo({ top:0, behavior:'smooth' });
+  });
+  $('#btnSave').addEventListener('click', () => { if(resultBlob) dl(resultBlob, resultName); });
+
+  function dl(blob, name){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  }
+
+  document.addEventListener('keydown', e => {
+    if(e.target.matches('input, select, textarea')) return;
+    if(e.code === 'Space'){
+      e.preventDefault();
+      if(recState === 'idle'){ if(!$('#btnRec').disabled) startRec(); }
+      else pauseRec();
+    } else if(e.key === 'Escape'){
+      e.preventDefault(); stopRec();
+    }
+  });
+
+  /* ---------- 文字起こし ---------- */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let sr = null, srWanted = false, lines = [], interim = '', segStart = null;
+  if(!SR){ $('#cbTx').checked = false; $('#cbTx').disabled = true;
+           $('#cbCap').checked = false; $('#cbCap').disabled = true; cfg.caption = false;
+           $('#cbTx').parentElement.querySelector('.hint').textContent = 'このブラウザでは使えません（Chrome をお使いください）。'; }
+
+  function startSR(){
+    if(!SR) return;
+    srWanted = true;
+    try{
+      sr = new SR();
+      sr.lang = 'ja-JP'; sr.continuous = true; sr.interimResults = true;
+      sr.onresult = e => {
+        if(segStart === null) segStart = elapsed();
+        let itr = '';
+        for(let i = e.resultIndex; i < e.results.length; i++){
+          const r = e.results[i];
+          if(r.isFinal){
+            const t = (r[0].transcript || '').trim();
+            if(t){ lines.push({ s:segStart, e:elapsed(), t }); }
+            segStart = null;
+          } else {
+            itr += r[0].transcript;
+          }
+        }
+        interim = itr;
+        const shown = itr || (lines.length ? lines[lines.length-1].t : '');
+        if(shown){ capText = shown; capUntil = performance.now() + 4500; }
+        renderTx();
+      };
+      sr.onerror = () => {};
+      sr.onend = () => { if(srWanted && recState === 'recording'){ try{ sr.start(); }catch(e){} } };
+      sr.start();
+    }catch(e){}
+  }
+  function stopSR(){
+    srWanted = false; interim = '';
+    if(sr){ try{ sr.stop(); }catch(e){} sr = null; }
+    renderTx();
+  }
+  function renderTx(){
+    const box = $('#tx');
+    if(!lines.length && !interim){ box.innerHTML = '<p class="empty">まだありません。</p>'; return; }
+    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    let html = lines.map(l => '<p><span class="t">' + fmt(l.s) + '</span>' + esc(l.t) + '</p>').join('');
+    if(interim) html += '<p class="interim"><span class="t">' + fmt(elapsed()) + '</span>' + esc(interim) + '…</p>';
+    box.innerHTML = html;
+    box.scrollTop = box.scrollHeight;
+  }
+  const txText = () => lines.map(l => '[' + fmt(l.s) + '] ' + l.t).join('\n');
+  const srtText = () => lines.map((l,i) => {
+    const end = Math.max(l.e, l.s + 800);
+    const next = lines[i+1];
+    const e2 = next ? Math.min(end, next.s - 40) : end;
+    return (i+1) + '\n' + srtT(l.s) + ' --> ' + srtT(Math.max(l.s + 400, e2)) + '\n' + l.t + '\n';
+  }).join('\n');
+
+  $('#btnCopyTx').addEventListener('click', async () => {
+    try{ await navigator.clipboard.writeText(txText()); $('#btnCopyTx').textContent = 'コピーしました'; }
+    catch(e){ $('#btnCopyTx').textContent = 'コピーできませんでした'; }
+    setTimeout(() => { $('#btnCopyTx').textContent = '文章をコピー'; }, 1600);
+  });
+  $('#btnTxt').addEventListener('click', () => dl(new Blob([txText()], { type:'text/plain;charset=utf-8' }), 'てほどき-' + stamp() + '.txt'));
+  $('#btnSrt').addEventListener('click', () => dl(new Blob([srtText()], { type:'text/plain;charset=utf-8' }), 'てほどき-' + stamp() + '.srt'));
+
+  /* ---------- 調整 UI ---------- */
+  function seg(id, key, after){
+    const box = $(id);
+    box.addEventListener('click', e => {
+      const b = e.target.closest('button'); if(!b) return;
+      box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      cfg[key] = b.dataset.v; if(after) after();
+    });
+  }
+  seg('#segLayout','layout'); seg('#segPlace','place'); seg('#segShadow','shadow');
+  $('#swBg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    $('#swBg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    cfg.bg = b.dataset.v;
+  });
+  function range(id, out, key, f, fmtv){
+    const r = $(id), o = $(out);
+    const upd = () => { cfg[key] = f(+r.value); o.textContent = fmtv(+r.value); };
+    r.addEventListener('input', upd); upd();
+  }
+  range('#rFaceScale','#vFaceScale','faceScale', v => v/100, v => v + '%');
+  range('#rFaceRadius','#vFaceRadius','faceRadius', v => v/100, v => v + '%');
+  range('#rFaceX','#vFaceX','faceX', v => v/100, v => (v > 0 ? '＋' : '') + v);
+  range('#rFaceY','#vFaceY','faceY', v => v/100, v => (v > 0 ? '＋' : '') + v);
+  range('#rFaceZoom','#vFaceZoom','faceZoom', v => v/100, v => (v/100).toFixed(2) + '倍');
+  range('#rDevRadius','#vDevRadius','devRadius', v => v, v => String(v));
+  $('#cbMirror').addEventListener('change', e => { cfg.mirror = e.target.checked; });
+
+  $('#inTitle').addEventListener('input', e => { cfg.title = e.target.value; });
+  cfg.title = $('#inTitle').value;
+
+  function syncCap(){
+    const on = $('#cbTx').checked;
+    $('#cbCap').disabled = !on;
+    cfg.caption = on && $('#cbCap').checked;
+  }
+  $('#cbTx').addEventListener('change', syncCap);
+  $('#cbCap').addEventListener('change', syncCap);
+  syncCap();
+
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(() => render());
+
+  window.__tehodokiDebug = { screenVideo, camVideo, cfg, layout,   // 動作確認用
+    cap: t => { capText = t; capUntil = performance.now() + 6e5; },
+    setStreams: (sc, cm) => { screenStream = sc; camStream = cm; updateButtons(); },
+    result: () => ({ blob: resultBlob, name: resultName, mime, secs: Math.round(lastDuration/1000) }) };
+
+  render();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
