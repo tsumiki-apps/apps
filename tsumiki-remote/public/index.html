@@ -272,6 +272,27 @@
   #out .dlab{flex:1 1 auto;min-width:0}
   #out .ddesc{display:block;margin-top:2px;font-size:10.5px;color:var(--dim);line-height:1.5}
 
+  /* Claude が「どれにしますか」と聞くパネル（AskUserQuestion・2026-08-24）。
+     角丸の箱ではないので別に組み直すが、見た目は .dlg と揃える（同じ「返答待ち」の意味）*/
+  #out .dtabs{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}
+  #out .dtabs span{font-size:10px;padding:2px 8px;border-radius:999px;
+    background:#2a303a;color:#aab2c0}
+  #out .dtabs span.on{background:rgba(245,158,11,.28);color:#fdf3e2}
+  /* 複数選べる質問の入り／切り。押した結果がその場で分かるよう、札そのものを塗る */
+  #out .dchk{flex:0 0 auto;width:17px;height:17px;border-radius:5px;margin-top:1px;
+    border:1px solid #4b525e;color:#1a1205;font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  /* いまカーソルが乗っている行。選んだ印ではないので控えめに。
+     ⚠️ 選んだ印（.on）より**先**に書くこと。後に書くと、選んでいてカーソルも
+     乗っている行だけ枠が灰色に戻り、隣の選んだ行より選ばれていないように見える */
+  #out .dopt.cur{border-color:#6b7280}
+  #out .dopt.on{border-color:#f59e0b;background:rgba(245,158,11,.16)}
+  #out .dopt.on .dchk{background:#f59e0b;border-color:#f59e0b}
+  #out .dgo{justify-content:center;border-color:#f59e0b;background:rgba(245,158,11,.22);
+    font-weight:700}
+  #out .dsub{min-height:32px;font-size:11px;color:var(--dim)}
+  #out .dhint{margin:7px 0 0;font-size:10.5px;color:var(--dim);line-height:1.5}
+
   /* 下端は iPhone のホームバー領域（触れない帯）。そこに 8px を足すと
      黒い余りが増えるだけなので、max() で「多い方」を使うだけにする */
   /* position:relative ＝ トーストの位置の基準。footer が伸び縮みしても
@@ -1676,6 +1697,167 @@
     if (at < text.length) parent.appendChild(document.createTextNode(text.slice(at)));
   }
 
+  // ------------------------------- Claude が「どれにしますか」と聞くパネル（2026-08-24）
+  //
+  // 許可ダイアログ（╭─╮ の角丸の箱）とは**別の作り**。外枠が無く、
+  // 「←  ☐ 質問1  ☐ 質問2  ✔ Submit  →」というタブの行で始まる。
+  // takeDialog は角丸の箱しか拾わないので、この画面では押せる選択肢が
+  // 一つも作られていなかった＝Kodai の「押しても選ばれない」の正体（2026-08-24 実測）。
+  //
+  // 実機に tmux でキーを送って測った結果：
+  //  ・数字キーは**効くときと効かないときがある**。カーソルが自由記述の行
+  //    （Type something / Chat about this）に乗っていると、数字はその入力欄に
+  //    吸い込まれて選択が動かない。だから数字は使わない。
+  //  ・↑↓ はどの行に乗っていても必ず効き、Enter がその行の決定。
+  //    ＝画面から「いまカーソルがどこか（❯）」を読み、目当ての行まで動かして Enter。
+  //  ・単一選択は Enter でそのまま次の質問へ進む。
+  //  ・複数選択は行頭が [ ] で、Enter は入り／切りの切り替え。
+  //    最後に**番号の無い「Submit」の行**まで下りて Enter＝確定。
+  //  ・全部答えると「Review your answers」の確認画面に変わる（ここも同じ操作）。
+  var RE_ASK_TAB  = /^\s*←\s/;
+  var RE_ASK_FOOT = /Enter to select|Esc to cancel/;
+  var RE_ASK_OPT  = /^(\s*)(❯)?\s*(\d{1,2})\.\s+(?:(\[[^\]]?\])\s*)?(.*)$/;
+  var RE_ASK_GO   = /^(\s*)(❯)?\s*Submit\s*$/;
+  var RE_ASK_CHK  = /[✔✓xX]/;
+  // 端末に出るのは英語のまま。決まり文句だけ日本語に置き換える（形が変わったら原文が出る）
+  var ASK_WORDS = {
+    'Type something.': '自分の言葉で書く',
+    'Type something': '自分の言葉で書く',
+    'Chat about this': 'これについて相談する',
+    'Submit answers': 'この内容で送る',
+    'Cancel': 'やめる',
+    'Review your answers': '回答の確認',
+    'Ready to submit your answers?': 'この内容で送りますか？',
+    '⚠ You have not answered all questions': '⚠ まだ答えていない質問があります'
+  };
+  function askWord(s) { return ASK_WORDS[s] || ASK_WORDS[s.replace(/\s+$/, '')] || s; }
+
+  // i 行目からパネルが始まっていれば、タブの行・本文・終わりの行番号を返す
+  function takeAskPanel(lines, i) {
+    if (!RE_ASK_TAB.test(lines[i])) return null;
+    // タブの行は、質問が多い／端末が狭いと折り返る。→ が出るまで束ねる
+    var tab = lines[i], t = i;
+    for (var k = 0; k < 3 && tab.indexOf('→') < 0 && t + 1 < lines.length; k++) tab += ' ' + lines[++t];
+    if (tab.indexOf('Submit') < 0) return null;
+    var body = [], end = t, foot = false;
+    for (var j = t + 1; j < lines.length; j++) {
+      if (RE_ASK_FOOT.test(lines[j])) { foot = true; end = j; break; }
+      // Claude Code の地の文（⏺ の発言・⎿ の結果）が混じったら、それはパネルではない。
+      // 履歴に「←  ☒ … ✔ Submit  →」という**文字列**が流れているだけ（撮った画面を
+      // 貼ったときに実際に起きた）。ここで止めないと、後ろ90行を丸ごと飲み込む
+      if (RE_SAY.test(lines[j]) || lines[j].indexOf('⎿') >= 0) return null;
+      body.push(lines[j]);
+      if (body.length > 40) return null;             // 本物のパネルはこんなに長くない
+      end = j;
+    }
+    // 下の案内（「Enter to select · … · Esc」「to cancel」）は2行に割れていることがある
+    if (foot) while (end + 1 < lines.length && lines[end + 1].trim() && !RE_ASK_TAB.test(lines[end + 1])
+                     && dispw(lines[end + 1]) < 40) end++;
+    // 選択肢とプレビューが左右に並ぶ形（2026-08-16 対応ぶん）は、そちらに任せる。
+    // ここで丸ごと抱え込むと、右の絵まで飲み込んで前より悪くなる
+    for (var m = 0; m < body.length; m++) if (takeSideBySide(body, m)) return null;
+    var it = askItems(body);
+    if (!it.rows.length) return null;                 // 選べる行が無ければパネルではない
+    return { end: end, tab: tab, items: it };
+  }
+
+  // 本文を「文章」と「押せる行」に分ける。押せる行は**画面に出ている順**に並べる＝
+  // ↑↓ を何回打てばそこへ行けるかが、この並びの差でそのまま出る
+  function askItems(body) {
+    var rows = [], paras = [], cur = null, para = null, tail = false;
+    function flush() { if (para) { paras.push(para); para = null; } }
+    body.forEach(function (raw) {
+      var s = raw.replace(/^\s*│\s?/, '');           // 質問文に付く左の縦線を落とす
+      if (RE_RULE.test(s)) { cur = null; flush(); tail = true; return; }
+      if (!s.trim()) { cur = null; flush(); return; }
+      var m = RE_ASK_OPT.exec(s);
+      if (m) {
+        flush();
+        rows.push(cur = { k: 'opt', n: m[3], at: !!m[2], box: m[4] || '',
+          on: !!m[4] && RE_ASK_CHK.test(m[4]), text: askWord((m[5] || '').trim()),
+          desc: '', tail: tail });
+        return;
+      }
+      var g = RE_ASK_GO.exec(s);
+      if (g) { flush(); rows.push(cur = { k: 'go', at: !!g[2], text: 'これで決定', desc: '', tail: tail }); return; }
+      if (cur) { cur.desc = joinWrapped(cur.desc, s.trim()); return; }
+      // 確認画面の「● 質問…」「→ 答え」は別の行として立てる（つなぐと読めなくなる）
+      if (para && !/^[●→⚠]/.test(s.trim())) { para = joinWrapped(para, s.trim()); return; }
+      flush();
+      para = s.trim();
+    });
+    flush();
+    return { rows: rows, paras: paras };
+  }
+
+  function askPanelEl(a) {
+    var box = document.createElement('div');
+    box.className = 'dlg askp';
+    // いまカーソルが乗っている行の番号。これが分からないと ↑↓ を何回打つか決められない
+    var at = -1;
+    a.items.rows.forEach(function (r, k) { if (r.at) at = k; });
+    box.dataset.cur = at;
+
+    // 上のタブ＝質問がいくつあって、どこまで答えたか。1問だけのときは出さない
+    var chips = [], mm, re = /([☐☒])\s*([^☐☒✔→]+)/g;
+    while ((mm = re.exec(a.tab))) chips.push({ on: mm[1] === '☒', t: mm[2].trim() });
+    if (chips.length > 1) {
+      var tb = document.createElement('div');
+      tb.className = 'dtabs';
+      chips.forEach(function (c, k) {
+        var sp = document.createElement('span');
+        if (c.on) sp.className = 'on';
+        sp.textContent = (c.on ? '✓ ' : (k + 1) + '. ') + c.t;
+        tb.appendChild(sp);
+      });
+      box.appendChild(tb);
+    }
+
+    a.items.paras.forEach(function (t) {
+      var p = document.createElement('div');
+      p.className = 'dtx';
+      addText(p, askWord(t));
+      box.appendChild(p);
+    });
+
+    var multi = a.items.rows.some(function (r) { return r.k === 'go'; });
+    a.items.rows.forEach(function (r, k) {
+      var b = document.createElement('button');
+      b.className = 'aopt dopt' + (r.k === 'go' ? ' dgo' : '') + (r.tail ? ' dsub' : '')
+        + (r.on ? ' on' : '') + (r.at ? ' cur' : '');
+      b.dataset.mv = k;
+      b.dataset.label = r.text;
+      if (r.k === 'go') { b.textContent = r.text; box.appendChild(b); return; }
+      var mark = document.createElement('span');
+      if (r.box) { mark.className = 'dchk'; mark.textContent = r.on ? '✓' : ''; }
+      else { mark.className = 'dnum'; mark.textContent = r.n; }
+      var lab = document.createElement('span');
+      lab.className = 'dlab';
+      lab.textContent = r.text;
+      if (r.desc) {
+        var dd = document.createElement('span');
+        dd.className = 'ddesc';
+        dd.textContent = r.desc;
+        lab.appendChild(dd);
+      }
+      b.appendChild(mark);
+      b.appendChild(lab);
+      box.appendChild(b);
+    });
+
+    // 全部答えたあとに出る確認画面（Review your answers）は、案内も別のことを言う
+    var review = a.items.paras.some(function (t) { return t.indexOf('Review your answers') === 0; });
+    var h = document.createElement('div');
+    h.className = 'dhint';
+    h.textContent = review
+      ? '答えた内容の確認です。よければ「この内容で送る」を押してください'
+      : multi
+        ? 'いくつでも選べます。選び終わったら「これで決定」を押してください'
+        : '押すとその場で選ばれ、次の質問へ進みます';
+    box.appendChild(h);
+    return box;
+  }
+
   function renderScreen(text) {
     // 桁数は「取りに行ったとき」に決まるが、起動直後は保存しておいた画面を先に出す＝
     // まだ分かっていない。そのときは今この場で測る（同じ端末・同じ幅なので前回と同じ値になる）
@@ -1695,6 +1877,16 @@
       sayBtn = null; sayLines = null;
     }
     for (var i = 0; i < lines.length; i++) {
+      // 質問パネル（AskUserQuestion）が先。タブの行で始まるので取り違えは起きない
+      var ask = takeAskPanel(lines, i);
+      if (ask) {
+        closeSay(); block = null; cls = ''; prev = '';
+        var ae = askPanelEl(ask);
+        frag.appendChild(ae);
+        dlgs.push(ae);
+        i = ask.end;
+        continue;
+      }
       var dlg = takeDialog(lines, i);
       if (dlg) {
         // 枠は「かたまり」の外に出す。中で色を塗り直すので、外側の帯に乗せると二重になる。
@@ -1878,6 +2070,22 @@
       .catch(function (e) { toast('送信失敗: ' + e.message); });
   }
 
+  // キーを順番に送る。質問パネルの「↓を3回打って Enter」のように、
+  // 何回か動かしてから決める操作に使う。まとめて投げると tmux が取りこぼすので1つずつ
+  function sendKeys(list) {
+    if (!current) return toast('送り先が選ばれていません');
+    return list.reduce(function (p, k) {
+      return p.then(function () {
+        return api('/api/key', { method: 'POST', body: JSON.stringify({ name: current, key: k }) });
+      });
+    }, Promise.resolve()).then(function () {
+      // 端末が描き直すのを待って2回取りに行く。1回だけだと、押した結果が
+      // 次の巡回（1.5秒後）まで画面に出ず「効かなかった」ように見える
+      setTimeout(function () { tick(true); }, 250);
+      setTimeout(function () { tick(true); }, 900);
+    }).catch(function (e) { toast('送信失敗: ' + e.message); });
+  }
+
   // 添えた画像（札）。送信の瞬間に「パス + 半角スペース + 本文」に組み立てる
   var atts = [];
 
@@ -1921,6 +2129,23 @@
   el.out.addEventListener('click', function (e) {
     var b = e.target.closest('.dopt');
     if (!b || b.disabled) return;
+
+    // 質問パネルの行。数字は自由記述の欄に吸い込まれることがあるので使わず、
+    // ❯ の位置から目当ての行まで ↑↓ で動かして Enter を打つ（2026-08-24 実測）
+    if (b.classList.contains('aopt')) {
+      var panel = b.parentNode;
+      var from = parseInt(panel.dataset.cur, 10);
+      var to = parseInt(b.dataset.mv, 10);
+      if (isNaN(from) || from < 0) return toast('いまどこが選ばれているか読めません。Mac 側で操作してください');
+      var keys = [];
+      for (var n = Math.abs(to - from); n > 0; n--) keys.push(to > from ? 'Down' : 'Up');
+      keys.push('Enter');
+      panel.dataset.cur = to;          // 送った直後の位置。次に画面を取れば本物に直る
+      sendKeys(keys);
+      toast('「' + (b.dataset.label || '') + '」を押しました');
+      return;
+    }
+
     sendText(b.dataset.opt, true);
     toast(b.dataset.opt + '「' + (b.dataset.label || '') + '」を選びました');
   });
