@@ -96,7 +96,7 @@
   @media (min-width:1080px){
     main{
       max-width:none; padding:22px 24px calc(env(safe-area-inset-bottom) + 44px); gap:18px;
-      grid-template-columns:minmax(320px,380px) minmax(0,1fr);
+      grid-template-columns:minmax(330px,1fr) minmax(0,1.9fr);   /* 幅に応じて全部の列が伸びる */
       grid-template-areas:
         "timer days"
         "sum   rec"
@@ -105,16 +105,22 @@
     #timerCard{grid-area:timer;} #sumCard{grid-area:sum;} #daysCard{grid-area:days;}
     #recCard{grid-area:rec;} #projCard{grid-area:proj;}
     .topbar{padding-left:24px; padding-right:24px;}
+    /* 記録がまだ1件も無いときは、グラフと記録のカードが出ない＝真ん中が空くので1列に寄せる */
+    main.bare{
+      grid-template-columns:minmax(0,620px); grid-template-areas:"timer" "sum" "proj";
+      justify-content:center;
+    }
   }
   @media (min-width:1440px){
     main{
-      grid-template-columns:minmax(320px,380px) minmax(0,1fr) minmax(300px,360px);
+      grid-template-columns:minmax(330px,1fr) minmax(0,2.1fr) minmax(300px,1fr);
       grid-template-areas:
         "timer days proj"
         "sum   rec  proj";
     }
   }
   @media (min-width:1920px){ main{gap:22px;} }
+  @media (min-width:2200px){ main{max-width:2200px; margin:0 auto;} }   /* これ以上は間延びするので止める */
 
   /* ---------- ボタン ---------- */
   .btn{
@@ -628,6 +634,8 @@ function renderSoft(){
 }
 function render(){
   renderTimer(); renderSummary(); renderDays(); renderRecords(); renderProjects(); renderSync();
+  /* 記録がまだ無い＝グラフと記録のカードが出ないので、PCでは1列に寄せる */
+  document.getElementById('page').classList.toggle('bare', !db.entries.length);
 }
 
 /* ---------- 計測カード ---------- */
@@ -752,7 +760,7 @@ function renderSummary(){
 /* ---------- 日ごとの積み上げ（直近14日） ---------- */
 function dayCount(){
   const w = window.innerWidth;
-  return w >= 1920 ? 45 : (w >= 1080 ? 30 : 14);
+  return w >= 1440 ? 30 : (w >= 1080 ? 21 : 14);   /* 45日まで出すと左が空きすぎるので30日まで */
 }
 function renderDays(){
   const el = document.getElementById('daysCard');
@@ -1169,7 +1177,7 @@ window.addEventListener('resize', ()=>{
     lastW = window.innerWidth; renderDays();
   }, 180);
 });
-[1080,1920].forEach(w=>{
+[1080,1440].forEach(w=>{
   const mq = window.matchMedia('(min-width:'+w+'px)');
   const on = ()=>{ lastW = window.innerWidth; renderDays(); };
   if(mq.addEventListener) mq.addEventListener('change', on); else if(mq.addListener) mq.addListener(on);
