@@ -193,6 +193,10 @@
      コピーすると切れ目に改行が入り、そのままでは開けないURLになる（実害はここ）。
      切れた行を繋ぎ直したうえで、指1本で確実に取れるよう写す札を横に置く（2026-08-24） */
   #out .lnk{color:#7dd3fc;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+  /* 合言葉（プロダクトキー）など、そのまま渡す値。リンクではないので下線は引かず、
+     薄く敷いて「ここが値」と分かるようにする。字は等幅のまま＝見まちがえない */
+  #out .val{background:rgba(125,211,252,.12);border-radius:4px;padding:0 3px;
+    color:#e7edf5;overflow-wrap:anywhere}
   /* 札は字ではなく絵。等幅の行の中で場所を取らず、意味も一目で分かる。
      ⚠️ 見た目を大きくすると行がガタつくので、大きくするのは「指の当たり判定」だけ
      （::after で外側へ広げる）。小さい札は押したつもりで外していることがある */
@@ -203,6 +207,8 @@
     cursor:pointer;-webkit-user-select:none;user-select:none;
     -webkit-tap-highlight-color:transparent;
   }
+  /* かたまりの札は ⏺ のすぐ右に座る。字の並びの一部に見えるよう、少しだけ控えめに */
+  #out .lcp.bcp{margin:0 3px 0 1px;color:#7a8496}
   #out .lcp::after{content:'';position:absolute;top:-11px;right:-9px;bottom:-11px;left:-9px}
   #out .lcp svg{width:14px;height:14px;display:block;pointer-events:none}
   #out .lcp:active{background:rgba(255,255,255,.1);color:#eef3ee}
@@ -1383,11 +1389,44 @@
   // 途中で切られて次の行へ落ちる。目で読むぶんには繋がって見えるが、なぞってコピーすると
   // 切れ目に改行が入り、そのままでは開けないURLになる（2026-08-24 報告）。
   // ここで ①切れた行を繋ぎ直し ②リンクに描き直して「コピー」の札を添える。
-  var RE_URL = /https?:\/\/[^\s"'<>`|\\^{}（）「」『』【】、。]+/g;
-  var RE_URL_TAIL = /https?:\/\/[^\s"'<>`|\\^{}（）「」『』【】、。]*$/;
-  var RE_URL_HEAD = /^[A-Za-z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+/;
-  // 文の終わりの句読点・閉じ括弧は URL の一部でないことがほとんどなので落とす
+  // URL に使えるのは ASCII のこの字だけ。「[^空白]」で拾うと、後ろに続く全角の
+  // 「／」や「合言葉：」まで URL の一部として飲み込んでしまう（2026-08-24 に発覚）
+  var URL_CH = "A-Za-z0-9\\-._~:/?#\\[\\]@!$&'()*+,;=%";
+  var RE_URL = new RegExp('https?://[' + URL_CH + ']+', 'g');
+  var RE_URL_TAIL = new RegExp('https?://[' + URL_CH + ']*$');
+  var RE_URL_HEAD = new RegExp('^[' + URL_CH + ']+');
+  // 文の終わりの句読点・閉じ括弧は値の一部でないことがほとんどなので落とす
   var RE_URL_TRIM = /[.,;:!?)\]}'"]+$/;
+  // 合言葉は URL ほど強く削らない。「!」や「.」で終わるパスワードは珍しくないので残す
+  var RE_VAL_TRIM = /[,;:'"）」』)\]}]+$/;
+
+  // 合言葉（プロダクトキー）も写せるようにする。拾い方は2つ。
+  //  ① 形で拾う＝`TSUMIKI-XXXX-XXXX-XXXX`。大文字と数字のかたまりをハイフンで
+  //     3つ以上つないだもの。2つまで（`CLAUDE-CODE` など）は普通の言葉なので拾わない
+  //  ② 名前で拾う＝「合言葉：◯◯」「パスワード: ◯◯」のように、名前を付けて渡している値。
+  //     こちらは形が決まっていない合言葉（日本語の言葉など）でも拾える。
+  //     `key:` `token:` のような普通の英単語は入れない（ログや JSON が札だらけになる）
+  var RE_KEY = /[A-Z0-9]{4,}(?:-[A-Z0-9]{4,}){2,}/g;
+  var KEY_LABEL = '(?:合言葉|あいことば|プロダクトキー|ライセンスキー|パスワード|product key|license key)';
+  var VAL_CH = '[^\\s、。「」『』（）()`]+';
+  // 囲い方は3通り。Claude は合言葉を `　` で囲んで書くことが多いので、これを外さない
+  var QUOTED = '「([^」]+)」|『([^』]+)』|`([^`]+)`';
+  var RE_LABELED = new RegExp(
+    KEY_LABEL + '\\s*(?:は|が)?\\s*(?:'
+      + '[:：=＝]\\s*(?:' + QUOTED + '|(' + VAL_CH + '))'   // 「合言葉：◯◯」
+      + '|' + QUOTED                                          // 「合言葉は『◯◯』」
+    + ')', 'gi');
+
+  // 「合言葉は BKZX8JLV です」＝区切りの記号も囲いも無い言い方。ここで文章まで拾うと
+  // 「パスワードが 間違っています」まで札を付けてしまうので、**半角6字以上のかたまり**に限る
+  var RE_LABELED_BARE = new RegExp(KEY_LABEL + '\\s*(?:は|が)\\s+([\\x21-\\x7E]{6,})', 'gi');
+
+  // 囲いが無いときは、値のうしろへ「です」「を」などがくっついてくる。半角の字で
+  // 始まっている値なら、全角が出てきたところで切る（日本語そのものの合言葉は切らない）
+  function cutAtWide(v) {
+    var m = /^[\x21-\x7E]+/.exec(v);
+    return m && m[0].length < v.length ? m[0] : v;
+  }
 
   // 「桁いっぱいまで届いた行」の末尾が URL の途中で、次の行がその続きに見えるときだけ繋ぐ。
   // 端末が長い単語を割るときは必ず幅ぴったりまで埋まるので、これが「割られた」印になる。
@@ -1422,49 +1461,165 @@
     + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
     + '<polyline points="20 6 9 17 4 12"/></svg>';
 
-  // 1行ぶんの文字を「文章＋リンク＋写す札」に組み直して足す
-  function addText(parent, text) {
-    RE_URL.lastIndex = 0;
-    var at = 0, m;
-    while ((m = RE_URL.exec(text))) {
-      var raw = m[0].replace(RE_URL_TRIM, '');
-      if (!raw) { RE_URL.lastIndex = m.index + m[0].length; continue; }
-      if (m.index > at) parent.appendChild(document.createTextNode(text.slice(at, m.index)));
-      var a = document.createElement('a');
-      a.className = 'lnk';
-      a.href = raw;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.textContent = raw;
-      parent.appendChild(a);
-      var b = document.createElement('button');
-      b.className = 'lcp';
-      b.type = 'button';
-      b.dataset.copy = raw;
-      b.title = 'リンクをコピー';
-      b.setAttribute('aria-label', 'リンクをコピー');
-      b.innerHTML = ICON_COPY;
-      parent.appendChild(b);
-      at = m.index + raw.length;
-      RE_URL.lastIndex = at;
+  // 写す札を1つ作る。行の中（リンク・合言葉）でも、かたまりの頭でも同じ形を使う
+  function makeCopyBtn(what, copy, extra) {
+    var b = document.createElement('button');
+    b.className = 'lcp' + (extra ? ' ' + extra : '');
+    b.type = 'button';
+    if (copy != null) b.dataset.copy = copy;
+    b.dataset.what = what;
+    b.title = what + 'をコピー';
+    b.setAttribute('aria-label', what + 'をコピー');
+    b.innerHTML = ICON_COPY;
+    return b;
+  }
+
+  // --------------------------------------------- かたまりごと写す（Claude が書いた文章）
+  //
+  // Claude に「コピペ用プロンプト」を書いてもらうことがある。ところが端末は桁でぶつ切りに
+  // するので、なぞってコピーすると **1行おきに改行が入り**、頭には `⏺ ` と2字下げも付く。
+  // そのまま貼っても使えない（2026-08-24 報告）。かたまりごと、元の文章に戻して写す。
+  //
+  // 「新しい項目の始まり」に見える行は繋がない＝箇条書き・見出し・番号付きが潰れない。
+  // 「（」で始まる行は入れない＝ただの補足で、前の行の続きであることが多い
+  var RE_ITEM_HEAD = /^\s*(?:[-*・‣▪>＞]|[0-9０-９]{1,2}[.)．、]|[①-⑳]|[【「『＃#]|\*\*)/;
+  var RE_BULLET = /^[-*・‣▪]\s/;
+
+  function unwrapBlock(lines, cols) {
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      var raw = lines[i];
+      // 頭の `⏺ ` と、かたまり全体に付く2字下げを外す
+      var body = (i === 0 ? raw.replace(/^⏺\s?/, '') : raw.replace(/^ {2}/, '')).replace(/\s+$/, '');
+      var w = dispw(raw);
+      var last = out.length ? out[out.length - 1] : null;
+      // 箇条書きの折り返しは、印のぶん2字ぶん下げて揃えてくることがある。
+      // 前の行が箇条書きなら、その下げは「揃えただけ」＝続きとして扱う
+      if (last && last.bullet && /^ {2}\S/.test(body)) body = body.slice(2);
+      var join = '';
+      if (last && body && !/^\s/.test(body) && !RE_ITEM_HEAD.test(body)) {
+        var fw = dispw(firstWord(body));
+        if (last.bare) {
+          join = 'word';                                   // 前の行が「-」だけ＝印の後ろで折り返した
+        } else if (last.w >= cols - 1) {
+          // ① 桁いっぱいまで届いていた。ここは2通りある＝字の途中で割ったのか、
+          //    たまたま端まで埋まって言葉の間で割ったのか。**その言葉が1行に収まる長さか**
+          //    で見分ける（収まらない長さなら、字の途中で割るしかなかった）
+          join = dispw(lastWord(last.s)) + fw > cols - 2 ? 'hard' : 'word';
+        } else if (last.w >= cols * 0.35 && !/[】」』]$/.test(last.s)
+                   && last.w + 1 + fw > cols) {
+          // ② 途中までしか無いのに割れている＝**次の言葉が入りきらなかった**。
+          //    端まで埋まっていない以上、割れ目は必ず言葉と言葉の間（＝空白を食べている）
+          join = 'word';
+        }
+      }
+      if (join) {
+        // 言葉の間で割られたなら、端末が空白を食べている＝返す。
+        // 字の途中で割られたなら、空白はもともと無い＝詰めたままにする
+        var glue = join === 'word' && last.s && !/\s$/.test(last.s) ? ' ' : '';
+        last.s += glue + body;
+        last.w = w;
+        last.bare = false;
+      } else {
+        var t = body.trim();
+        out.push({ s: body, w: w, bare: /^[-*・‣▪]$/.test(t), bullet: RE_BULLET.test(t) });
+      }
     }
+    return out.map(function (o) { return o.s; }).join('\n')
+      .replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '');
+  }
+
+  // 行の頭の「ひとかたまり」と、行の末尾の「ひとかたまり」（空白で区切られた1語）
+  function firstWord(s) { var m = /^\S+/.exec(s); return m ? m[0] : ''; }
+  function lastWord(s) { var m = /\S+$/.exec(s); return m ? m[0] : ''; }
+
+  // 1行の中から「写せるもの」の場所を全部拾って、前から順に並べて返す
+  function findTargets(text) {
+    var hits = [], m;
+    function push(at, raw, kind) {
+      raw = raw.replace(kind === 'url' ? RE_URL_TRIM : RE_VAL_TRIM, '');
+      if (raw) hits.push({ i: at, j: at + raw.length, s: raw, k: kind });
+    }
+    RE_URL.lastIndex = 0;
+    while ((m = RE_URL.exec(text))) {
+      push(m.index, m[0], 'url');
+      RE_URL.lastIndex = m.index + m[0].length;
+    }
+    RE_KEY.lastIndex = 0;
+    while ((m = RE_KEY.exec(text))) push(m.index, m[0], 'val');
+    RE_LABELED.lastIndex = 0;
+    while ((m = RE_LABELED.exec(text))) {
+      var v = m[1] || m[2] || m[3] || m[5] || m[6] || m[7];   // 囲いの中
+      if (!v && m[4]) v = cutAtWide(m[4]);                    // 囲いが無いとき
+      if (!v) continue;
+      var at = text.indexOf(v, m.index);
+      if (at >= 0) push(at, v, 'val');
+    }
+    RE_LABELED_BARE.lastIndex = 0;
+    while ((m = RE_LABELED_BARE.exec(text))) {
+      var b = text.indexOf(m[1], m.index);
+      if (b >= 0) push(b, m[1], 'val');
+    }
+    // 前から順に。同じところから始まっていたら長い方を採る（URL の中の
+    // 大文字の並びを合言葉と読みちがえる、といった重なりをここで捨てる）
+    hits.sort(function (a, b) { return a.i - b.i || b.j - a.j; });
+    var out = [], end = 0;
+    hits.forEach(function (h) { if (h.i >= end) { out.push(h); end = h.j; } });
+    return out;
+  }
+
+  // 1行ぶんの文字を「文章＋リンク／合言葉＋写す札」に組み直して足す
+  function addText(parent, text) {
+    var hits = findTargets(text);
+    if (!hits.length) { parent.appendChild(document.createTextNode(text)); return; }
+    var at = 0;
+    hits.forEach(function (h) {
+      if (h.i > at) parent.appendChild(document.createTextNode(text.slice(at, h.i)));
+      var what = h.k === 'url' ? 'リンク' : '合言葉';
+      if (h.k === 'url') {
+        var a = document.createElement('a');
+        a.className = 'lnk';
+        a.href = h.s;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = h.s;
+        parent.appendChild(a);
+      } else {
+        var v = document.createElement('span');
+        v.className = 'val';
+        v.textContent = h.s;
+        parent.appendChild(v);
+      }
+      parent.appendChild(makeCopyBtn(what, h.s));
+      at = h.j;
+    });
     if (at < text.length) parent.appendChild(document.createTextNode(text.slice(at)));
   }
 
   function renderScreen(text) {
     // 桁数は「取りに行ったとき」に決まるが、起動直後は保存しておいた画面を先に出す＝
     // まだ分かっていない。そのときは今この場で測る（同じ端末・同じ幅なので前回と同じ値になる）
-    var lines = joinUrlWraps(text.split('\n'), paneCols || measureCols());
+    var cols = paneCols || measureCols();
+    var lines = joinUrlWraps(text.split('\n'), cols);
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
     var dlgs = [];
     var wide = false;
+    // いま組んでいる「Claude の発言」のかたまり。閉じるときに、写す札へ中身を入れる
+    var sayBtn = null, sayLines = null;
+    function closeSay() {
+      if (!sayBtn) return;
+      var body = unwrapBlock(sayLines, cols);
+      if (body) sayBtn.dataset.copy = body;
+      else if (sayBtn.parentNode) sayBtn.parentNode.removeChild(sayBtn);   // 中身が無い札は出さない
+      sayBtn = null; sayLines = null;
+    }
     for (var i = 0; i < lines.length; i++) {
       var dlg = takeDialog(lines, i);
       if (dlg) {
         // 枠は「かたまり」の外に出す。中で色を塗り直すので、外側の帯に乗せると二重になる。
         // 枠の次の空行に色が伸びないよう、直前の分類も切っておく
-        block = null; cls = ''; prev = '';
+        closeSay(); block = null; cls = ''; prev = '';
         var de = dialogEl(dlg);
         frag.appendChild(de);
         dlgs.push(de);
@@ -1478,7 +1633,7 @@
         if (sbs.end >= lines.length - 14) wide = true;
         // ダイアログと同じ扱い＝外の帯には乗せない。ここで分類も切っておかないと、
         // 右側の字下げ行を拾ったオレンジがこの後ろまで続いてしまう
-        block = null; cls = ''; prev = '';
+        closeSay(); block = null; cls = ''; prev = '';
         var se = sideBySideEl(sbs);
         frag.appendChild(se);
         dlgs.push(se);
@@ -1495,20 +1650,35 @@
         continue;
       }
       if (RE_RULE.test(lines[i])) {
-        block = null; cls = ''; prev = '';
+        closeSay(); block = null; cls = ''; prev = '';
         frag.appendChild(document.createElement('div')).className = 'rule';
         continue;
       }
       var c = classify(lines[i], prev) || '';
       if (!block || c !== cls) {
+        closeSay();
         block = document.createElement('span');
         block.className = 'blk ' + c;
         frag.appendChild(block);
         cls = c;
+        // Claude の発言なら、頭の ⏺ の**すぐ右**に写す札を置く。⏺ は列の頭に残るので
+        // 他の ⏺ との縦の揃いが崩れない（揃いがこの画面の読みやすさそのもの）
+        if (c === 'say' && RE_SAY.test(lines[i])) {
+          sayLines = [];
+          block.appendChild(document.createTextNode('⏺ '));
+          sayBtn = makeCopyBtn('文章', null, 'bcp');
+          block.appendChild(sayBtn);
+          addText(block, lines[i].replace(/^⏺\s/, '') + '\n');
+          sayLines.push(lines[i]);
+          prev = c;
+          continue;
+        }
       }
+      if (sayLines) sayLines.push(lines[i]);
       addText(block, lines[i] + '\n');
       prev = c;
     }
+    closeSay();
     // 押せるのは一番下の枠だけ。履歴に残った古い枠まで押せると、
     // 遡って読んでいるつもりが、いまの質問に答えてしまう
     dlgs.forEach(function (de, k) {
@@ -1722,9 +1892,9 @@
     return ok ? Promise.resolve() : Promise.reject(new Error('コピーできません'));
   }
 
-  // どうしても写せなかったとき用。そのリンクの字を「選んだ状態」にしておく＝
+  // どうしても写せなかったとき用。その字を「選んだ状態」にしておく＝
   // 長押しで iOS の「コピー」を出せば取れる。何も起きないよりはるかにまし
-  function selectLink(node) {
+  function selectNode(node) {
     if (!node || node.nodeType !== 1) return false;
     try {
       var range = document.createRange();
@@ -1741,17 +1911,18 @@
   el.out.addEventListener('click', function (e) {
     var b = e.target.closest('.lcp');
     if (!b) return;
-    var link = b.previousSibling;       // 直前に置いた <a>
+    // 逃げ道で選ぶ相手＝行の中の札なら直前のリンク／合言葉、かたまりの札ならかたまりごと
+    var link = b.classList.contains('bcp') ? b.parentNode : b.previousSibling;
     copyText(b.dataset.copy || '').then(function () {
       b.classList.add('done');
       b.innerHTML = ICON_DONE;
-      toast('リンクをコピーしました');
+      toast((b.dataset.what || '') + 'をコピーしました');
       setTimeout(function () {
         b.classList.remove('done');
         b.innerHTML = ICON_COPY;
       }, 2000);
     }, function () {
-      if (selectLink(link)) toast('選んであります。長押しして「コピー」を選んでください', 3600);
+      if (selectNode(link)) toast('選んであります。長押しして「コピー」を選んでください', 3600);
       else toast('コピーできませんでした', 2600);
     });
   });
