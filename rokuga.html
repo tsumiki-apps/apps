@@ -162,6 +162,10 @@
 
   <div class="card">
     <h2><span class="n">2</span>収録</h2>
+    <label class="field">渡すファイル名（説明するアプリの名前を入れてください）
+      <input type="text" id="inAppName" placeholder="あきま" maxlength="40" spellcheck="false"
+             style="width:100%; display:block; margin-top:5px;"></label>
+    <p class="hint" id="fileHint" style="margin-top:8px"></p>
     <div class="controls">
       <button class="rec" id="btnRec" disabled>収録をはじめる</button>
       <button id="btnPause" disabled>一時停止</button>
@@ -303,6 +307,8 @@
   <details>
     <summary>できあがったファイルについて</summary>
     <ul>
+      <li>ファイル名は <b>アプリ名_使い方_日付</b> になります（例：あきま_使い方_2026-08-24.mp4）。
+        アプリ名は「収録」のところで決められます。撮り直したら日付だけが変わるので、新旧が分かります。</li>
       <li>いまの Chrome では <b>.mp4</b> で保存されます。QuickTime でもそのまま開けるので、
         お客様に渡すファイルとして使えます。</li>
       <li>もし .webm になった場合は、QuickTime では開けません。Chrome にドラッグすれば再生できます。
@@ -745,16 +751,27 @@
   const srtT = ms => { ms = Math.max(0,ms); const t = Math.floor(ms/1000);
     return pad(Math.floor(t/3600),2)+':'+pad(Math.floor(t%3600/60),2)+':'+pad(t%60,2)+','+pad(Math.floor(ms%1000),3); };
 
-  function stamp(){
-    const d = new Date(), p = n => pad(n,2);
-    return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes());
+  /* 渡すファイル名。「アプリ名_使い方_2026-08-24」の形で、動画・文字起こし・字幕に共通で使う。
+     お客様のフォルダに並んだときに何の動画か分かること、撮り直しの新旧が分かることを優先した。 */
+  const NAME_KEY = 'rokuga.appname';
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth()+1,2) + '-' + pad(d.getDate(),2); };
+  const safeName = t => t.replace(/[\/\\:*?"<>|]/g, '').replace(/[ \u3000]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').trim();
+  function baseName(){
+    const n = safeName($('#inAppName').value) || 'つみき画面収録';
+    return n + '_使い方_' + today();
+  }
+  function refreshName(){
+    const ext = pickMime()[1];
+    $('#fileHint').innerHTML = 'できるファイル名 → <b>' +
+      baseName().replace(/&/g,'&amp;').replace(/</g,'&lt;') + '.' + ext + '</b>' +
+      '<br>文字起こし（.txt）と字幕（.srt）も、同じ名前で出ます。';
   }
 
   async function startRec(){
     if(recState !== 'idle' || !screenStream || !camStream) return;
 
     [mime, ext] = pickMime();
-    resultName = 'つみき画面収録-' + stamp() + '.' + ext;
+    resultName = baseName() + '.' + ext;
     fileWriter = null; writeChain = Promise.resolve(); chunks = []; resultBlob = null;
 
     if($('#cbLong').checked && window.showSaveFilePicker){
@@ -1020,8 +1037,8 @@
     catch(e){ $('#btnCopyTx').textContent = 'コピーできませんでした'; }
     setTimeout(() => { $('#btnCopyTx').textContent = '文章をコピー'; }, 1600);
   });
-  $('#btnTxt').addEventListener('click', () => dl(new Blob([txText()], { type:'text/plain;charset=utf-8' }), 'つみき画面収録-' + stamp() + '.txt'));
-  $('#btnSrt').addEventListener('click', () => dl(new Blob([srtText()], { type:'text/plain;charset=utf-8' }), 'つみき画面収録-' + stamp() + '.srt'));
+  $('#btnTxt').addEventListener('click', () => dl(new Blob([txText()], { type:'text/plain;charset=utf-8' }), baseName() + '.txt'));
+  $('#btnSrt').addEventListener('click', () => dl(new Blob([srtText()], { type:'text/plain;charset=utf-8' }), baseName() + '.srt'));
 
   /* ---------- 調整 UI ---------- */
   function seg(id, key, after){
@@ -1050,6 +1067,13 @@
   range('#rFaceZoom','#vFaceZoom','faceZoom', v => v/100, v => (v/100).toFixed(2) + '倍');
   range('#rDevRadius','#vDevRadius','devRadius', v => v, v => String(v));
   $('#cbMirror').addEventListener('change', e => { cfg.mirror = e.target.checked; });
+
+  try{ const n = localStorage.getItem(NAME_KEY); if(n) $('#inAppName').value = n; }catch(e){}
+  $('#inAppName').addEventListener('input', () => {
+    try{ localStorage.setItem(NAME_KEY, $('#inAppName').value); }catch(e){}
+    refreshName();
+  });
+  refreshName();
 
   $('#inTitle').addEventListener('input', e => { cfg.title = e.target.value; });
   cfg.title = $('#inTitle').value;
