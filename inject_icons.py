@@ -30,7 +30,7 @@ TITLES = {
     "hiyou":       "費用図鑑",
     "tsumijikan":  "つみじかん",
     "dakkobakari": "だっこばかり",
-    "tehodoki":    "てほどき",
+    "rokuga":      "画面収録",
 }
 
 VIEWPORT_RE = re.compile(r'(<meta\s+name="viewport"[^>]*>)', re.IGNORECASE)
