@@ -9,6 +9,11 @@
 #
 # 使い方: ntfy-notify.sh <event>
 #   event = permission | notification | stop
+#
+# 「質問（AskUserQuestion）」と「ツールの許可」は、どちらも Claude Code の
+# PermissionRequest として飛んでくる（2026-08-24 に ntfy の履歴で確認）。
+# そのままだと質問まで「許可を待っています」と出て、何を待たれているのか分からない。
+# hook が標準入力でくれる JSON に道具の名前が入っているので、そこで見分ける。
 
 set -u
 
@@ -66,44 +71,83 @@ if [ -n "${TMUX:-}" ] && [ -x "$TMUX_BIN" ]; then
   fi
 fi
 
+# hook は標準入力で JSON をくれる（tool_name などが入っている）。
+# ⚠️ 端末から手で叩いたときは標準入力が繋がったままなので、cat で止まってしまう。
+# 端末なら読まない（-t 0）。読めなくても通知そのものは出す
+PAYLOAD=''
+[ -t 0 ] || PAYLOAD=$(cat 2>/dev/null || echo '')
+
+# 質問（AskUserQuestion）か、ツールの許可か
+IS_QUESTION=0
+case "$PAYLOAD" in
+  *AskUserQuestion*) IS_QUESTION=1 ;;
+esac
+
 # 同じセッションの連発を抑える。
 # 許可待ちのとき Claude Code は PermissionRequest と Notification の両方を撃つので、
 # そのままだと「返答待ち」の 6 秒後に「入力待ち」が来て 1 件の用事で 2 回鳴る。
 # 先に来た方（＝より具体的な「返答待ち」）だけ通し、直後の追い討ちは捨てる。
-COOLDOWN=20
-STATE_DIR="$HOME/.tsumiki-remote/notify-state"
-KEY=$(printf '%s' "$SESSION" | tr -c 'A-Za-z0-9_.-' '_')
-NOW=$(date +%s)
-LAST=0
-if [ -r "$STATE_DIR/$KEY" ]; then
-  LAST=$(cat "$STATE_DIR/$KEY" 2>/dev/null)
-  case "$LAST" in (''|*[!0-9]*) LAST=0 ;; esac
-fi
-[ "$((NOW - LAST))" -lt "$COOLDOWN" ] && exit 0
-mkdir -p "$STATE_DIR" 2>/dev/null
-printf '%s' "$NOW" > "$STATE_DIR/$KEY" 2>/dev/null
-
 EVENT="${1:-notification}"
+
+# 何を待たれているのか。大事さの順に 3 > 2 > 1
 case "$EVENT" in
   permission)
-    TITLE="返答待ち"
-    BODY="$WHO が許可を待っています"
-    TAGS="raised_hand"
-    PRIORITY="high"
+    if [ "$IS_QUESTION" = "1" ]; then
+      RANK=3
+      TITLE="質問が来ています"
+      BODY="$WHO が「どれにしますか？」と聞いています"
+      TAGS="raised_hand"
+      PRIORITY="high"
+    else
+      RANK=2
+      TITLE="許可を待っています"
+      BODY="$WHO が許可を待っています"
+      TAGS="lock"
+      PRIORITY="high"
+    fi
     ;;
   stop)
+    RANK=1
     TITLE="終わりました"
     BODY="$WHO の作業が終わりました"
     TAGS="white_check_mark"
     PRIORITY="default"
     ;;
   *)
+    # 1ターンの区切りでも飛ぶ＝いちばん数が多い。ここが high のままだと
+    # 3時間で20通以上鳴り、肝心の「質問が来ています」が埋もれる（2026-08-24 実測）
+    RANK=1
     TITLE="入力待ち"
     BODY="$WHO があなたを待っています"
     TAGS="bell"
-    PRIORITY="high"
+    PRIORITY="default"
     ;;
 esac
+
+# 同じセッションの連発を抑える。
+# 許可待ちのとき Claude Code は PermissionRequest と Notification の両方を撃つので、
+# そのままだと「返答待ち」の 6 秒後に「入力待ち」が来て 1 件の用事で 2 回鳴る。
+# 先に来た方（＝より具体的な方）だけ通し、直後の追い討ちは捨てる。
+# ただし**より大事なもの（質問・許可）は追い越せる**。そうしないと、
+# ターン終わりの「入力待ち」の直後に質問が出たとき、質問の方が消える
+COOLDOWN=20
+STATE_DIR="$HOME/.tsumiki-remote/notify-state"
+KEY=$(printf '%s' "$SESSION" | tr -c 'A-Za-z0-9_.-' '_')
+NOW=$(date +%s)
+LAST=0
+LAST_RANK=0
+if [ -r "$STATE_DIR/$KEY" ]; then
+  REC=$(cat "$STATE_DIR/$KEY" 2>/dev/null)
+  LAST=${REC%%|*}
+  case "$REC" in (*\|*) LAST_RANK=${REC##*|} ;; esac
+  case "$LAST" in (''|*[!0-9]*) LAST=0 ;; esac
+  case "$LAST_RANK" in (''|*[!0-9]*) LAST_RANK=0 ;; esac
+fi
+if [ "$((NOW - LAST))" -lt "$COOLDOWN" ] && [ "$RANK" -le "$LAST_RANK" ]; then
+  exit 0
+fi
+mkdir -p "$STATE_DIR" 2>/dev/null
+printf '%s|%s' "$NOW" "$RANK" > "$STATE_DIR/$KEY" 2>/dev/null
 
 curl -s -m 5 \
   -H "Title: $TITLE" \
