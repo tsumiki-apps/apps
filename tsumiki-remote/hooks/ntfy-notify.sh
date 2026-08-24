@@ -8,7 +8,12 @@
 # コマンドは今までどおり一切送らない。題名も出したくない時は USE_TITLE=0 にする。
 #
 # 使い方: ntfy-notify.sh <event>
-#   event = permission | notification | stop
+#   event = start | permission | notification | stop
+#
+# start は通知を送らない。「いつ頼まれたか」を書き留めるだけ（UserPromptSubmit から呼ぶ）。
+# これが有ると、ターンの終わりに**どれだけ待たされたか**が分かる。長くかかった作業の
+# 終わりだけ「終わりました（◯分）」として鳴らし、すぐ終わったものは静かなまま。
+# 無くても動く（そのときは今までどおり全部「入力待ち」＝静か）。
 #
 # 「質問（AskUserQuestion）」と「ツールの許可」は、どちらも Claude Code の
 # PermissionRequest として飛んでくる（2026-08-24 に ntfy の履歴で確認）。
@@ -89,6 +94,28 @@ esac
 # 先に来た方（＝より具体的な「返答待ち」）だけ通し、直後の追い討ちは捨てる。
 EVENT="${1:-notification}"
 
+STATE_DIR="$HOME/.tsumiki-remote/notify-state"
+KEY=$(printf '%s' "$SESSION" | tr -c 'A-Za-z0-9_.-' '_')
+NOW=$(date +%s)
+
+# 「長くかかった」と見なす境目。これを超えた作業の終わりだけ鳴る
+LONG_RUN=300
+
+# 頼まれた時刻を書き留めるだけ。通知は送らない
+if [ "$EVENT" = "start" ]; then
+  mkdir -p "$STATE_DIR" 2>/dev/null
+  printf '%s' "$NOW" > "$STATE_DIR/$KEY.start" 2>/dev/null
+  exit 0
+fi
+
+# ターンの終わりで「どれだけ待たされたか」。start が無ければ 0＝今までどおりの扱い
+WAITED=0
+if [ -r "$STATE_DIR/$KEY.start" ]; then
+  S=$(cat "$STATE_DIR/$KEY.start" 2>/dev/null)
+  case "$S" in (''|*[!0-9]*) S='' ;; esac
+  [ -n "$S" ] && WAITED=$((NOW - S))
+fi
+
 # 何を待たれているのか。大事さの順に 3 > 2 > 1
 case "$EVENT" in
   permission)
@@ -107,6 +134,9 @@ case "$EVENT" in
     fi
     ;;
   stop)
+    # ⚠️ Stop は **hook に登録していない**（2026-08-24 に実データで確認：11.4時間で0通）。
+    # ターンの終わりは Notification が既に飛ばしており、両方登録すると1回の用事で2回鳴る。
+    # 手で叩いて試すとき用に枝だけ残してある
     RANK=1
     TITLE="終わりました"
     BODY="$WHO の作業が終わりました"
@@ -114,13 +144,28 @@ case "$EVENT" in
     PRIORITY="default"
     ;;
   *)
-    # 1ターンの区切りでも飛ぶ＝いちばん数が多い。ここが high のままだと
-    # 3時間で20通以上鳴り、肝心の「質問が来ています」が埋もれる（2026-08-24 実測）
-    RANK=1
-    TITLE="入力待ち"
-    BODY="$WHO があなたを待っています"
-    TAGS="bell"
-    PRIORITY="default"
+    # 1ターンの区切りでも飛ぶ＝いちばん数が多い。11.4時間で38通のうち26通がこれ
+    # （2026-08-24 実測）。ここが high のままだと肝心の質問が埋もれるので、静かが既定。
+    #
+    # ただし**長くかかった作業の終わり**だけは鳴らす。外出先でいちばん知りたいのは
+    # 「頼んで放っておいたものが終わった」であって、3秒で返ってきた相づちではない。
+    # 頼まれた時刻（start）が分かるときだけ判定できる＝無ければ今までどおり静か。
+    if [ "$WAITED" -ge "$LONG_RUN" ]; then
+      RANK=2
+      MIN=$((WAITED / 60))
+      TITLE="終わりました（${MIN}分）"
+      BODY="$WHO の作業が終わりました"
+      TAGS="white_check_mark"
+      PRIORITY="high"
+    else
+      RANK=1
+      TITLE="入力待ち"
+      BODY="$WHO があなたを待っています"
+      TAGS="bell"
+      PRIORITY="default"
+    fi
+    # ターンが終わったので、待ち時間の数えはここで畳む
+    rm -f "$STATE_DIR/$KEY.start" 2>/dev/null
     ;;
 esac
 
@@ -131,9 +176,6 @@ esac
 # ただし**より大事なもの（質問・許可）は追い越せる**。そうしないと、
 # ターン終わりの「入力待ち」の直後に質問が出たとき、質問の方が消える
 COOLDOWN=20
-STATE_DIR="$HOME/.tsumiki-remote/notify-state"
-KEY=$(printf '%s' "$SESSION" | tr -c 'A-Za-z0-9_.-' '_')
-NOW=$(date +%s)
 LAST=0
 LAST_RANK=0
 if [ -r "$STATE_DIR/$KEY" ]; then
