@@ -76,7 +76,7 @@
     color:var(--sub); border-color:var(--line);}
   .btn svg{width:22px; height:22px; display:block;}
   .bar{height:5px; border-radius:999px; background:var(--surface); overflow:hidden; margin-top:10px; display:none;}
-  .hint{display:none; margin-top:8px; text-align:center; font-size:12px; line-height:1.5; color:var(--sub);}
+  .hint{display:none; margin-top:8px; text-align:center; font-size:12px; line-height:1.5; color:var(--sub); white-space:pre-line;}
   .bar i{display:block; height:100%; width:0%; background:var(--ink); transition:width .2s linear;}
 
   #toast{position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 100px); transform:translateX(-50%) translateY(12px);
@@ -438,12 +438,9 @@ function makeVideo(onProgress){
     const ctx = c.getContext('2d', {alpha:false});
     paint(ctx, v, W, H);
 
-    /* ⚠️ iOSは「画面にのっていない canvas」の取り込みが不安定（同じコマが続く・落ちる）。
-       書き出し中はこの canvas をプレビューの上にぴったり重ねて、実際に画面に出す。
-       ついでに、録れている中身がそのまま見えるようになる（元の動画は透明にして裏で再生） */
-    c.style.cssText = 'position:absolute; left:0; top:0; width:100%; height:100%;';
-    el('frame').appendChild(c);
-    v.style.opacity = '0';
+    /* ⚠️ 元の動画は「見えたまま」で再生する。
+       透明にしたり隠したりすると、iOSはコマの通知（requestVideoFrameCallback）を
+       ほとんど出さなくなり、書き出しが数秒で固まる（2026-08-25 実機で確認）。 */
 
     /* 画面が消えると iOS は処理ごと止めてしまうので、書き出しの間だけ消えないようにする */
     let wake = null;
@@ -466,15 +463,21 @@ function makeVideo(onProgress){
 
     // 音を拾う（元の音声を録画ストリームに合流させる）
     // createMediaElementSource は1つの<video>につき1回だけなので、要素そのものに覚えさせる
-    let audioTap = null;
+    /* ⚠️ createMediaElementSource でWebAudioにつなぐと、音の処理が止まったときに
+       動画の再生ごと止まる（iOSの持病）。動いていることを確かめてからだけつなぐ。
+       つなげないときは音なしで書き出す（映像が固まるよりましなので） */
+    let audioTap = null, audioOn = false;
     try{
       if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if(audioCtx.state === 'suspended') await audioCtx.resume();
-      if(!v.__srcNode) v.__srcNode = audioCtx.createMediaElementSource(v);
-      audioTap = audioCtx.createMediaStreamDestination();
-      v.__srcNode.connect(audioTap);
-      audioTap.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-    }catch(e){ audioTap = null; /* 音が拾えなくても映像だけ書き出す */ }
+      if(audioCtx.state !== 'running') await audioCtx.resume();
+      if(audioCtx.state === 'running'){
+        if(!v.__srcNode) v.__srcNode = audioCtx.createMediaElementSource(v);
+        audioTap = audioCtx.createMediaStreamDestination();
+        v.__srcNode.connect(audioTap);
+        audioTap.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+        audioOn = true;
+      }
+    }catch(e){ audioTap = null; audioOn = false; /* 音が拾えなくても映像だけ書き出す */ }
 
     let rec;
     try{
@@ -493,15 +496,15 @@ function makeVideo(onProgress){
 
     const finish = () => {
       if(stopped) return; stopped = true;
+      endPos = v.currentTime;          // 診断用：どこまで再生できたか（この後 0 に戻すので先に控える）
       cancelAnimationFrame(raf);
       clearInterval(timer);
       try{ rec.stop(); }catch(e){}
     };
     rec.onstop = () => {
+      if(!endPos) endPos = v.currentTime;
       try{ if(wake) wake.release(); }catch(e){}
       wake = null;
-      try{ c.remove(); }catch(e){}
-      v.style.opacity = '';
       stream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} });
       if(audioTap){ try{ v.__srcNode.disconnect(audioTap); }catch(e){} }
       v.pause();
@@ -510,8 +513,13 @@ function makeVideo(onProgress){
       const blob = new Blob(chunks, {type: chunks.length && chunks[0].type ? chunks[0].type : mime});
       // 診断：実機のどこが遅いのかを見えるようにしておく（コマ落ちの切り分け用）
       const secs = t0 ? (performance.now() - t0) / 1000 : 0;
-      el('hint').textContent = W + '×' + H + '・' + (manual ? '手わたし' : '自動') + '・'
-        + frames + 'コマ／' + secs.toFixed(1) + '秒＝' + (secs ? (frames / secs).toFixed(1) : '0') + 'fps';
+      el('hint').textContent =
+        W + '×' + H + '・' + (manual ? '手わたし' : '自動') + (audioOn ? '・音あり' : '・音なし') + '\n'
+        + frames + 'コマ(通知' + byRVFC + '/保険' + byRAF + ')／' + secs.toFixed(1) + '秒＝'
+        + (secs ? (frames / secs).toFixed(1) : '0') + 'fps\n'
+        + '描画' + (frames ? (paintMs / frames).toFixed(1) : '0') + 'ms・空白'
+        + (maxGap / 1000).toFixed(1) + '秒・位置' + endPos.toFixed(1) + '/' + dur.toFixed(1)
+        + '秒・再開' + retries + '回';
       if(!blob.size) reject(new Error('動画を作れませんでした'));
       else resolve(blob);
     };
@@ -519,30 +527,45 @@ function makeVideo(onProgress){
     // 1フレームごとに白ふち付きで描き直す。
     // requestVideoFrameCallback があれば動画のフレームに正確に合わせ、無ければ rAF。
     // どちらも止まる環境の保険として、タイマーでも描き直す（＝進捗表示も兼ねる）
+    /* 描くきっかけは2本立てにする。
+       ①コマの通知（requestVideoFrameCallback）＝いちばん正確
+       ②画面の描き替え（requestAnimationFrame）＝①が来なくても30コマ/秒は確保する保険
+       iPhoneでは①がほとんど来ないことがあり（＝2.8fpsの正体）、②が無いと動画が固まる。 */
     let lastAt = 0, frames = 0, t0 = 0;
-    const drawFrame = () => {
+    let byRVFC = 0, byRAF = 0, paintMs = 0, maxGap = 0, retries = 0, endPos = 0;
+    const drawFrame = src => {
+      const t = performance.now();
+      if(lastAt) maxGap = Math.max(maxGap, t - lastAt);
       paint(ctx, v, W, H, true);
+      paintMs += performance.now() - t;
       lastAt = performance.now();
       frames++;
+      if(src === 1) byRVFC++; else byRAF++;
       if(manual){ try{ vtrack.requestFrame(); }catch(e){} }
     };
     const tick = () => {
       if(stopped) return;
-      drawFrame();
       raf = requestAnimationFrame(tick);
+      if(performance.now() - lastAt >= 30) drawFrame(2);   // 30コマ/秒までに間引く
     };
     const startPainting = () => {
       if(hasRVFC){
-        const cb = () => { if(stopped) return; drawFrame(); v.requestVideoFrameCallback(cb); };
+        const cb = () => { if(stopped) return; drawFrame(1); v.requestVideoFrameCallback(cb); };
         v.requestVideoFrameCallback(cb);
-      } else {
-        tick();
       }
+      tick();
+      let seen = -1, still = 0;
       timer = setInterval(() => {
         if(stopped) return;
-        // 手渡し方式では、ここで描くと同じ絵を1枚よけいに足してしまう。
-        // ただしコマの通知が400msも来ないときは、止まった保険として1枚描く。
-        if(!manual || performance.now() - lastAt > 400) drawFrame();
+        // 再生が止まっていないか見張る。止まっていたら鳴らし直す（音の処理が原因のことがある）
+        if(v.currentTime === seen && !v.ended && !v.paused){
+          still++;
+          if(still >= 6){                       // 1.2秒すすまなかったら
+            still = 0; retries++;
+            try{ if(audioCtx && audioCtx.state !== 'running') audioCtx.resume(); }catch(e){}
+            v.play().catch(()=>{});
+          }
+        } else { still = 0; seen = v.currentTime; }
         if(dur) onProgress(Math.min(1, v.currentTime / dur), Math.max(0, dur - v.currentTime));
         if(v.ended) finish();
       }, 200);
@@ -550,7 +573,7 @@ function makeVideo(onProgress){
 
     v.pause();
     v.loop = false;
-    v.muted = false;
+    v.muted = !audioOn;   // 音を拾えないときは鳴らさない（意味なく音が出るだけなので）
     v.onended = finish;
     try{ v.currentTime = 0; }catch(e){}
     const start = () => {
@@ -564,8 +587,6 @@ function makeVideo(onProgress){
       }).catch(err => {
         stopped = true;
         try{ rec.stop(); }catch(e){}
-        try{ c.remove(); }catch(e){}      // 止まったときも、重ねた canvas を必ず外す
-        v.style.opacity = '';
         reject(new Error('動画を再生できませんでした'));
       });
     };
