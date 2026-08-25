@@ -21,12 +21,17 @@ SYM = {
                                 '<circle cx="61" cy="55" r="5.5"/><path d="M52.5,71 a8.5,9 0 0 1 17,0"/>'),
 }
 SHIFT = (-3.5, -4.5, 1.0)   # 右下を空けるぶんだけ左上へ（縮めない＝家の作法）
-BADGE = dict(sc=0.30, sw=3.2, kn=2.4)   # 既存のAppleロゴと同じくらいの重み
+# ⚠️ 線の太さは「絵の幅に対する比」で決める。正本＝幅60に対して線4.5＝比 0.075。
+#    ここを固定値（3.2）にしたら 比0.178 ＝ 2.4倍太くなり、白い塊に潰れた（2026-08-25）。
+LOGO_RATIO = 0.075                      # 正本と同じ比
+BADGE = dict(sc=0.38, kn=2.2)           # 絵の幅 60*0.38 = 22.8 → 線 1.71
 
 OUT = pathlib.Path.home()/'tsumiki-tools'
 for name, sym in SYM.items():
+    art_w = 60 * BADGE['sc']
     body = main_sym(sym, shrink=SHIFT) + tsumiki_badge(
-        BADGE['sc'], right=93, bottom=93, sw_visible=BADGE['sw'], knock=BADGE['kn'])
+        BADGE['sc'], right=93, bottom=93,
+        sw_visible=art_w * LOGO_RATIO, knock=BADGE['kn'])
     p = OUT/f'icon-{name}.png'
     render(body, p)
     print('作った', p)
