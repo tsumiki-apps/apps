@@ -65,6 +65,16 @@
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:28px; height:28px; border-radius:50%;
     margin-top:-12px; background:#fff; border:1px solid var(--line); box-shadow:0 2px 6px rgba(36,35,33,.18);}
 
+  /* ---- 写真の大きさ：スライダーではなくボタンでえらぶ ---- */
+  .seg{display:flex; gap:6px; background:var(--surface); border:1px solid var(--line);
+    border-radius:15px; padding:4px; margin-bottom:6px;}
+  .segb{flex:1; min-height:44px; padding:0 8px;
+    font-family:inherit; font-size:14.5px; font-weight:700; letter-spacing:.02em;
+    color:var(--sub); background:transparent; border:0; border-radius:11px; cursor:pointer;
+    transition:background .16s ease, color .16s ease, transform .15s ease;}
+  .segb:active{transform:scale(.97);}
+  .segb.on{background:var(--ink); color:#fff;}
+
   .actions{display:flex; gap:10px; margin-top:8px;}
   .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
     font-family:inherit; font-size:16px; font-weight:700; letter-spacing:.02em;
@@ -118,14 +128,10 @@
   <div class="stage" id="stage"><div class="frame" id="frame"><div class="inner" id="inner"></div></div></div>
 
   <div class="panel">
-    <!-- 写真の大きさ（0＝ぜんぶのせる／1＝9:16にうめる／2＝そのさらに2倍） -->
-    <div class="ctl">
-      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-           stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4,15.4 L21,21"/>
-        <path d="M7.6,10.5h5.8M10.5,7.6v5.8"/></svg>
-      <input type="range" id="z" min="0" max="2" step="0.01" value="0" aria-label="写真の大きさ">
-      <span class="val" id="zv">ぜんぶ</span>
+    <!-- 写真の大きさ。ぜんぶ＝切らずに全部のせる／うめる＝9:16をうめる（はみ出しは切る） -->
+    <div class="seg" id="seg">
+      <button type="button" class="segb on" data-z="0">ぜんぶ</button>
+      <button type="button" class="segb" data-z="1">うめる</button>
     </div>
     <!-- ふちの太さ -->
     <div class="ctl">
@@ -164,8 +170,8 @@
    ・写真は切らずに全部のせる（横位置なら上下に、9:16より細長いなら左右に白がふえる）
    ・ただし切れるのが 3% までで収まるとき（＝ほぼ9:16の写真）は、
      いままで通り4辺のふちをぴったりそろえる（cover）
-   ・「大きさ」を上げると写真を拡大して切り、9:16をうめられる（0＝ぜんぶ／1＝うめる／2＝その2倍）。
-     切れているときは指でなぞって位置を、2本指でつまんで大きさを変えられる
+   ・「ぜんぶ／うめる」のボタンで、切らずに全部のせるか、拡大して9:16をうめるかを切りかえる。
+     切れているときは指でなぞって位置を、2本指でつまんでさらに大きさを変えられる
    ・画面は1画面ぴったり（スクロールなし）。プレビューの大きさはJSで実測して決める
    ========================================================= */
 const el = id => document.getElementById(id);
@@ -174,7 +180,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 9;
+const VER = 10;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -219,7 +225,7 @@ let panX = 0, panY = 0;
 
 el('w').value = pct;
 el('r').value = rad;
-el('z').value = zoom;
+syncSeg();                     // 前回えらんだ「ぜんぶ／うめる」を光らせておく
 
 /* ---------- 出来上がりの形 ----------
    いつも 9:16（たて長）の白い台紙。その真ん中に写真をのせる。
@@ -285,13 +291,12 @@ function hasFill(){
   return f.cover / f.base >= 1.02;
 }
 
-/* 大きさの表示。0＝ぜんぶ／1＝うめる／そのあいだは「そのままの何％か」 */
-function zoomLabel(){
-  if(zoom <= 0.005) return 'ぜんぶ';
-  if(!srcW || !srcH) return Math.round(zoom * 100) + '%';
-  if(hasFill() && Math.abs(zoom - 1) < 0.02) return 'うめる';
-  const f = fits(1000, 1000 / AR, srcW, srcH);
-  return Math.round(scaleAt(zoom, f.base, f.cover) / f.base * 100) + '%';
+/* いま選ばれているボタンを光らせる。
+   2本指でつまんで途中の大きさにしたときは、どちらも光らせない（うそをつかないため） */
+function syncSeg(){
+  el('seg').querySelectorAll('.segb').forEach(b => {
+    b.classList.toggle('on', Math.abs(zoom - parseFloat(b.dataset.z)) < 0.005);
+  });
 }
 
 /* 大きさを決める。0 と「うめる」にはそっと吸いつかせる（指でぴったり合わせるのは難しいので） */
@@ -300,7 +305,7 @@ function setZoom(t){
   if(t < 0.04) t = 0;
   else if(hasFill() && Math.abs(t - 1) < 0.04) t = 1;
   zoom = t;
-  el('z').value = t;
+  syncSeg();
   localStorage.setItem(KEY_Z, String(t));
   if(pending) disarmSave();
   layout();
@@ -308,7 +313,6 @@ function setZoom(t){
 
 /* プレビューの大きさは、余った場所を実測してぴったり収まるように決める（＝スクロールしない） */
 function layout(){
-  el('zv').textContent = zoomLabel();
   el('wv').textContent = pct.toFixed(1) + '%';
   el('rv').textContent = Math.round(rad) + '%';
   const f = el('frame'), st = el('stage'), inr = el('inner');
@@ -333,7 +337,12 @@ function layout(){
   kid.style.width  = g.w + 'px';
   kid.style.height = g.h + 'px';
 }
-el('z').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
+el('seg').addEventListener('click', e => {
+  const b = e.target.closest('.segb');
+  if(!b || busy) return;
+  panX = 0; panY = 0;          // えらび直したら、まず真ん中を残す
+  setZoom(parseFloat(b.dataset.z));
+});
 el('w').addEventListener('input', e => {
   pct = parseFloat(e.target.value);
   localStorage.setItem(KEY, String(pct));
