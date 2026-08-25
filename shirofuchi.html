@@ -180,7 +180,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 11;
+const VER = 12;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -380,7 +380,6 @@ if(window.ResizeObserver) new ResizeObserver(relayout).observe(el('stage'));
 el('again').addEventListener('click', () => { if(!busy) reset(); });
 
 function reset(){
-  stopMonitor();
   el('hint').style.display = 'none';
   el('hint').textContent = '';
   if(url) URL.revokeObjectURL(url);
@@ -393,9 +392,7 @@ function reset(){
 }
 
 function load(file, hint){
-  stopMonitor();
   fileBytes = file.size; heavy = 0;
-  fileInfo = (file.type || '種類不明') + '・' + (file.size / 1048576).toFixed(0) + 'MB';
   el('hint').style.display = 'none';
   el('hint').textContent = '';
   if(url) URL.revokeObjectURL(url);
@@ -454,63 +451,33 @@ function ready(){
   if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
   // 重すぎる動画（ProResなど）は、ブラウザでは再生も書き出しもできない。先に伝える
   if(kind === 'video' && media.duration > 0 && fileBytes / media.duration > HEAVY_BPS){
-    heavy = Math.round(fileBytes / media.duration / 1048576);
-    toast('この動画は重すぎます（1秒あたり' + heavy + 'MB）。ProResをオフにして撮り直すか、軽いコピーでお試しください');
+    heavy = 1;
+    toast('この動画は重すぎます。ふつうの画質で撮ったものをお使いください');
   }
   el('inner').appendChild(media);
   el('view1').classList.add('hide');
   el('view2').classList.remove('hide');
+  if(heavy){
+    el('hint').textContent = '⚠️ この動画は重すぎます（ProResなど）';
+    el('hint').style.display = 'block';
+  }
   layout();
-  startMonitor();
 }
 
 /* ---------- 再生モニター ----------
    「書き出し以前に、そもそも再生できているのか」を実機で見るための実況表示。
    コマの通知を数えて実効fpsを出し、再生位置・読み込み状態・待ち回数を出す。 */
-let mon = 0, monFrames = 0, monWait = 0, fileInfo = '', fileBytes = 0, heavy = 0;
+let fileBytes = 0, heavy = 0;
 
 /* 重すぎる動画のめやす。
    ふつうの iPhone 4K/30（HEVC）は 1秒あたり約6MB。ProResは約200MB（＝30倍以上）。
    ブラウザは1.7GBのファイルを抱えたまま4Kを等速デコードできず、
    数秒で再生が止まる（2026-08-25 実機：8.7秒/1753MB の ProRes で 0fps）。 */
 const HEAVY_BPS = 25 * 1048576;   // 1秒あたり25MBを超えたら重すぎ
-function onMonWait(){ monWait++; }
-function stopMonitor(){
-  if(mon){ clearInterval(mon); mon = 0; }
-  if(media){
-    media.removeEventListener('waiting', onMonWait);
-    media.removeEventListener('stalled', onMonWait);
-  }
-}
-function startMonitor(){
-  stopMonitor();
-  if(kind !== 'video' || !media) return;
-  const v = media;
-  monFrames = 0; monWait = 0;
-  v.addEventListener('waiting', onMonWait);
-  v.addEventListener('stalled', onMonWait);
-  if(typeof v.requestVideoFrameCallback === 'function'){
-    const cb = () => { if(!mon) return; monFrames++; v.requestVideoFrameCallback(cb); };
-    v.requestVideoFrameCallback(cb);
-  }
-  let last = performance.now(), lastN = 0;
-  const render = fps => {
-    el('hint').textContent =
-      (heavy ? '⚠️ 重すぎます（1秒あたり' + heavy + 'MB＝ProResなど）。ブラウザでは再生も書き出しもできません\n' : '')
-      + 'v' + VER + '・元 ' + srcW + '×' + srcH + '・' + (isFinite(v.duration) ? v.duration.toFixed(1) : '?') + '秒・' + fileInfo + '\n'
-      + '再生 ' + v.currentTime.toFixed(1) + '秒・' + fps.toFixed(0) + 'fps・読込' + v.readyState
-      + (v.paused ? '・とまってる' : '') + '・待ち' + monWait + '回・コマ計' + monFrames;
-  };
-  el('hint').style.display = 'block';
-  render(0);
-  layout();                      // 実況の行ぶんパネルが伸びるので、プレビューを測り直す
-  mon = setInterval(() => {
-    if(busy) return;
-    const now = performance.now(), dt = (now - last) / 1000;
-    const fps = dt > 0 ? (monFrames - lastN) / dt : 0;
-    lastN = monFrames; last = now;
-    render(fps);
-  }, 700);
+/* のこり時間の言い方（1行だけ出す） */
+function leftText(sec){
+  const m = Math.floor(sec / 60), s2 = Math.round(sec % 60);
+  return 'のこり ' + (m ? m + '分' : '') + s2 + '秒';
 }
 /* ---------- 指でうごかす ----------
    1本指でなぞる ＝ 切れているときに「どこを残すか」を動かす
@@ -625,7 +592,6 @@ async function save(){
   if(pending){ handOver(pending); return; }
 
   busy = true;
-  stopMonitor();
   btn.disabled = true; el('again').disabled = true;
   try{
     if(kind === 'image'){
@@ -636,8 +602,7 @@ async function save(){
       const prog = (p, left) => {
         btn.textContent = Math.round(p * 100) + '%';
         el('bar').querySelector('i').style.width = (p * 100) + '%';
-        const m = Math.floor(left / 60), sec = Math.round(left % 60);
-        el('hint').textContent = '画面はこのままでお待ちください（のこり ' + (m ? m + '分' : '') + sec + '秒・v' + VER + '）';
+        el('hint').textContent = leftText(left);
       };
       /* 音を拾うと再生ごと止まる端末がある（iOSの持病）。
          止まったら「音なし」で自動的にやり直し、以後この端末では音なしで書き出す。 */
@@ -647,7 +612,7 @@ async function save(){
         blob = await makeVideo(prog, useAudio);
       }catch(e){
         if(e && e.stalled && useAudio){
-          toast('音の取り込みで再生が止まりました。音なしでやり直します');
+          toast('音なしでやり直します');
           await reloadMedia();          // WebAudioにつながれた動画を作り直して縁を切る
           blob = await makeVideo(prog, false);
           localStorage.setItem(KEY_NA, '1');   // 音なしで成功したときだけ覚える
@@ -665,7 +630,8 @@ async function save(){
   }
   el('bar').style.display = 'none';
   el('bar').querySelector('i').style.width = '0%';
-  // 診断行（◯コマ／◯秒＝◯fps）は消さずに残す。次に写真/動画をえらんだ時に消える
+  el('hint').style.display = 'none';
+  el('hint').textContent = '';
   btn.disabled = false; el('again').disabled = false;
   busy = false;
 }
@@ -804,7 +770,7 @@ function makeVideo(onProgress, useAudio){
     let stopped = false, raf = 0, timer = 0;
     el('bar').style.display = 'block';
     el('hint').style.display = 'block';
-    el('hint').textContent = '画面はこのままでお待ちください（v' + VER + '）';
+    el('hint').textContent = leftText(dur);
     layout();   // 進捗バーのぶんパネルが伸びるので、プレビューの大きさを取り直す
 
     const finish = () => {
@@ -824,15 +790,6 @@ function makeVideo(onProgress, useAudio){
       v.muted = true; v.loop = true; v.currentTime = 0;
       v.play().catch(()=>{});
       const blob = new Blob(chunks, {type: chunks.length && chunks[0].type ? chunks[0].type : mime});
-      // 診断：実機のどこが遅いのかを見えるようにしておく（コマ落ちの切り分け用）
-      const secs = t0 ? (performance.now() - t0) / 1000 : 0;
-      el('hint').textContent =
-        'v' + VER + '・' + W + '×' + H + '・' + (manual ? '手わたし' : '自動') + '・音' + (audioOn ? 'あり(' + audioWay + ')' : 'なし') + '\n'
-        + frames + 'コマ(通知' + byRVFC + '/保険' + byRAF + ')／' + secs.toFixed(1) + '秒＝'
-        + (secs ? (frames / secs).toFixed(1) : '0') + 'fps\n'
-        + '描画' + (frames ? (paintMs / frames).toFixed(1) : '0') + 'ms・空白'
-        + (maxGap / 1000).toFixed(1) + '秒・位置' + endPos.toFixed(1) + '/' + dur.toFixed(1)
-        + '秒・再開' + retries + '回';
       if(stalledOut){
         const err = new Error('再生が' + endPos.toFixed(1) + '秒で止まりました');
         err.stalled = true;
@@ -850,26 +807,20 @@ function makeVideo(onProgress, useAudio){
        ①コマの通知（requestVideoFrameCallback）＝いちばん正確
        ②画面の描き替え（requestAnimationFrame）＝①が来なくても30コマ/秒は確保する保険
        iPhoneでは①がほとんど来ないことがあり（＝2.8fpsの正体）、②が無いと動画が固まる。 */
-    let lastAt = 0, frames = 0, t0 = 0;
-    let byRVFC = 0, byRAF = 0, paintMs = 0, maxGap = 0, retries = 0, endPos = 0, stalledOut = false;
-    const drawFrame = src => {
-      const t = performance.now();
-      if(lastAt) maxGap = Math.max(maxGap, t - lastAt);
+    let lastAt = 0, endPos = 0, stalledOut = false;
+    const drawFrame = () => {
       paint(ctx, v, W, H, true);
-      paintMs += performance.now() - t;
       lastAt = performance.now();
-      frames++;
-      if(src === 1) byRVFC++; else byRAF++;
       if(manual){ try{ vtrack.requestFrame(); }catch(e){} }
     };
     const tick = () => {
       if(stopped) return;
       raf = requestAnimationFrame(tick);
-      if(performance.now() - lastAt >= 30) drawFrame(2);   // 30コマ/秒までに間引く
+      if(performance.now() - lastAt >= 30) drawFrame();   // 30コマ/秒までに間引く
     };
     const startPainting = () => {
       if(hasRVFC){
-        const cb = () => { if(stopped) return; drawFrame(1); v.requestVideoFrameCallback(cb); };
+        const cb = () => { if(stopped) return; drawFrame(); v.requestVideoFrameCallback(cb); };
         v.requestVideoFrameCallback(cb);
       }
       tick();
@@ -880,7 +831,6 @@ function makeVideo(onProgress, useAudio){
         if(v.currentTime <= seen + 0.02 && !v.ended && !v.paused){
           still++;
           if(still === 5){                      // 1.0秒すすまない → 鳴らし直す
-            retries++;
             try{ if(audioCtx && audioCtx.state !== 'running') audioCtx.resume(); }catch(e){}
             v.play().catch(()=>{});
           }
@@ -900,8 +850,6 @@ function makeVideo(onProgress, useAudio){
     try{ v.currentTime = 0; }catch(e){}
     const start = () => {
       rec.start();
-      t0 = performance.now();
-      frames = 0;
       startPainting();
       v.play().then(() => {
         // 保険：長さ＋2秒で必ず止める
