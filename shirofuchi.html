@@ -255,6 +255,8 @@ function reset(){
 }
 
 function load(file, hint){
+  el('hint').style.display = 'none';
+  el('hint').textContent = '';
   if(url) URL.revokeObjectURL(url);
   url = URL.createObjectURL(file);
   // 種類はファイル自身の型で判定。型が空のときは押したボタン（hint）を使う
@@ -291,22 +293,22 @@ function ready(){
 }
 
 /* ---------- 描画（ふちをつける） ---------- */
-/* 角丸の四角い道すじを作る。古いSafari用に roundRect が無いときの手描きも用意 */
-function roundPath(ctx, x, y, w, h, r){
-  r = Math.max(0, Math.min(r, w / 2, h / 2));
+/* かどの丸みぶんの「白い三日月」を1つ描く。
+   まるごと切り抜く（clip）かわりに、はみ出た角だけを白でふさぐ作戦。 */
+function cornerFill(ctx, px, py, cx, cy, r, a0, a1){
   ctx.beginPath();
-  if(r === 0){ ctx.rect(x, y, w, h); return; }
-  if(typeof ctx.roundRect === 'function'){ ctx.roundRect(x, y, w, h, r); return; }
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y,     x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x,     y + h, r);
-  ctx.arcTo(x,     y + h, x,     y,     r);
-  ctx.arcTo(x,     y,     x + w, y,     r);
+  ctx.moveTo(px, py);
+  ctx.arc(cx, cy, r, a0, a1, true);
   ctx.closePath();
+  ctx.fill();
 }
 
-/* keepBg=true のときは白ぬりを省く（動画で毎コマ2M画素を塗り直すのは重い。
-   写真の場所は毎回同じで、はみ出しは切り抜きで防いでいるので、白は最初の1回でよい） */
+/* 1コマぶんを描く。
+   ⚠️ iPhoneでは「毎コマ clip する」「毎コマ台紙ぜんぶを白でぬる」がとても重く、
+      動画のコマ落ちの原因になる。そこで
+      ・切り抜き → drawImage の9引数（元のどこを使うか）で代用＝clip なし
+      ・白ぬり  → 最初の1回だけ（keepBg=true で省略）。かどの丸みは角4つを白でふさぐ
+   にしている。写真1枚の書き出しでは重さは問題にならないが、同じ道を通す。 */
 function paint(ctx, src, W, H, keepBg){
   const sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight;
   if(!keepBg){
@@ -314,13 +316,19 @@ function paint(ctx, src, W, H, keepBg){
     ctx.fillRect(0, 0, W, H);               // 台紙ぜんぶを白でぬる（＝白い背景）
   }
   const g = geom(W, H, sw, sh);
-  const s = Math.max(g.w / sw, g.h / sh);   // 置き場所を満たす倍率（切らない側では ぴったり一致）
-  const dw = sw * s, dh = sh * s;
-  ctx.save();
-  roundPath(ctx, g.x, g.y, g.w, g.h, g.w * rad / 100);
-  ctx.clip();
-  ctx.drawImage(src, g.x + (g.w - dw) / 2, g.y + (g.h - dh) / 2, dw, dh);
-  ctx.restore();
+  // 置き場所を満たす倍率。切らない側では ぴったり一致するので、切り出しは起きない
+  const s  = Math.max(g.w / sw, g.h / sh);
+  const cw = Math.min(sw, g.w / s), ch = Math.min(sh, g.h / s);
+  ctx.drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, g.x, g.y, g.w, g.h);
+  const r = Math.min(g.w * rad / 100, g.w / 2, g.h / 2);
+  if(r > 0.5){
+    const P = Math.PI;
+    ctx.fillStyle = '#fff';
+    cornerFill(ctx, g.x,       g.y,       g.x + r,       g.y + r,       r, -P/2, -P);
+    cornerFill(ctx, g.x + g.w, g.y,       g.x + g.w - r, g.y + r,       r, 0,    -P/2);
+    cornerFill(ctx, g.x + g.w, g.y + g.h, g.x + g.w - r, g.y + g.h - r, r, P/2,  0);
+    cornerFill(ctx, g.x,       g.y + g.h, g.x + r,       g.y + g.h - r, r, P,    P/2);
+  }
 }
 
 /* ---------- 保存 ---------- */
@@ -360,8 +368,7 @@ async function save(){
   }
   el('bar').style.display = 'none';
   el('bar').querySelector('i').style.width = '0%';
-  el('hint').style.display = 'none';
-  el('hint').textContent = '';
+  // 診断行（◯コマ／◯秒＝◯fps）は消さずに残す。次に写真/動画をえらんだ時に消える
   btn.disabled = false; el('again').disabled = false;
   busy = false;
 }
@@ -428,8 +435,15 @@ function makeVideo(onProgress){
 
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
-    const ctx = c.getContext('2d');
+    const ctx = c.getContext('2d', {alpha:false});
     paint(ctx, v, W, H);
+
+    /* ⚠️ iOSは「画面にのっていない canvas」の取り込みが不安定（同じコマが続く・落ちる）。
+       書き出し中はこの canvas をプレビューの上にぴったり重ねて、実際に画面に出す。
+       ついでに、録れている中身がそのまま見えるようになる（元の動画は透明にして裏で再生） */
+    c.style.cssText = 'position:absolute; left:0; top:0; width:100%; height:100%;';
+    el('frame').appendChild(c);
+    v.style.opacity = '0';
 
     /* 画面が消えると iOS は処理ごと止めてしまうので、書き出しの間だけ消えないようにする */
     let wake = null;
@@ -486,12 +500,18 @@ function makeVideo(onProgress){
     rec.onstop = () => {
       try{ if(wake) wake.release(); }catch(e){}
       wake = null;
+      try{ c.remove(); }catch(e){}
+      v.style.opacity = '';
       stream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} });
       if(audioTap){ try{ v.__srcNode.disconnect(audioTap); }catch(e){} }
       v.pause();
       v.muted = true; v.loop = true; v.currentTime = 0;
       v.play().catch(()=>{});
       const blob = new Blob(chunks, {type: chunks.length && chunks[0].type ? chunks[0].type : mime});
+      // 診断：実機のどこが遅いのかを見えるようにしておく（コマ落ちの切り分け用）
+      const secs = t0 ? (performance.now() - t0) / 1000 : 0;
+      el('hint').textContent = W + '×' + H + '・' + (manual ? '手わたし' : '自動') + '・'
+        + frames + 'コマ／' + secs.toFixed(1) + '秒＝' + (secs ? (frames / secs).toFixed(1) : '0') + 'fps';
       if(!blob.size) reject(new Error('動画を作れませんでした'));
       else resolve(blob);
     };
@@ -499,10 +519,11 @@ function makeVideo(onProgress){
     // 1フレームごとに白ふち付きで描き直す。
     // requestVideoFrameCallback があれば動画のフレームに正確に合わせ、無ければ rAF。
     // どちらも止まる環境の保険として、タイマーでも描き直す（＝進捗表示も兼ねる）
-    let lastAt = 0;
+    let lastAt = 0, frames = 0, t0 = 0;
     const drawFrame = () => {
       paint(ctx, v, W, H, true);
       lastAt = performance.now();
+      frames++;
       if(manual){ try{ vtrack.requestFrame(); }catch(e){} }
     };
     const tick = () => {
@@ -533,7 +554,9 @@ function makeVideo(onProgress){
     v.onended = finish;
     try{ v.currentTime = 0; }catch(e){}
     const start = () => {
-      rec.start(200);
+      rec.start();
+      t0 = performance.now();
+      frames = 0;
       startPainting();
       v.play().then(() => {
         // 保険：長さ＋2秒で必ず止める
@@ -541,6 +564,8 @@ function makeVideo(onProgress){
       }).catch(err => {
         stopped = true;
         try{ rec.stop(); }catch(e){}
+        try{ c.remove(); }catch(e){}      // 止まったときも、重ねた canvas を必ず外す
+        v.style.opacity = '';
         reject(new Error('動画を再生できませんでした'));
       });
     };
