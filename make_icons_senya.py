@@ -20,18 +20,23 @@ SYM = {
   'tsumiki-senya-kanri': CAL + ('<circle cx="41" cy="55" r="5.5"/><path d="M32.5,71 a8.5,9 0 0 1 17,0"/>'
                                 '<circle cx="61" cy="55" r="5.5"/><path d="M52.5,71 a8.5,9 0 0 1 17,0"/>'),
 }
-SHIFT = (-3.5, -4.5, 1.0)   # 右下を空けるぶんだけ左上へ（縮めない＝家の作法）
+# ⚠️ 本体とロゴが重ならないよう、外接矩形を数式で出して決めた（2026-08-25）。
+#    本体の絵＝x20-80 / y18-80（＋線の半分3）／ ロゴ＝幅60*sc・高さ52*sc（＋線の半分）。
+#    この値で すきま 6.5・本体の左余白9.0/上余白9.2・ロゴの右下余白5.2。
+SHIFT = (-6.0, -4.0, 0.88)
 # ⚠️ 線の太さは「絵の幅に対する比」で決める。正本＝幅60に対して線4.5＝比 0.075。
 #    ここを固定値（3.2）にしたら 比0.178 ＝ 2.4倍太くなり、白い塊に潰れた（2026-08-25）。
 LOGO_RATIO = 0.075                      # 正本と同じ比
-BADGE = dict(sc=0.38, kn=2.2)           # 絵の幅 60*0.38 = 22.8 → 線 1.71
+# kn（下敷き）は不要になった＝本体とロゴが本当に離れているため。
+# 下敷きを敷かずに済むかどうかが「重なっていない」ことの証拠になる。
+BADGE = dict(sc=0.34, right=94, bottom=94)   # 絵の幅 60*0.34 = 20.4 → 線 1.53
 
 OUT = pathlib.Path.home()/'tsumiki-tools'
 for name, sym in SYM.items():
     art_w = 60 * BADGE['sc']
     body = main_sym(sym, shrink=SHIFT) + tsumiki_badge(
-        BADGE['sc'], right=93, bottom=93,
-        sw_visible=art_w * LOGO_RATIO, knock=BADGE['kn'])
+        BADGE['sc'], right=BADGE['right'], bottom=BADGE['bottom'],
+        sw_visible=art_w * LOGO_RATIO)      # 下敷きなし
     p = OUT/f'icon-{name}.png'
     render(body, p)
     print('作った', p)
