@@ -157,6 +157,21 @@
 const el = id => document.getElementById(id);
 const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r';
 
+/* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
+   ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
+   見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
+const VER = 6;
+(async () => {
+  try{
+    if(sessionStorage.getItem('shirofuchi_verchecked')) return;
+    sessionStorage.setItem('shirofuchi_verchecked', '1');
+    const res = await fetch(location.pathname + '?cb=' + Date.now(), {cache:'no-store'});
+    const txt = await res.text();
+    const m = txt.match(/const VER = (\d+)/);
+    if(m && Number(m[1]) > VER) location.replace(location.pathname + '?v=' + m[1]);
+  }catch(e){}
+})();
+
 let kind = null;      // 'image' | 'video'
 let url  = null;      // objectURL
 let media = null;     // <img> or <video>
@@ -491,7 +506,7 @@ function makeVideo(onProgress){
     let stopped = false, raf = 0, timer = 0;
     el('bar').style.display = 'block';
     el('hint').style.display = 'block';
-    el('hint').textContent = '画面はこのままでお待ちください';
+    el('hint').textContent = '画面はこのままでお待ちください（v' + VER + '）';
     layout();   // 進捗バーのぶんパネルが伸びるので、プレビューの大きさを取り直す
 
     const finish = () => {
@@ -514,7 +529,7 @@ function makeVideo(onProgress){
       // 診断：実機のどこが遅いのかを見えるようにしておく（コマ落ちの切り分け用）
       const secs = t0 ? (performance.now() - t0) / 1000 : 0;
       el('hint').textContent =
-        W + '×' + H + '・' + (manual ? '手わたし' : '自動') + (audioOn ? '・音あり' : '・音なし') + '\n'
+        'v' + VER + '・' + W + '×' + H + '・' + (manual ? '手わたし' : '自動') + (audioOn ? '・音あり' : '・音なし') + '\n'
         + frames + 'コマ(通知' + byRVFC + '/保険' + byRAF + ')／' + secs.toFixed(1) + '秒＝'
         + (secs ? (frames / secs).toFixed(1) : '0') + 'fps\n'
         + '描画' + (frames ? (paintMs / frames).toFixed(1) : '0') + 'ms・空白'
