@@ -160,7 +160,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 7;
+const VER = 8;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -261,6 +261,9 @@ window.addEventListener('orientationchange', () => setTimeout(layout, 250));
 el('again').addEventListener('click', () => { if(!busy) reset(); });
 
 function reset(){
+  stopMonitor();
+  el('hint').style.display = 'none';
+  el('hint').textContent = '';
   if(url) URL.revokeObjectURL(url);
   url = null; media = null; kind = null; srcW = 0; srcH = 0;
   disarmSave();
@@ -270,6 +273,8 @@ function reset(){
 }
 
 function load(file, hint){
+  stopMonitor();
+  fileInfo = (file.type || '種類不明') + '・' + (file.size / 1048576).toFixed(0) + 'MB';
   el('hint').style.display = 'none';
   el('hint').textContent = '';
   if(url) URL.revokeObjectURL(url);
@@ -329,7 +334,55 @@ function ready(){
   el('view1').classList.add('hide');
   el('view2').classList.remove('hide');
   layout();
+  startMonitor();
 }
+
+/* ---------- 再生モニター ----------
+   「書き出し以前に、そもそも再生できているのか」を実機で見るための実況表示。
+   コマの通知を数えて実効fpsを出し、再生位置・読み込み状態・待ち回数を出す。 */
+let mon = 0, monFrames = 0, monWait = 0, fileInfo = '';
+function onMonWait(){ monWait++; }
+function stopMonitor(){
+  if(mon){ clearInterval(mon); mon = 0; }
+  if(media){
+    media.removeEventListener('waiting', onMonWait);
+    media.removeEventListener('stalled', onMonWait);
+  }
+}
+function startMonitor(){
+  stopMonitor();
+  if(kind !== 'video' || !media) return;
+  const v = media;
+  monFrames = 0; monWait = 0;
+  v.addEventListener('waiting', onMonWait);
+  v.addEventListener('stalled', onMonWait);
+  if(typeof v.requestVideoFrameCallback === 'function'){
+    const cb = () => { if(!mon) return; monFrames++; v.requestVideoFrameCallback(cb); };
+    v.requestVideoFrameCallback(cb);
+  }
+  let last = performance.now(), lastN = 0;
+  const render = fps => {
+    el('hint').textContent =
+      'v' + VER + '・元 ' + srcW + '×' + srcH + '・' + (isFinite(v.duration) ? v.duration.toFixed(1) : '?') + '秒・' + fileInfo + '\n'
+      + '再生 ' + v.currentTime.toFixed(1) + '秒・' + fps.toFixed(0) + 'fps・読込' + v.readyState
+      + (v.paused ? '・とまってる' : '') + '・待ち' + monWait + '回・コマ計' + monFrames;
+  };
+  el('hint').style.display = 'block';
+  render(0);
+  layout();                      // 実況の行ぶんパネルが伸びるので、プレビューを測り直す
+  mon = setInterval(() => {
+    if(busy) return;
+    const now = performance.now(), dt = (now - last) / 1000;
+    const fps = dt > 0 ? (monFrames - lastN) / dt : 0;
+    lastN = monFrames; last = now;
+    render(fps);
+  }, 700);
+}
+/* プレビューを押したら再生／一時停止。自動再生が止められている端末でも動かせるように */
+el('frame').addEventListener('click', () => {
+  if(busy || kind !== 'video' || !media) return;
+  if(media.paused) media.play().catch(()=>{}); else media.pause();
+});
 
 /* ---------- 描画（ふちをつける） ---------- */
 /* かどの丸みぶんの「白い三日月」を1つ描く。
@@ -384,6 +437,7 @@ async function save(){
   if(pending){ handOver(pending); return; }
 
   busy = true;
+  stopMonitor();
   btn.disabled = true; el('again').disabled = true;
   try{
     if(kind === 'image'){
