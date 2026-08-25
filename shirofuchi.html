@@ -48,8 +48,11 @@
 
   /* ---- プレビュー ---- */
   .stage{flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding-bottom:16px;}
-  .frame{position:relative; background:#fff; overflow:hidden; box-shadow:0 12px 34px rgba(36,35,33,.15); border-radius:5px;}
-  .frame > *{position:absolute; object-fit:cover; display:block;}
+  .frame{position:relative; background:#fff; overflow:hidden; box-shadow:0 12px 34px rgba(36,35,33,.15); border-radius:5px;
+    touch-action:none; -webkit-user-select:none; user-select:none;}
+  /* 拡大して切るとき、ふちからはみ出したぶんをここで隠す（かどの丸みもここでつける） */
+  .inner{position:absolute; overflow:hidden;}
+  .inner > *{position:absolute; display:block; -webkit-user-drag:none; -webkit-touch-callout:none;}
 
   /* ---- 操作パネル ---- */
   .panel{flex:0 0 auto; background:var(--card); border:1px solid var(--line);
@@ -112,9 +115,18 @@
 
 <!-- 編集画面：1画面ぴったり。スクロールなし -->
 <div class="screen hide" id="view2">
-  <div class="stage" id="stage"><div class="frame" id="frame"></div></div>
+  <div class="stage" id="stage"><div class="frame" id="frame"><div class="inner" id="inner"></div></div></div>
 
   <div class="panel">
+    <!-- 写真の大きさ（0＝ぜんぶのせる／1＝9:16にうめる／2＝そのさらに2倍） -->
+    <div class="ctl">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4,15.4 L21,21"/>
+        <path d="M7.6,10.5h5.8M10.5,7.6v5.8"/></svg>
+      <input type="range" id="z" min="0" max="2" step="0.01" value="0" aria-label="写真の大きさ">
+      <span class="val" id="zv">ぜんぶ</span>
+    </div>
     <!-- ふちの太さ -->
     <div class="ctl">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"
@@ -152,15 +164,17 @@
    ・写真は切らずに全部のせる（横位置なら上下に、9:16より細長いなら左右に白がふえる）
    ・ただし切れるのが 3% までで収まるとき（＝ほぼ9:16の写真）は、
      いままで通り4辺のふちをぴったりそろえる（cover）
+   ・「大きさ」を上げると写真を拡大して切り、9:16をうめられる（0＝ぜんぶ／1＝うめる／2＝その2倍）。
+     切れているときは指でなぞって位置を、2本指でつまんで大きさを変えられる
    ・画面は1画面ぴったり（スクロールなし）。プレビューの大きさはJSで実測して決める
    ========================================================= */
 const el = id => document.getElementById(id);
-const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio';
+const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio', KEY_Z = 'shirofuchi_z';
 
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 8;
+const VER = 9;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -192,8 +206,20 @@ if(localStorage.getItem('shirofuchi_r_std2') !== '1'){
 }
 let rad = parseFloat(localStorage.getItem(KEY_R) || '2');
 if(!(rad >= 0 && rad <= 24)) rad = 2;
+
+/* ---------- 写真の大きさ（ズーム）と位置 ----------
+   zoom 0 ＝ いままで通り「切らずに全部のせる」
+   zoom 1 ＝ 9:16 をうめる（ふちの内側いっぱい。はみ出したところは切る）
+   zoom 2 ＝ そのさらに2倍まで寄れる
+   panX / panY ＝ 切ったときに「どこを残すか」。中身の横幅・たて幅に対する割合で持つので、
+                  プレビューでも書き出しでも同じ場所が残る。写真をえらび直すたびに真ん中へ戻す。 */
+let zoom = parseFloat(localStorage.getItem(KEY_Z) || '0');
+if(!(zoom >= 0 && zoom <= 2)) zoom = 0;
+let panX = 0, panY = 0;
+
 el('w').value = pct;
 el('r').value = rad;
+el('z').value = zoom;
 
 /* ---------- 出来上がりの形 ----------
    いつも 9:16（たて長）の白い台紙。その真ん中に写真をのせる。
@@ -201,38 +227,113 @@ el('r').value = rad;
 const AR = 9 / 16;          // 出来上がりの 横 ÷ たて
 const CROP_MAX = 0.03;      // これ以内しか切れないなら、4辺のふちをそろえる（＝いままでの見た目）
 
-/* 台紙（W×H）の中で、写真をどこに・どの大きさで置くかを求める。
-   もどり値の x,y,w,h は写真の場所。s は元の写真にかかる倍率（出来上がりサイズを決めるのに使う） */
-function geom(W, H, sw, sh){
+/* 台紙（W×H）の中身の枠と、「そのまま」「うめる」それぞれの倍率を出す */
+function fits(W, H, sw, sh){
   const b  = W * pct / 100;
   const iw = Math.max(1, W - b * 2), ih = Math.max(1, H - b * 2);
-  const sc = Math.max(iw / sw, ih / sh);                        // ふち内いっぱいに満たす倍率
-  const crop = Math.max(sw * sc / iw, sh * sc / ih) - 1;         // そのとき切れる割合
-  if(crop <= CROP_MAX) return {x:b, y:b, w:iw, h:ih, s:sc};      // ほぼ9:16 → 4辺そろえる
-  const sf = Math.min(iw / sw, ih / sh);                         // それ以外 → 切らずに全部のせる
-  const w = sw * sf, h = sh * sf;
-  return {x:(W - w) / 2, y:(H - h) / 2, w, h, s:sf};
+  const cover = Math.max(iw / sw, ih / sh);                      // ふち内いっぱいに満たす倍率
+  const crop  = Math.max(sw * cover / iw, sh * cover / ih) - 1;   // そのとき切れる割合
+  // ほぼ9:16の写真は、いままで通り4辺そろえる。それ以外は切らずに全部のせる
+  const base  = crop <= CROP_MAX ? cover : Math.min(iw / sw, ih / sh);
+  return {b, iw, ih, base, cover};
+}
+/* スライダーの値（0〜2）→ 実際の倍率。1 でちょうど「うめる」になるように折れ線でつなぐ。
+   もともと切れない写真（すでに9:16）は、0〜2 をそのまま 1倍〜2倍にわりあてる */
+function scaleAt(t, base, cover){
+  if(cover / base < 1.02) return base * (1 + t / 2);
+  return t <= 1 ? base + (cover - base) * t : cover * t;
+}
+/* 上の逆。2本指でつまんだときに、倍率からスライダーの値へ戻すのに使う */
+function tAt(s, base, cover){
+  if(cover / base < 1.02) return (s / base - 1) * 2;
+  return s <= cover ? (s - base) / (cover - base) : s / cover;
+}
+
+/* 台紙（W×H）の中で、写真をどこに・どの大きさで置くかを求める。
+   x,y,w,h ＝ 写真ぜんたいの場所（切られるぶんも含む）
+   vx,vy,vw,vh ＝ そのうち実際に見える場所（＝中身の枠との重なり。かどの丸みはここにつく）
+   s ＝ 元の写真にかかる倍率（出来上がりサイズを決めるのに使う）
+   mx,my ＝ 指で動かせる範囲（割合） */
+function geom(W, H, sw, sh){
+  const f = fits(W, H, sw, sh);
+  const s = scaleAt(zoom, f.base, f.cover);
+  const w = sw * s, h = sh * s;
+  const mx = Math.max(0, (w - f.iw) / 2), my = Math.max(0, (h - f.ih) / 2);
+  const ox = Math.max(-mx, Math.min(mx, panX * f.iw));
+  const oy = Math.max(-my, Math.min(my, panY * f.ih));
+  const x  = f.b + (f.iw - w) / 2 + ox;
+  const y  = f.b + (f.ih - h) / 2 + oy;
+  const vx = Math.max(x, f.b), vy = Math.max(y, f.b);
+  const vw = Math.max(1, Math.min(x + w, f.b + f.iw) - vx);
+  const vh = Math.max(1, Math.min(y + h, f.b + f.ih) - vy);
+  return {x, y, w, h, s, vx, vy, vw, vh, mx: mx / f.iw, my: my / f.ih};
+}
+
+/* プレビューの「中身の枠」を実測ピクセルで返す（指でなぞった量を割合に直すのに使う） */
+function innerBox(){
+  const f = el('frame'), w = f.clientWidth, h = f.clientHeight;
+  if(!w || !h) return null;
+  const b = w * pct / 100;
+  return {iw: Math.max(1, w - b * 2), ih: Math.max(1, h - b * 2)};
+}
+
+/* すでに 9:16 に近い写真は「うめる」がはじめから満たされている。
+   その写真ではスライダーの真ん中に意味がないので、目盛りも吸いつきもやめる */
+function hasFill(){
+  if(!srcW || !srcH) return false;
+  const f = fits(1000, 1000 / AR, srcW, srcH);
+  return f.cover / f.base >= 1.02;
+}
+
+/* 大きさの表示。0＝ぜんぶ／1＝うめる／そのあいだは「そのままの何％か」 */
+function zoomLabel(){
+  if(zoom <= 0.005) return 'ぜんぶ';
+  if(!srcW || !srcH) return Math.round(zoom * 100) + '%';
+  if(hasFill() && Math.abs(zoom - 1) < 0.02) return 'うめる';
+  const f = fits(1000, 1000 / AR, srcW, srcH);
+  return Math.round(scaleAt(zoom, f.base, f.cover) / f.base * 100) + '%';
+}
+
+/* 大きさを決める。0 と「うめる」にはそっと吸いつかせる（指でぴったり合わせるのは難しいので） */
+function setZoom(t){
+  t = Math.max(0, Math.min(2, t));
+  if(t < 0.04) t = 0;
+  else if(hasFill() && Math.abs(t - 1) < 0.04) t = 1;
+  zoom = t;
+  el('z').value = t;
+  localStorage.setItem(KEY_Z, String(t));
+  if(pending) disarmSave();
+  layout();
 }
 
 /* プレビューの大きさは、余った場所を実測してぴったり収まるように決める（＝スクロールしない） */
 function layout(){
+  el('zv').textContent = zoomLabel();
   el('wv').textContent = pct.toFixed(1) + '%';
   el('rv').textContent = Math.round(rad) + '%';
-  const f = el('frame'), st = el('stage');
+  const f = el('frame'), st = el('stage'), inr = el('inner');
   if(!srcW || !srcH || !st.clientWidth) return;
   const w = Math.floor(Math.min(st.clientWidth, st.clientHeight * AR));
   const h = Math.round(w / AR);
   f.style.width  = w + 'px';
   f.style.height = h + 'px';
-  const kid = f.firstElementChild;
+  const kid = inr.firstElementChild;
   if(!kid) return;
   const g = geom(w, h, srcW, srcH);
-  kid.style.left   = g.x + 'px';
-  kid.style.top    = g.y + 'px';
+  // はみ出しの外へは動かせない。持っている値のほうも直しておく（引っぱりが空ぶりしないように）
+  panX = Math.max(-g.mx, Math.min(g.mx, panX));
+  panY = Math.max(-g.my, Math.min(g.my, panY));
+  inr.style.left   = g.vx + 'px';
+  inr.style.top    = g.vy + 'px';
+  inr.style.width  = g.vw + 'px';
+  inr.style.height = g.vh + 'px';
+  inr.style.borderRadius = (g.vw * rad / 100) + 'px';
+  kid.style.left   = (g.x - g.vx) + 'px';
+  kid.style.top    = (g.y - g.vy) + 'px';
   kid.style.width  = g.w + 'px';
   kid.style.height = g.h + 'px';
-  kid.style.borderRadius = (g.w * rad / 100) + 'px';
 }
+el('z').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
 el('w').addEventListener('input', e => {
   pct = parseFloat(e.target.value);
   localStorage.setItem(KEY, String(pct));
@@ -245,8 +346,17 @@ el('r').addEventListener('input', e => {
   if(pending) disarmSave();
   layout();
 });
-window.addEventListener('resize', layout);
+/* 画面の大きさが変わったら測り直す（回転・キーボード・実況行の増減など）。
+   ResizeObserver は続けて何度も鳴るので、ひと呼吸おいて1回にまとめる。
+   ⚠️ requestAnimationFrame は環境によって止まることがあるので、ここでは使わない */
+let layoutQ = 0;
+function relayout(){
+  clearTimeout(layoutQ);
+  layoutQ = setTimeout(layout, 16);
+}
+window.addEventListener('resize', relayout);
 window.addEventListener('orientationchange', () => setTimeout(layout, 250));
+if(window.ResizeObserver) new ResizeObserver(relayout).observe(el('stage'));
 
 /* ---------- ファイルをえらぶ ----------
    写真用・動画用で入力欄を分けている。accept を絞っておくと、
@@ -266,8 +376,9 @@ function reset(){
   el('hint').textContent = '';
   if(url) URL.revokeObjectURL(url);
   url = null; media = null; kind = null; srcW = 0; srcH = 0;
+  panX = 0; panY = 0;
   disarmSave();
-  el('frame').innerHTML = '';
+  el('inner').innerHTML = '';
   el('view2').classList.add('hide');
   el('view1').classList.remove('hide');
 }
@@ -283,8 +394,9 @@ function load(file, hint){
   kind = /^video\//.test(file.type) ? 'video'
        : /^image\//.test(file.type) ? 'image'
        : (hint || 'image');
+  panX = 0; panY = 0;          // 新しい写真は、まず真ん中を残す
   disarmSave();
-  el('frame').innerHTML = '';
+  el('inner').innerHTML = '';
 
   if(kind === 'image'){
     const img = new Image();
@@ -316,8 +428,8 @@ function reloadMedia(){
       const old = media;
       srcW = nv.videoWidth; srcH = nv.videoHeight;
       media = nv;
-      el('frame').innerHTML = '';
-      el('frame').appendChild(nv);
+      el('inner').innerHTML = '';
+      el('inner').appendChild(nv);
       try{ old.pause(); old.removeAttribute('src'); old.load(); }catch(e){}
       layout();
       nv.play().catch(()=>{});
@@ -330,7 +442,7 @@ function reloadMedia(){
 
 function ready(){
   if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
-  el('frame').appendChild(media);
+  el('inner').appendChild(media);
   el('view1').classList.add('hide');
   el('view2').classList.remove('hide');
   layout();
@@ -378,11 +490,63 @@ function startMonitor(){
     render(fps);
   }, 700);
 }
-/* プレビューを押したら再生／一時停止。自動再生が止められている端末でも動かせるように */
-el('frame').addEventListener('click', () => {
-  if(busy || kind !== 'video' || !media) return;
-  if(media.paused) media.play().catch(()=>{}); else media.pause();
+/* ---------- 指でうごかす ----------
+   1本指でなぞる ＝ 切れているときに「どこを残すか」を動かす
+   2本指でつまむ ＝ 大きさを変える（スライダーと同じ値が動く）
+   ほとんど動かさずに離した ＝ タップ。動画の再生／一時停止（自動再生が止められている端末むけ） */
+const pts = new Map();
+let g1 = null, gz = null, moved = 0;
+const twoDist = () => {
+  const a = [...pts.values()];
+  return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+};
+el('frame').addEventListener('pointerdown', e => {
+  if(busy || !media) return;
+  try{ el('frame').setPointerCapture(e.pointerId); }catch(err){}
+  pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pts.size === 1){ moved = 0; gz = null; g1 = {x:e.clientX, y:e.clientY, px:panX, py:panY}; }
+  else if(pts.size === 2){ g1 = null; gz = {d:twoDist(), z:zoom}; moved = 99; }
 });
+el('frame').addEventListener('pointermove', e => {
+  const p = pts.get(e.pointerId);
+  if(!p || busy) return;
+  p.x = e.clientX; p.y = e.clientY;
+  e.preventDefault();
+  if(pts.size >= 2 && gz){
+    const d = twoDist();
+    if(gz.d > 8 && srcW && srcH){
+      const f = fits(1000, 1000 / AR, srcW, srcH);
+      setZoom(tAt(scaleAt(gz.z, f.base, f.cover) * (d / gz.d), f.base, f.cover));
+    }
+    return;
+  }
+  if(!g1) return;
+  const box = innerBox();
+  if(!box) return;
+  const dx = p.x - g1.x, dy = p.y - g1.y;
+  moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
+  panX = g1.px + dx / box.iw;
+  panY = g1.py + dy / box.ih;
+  if(pending) disarmSave();
+  layout();
+});
+const endPoint = e => {
+  if(!pts.has(e.pointerId)) return;
+  pts.delete(e.pointerId);
+  if(pts.size < 2) gz = null;
+  if(pts.size === 1){
+    // つまむ→なぞる に切り替わったとき、途中から続けられるように基準を取り直す
+    const only = [...pts.values()][0];
+    g1 = {x:only.x, y:only.y, px:panX, py:panY};
+  } else if(pts.size === 0){
+    g1 = null;
+    if(moved < 8 && !busy && kind === 'video' && media){
+      if(media.paused) media.play().catch(()=>{}); else media.pause();
+    }
+  }
+};
+el('frame').addEventListener('pointerup', endPoint);
+el('frame').addEventListener('pointercancel', endPoint);
 
 /* ---------- 描画（ふちをつける） ---------- */
 /* かどの丸みぶんの「白い三日月」を1つ描く。
@@ -408,18 +572,20 @@ function paint(ctx, src, W, H, keepBg){
     ctx.fillRect(0, 0, W, H);               // 台紙ぜんぶを白でぬる（＝白い背景）
   }
   const g = geom(W, H, sw, sh);
-  // 置き場所を満たす倍率。切らない側では ぴったり一致するので、切り出しは起きない
-  const s  = Math.max(g.w / sw, g.h / sh);
-  const cw = Math.min(sw, g.w / s), ch = Math.min(sh, g.h / s);
-  ctx.drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, g.x, g.y, g.w, g.h);
-  const r = Math.min(g.w * rad / 100, g.w / 2, g.h / 2);
+  /* 「見えている場所」ぶんだけを元の写真から切り出して描く。
+     こうすると拡大してはみ出しても、切り抜き（clip）を使わずにふちを守れる＝iPhoneで軽い */
+  let sx = Math.max(0, (g.vx - g.x) / g.s), sy = Math.max(0, (g.vy - g.y) / g.s);
+  const cw = Math.max(1, Math.min(sw - sx, g.vw / g.s));
+  const ch = Math.max(1, Math.min(sh - sy, g.vh / g.s));
+  ctx.drawImage(src, sx, sy, cw, ch, g.vx, g.vy, g.vw, g.vh);
+  const r = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);
   if(r > 0.5){
     const P = Math.PI;
     ctx.fillStyle = '#fff';
-    cornerFill(ctx, g.x,       g.y,       g.x + r,       g.y + r,       r, -P/2, -P);
-    cornerFill(ctx, g.x + g.w, g.y,       g.x + g.w - r, g.y + r,       r, 0,    -P/2);
-    cornerFill(ctx, g.x + g.w, g.y + g.h, g.x + g.w - r, g.y + g.h - r, r, P/2,  0);
-    cornerFill(ctx, g.x,       g.y + g.h, g.x + r,       g.y + g.h - r, r, P,    P/2);
+    cornerFill(ctx, g.vx,        g.vy,        g.vx + r,         g.vy + r,         r, -P/2, -P);
+    cornerFill(ctx, g.vx + g.vw, g.vy,        g.vx + g.vw - r,  g.vy + r,         r, 0,    -P/2);
+    cornerFill(ctx, g.vx + g.vw, g.vy + g.vh, g.vx + g.vw - r,  g.vy + g.vh - r,  r, P/2,  0);
+    cornerFill(ctx, g.vx,        g.vy + g.vh, g.vx + r,         g.vy + g.vh - r,  r, P,    P/2);
   }
 }
 
@@ -505,7 +671,8 @@ function stamp(){
    geom は比率だけで決まるので、仮の1000pxで倍率を出して逆算できる */
 function outSize(){
   const s = geom(1000, 1000 / AR, srcW, srcH).s / 1000;
-  const W = Math.max(2, Math.round(1 / s));
+  // 拡大するほど元の写真を細かく使うので出来上がりは小さくなる。粗くなりすぎないよう 1080 を下限にする
+  const W = Math.max(1080, Math.max(2, Math.round(1 / s)));
   return {W, H: Math.max(2, Math.round(W / AR))};
 }
 
