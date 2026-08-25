@@ -76,6 +76,7 @@
     color:var(--sub); border-color:var(--line);}
   .btn svg{width:22px; height:22px; display:block;}
   .bar{height:5px; border-radius:999px; background:var(--surface); overflow:hidden; margin-top:10px; display:none;}
+  .hint{display:none; margin-top:8px; text-align:center; font-size:12px; line-height:1.5; color:var(--sub);}
   .bar i{display:block; height:100%; width:0%; background:var(--ink); transition:width .2s linear;}
 
   #toast{position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 100px); transform:translateX(-50%) translateY(12px);
@@ -138,6 +139,7 @@
       <button class="btn" id="save">保存</button>
     </div>
     <div class="bar" id="bar"><i></i></div>
+    <div class="hint" id="hint"></div>
   </div>
 </div>
 
@@ -303,10 +305,14 @@ function roundPath(ctx, x, y, w, h, r){
   ctx.closePath();
 }
 
-function paint(ctx, src, W, H){
+/* keepBg=true のときは白ぬりを省く（動画で毎コマ2M画素を塗り直すのは重い。
+   写真の場所は毎回同じで、はみ出しは切り抜きで防いでいるので、白は最初の1回でよい） */
+function paint(ctx, src, W, H, keepBg){
   const sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, W, H);                 // 台紙ぜんぶを白でぬる（＝白い背景）
+  if(!keepBg){
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);               // 台紙ぜんぶを白でぬる（＝白い背景）
+  }
   const g = geom(W, H, sw, sh);
   const s = Math.max(g.w / sw, g.h / sh);   // 置き場所を満たす倍率（切らない側では ぴったり一致）
   const dw = sw * s, dh = sh * s;
@@ -338,9 +344,11 @@ async function save(){
       const blob = await makeImage();
       handOver(new File([blob], stamp() + '.jpg', {type:'image/jpeg'}));
     } else {
-      const blob = await makeVideo(p => {
+      const blob = await makeVideo((p, left) => {
         btn.textContent = Math.round(p * 100) + '%';
         el('bar').querySelector('i').style.width = (p * 100) + '%';
+        const m = Math.floor(left / 60), sec = Math.round(left % 60);
+        el('hint').textContent = '画面はこのままでお待ちください（のこり ' + (m ? m + '分' : '') + sec + '秒）';
       });
       const mp4 = blob.type.indexOf('mp4') >= 0;
       if(!mp4) toast('この端末はmp4を作れないため、webmで書き出しました');
@@ -352,6 +360,8 @@ async function save(){
   }
   el('bar').style.display = 'none';
   el('bar').querySelector('i').style.width = '0%';
+  el('hint').style.display = 'none';
+  el('hint').textContent = '';
   btn.disabled = false; el('again').disabled = false;
   busy = false;
 }
@@ -421,7 +431,24 @@ function makeVideo(onProgress){
     const ctx = c.getContext('2d');
     paint(ctx, v, W, H);
 
-    const stream = c.captureStream(30);
+    /* 画面が消えると iOS は処理ごと止めてしまうので、書き出しの間だけ消えないようにする */
+    let wake = null;
+    try{ if(navigator.wakeLock && navigator.wakeLock.request) wake = await navigator.wakeLock.request('screen'); }catch(e){}
+
+    /* 録画への取り込み方
+       ・「毎秒30コマ、自動で取り込む」方式は、iPhoneが描き終えていないコマをそのまま捨てる＝コマ落ちの正体。
+       ・そこで captureStream(0)（＝自動では取り込まない）にして、
+         動画のコマが1枚できあがるたびに requestFrame() で1枚ずつ手渡す。取りこぼしが起きない。
+       ・requestVideoFrameCallback / requestFrame が無い端末だけ、これまで通りの自動30コマにする */
+    const hasRVFC = typeof v.requestVideoFrameCallback === 'function';
+    let stream = c.captureStream(0);
+    let vtrack = stream.getVideoTracks()[0];
+    const manual = hasRVFC && vtrack && typeof vtrack.requestFrame === 'function';
+    if(!manual){
+      try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+      stream = c.captureStream(30);
+      vtrack = stream.getVideoTracks()[0];
+    }
 
     // 音を拾う（元の音声を録画ストリームに合流させる）
     // createMediaElementSource は1つの<video>につき1回だけなので、要素そのものに覚えさせる
@@ -437,7 +464,7 @@ function makeVideo(onProgress){
 
     let rec;
     try{
-      rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond: 12000000, audioBitsPerSecond: 128000});
+      rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond: 8000000, audioBitsPerSecond: 128000});
     }catch(e){ return reject(new Error('この端末では動画を書き出せませんでした')); }
 
     const chunks = [];
@@ -446,6 +473,8 @@ function makeVideo(onProgress){
     const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
     let stopped = false, raf = 0, timer = 0;
     el('bar').style.display = 'block';
+    el('hint').style.display = 'block';
+    el('hint').textContent = '画面はこのままでお待ちください';
     layout();   // 進捗バーのぶんパネルが伸びるので、プレビューの大きさを取り直す
 
     const finish = () => {
@@ -455,6 +484,8 @@ function makeVideo(onProgress){
       try{ rec.stop(); }catch(e){}
     };
     rec.onstop = () => {
+      try{ if(wake) wake.release(); }catch(e){}
+      wake = null;
       stream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} });
       if(audioTap){ try{ v.__srcNode.disconnect(audioTap); }catch(e){} }
       v.pause();
@@ -468,24 +499,32 @@ function makeVideo(onProgress){
     // 1フレームごとに白ふち付きで描き直す。
     // requestVideoFrameCallback があれば動画のフレームに正確に合わせ、無ければ rAF。
     // どちらも止まる環境の保険として、タイマーでも描き直す（＝進捗表示も兼ねる）
+    let lastAt = 0;
+    const drawFrame = () => {
+      paint(ctx, v, W, H, true);
+      lastAt = performance.now();
+      if(manual){ try{ vtrack.requestFrame(); }catch(e){} }
+    };
     const tick = () => {
       if(stopped) return;
-      paint(ctx, v, W, H);
+      drawFrame();
       raf = requestAnimationFrame(tick);
     };
     const startPainting = () => {
-      if(typeof v.requestVideoFrameCallback === 'function'){
-        const cb = () => { if(stopped) return; paint(ctx, v, W, H); v.requestVideoFrameCallback(cb); };
+      if(hasRVFC){
+        const cb = () => { if(stopped) return; drawFrame(); v.requestVideoFrameCallback(cb); };
         v.requestVideoFrameCallback(cb);
       } else {
         tick();
       }
       timer = setInterval(() => {
         if(stopped) return;
-        paint(ctx, v, W, H);
-        if(dur) onProgress(Math.min(1, v.currentTime / dur));
+        // 手渡し方式では、ここで描くと同じ絵を1枚よけいに足してしまう。
+        // ただしコマの通知が400msも来ないときは、止まった保険として1枚描く。
+        if(!manual || performance.now() - lastAt > 400) drawFrame();
+        if(dur) onProgress(Math.min(1, v.currentTime / dur), Math.max(0, dur - v.currentTime));
         if(v.ended) finish();
-      }, 120);
+      }, 200);
     };
 
     v.pause();
