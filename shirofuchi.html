@@ -155,12 +155,12 @@
    ・画面は1画面ぴったり（スクロールなし）。プレビューの大きさはJSで実測して決める
    ========================================================= */
 const el = id => document.getElementById(id);
-const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r';
+const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio';
 
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 6;
+const VER = 7;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -299,6 +299,30 @@ function load(file, hint){
   }
 }
 
+/* 同じファイルから <video> を作り直す。
+   createMediaElementSource でWebAudioにつないだ要素は、二度と切り離せない。
+   音なしでやり直すには要素そのものを取り替えるしかない。 */
+function reloadMedia(){
+  return new Promise((res, rej) => {
+    const nv = document.createElement('video');
+    nv.playsInline = true; nv.setAttribute('playsinline','');
+    nv.muted = true; nv.loop = true; nv.preload = 'auto';
+    nv.onloadedmetadata = () => {
+      const old = media;
+      srcW = nv.videoWidth; srcH = nv.videoHeight;
+      media = nv;
+      el('frame').innerHTML = '';
+      el('frame').appendChild(nv);
+      try{ old.pause(); old.removeAttribute('src'); old.load(); }catch(e){}
+      layout();
+      nv.play().catch(()=>{});
+      res();
+    };
+    nv.onerror = () => rej(new Error('動画を読み直せませんでした'));
+    nv.src = url;
+  });
+}
+
 function ready(){
   if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
   el('frame').appendChild(media);
@@ -367,12 +391,28 @@ async function save(){
       const blob = await makeImage();
       handOver(new File([blob], stamp() + '.jpg', {type:'image/jpeg'}));
     } else {
-      const blob = await makeVideo((p, left) => {
+      const prog = (p, left) => {
         btn.textContent = Math.round(p * 100) + '%';
         el('bar').querySelector('i').style.width = (p * 100) + '%';
         const m = Math.floor(left / 60), sec = Math.round(left % 60);
-        el('hint').textContent = '画面はこのままでお待ちください（のこり ' + (m ? m + '分' : '') + sec + '秒）';
-      });
+        el('hint').textContent = '画面はこのままでお待ちください（のこり ' + (m ? m + '分' : '') + sec + '秒・v' + VER + '）';
+      };
+      /* 音を拾うと再生ごと止まる端末がある（iOSの持病）。
+         止まったら「音なし」で自動的にやり直し、以後この端末では音なしで書き出す。 */
+      let useAudio = localStorage.getItem(KEY_NA) !== '1';
+      let blob;
+      try{
+        blob = await makeVideo(prog, useAudio);
+      }catch(e){
+        if(e && e.stalled && useAudio){
+          toast('音の取り込みで再生が止まりました。音なしでやり直します');
+          await reloadMedia();          // WebAudioにつながれた動画を作り直して縁を切る
+          blob = await makeVideo(prog, false);
+          localStorage.setItem(KEY_NA, '1');   // 音なしで成功したときだけ覚える
+        }else{
+          throw e;
+        }
+      }
       const mp4 = blob.type.indexOf('mp4') >= 0;
       if(!mp4) toast('この端末はmp4を作れないため、webmで書き出しました');
       handOver(new File([blob], stamp() + (mp4 ? '.mp4' : '.webm'), {type: mp4 ? 'video/mp4' : 'video/webm'}));
@@ -435,7 +475,7 @@ function pickMime(){
 
 let audioCtx = null;
 
-function makeVideo(onProgress){
+function makeVideo(onProgress, useAudio){
   return new Promise(async (resolve, reject) => {
     const v = media;
     const mime = pickMime();
@@ -478,21 +518,36 @@ function makeVideo(onProgress){
 
     // 音を拾う（元の音声を録画ストリームに合流させる）
     // createMediaElementSource は1つの<video>につき1回だけなので、要素そのものに覚えさせる
-    /* ⚠️ createMediaElementSource でWebAudioにつなぐと、音の処理が止まったときに
-       動画の再生ごと止まる（iOSの持病）。動いていることを確かめてからだけつなぐ。
-       つなげないときは音なしで書き出す（映像が固まるよりましなので） */
-    let audioTap = null, audioOn = false;
-    try{
-      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if(audioCtx.state !== 'running') await audioCtx.resume();
-      if(audioCtx.state === 'running'){
-        if(!v.__srcNode) v.__srcNode = audioCtx.createMediaElementSource(v);
-        audioTap = audioCtx.createMediaStreamDestination();
-        v.__srcNode.connect(audioTap);
-        audioTap.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-        audioOn = true;
+    /* 音の取り込み。
+       ⚠️ createMediaElementSource でWebAudioにつなぐと、動画の再生ごと止まることがある
+          （iOSの持病。2026-08-25 実機で「16秒の動画が0.5秒で停止」を確認）。
+       そこで ①動画そのものから音のトラックを取れるならそれを使い（WebAudioを通さない）、
+              ②だめならWebAudio、③それもだめなら音なし、の順で試す。
+       止まってしまった場合は呼び出し側が「音なし」でやり直す。 */
+    let audioTap = null, audioOn = false, audioWay = 'なし';
+    if(useAudio){
+      try{
+        const cap = v.captureStream || v.mozCaptureStream || v.webkitCaptureStream;
+        if(typeof cap === 'function'){
+          const ms = cap.call(v);
+          const at = ms && ms.getAudioTracks && ms.getAudioTracks()[0];
+          if(at){ stream.addTrack(at); audioOn = true; audioWay = '直'; }
+        }
+      }catch(e){ audioOn = false; }
+      if(!audioOn){
+        try{
+          if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          if(audioCtx.state !== 'running') await audioCtx.resume();
+          if(audioCtx.state === 'running'){
+            if(!v.__srcNode) v.__srcNode = audioCtx.createMediaElementSource(v);
+            audioTap = audioCtx.createMediaStreamDestination();
+            v.__srcNode.connect(audioTap);
+            audioTap.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+            audioOn = true; audioWay = 'WA';
+          }
+        }catch(e){ audioTap = null; audioOn = false; }
       }
-    }catch(e){ audioTap = null; audioOn = false; /* 音が拾えなくても映像だけ書き出す */ }
+    }
 
     let rec;
     try{
@@ -529,12 +584,18 @@ function makeVideo(onProgress){
       // 診断：実機のどこが遅いのかを見えるようにしておく（コマ落ちの切り分け用）
       const secs = t0 ? (performance.now() - t0) / 1000 : 0;
       el('hint').textContent =
-        'v' + VER + '・' + W + '×' + H + '・' + (manual ? '手わたし' : '自動') + (audioOn ? '・音あり' : '・音なし') + '\n'
+        'v' + VER + '・' + W + '×' + H + '・' + (manual ? '手わたし' : '自動') + '・音' + (audioOn ? 'あり(' + audioWay + ')' : 'なし') + '\n'
         + frames + 'コマ(通知' + byRVFC + '/保険' + byRAF + ')／' + secs.toFixed(1) + '秒＝'
         + (secs ? (frames / secs).toFixed(1) : '0') + 'fps\n'
         + '描画' + (frames ? (paintMs / frames).toFixed(1) : '0') + 'ms・空白'
         + (maxGap / 1000).toFixed(1) + '秒・位置' + endPos.toFixed(1) + '/' + dur.toFixed(1)
         + '秒・再開' + retries + '回';
+      if(stalledOut){
+        const err = new Error('再生が' + endPos.toFixed(1) + '秒で止まりました');
+        err.stalled = true;
+        reject(err);
+        return;
+      }
       if(!blob.size) reject(new Error('動画を作れませんでした'));
       else resolve(blob);
     };
@@ -547,7 +608,7 @@ function makeVideo(onProgress){
        ②画面の描き替え（requestAnimationFrame）＝①が来なくても30コマ/秒は確保する保険
        iPhoneでは①がほとんど来ないことがあり（＝2.8fpsの正体）、②が無いと動画が固まる。 */
     let lastAt = 0, frames = 0, t0 = 0;
-    let byRVFC = 0, byRAF = 0, paintMs = 0, maxGap = 0, retries = 0, endPos = 0;
+    let byRVFC = 0, byRAF = 0, paintMs = 0, maxGap = 0, retries = 0, endPos = 0, stalledOut = false;
     const drawFrame = src => {
       const t = performance.now();
       if(lastAt) maxGap = Math.max(maxGap, t - lastAt);
@@ -572,13 +633,16 @@ function makeVideo(onProgress){
       let seen = -1, still = 0;
       timer = setInterval(() => {
         if(stopped) return;
-        // 再生が止まっていないか見張る。止まっていたら鳴らし直す（音の処理が原因のことがある）
-        if(v.currentTime === seen && !v.ended && !v.paused){
+        // 再生が進んでいるか見張る。進まなければ鳴らし直し、それでもだめなら「止まった」で打ち切る
+        if(v.currentTime <= seen + 0.02 && !v.ended && !v.paused){
           still++;
-          if(still >= 6){                       // 1.2秒すすまなかったら
-            still = 0; retries++;
+          if(still === 5){                      // 1.0秒すすまない → 鳴らし直す
+            retries++;
             try{ if(audioCtx && audioCtx.state !== 'running') audioCtx.resume(); }catch(e){}
             v.play().catch(()=>{});
+          }
+          if(still >= 13){                      // 2.6秒すすまない → 止まったと判断して打ち切る
+            stalledOut = true; finish(); return;
           }
         } else { still = 0; seen = v.currentTime; }
         if(dur) onProgress(Math.min(1, v.currentTime / dur), Math.max(0, dur - v.currentTime));
