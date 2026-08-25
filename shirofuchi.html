@@ -180,7 +180,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 10;
+const VER = 11;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -394,6 +394,7 @@ function reset(){
 
 function load(file, hint){
   stopMonitor();
+  fileBytes = file.size; heavy = 0;
   fileInfo = (file.type || '種類不明') + '・' + (file.size / 1048576).toFixed(0) + 'MB';
   el('hint').style.display = 'none';
   el('hint').textContent = '';
@@ -451,6 +452,11 @@ function reloadMedia(){
 
 function ready(){
   if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
+  // 重すぎる動画（ProResなど）は、ブラウザでは再生も書き出しもできない。先に伝える
+  if(kind === 'video' && media.duration > 0 && fileBytes / media.duration > HEAVY_BPS){
+    heavy = Math.round(fileBytes / media.duration / 1048576);
+    toast('この動画は重すぎます（1秒あたり' + heavy + 'MB）。ProResをオフにして撮り直すか、軽いコピーでお試しください');
+  }
   el('inner').appendChild(media);
   el('view1').classList.add('hide');
   el('view2').classList.remove('hide');
@@ -461,7 +467,13 @@ function ready(){
 /* ---------- 再生モニター ----------
    「書き出し以前に、そもそも再生できているのか」を実機で見るための実況表示。
    コマの通知を数えて実効fpsを出し、再生位置・読み込み状態・待ち回数を出す。 */
-let mon = 0, monFrames = 0, monWait = 0, fileInfo = '';
+let mon = 0, monFrames = 0, monWait = 0, fileInfo = '', fileBytes = 0, heavy = 0;
+
+/* 重すぎる動画のめやす。
+   ふつうの iPhone 4K/30（HEVC）は 1秒あたり約6MB。ProResは約200MB（＝30倍以上）。
+   ブラウザは1.7GBのファイルを抱えたまま4Kを等速デコードできず、
+   数秒で再生が止まる（2026-08-25 実機：8.7秒/1753MB の ProRes で 0fps）。 */
+const HEAVY_BPS = 25 * 1048576;   // 1秒あたり25MBを超えたら重すぎ
 function onMonWait(){ monWait++; }
 function stopMonitor(){
   if(mon){ clearInterval(mon); mon = 0; }
@@ -484,7 +496,8 @@ function startMonitor(){
   let last = performance.now(), lastN = 0;
   const render = fps => {
     el('hint').textContent =
-      'v' + VER + '・元 ' + srcW + '×' + srcH + '・' + (isFinite(v.duration) ? v.duration.toFixed(1) : '?') + '秒・' + fileInfo + '\n'
+      (heavy ? '⚠️ 重すぎます（1秒あたり' + heavy + 'MB＝ProResなど）。ブラウザでは再生も書き出しもできません\n' : '')
+      + 'v' + VER + '・元 ' + srcW + '×' + srcH + '・' + (isFinite(v.duration) ? v.duration.toFixed(1) : '?') + '秒・' + fileInfo + '\n'
       + '再生 ' + v.currentTime.toFixed(1) + '秒・' + fps.toFixed(0) + 'fps・読込' + v.readyState
       + (v.paused ? '・とまってる' : '') + '・待ち' + monWait + '回・コマ計' + monFrames;
   };
