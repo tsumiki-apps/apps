@@ -82,6 +82,12 @@
   body.editing .favmark{opacity:1; transform:scale(1);}
   .card.is-fav .favmark .s{fill:var(--ink); stroke:var(--ink);}
   body.editing .card{cursor:pointer;}
+  /* 「最近つくった」カードの日付チップ */
+  .newdate{position:absolute; top:10px; right:10px; font-size:10.5px; font-weight:500;
+    letter-spacing:.04em; color:var(--sub); background:var(--surface);
+    border-radius:999px; padding:2px 8px; line-height:1.5; pointer-events:none;
+    transition:opacity .15s ease;}
+  body.editing .newdate{opacity:0;}
   .editing-hint{color:var(--sub); font-size:12px; letter-spacing:.04em; text-align:center; margin-top:12px;}
   .fav-empty{color:var(--sub); font-size:13px; padding:6px 4px 2px; line-height:1.7;}
   .favsync{margin-left:8px; font-size:12px; font-weight:500; color:var(--sub);
@@ -161,6 +167,8 @@
 
   <section id="favs" class="section" hidden></section>
 
+  <section id="recent" class="section" hidden></section>
+
   <main id="app"></main>
 
   <footer>
@@ -172,82 +180,82 @@
 <script>
   const categories = [
     {key:"work", emoji:"💼", label:"Work", apps:[
-      {emoji:"🕓", title:"打刻", desc:"出勤・退勤を大ボタンでタップ。現場も選べる。派遣スタッフ向け（労働者用・打刻コードで入る）", href:"https://tools.tsumiki-apps.com/dakoku.html"},
-      {emoji:"🗂️", title:"打刻管理", desc:"打刻を21日締めで集計し、平日/残業/休日出勤に3分割した勤怠管理表をExcel/PDF書き出し（派遣提出様式・管理者用）", href:"https://tools.tsumiki-apps.com/dakoku-kanri.html"},
-      {emoji:"🔎", title:"横断検索", desc:"STARS・GROW・5Whys・Recognitionを一括検索", href:"search.html"},
-      {emoji:"📊", title:"NPSカウンター", desc:"NPS目標から必要Promoter数を逆算", href:"nps.html"},
-      {emoji:"📈", title:"Weekly Recap", desc:"週次リキャップ画像を作成", href:"recap.html"},
-      {emoji:"📝", title:"Floor Memo", desc:"休憩中にささっとメモ→RecapのFloorに自動反映", href:"floormemo.html"},
-      {emoji:"🗒️", title:"議事録", desc:"会議しながら要点を。決定・ToDoが自動でまとまりMarkdown書き出し", href:"gijiroku.html"},
-      {emoji:"🌟", title:"Recognition", desc:"承認・称賛を記録", href:"recognition.html"},
-      {emoji:"🌳", title:"GROW ノート", desc:"1on1の成長に伴走するノート", href:"grownote.html"},
-      {emoji:"🔍", title:"5Whys ノート", desc:"連鎖型5Whysで本音を深掘り", href:"team5whys.html"},
-      {emoji:"🪞", title:"STARS 振り返り", desc:"面接で使える経験を蓄積", href:"reflection.html"},
-      {emoji:"🔐", title:"Password mgr", desc:"パスワードをジャンルごとに保管", href:"vault.html"},
-      {emoji:"🎁", title:"おすそわけ", desc:"作ったアプリを誰に届けたか記録", href:"osusowake.html"},
-      {emoji:"🗓️", title:"スケジュール→カレンダー", desc:"Excelの予定を.icsに変換して取り込む", href:"schedule.html"},
-      {emoji:"🗂️", title:"キャリアログ", desc:"Work活動の足跡を自動で残しレジュメ素材に", href:"career.html"},
-      {emoji:"🎤", title:"Interviewノート", desc:"昇進面接の質問・回答・FBを記録", href:"interview.html"},
-      {emoji:"📝", title:"メモ帳", desc:"白紙にサッと。カテゴリーとタグで整理。Interviewの記録もここに", href:"memo.html"},
+      {emoji:"🕓", title:"打刻", desc:"出勤・退勤を大ボタンでタップ。現場も選べる。派遣スタッフ向け（労働者用・打刻コードで入る）", href:"https://tools.tsumiki-apps.com/dakoku.html", created:"2026-07-26"},
+      {emoji:"🗂️", title:"打刻管理", desc:"打刻を21日締めで集計し、平日/残業/休日出勤に3分割した勤怠管理表をExcel/PDF書き出し（派遣提出様式・管理者用）", href:"https://tools.tsumiki-apps.com/dakoku-kanri.html", created:"2026-07-26"},
+      {emoji:"🔎", title:"横断検索", desc:"STARS・GROW・5Whys・Recognitionを一括検索", href:"search.html", created:"2026-06-07"},
+      {emoji:"📊", title:"NPSカウンター", desc:"NPS目標から必要Promoter数を逆算", href:"nps.html", created:"2026-06-02"},
+      {emoji:"📈", title:"Weekly Recap", desc:"週次リキャップ画像を作成", href:"recap.html", created:"2026-06-02"},
+      {emoji:"📝", title:"Floor Memo", desc:"休憩中にささっとメモ→RecapのFloorに自動反映", href:"floormemo.html", created:"2026-07-07"},
+      {emoji:"🗒️", title:"議事録", desc:"会議しながら要点を。決定・ToDoが自動でまとまりMarkdown書き出し", href:"gijiroku.html", created:"2026-07-07"},
+      {emoji:"🌟", title:"Recognition", desc:"承認・称賛を記録", href:"recognition.html", created:"2026-06-02"},
+      {emoji:"🌳", title:"GROW ノート", desc:"1on1の成長に伴走するノート", href:"grownote.html", created:"2026-06-02"},
+      {emoji:"🔍", title:"5Whys ノート", desc:"連鎖型5Whysで本音を深掘り", href:"team5whys.html", created:"2026-06-02"},
+      {emoji:"🪞", title:"STARS 振り返り", desc:"面接で使える経験を蓄積", href:"reflection.html", created:"2026-06-02"},
+      {emoji:"🔐", title:"Password mgr", desc:"パスワードをジャンルごとに保管", href:"vault.html", created:"2026-06-03"},
+      {emoji:"🎁", title:"おすそわけ", desc:"作ったアプリを誰に届けたか記録", href:"osusowake.html", created:"2026-06-03"},
+      {emoji:"🗓️", title:"スケジュール→カレンダー", desc:"Excelの予定を.icsに変換して取り込む", href:"schedule.html", created:"2026-06-03"},
+      {emoji:"🗂️", title:"キャリアログ", desc:"Work活動の足跡を自動で残しレジュメ素材に", href:"career.html", created:"2026-06-04"},
+      {emoji:"🎤", title:"Interviewノート", desc:"昇進面接の質問・回答・FBを記録", href:"interview.html", created:"2026-06-09"},
+      {emoji:"📝", title:"メモ帳", desc:"白紙にサッと。カテゴリーとタグで整理。Interviewの記録もここに", href:"memo.html", created:"2026-06-21"},
     ]},
     {key:"private", emoji:"🌿", label:"Private", apps:[
-      {emoji:"🧠", title:"ぶれいん", desc:"頭の中のかけらを盤面に並べ、近づけてカタマリに。プロジェクト別に整理", href:"think.html"},
-      {emoji:"🧭", title:"らしんばん", desc:"人生の地図と毎日の積み上げ。理想→現在地→ゴールを習慣でつなぐ", href:"rashinban.html"},
-      {emoji:"⚖️", title:"はかり", desc:"食べたものを声で言うだけ。AIがカロリーとPFCを調べて記録する。手料理は材料から1人前を計算してマイ料理に。運動は文章でも、アプリや機器のスクショからでも読み取れる", href:"hakari.html"},
-      {emoji:"🏃", title:"カケル", desc:"ふたりで横浜マラソン完走へ。練習計画・記録・本番サポート", href:"kakeru.html"},
-      {emoji:"🍋", title:"ゆずわり", desc:"ふたりの立て替えをプロジェクト別に精算。クラウドで同時編集", href:"yuzuwari.html"},
-      {emoji:"🍻", title:"みんなわり", desc:"旅行や飲み会の割り勘。URLを送るだけで全員が同時入力、送金回数が最小になるよう精算。品目ごと・大人子ども比率もOK", href:"minnawari.html"},
-      {emoji:"⏰", title:"つぎいつ？", desc:"美容室や脱毛など、次に行く日を計算して通知", href:"tsugi.html"},
-      {emoji:"🌅", title:"おきどき", desc:"やりたい時間から逆算して、何時に起きればいいかを出す。カフェ朝活の逆算に", href:"okidoki.html"},
-      {emoji:"🍳", title:"ゆずごはん日記", desc:"ふたりで共有する献立ノート", href:"cooking.html"},
-      {emoji:"🌡️", title:"ていおん", desc:"低温調理の設定。食材と厚みと温度を選ぶとBONIQの加熱時間基準表そのままの時間とできあがり時刻が出る。味つけ13種・塩糖水の計算・保存と再加熱・安全のルールつき", href:"teion.html"},
-      {emoji:"🐾", title:"だっこばかり", desc:"1人で乗った体重と、犬を抱っこして乗った体重を入れるだけで2人分が一度に出る。抱っこする人は2人ぶん登録でき、それぞれの体重も記録。グラフと最軽・最重つき・3人で共有", href:"dakkobakari.html"},
-      {emoji:"🌱", title:"ツナグ", desc:"夢と今日をつなぐ努力の記録", href:"tsunagu.html"},
-      {emoji:"🌴", title:"たびのき", desc:"ふたりで作る旅のしおり。時刻つきの計画を共有", href:"tabinoki.html"},
-      {emoji:"🧺", title:"ぴずかご", desc:"買い物・行きたい場所…カテゴリ自由の共有リスト。ふたりでリアルタイム同期", href:"issho.html"},
-      {emoji:"🗒️", title:"たすくノート", desc:"Notion風タスク管理。ひとつのタスクをボード／リスト／カレンダーで。/コマンドのブロックエディタ付き", href:"tasknote.html"},
-      {emoji:"✅", title:"やることばこ", desc:"やること・アプリ構想・買い物を1つの箱で整理", href:"yarukoto.html"},
-      {emoji:"📮", title:"ことづて", desc:"Claude Codeへの指示メモ。アイデア→依頼→確認→完了で管理", href:"sashizu.html"},
-      {emoji:"🧹", title:"こまめ", desc:"家のおそうじを定期管理。やったら次回を自動計算。片付けたい場所もふたりで共有", href:"komame.html"},
-      {emoji:"🛒", title:"おつかいカート", desc:"頼まれた物をAmazonで安い順に探して管理", href:"kaimono.html"},
-      {emoji:"🎭", title:"おぼえりふ", desc:"台本のセリフを縦書きで稽古する。練習する役だけ空欄に", href:"serifu.html"},
-      {emoji:"🖼️", title:"ひとこま", desc:"写真の撮影情報を読み取って、作品みたいなフレームに。7種のスタイルとプリセット付き", href:"hitokoma.html"},
-      {emoji:"🤍", title:"しろふち", desc:"どんな比率の写真や動画も、9:16のたて長に置いてうすい白のふち＋白い背景をつけて「写真」に保存。ふちの太さと角の丸みはスライダーで", href:"shirofuchi.html"},
-      {emoji:"💧", title:"いろのこし", desc:"写真を白黒にして、タップした色だけカラーで残す。色の幅を調整して、はみ出しは指で塗って手直し", href:"ironokoshi.html"},
-      {emoji:"🎨", title:"まぜいろ", desc:"美容師さん向けカラー剤の配合計算。全体量と比率から各色のグラム数、2剤の量も自動算出", href:"https://tools.tsumiki-apps.com/mazeiro.html"},
-      {emoji:"🎲", title:"じんせいすごろく", desc:"ふたりで遊ぶ3D人生ゲーム風すごろく", href:"jinsei.html"},
-      {emoji:"🃏", title:"トランプ3D", desc:"3Dの本格カード。10種のゲームをふたりでリアルタイム対戦", href:"trump.html"},
-      {emoji:"🌾", title:"みのり", desc:"名言・映画・絵画…人生で出会った学びをジャンル別に記録", href:"minori.html"},
-      {emoji:"🌲", title:"費用構造図鑑", desc:"いろんな商売の費用を、変動費と固定費の木に分解した図鑑。枝の1本には必ず「名前から想像するのと違う動き」がある（航空会社の燃料費は、お客が増えても1滴も増えない）", href:"hiyou.html"},
-      {emoji:"🕸️", title:"ひとのわ", desc:"知り合った人脈をメモ。「誰の紹介で会ったか」を残すと、人物相関図が自動で広がる", href:"hitonowa.html"},
+      {emoji:"🧠", title:"ぶれいん", desc:"頭の中のかけらを盤面に並べ、近づけてカタマリに。プロジェクト別に整理", href:"think.html", created:"2026-06-23"},
+      {emoji:"🧭", title:"らしんばん", desc:"人生の地図と毎日の積み上げ。理想→現在地→ゴールを習慣でつなぐ", href:"rashinban.html", created:"2026-06-16"},
+      {emoji:"⚖️", title:"はかり", desc:"食べたものを声で言うだけ。AIがカロリーとPFCを調べて記録する。手料理は材料から1人前を計算してマイ料理に。運動は文章でも、アプリや機器のスクショからでも読み取れる", href:"hakari.html", created:"2026-08-16"},
+      {emoji:"🏃", title:"カケル", desc:"ふたりで横浜マラソン完走へ。練習計画・記録・本番サポート", href:"kakeru.html", created:"2026-06-15"},
+      {emoji:"🍋", title:"ゆずわり", desc:"ふたりの立て替えをプロジェクト別に精算。クラウドで同時編集", href:"yuzuwari.html", created:"2026-06-14"},
+      {emoji:"🍻", title:"みんなわり", desc:"旅行や飲み会の割り勘。URLを送るだけで全員が同時入力、送金回数が最小になるよう精算。品目ごと・大人子ども比率もOK", href:"minnawari.html", created:"2026-08-02"},
+      {emoji:"⏰", title:"つぎいつ？", desc:"美容室や脱毛など、次に行く日を計算して通知", href:"tsugi.html", created:"2026-06-07"},
+      {emoji:"🌅", title:"おきどき", desc:"やりたい時間から逆算して、何時に起きればいいかを出す。カフェ朝活の逆算に", href:"okidoki.html", created:"2026-07-24"},
+      {emoji:"🍳", title:"ゆずごはん日記", desc:"ふたりで共有する献立ノート", href:"cooking.html", created:"2026-06-02"},
+      {emoji:"🌡️", title:"ていおん", desc:"低温調理の設定。食材と厚みと温度を選ぶとBONIQの加熱時間基準表そのままの時間とできあがり時刻が出る。味つけ13種・塩糖水の計算・保存と再加熱・安全のルールつき", href:"teion.html", created:"2026-08-17"},
+      {emoji:"🐾", title:"だっこばかり", desc:"1人で乗った体重と、犬を抱っこして乗った体重を入れるだけで2人分が一度に出る。抱っこする人は2人ぶん登録でき、それぞれの体重も記録。グラフと最軽・最重つき・3人で共有", href:"dakkobakari.html", created:"2026-08-23"},
+      {emoji:"🌱", title:"ツナグ", desc:"夢と今日をつなぐ努力の記録", href:"tsunagu.html", created:"2026-06-02"},
+      {emoji:"🌴", title:"たびのき", desc:"ふたりで作る旅のしおり。時刻つきの計画を共有", href:"tabinoki.html", created:"2026-06-09"},
+      {emoji:"🧺", title:"ぴずかご", desc:"買い物・行きたい場所…カテゴリ自由の共有リスト。ふたりでリアルタイム同期", href:"issho.html", created:"2026-07-14"},
+      {emoji:"🗒️", title:"たすくノート", desc:"Notion風タスク管理。ひとつのタスクをボード／リスト／カレンダーで。/コマンドのブロックエディタ付き", href:"tasknote.html", created:"2026-07-17"},
+      {emoji:"✅", title:"やることばこ", desc:"やること・アプリ構想・買い物を1つの箱で整理", href:"yarukoto.html", created:"2026-06-09"},
+      {emoji:"📮", title:"ことづて", desc:"Claude Codeへの指示メモ。アイデア→依頼→確認→完了で管理", href:"sashizu.html", created:"2026-07-23"},
+      {emoji:"🧹", title:"こまめ", desc:"家のおそうじを定期管理。やったら次回を自動計算。片付けたい場所もふたりで共有", href:"komame.html", created:"2026-06-16"},
+      {emoji:"🛒", title:"おつかいカート", desc:"頼まれた物をAmazonで安い順に探して管理", href:"kaimono.html", created:"2026-06-10"},
+      {emoji:"🎭", title:"おぼえりふ", desc:"台本のセリフを縦書きで稽古する。練習する役だけ空欄に", href:"serifu.html", created:"2026-06-11"},
+      {emoji:"🖼️", title:"ひとこま", desc:"写真の撮影情報を読み取って、作品みたいなフレームに。7種のスタイルとプリセット付き", href:"hitokoma.html", created:"2026-07-20"},
+      {emoji:"🤍", title:"しろふち", desc:"どんな比率の写真や動画も、9:16のたて長に置いてうすい白のふち＋白い背景をつけて「写真」に保存。ふちの太さと角の丸みはスライダーで", href:"shirofuchi.html", created:"2026-08-11"},
+      {emoji:"💧", title:"いろのこし", desc:"写真を白黒にして、タップした色だけカラーで残す。色の幅を調整して、はみ出しは指で塗って手直し", href:"ironokoshi.html", created:"2026-08-11"},
+      {emoji:"🎨", title:"まぜいろ", desc:"美容師さん向けカラー剤の配合計算。全体量と比率から各色のグラム数、2剤の量も自動算出", href:"https://tools.tsumiki-apps.com/mazeiro.html", created:"2026-07-22"},
+      {emoji:"🎲", title:"じんせいすごろく", desc:"ふたりで遊ぶ3D人生ゲーム風すごろく", href:"jinsei.html", created:"2026-06-12"},
+      {emoji:"🃏", title:"トランプ3D", desc:"3Dの本格カード。10種のゲームをふたりでリアルタイム対戦", href:"trump.html", created:"2026-06-13"},
+      {emoji:"🌾", title:"みのり", desc:"名言・映画・絵画…人生で出会った学びをジャンル別に記録", href:"minori.html", created:"2026-06-16"},
+      {emoji:"🌲", title:"費用構造図鑑", desc:"いろんな商売の費用を、変動費と固定費の木に分解した図鑑。枝の1本には必ず「名前から想像するのと違う動き」がある（航空会社の燃料費は、お客が増えても1滴も増えない）", href:"hiyou.html", created:"2026-08-14"},
+      {emoji:"🕸️", title:"ひとのわ", desc:"知り合った人脈をメモ。「誰の紹介で会ったか」を残すと、人物相関図が自動で広がる", href:"hitonowa.html", created:"2026-07-26"},
     ]},
     {key:"asset", emoji:"💰", label:"Asset", apps:[
-      {emoji:"🧱", title:"独立ロードマップ", desc:"今週の勝ち条件を1つ決めて、卒業の条件4つがどこまで来たかを見る。目標を積み上げて金曜に振り返る", href:"dokuritsu.html"},
-      {emoji:"🤝", title:"声かけメモ", desc:"声をかける人をピックアップ→困りごとの仮説→個人化した文章。営業の3工程をそのままメモに", href:"koekake.html"},
-      {emoji:"🗓️", title:"あきま", desc:"Appleのシフト（照会カレンダー）から空き枠を出す。30/45/60/90分で候補を並べて、営業メールにそのまま貼れる文面をコピー", href:"akima.html"},
-      {emoji:"🎬", title:"つみき画面収録", desc:"アプリの使い方を説明する動画を一発撮り。白い背景の上に、操作画面と自分の顔と話した言葉の字幕がひとつに合わさって、編集なしでそのまま遠くのお客様に渡せる", href:"rokuga.html"},
-      {emoji:"🧾", title:"請求書", desc:"検収が終わったら1枚。ひな形どおりの内訳・特記事項つきで作って印刷/PDF。支払期限は発行日＋60日で自動、入金待ちの合計も出る", href:"seikyu.html"},
-      {emoji:"⏳", title:"てまひま", desc:"受託案件の実働時間を0.5時間きざみで記録して「いまの時給」を出す。プランごとの作業時間の上限に対する残りが見え、完了案件は時給の一覧表になる", href:"temahima.html"},
-      {emoji:"⏲️", title:"つみじかん", desc:"つみきのアプリづくりで、どのプロジェクトに時間を使ったかを見る。はじめる／おわるを押すだけで日付と作業時間がひとりでに残り、割合と日ごとの積み上げで出る", href:"tsumijikan.html"},
-      {emoji:"⏱️", title:"時給計算", desc:"案件ごとに報酬とかかった時間を入れて、実質時給を出す。移動時間は数えない", href:"jikyu.html"},
-      {emoji:"🧱", title:"げんか", desc:"つみき事業の原価を、費目ごとに月額／年額で入れて積み上げる。1ヶ月あたり・1年あたりの原価と内訳が出て、そのままA4の原価表にしてPDFで保存できる", href:"genka.html"},
-      {emoji:"🗺️", title:"おかねのちず", desc:"『会計の地図』を読みながら、売上→費用→利益→資産→純資産→時価総額を1歩ずつ入れると、お金の流れが1枚の地図につながる。自分の事業でも、気になる会社の決算でも", href:"chizu.html"},
-      {emoji:"💡", title:"学んだこと", desc:"ミーティングのあと、自分のための気づきを箇条書きで残す振り返りメモ", href:"manabi.html"},
-      {emoji:"📔", title:"下書き", desc:"形の決まっていないまっさらなメモ帳。分解したタスク・考えごと・Claudeが作った文面を書いて、片付いたらしまう（旧・自由帳。独立ロードマップの中にあります）", href:"dokuritsu.html#drafts", icon:"jiyucho"},
-      {emoji:"🪙", title:"ちりつも", desc:"使ったお金をサッと記録。今週いくら使ったかすぐ分かる", href:"chiritsumo.html"},
-      {emoji:"💳", title:"クレジット明細マネージャー", desc:"立て替え＆クレカ支出を分けて管理", href:"credit.html"},
-      {emoji:"🧾", title:"ふたりカード", desc:"共同カードのCSVを読み込み、個人決済をはじいて共同ぶんを比率でわける。ふたりの負担額を自動計算", href:"futaricard.html"},
-      {emoji:"🌳", title:"せいかつの木", desc:"ふたりの生活費を6:4で自動按分。VpassのCSVを読み込むだけ", href:"seikatsu.html"},
-      {emoji:"💴", title:"お金の残高 計算ツール", desc:"残高をサッと計算", href:"money.html"},
-      {emoji:"📉", title:"資産予測グラフ", desc:"資産の推移を予測して可視化", href:"forecast.html"},
-      {emoji:"🔁", title:"まいつき", desc:"毎月の固定費を円グラフで見える化", href:"maitsuki.html"},
-      {emoji:"🗓️", title:"ひきおとし", desc:"固定費・サブスクがいつ引き落とされるかカレンダーで管理", href:"hikiotoshi.html"},
-      {emoji:"📋", title:"コピペ箱", desc:"クレカ・口座・EPP注文などよくコピーする情報を保管", href:"copybox.html"},
+      {emoji:"🧱", title:"独立ロードマップ", desc:"今週の勝ち条件を1つ決めて、卒業の条件4つがどこまで来たかを見る。目標を積み上げて金曜に振り返る", href:"dokuritsu.html", created:"2026-07-28"},
+      {emoji:"🤝", title:"声かけメモ", desc:"声をかける人をピックアップ→困りごとの仮説→個人化した文章。営業の3工程をそのままメモに", href:"koekake.html", created:"2026-07-29"},
+      {emoji:"🗓️", title:"あきま", desc:"Appleのシフト（照会カレンダー）から空き枠を出す。30/45/60/90分で候補を並べて、営業メールにそのまま貼れる文面をコピー", href:"akima.html", created:"2026-08-02"},
+      {emoji:"🎬", title:"つみき画面収録", desc:"アプリの使い方を説明する動画を一発撮り。白い背景の上に、操作画面と自分の顔と話した言葉の字幕がひとつに合わさって、編集なしでそのまま遠くのお客様に渡せる", href:"rokuga.html", created:"2026-08-24"},
+      {emoji:"🧾", title:"請求書", desc:"検収が終わったら1枚。ひな形どおりの内訳・特記事項つきで作って印刷/PDF。支払期限は発行日＋60日で自動、入金待ちの合計も出る", href:"seikyu.html", created:"2026-08-04"},
+      {emoji:"⏳", title:"てまひま", desc:"受託案件の実働時間を0.5時間きざみで記録して「いまの時給」を出す。プランごとの作業時間の上限に対する残りが見え、完了案件は時給の一覧表になる", href:"temahima.html", created:"2026-08-08"},
+      {emoji:"⏲️", title:"つみじかん", desc:"つみきのアプリづくりで、どのプロジェクトに時間を使ったかを見る。はじめる／おわるを押すだけで日付と作業時間がひとりでに残り、割合と日ごとの積み上げで出る", href:"tsumijikan.html", created:"2026-08-24"},
+      {emoji:"⏱️", title:"時給計算", desc:"案件ごとに報酬とかかった時間を入れて、実質時給を出す。移動時間は数えない", href:"jikyu.html", created:"2026-07-31"},
+      {emoji:"🧱", title:"げんか", desc:"つみき事業の原価を、費目ごとに月額／年額で入れて積み上げる。1ヶ月あたり・1年あたりの原価と内訳が出て、そのままA4の原価表にしてPDFで保存できる", href:"genka.html", created:"2026-08-11"},
+      {emoji:"🗺️", title:"おかねのちず", desc:"『会計の地図』を読みながら、売上→費用→利益→資産→純資産→時価総額を1歩ずつ入れると、お金の流れが1枚の地図につながる。自分の事業でも、気になる会社の決算でも", href:"chizu.html", created:"2026-08-17"},
+      {emoji:"💡", title:"学んだこと", desc:"ミーティングのあと、自分のための気づきを箇条書きで残す振り返りメモ", href:"manabi.html", created:"2026-07-29"},
+      {emoji:"📔", title:"下書き", desc:"形の決まっていないまっさらなメモ帳。分解したタスク・考えごと・Claudeが作った文面を書いて、片付いたらしまう（旧・自由帳。独立ロードマップの中にあります）", href:"dokuritsu.html#drafts", icon:"jiyucho", created:"2026-07-29"},
+      {emoji:"🪙", title:"ちりつも", desc:"使ったお金をサッと記録。今週いくら使ったかすぐ分かる", href:"chiritsumo.html", created:"2026-06-16"},
+      {emoji:"💳", title:"クレジット明細マネージャー", desc:"立て替え＆クレカ支出を分けて管理", href:"credit.html", created:"2026-06-02"},
+      {emoji:"🧾", title:"ふたりカード", desc:"共同カードのCSVを読み込み、個人決済をはじいて共同ぶんを比率でわける。ふたりの負担額を自動計算", href:"futaricard.html", created:"2026-07-25"},
+      {emoji:"🌳", title:"せいかつの木", desc:"ふたりの生活費を6:4で自動按分。VpassのCSVを読み込むだけ", href:"seikatsu.html", created:"2026-07-15"},
+      {emoji:"💴", title:"お金の残高 計算ツール", desc:"残高をサッと計算", href:"money.html", created:"2026-06-02"},
+      {emoji:"📉", title:"資産予測グラフ", desc:"資産の推移を予測して可視化", href:"forecast.html", created:"2026-06-02"},
+      {emoji:"🔁", title:"まいつき", desc:"毎月の固定費を円グラフで見える化", href:"maitsuki.html", created:"2026-06-21"},
+      {emoji:"🗓️", title:"ひきおとし", desc:"固定費・サブスクがいつ引き落とされるかカレンダーで管理", href:"hikiotoshi.html", created:"2026-06-28"},
+      {emoji:"📋", title:"コピペ箱", desc:"クレカ・口座・EPP注文などよくコピーする情報を保管", href:"copybox.html", created:"2026-06-03"},
     ]},
     {key:"apps", emoji:"📱", label:"アプリ", apps:[
-      {emoji:"🎬", title:"いつつ", desc:"1日5回・各2秒。撮りためた今日の断片が、夜にそっと1本の動画日記になる", href:"itsutsu.html"},
-      {emoji:"🎙️", title:"こえがき", desc:"話すだけで、そのまま使える文章に。完全オンデバイスのAI音声入力キーボード", href:"koegaki.html"},
-      {emoji:"📱", title:"つみきリモート 説明書", desc:"外出先のiPhoneからMacのClaude Codeを見て指示する自作アプリの取扱説明書。画面の見かた・使う流れ・困ったときの対処", href:"tsumiki-remote.html", icon:"tsumiki-remote"},
+      {emoji:"🎬", title:"いつつ", desc:"1日5回・各2秒。撮りためた今日の断片が、夜にそっと1本の動画日記になる", href:"itsutsu.html", created:"2026-06-19"},
+      {emoji:"🎙️", title:"こえがき", desc:"話すだけで、そのまま使える文章に。完全オンデバイスのAI音声入力キーボード", href:"koegaki.html", created:"2026-06-19"},
+      {emoji:"📱", title:"つみきリモート 説明書", desc:"外出先のiPhoneからMacのClaude Codeを見て指示する自作アプリの取扱説明書。画面の見かた・使う流れ・困ったときの対処", href:"tsumiki-remote.html", icon:"tsumiki-remote", created:"2026-08-11"},
     ]},
   ];
   const app = document.getElementById("app");
@@ -294,13 +302,15 @@
   const STAR = '<span class="favmark"><svg viewBox="0 0 24 24" aria-hidden="true">'+
     '<path class="s" d="M12 3.4l2.6 5.6 6.1.6-4.6 4 1.4 6L12 16.8 6.5 19.6l1.4-6-4.6-4 6.1-.6z"/></svg></span>';
 
-  function cardHTML(a){
+  function cardHTML(a, withDate){
     const stem = stemOf(a.href);
     const fav = favs.includes(stem) ? " is-fav" : "";
+    const chip = (withDate && a.created)
+      ? '<span class="newdate">'+(+a.created.slice(5,7))+'/'+(+a.created.slice(8,10))+'</span>' : '';
     return '<a class="card'+fav+'" href="'+a.href+'" data-stem="'+stem+'">'+
       '<img class="ico" src="icons/icon-'+(a.icon||stem)+'.png" alt="" loading="lazy">'+
       '<span class="txt"><span class="title">'+a.title+'</span>'+
-      '<span class="desc">'+a.desc+'</span></span>'+ STAR +
+      '<span class="desc">'+a.desc+'</span></span>'+ chip + STAR +
     '</a>';
   }
 
@@ -315,6 +325,29 @@
         '<div class="grid">'+cat.apps.map(cardHTML).join("")+'</div>';
       app.appendChild(sec);
     });
+  }
+
+  /* ===== 最近つくったアプリ =====
+     各アプリの created:"YYYY-MM-DD"（＝最初にコミットした日）を見て、
+     今日から RECENT_DAYS 日以内のものを新しい順に並べる。
+     日付を足すだけで勝手に入れ替わるので、手で並べ直さなくていい。 */
+  const RECENT_DAYS = 31;
+  function recentApps(){
+    const now = new Date(); now.setHours(0,0,0,0);
+    const limit = now.getTime() - RECENT_DAYS*86400000;
+    return Object.keys(ALL).map(s => ALL[s])
+      .filter(a => a.created && Date.parse(a.created+"T00:00:00") >= limit)
+      .sort((x,y) => y.created.localeCompare(x.created) || x.title.localeCompare(y.title));
+  }
+  function renderRecent(){
+    const sec = document.getElementById("recent");
+    const items = recentApps();
+    if(!items.length){ sec.hidden = true; sec.innerHTML = ""; return; }
+    sec.hidden = false;
+    sec.innerHTML =
+      '<h2><span class="cat-emoji">\u2728</span>最近つくったアプリ'+
+      '<span class="badge">'+items.length+'</span></h2>'+
+      '<div class="grid">'+items.map(a => cardHTML(a, true)).join("")+'</div>';
   }
 
   function renderFavs(){
@@ -339,6 +372,7 @@
     writeFavs(favs, Date.now());
     buildCategories();
     renderFavs();
+    renderRecent();
     pushFavs();               // クラウドへ反映（ベストエフォート）
   }
 
@@ -371,6 +405,7 @@
         if(remoteTs > localTs){                 // クラウドが新しい → 取り込む
           favs = remoteFavs; writeFavs(favs, remoteTs);
           buildCategories();
+          renderRecent();
         }else if(localTs > remoteTs){           // 手元が新しい（オフライン変更等） → 押し上げる
           await pushFavs();
         }
@@ -384,6 +419,7 @@
 
   buildCategories();
   renderFavs();
+  renderRecent();
   document.getElementById("count").textContent = Object.keys(ALL).length + " 個のアプリ";
   pullFavs();   // クラウドの最新お気に入りを取り込む（端末間同期）
 
