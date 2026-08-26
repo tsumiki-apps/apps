@@ -16,6 +16,8 @@
     --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
     /* 画面のふちからの逃げ（iPhoneの丸い角・ホームバーにパネルがかからないように） */
     --gutter:22px;
+    /* えらんだ「かたち」（出来上がりの 横/たて）。メニューのボタンの形にも使う */
+    --ar:9/16;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
@@ -33,17 +35,21 @@
   .screen{flex:1; min-height:0; display:flex; flex-direction:column; width:100%; max-width:520px; margin:0 auto;}
   .hide{display:none !important;}
 
-  /* ---- えらぶ画面：写真 / 動画 の2択だけ・文字なし ---- */
-  #view1{justify-content:center;}
-  .picks{display:flex; gap:14px; align-items:center; justify-content:center; width:100%;}
-  /* 正方形のボタン。画面が低いときは max-height ではみ出しを防ぐ */
-  .pick{flex:1; aspect-ratio:1/1; max-height:100%;
+  /* ---- えらぶ画面：かたちをえらぶ → 写真 / 動画 ---- */
+  #view1{justify-content:center; gap:14px;}
+  #view1 .seg{margin-bottom:0; flex:0 0 auto;}
+  .picks{display:flex; gap:14px; align-items:center; justify-content:center; width:100%; min-height:0;}
+  /* えらんだ「かたち」と「ふちの色」のとおりの形・色にする＝押す前に出来上がりが分かる。
+     画面が低いときは max-height ではみ出しを防ぐ */
+  .pick{flex:1; aspect-ratio:var(--ar); max-height:100%;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
     background:var(--card); border:1px solid var(--line); border-radius:26px;
     transition:transform .16s ease, border-color .16s ease, background .16s ease;}
   .pick:active{transform:scale(.965); border-color:var(--ghost); background:var(--surface);}
   .pick svg{width:54%; height:auto; color:var(--ghost); transition:color .16s ease;}
   .pick:active svg{color:var(--sub);}
+  /* 「元のまま」＝写真しだいなので、形を言い切らない（破線） */
+  .picks.free .pick{border-style:dashed;}
   input[type=file]{display:none;}
 
   /* ---- プレビュー ---- */
@@ -75,6 +81,33 @@
   .segb:active{transform:scale(.97);}
   .segb.on{background:var(--ink); color:#fff;}
 
+  /* ---- かたち（出来上がりの比率）。メニューと操作パネルの両方に同じものを置く ---- */
+  .shape{flex:1; min-width:0; min-height:44px; padding:0 2px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    font-family:inherit; color:var(--sub); background:transparent; border:0; border-radius:11px;
+    cursor:pointer; transition:background .16s ease, color .16s ease, transform .15s ease;}
+  .shape:active{transform:scale(.96);}
+  .shape .g{display:block; height:16px; border:1.8px solid currentColor; border-radius:3px;}
+  .shape .g.free{border-style:dashed;}
+  .shape b{font-size:10.5px; font-weight:700; letter-spacing:-.02em; white-space:nowrap;}
+  .shape.on{background:var(--ink); color:#fff;}
+
+  /* ---- ふちの色：しろ／くろ／ぼかし／写真の色／すきな色 ---- */
+  .chips{display:flex; gap:6px; margin-top:2px;}
+  .chip{position:relative; flex:1; min-width:0; min-height:44px; padding:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    font-family:inherit; color:var(--sub); background:transparent; border:0; border-radius:11px;
+    cursor:pointer; transition:color .16s ease, transform .15s ease;}
+  .chip:active{transform:scale(.94);}
+  .chip i{width:23px; height:23px; border-radius:50%; border:1px solid var(--line); display:block;
+    background-size:cover; background-position:center;}
+  .chip b{font-size:9.5px; font-weight:700; letter-spacing:-.03em; white-space:nowrap;}
+  .chip.on{color:var(--ink);}
+  .chip.on i{box-shadow:0 0 0 2px var(--card), 0 0 0 4px var(--ink);}
+  /* すきな色＝チップぜんたいが色えらび。透明にして重ねると、タップでそのままiPhoneの色パネルが出る */
+  .chip input[type=color]{position:absolute; inset:0; width:100%; height:100%; opacity:0;
+    border:0; padding:0; margin:0; background:transparent; -webkit-appearance:none; appearance:none;}
+
   .actions{display:flex; gap:10px; margin-top:8px;}
   .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
     font-family:inherit; font-size:16px; font-weight:700; letter-spacing:.02em;
@@ -100,9 +133,12 @@
 </head>
 <body>
 
-<!-- えらぶ画面：左＝写真だけ／右＝動画だけ（iPhoneの写真アプリが絞り込まれて開く） -->
+<!-- えらぶ画面：かたちをえらんでから、左＝写真だけ／右＝動画だけ
+     （iPhoneの写真アプリが絞り込まれて開く） -->
 <div class="screen" id="view1">
-  <div class="picks">
+  <!-- 出来上がりのかたち。えらんだ形が、下の2つのボタンの形になる -->
+  <div class="seg" id="shapes1"></div>
+  <div class="picks" id="picks">
     <label class="pick" for="filePhoto">
       <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
            stroke-linecap="round" stroke-linejoin="round" aria-label="写真をえらぶ">
@@ -128,7 +164,9 @@
   <div class="stage" id="stage"><div class="frame" id="frame"><div class="inner" id="inner"></div></div></div>
 
   <div class="panel">
-    <!-- 写真の大きさ。ぜんぶ＝切らずに全部のせる／うめる＝9:16をうめる（はみ出しは切る） -->
+    <!-- 出来上がりのかたち（メニューと同じもの） -->
+    <div class="seg" id="shapes2"></div>
+    <!-- 写真の大きさ。ぜんぶ＝切らずに全部のせる／うめる＝台紙をうめる（はみ出しは切る） -->
     <div class="seg" id="seg">
       <button type="button" class="segb on" data-z="0">ぜんぶ</button>
       <button type="button" class="segb" data-z="1">うめる</button>
@@ -147,6 +185,8 @@
       <input type="range" id="r" min="0" max="24" step="1" value="2" aria-label="かどの丸み">
       <span class="val" id="rv">2%</span>
     </div>
+    <!-- ふちの色。ぼかし＝写真そのものをぼかして敷く／写真の色＝写真の平均の色 -->
+    <div class="chips" id="chips"></div>
 
     <div class="actions">
       <button class="btn ghost" id="again" aria-label="えらびなおす">
@@ -165,8 +205,10 @@
 
 <script>
 /* =========================================================
-   しろふち — どんな比率の写真/動画も 9:16 の白い台紙にのせて「写真」に保存する
-   ・出来上がりはいつも 9:16（たて長）。ふちの太さは出来上がりの横幅に対する％
+   しろふち — どんな比率の写真/動画も、えらんだかたちの台紙にのせて「写真」に保存する
+   ・かたち＝1:1 / 4:5 / 9:16 / 元のまま（写真そのままの比率＝ふちが4辺そろう）
+   ・ふちの色＝しろ / くろ / ぼかし（写真そのものをぼかして敷く）/ 写真の色 / すきな色
+   ・ふちの太さは出来上がりの横幅に対する％
    ・写真は切らずに全部のせる（横位置なら上下に、9:16より細長いなら左右に白がふえる）
    ・ただし切れるのが 3% までで収まるとき（＝ほぼ9:16の写真）は、
      いままで通り4辺のふちをぴったりそろえる（cover）
@@ -175,12 +217,13 @@
    ・画面は1画面ぴったり（スクロールなし）。プレビューの大きさはJSで実測して決める
    ========================================================= */
 const el = id => document.getElementById(id);
-const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio', KEY_Z = 'shirofuchi_z';
+const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio', KEY_Z = 'shirofuchi_z',
+      KEY_AR = 'shirofuchi_ar', KEY_BG = 'shirofuchi_bg', KEY_BC = 'shirofuchi_bgcolor';
 
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 12;
+const VER = 13;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -225,13 +268,197 @@ let panX = 0, panY = 0;
 
 el('w').value = pct;
 el('r').value = rad;
-syncSeg();                     // 前回えらんだ「ぜんぶ／うめる」を光らせておく
 
-/* ---------- 出来上がりの形 ----------
-   いつも 9:16（たて長）の白い台紙。その真ん中に写真をのせる。
-   写真が台紙とちがう比率なら、あまった場所はぜんぶ白になる（＝白い背景）。 */
-const AR = 9 / 16;          // 出来上がりの 横 ÷ たて
+/* ---------- 出来上がりの形（かたち） ----------
+   えらんだ比率の台紙をつくり、その真ん中に写真をのせる。
+   写真が台紙とちがう比率なら、あまった場所はぜんぶ「ふちの色」になる。
+   'src' ＝ 写真そのままの比率。この形では何も切れず、ふちが4辺そろう。 */
+const ARS = [
+  {k:'1',    css:'1/1',  v:1,      t:'1:1'},
+  {k:'4:5',  css:'4/5',  v:0.8,    t:'4:5'},
+  {k:'9:16', css:'9/16', v:0.5625, t:'9:16'},
+  {k:'src',  css:'1/1',  v:0,      t:'元のまま'}
+];
+let arKey = localStorage.getItem(KEY_AR) || '9:16';
+if(!ARS.some(a => a.k === arKey)) arKey = '9:16';
+/* いまの 横÷たて。'元のまま' は写真の比率をそのまま使う（写真が来る前は 9:16 のふりをする） */
+function curAR(){
+  if(arKey === 'src') return (srcW && srcH) ? srcW / srcH : 0.5625;
+  return ARS.find(a => a.k === arKey).v;
+}
 const CROP_MAX = 0.03;      // これ以内しか切れないなら、4辺のふちをそろえる（＝いままでの見た目）
+
+/* ---------- ふちの色 ----------
+   しろ／くろ／ぼかし（写真そのものをぼかして敷く）／写真の色（写真の平均の色）／すきな色 */
+const BGS = [
+  {k:'white',  t:'しろ'},
+  {k:'black',  t:'くろ'},
+  {k:'blur',   t:'ぼかし'},
+  {k:'auto',   t:'写真の色'},
+  {k:'custom', t:'すきな色'}
+];
+let bgKey = localStorage.getItem(KEY_BG) || 'white';
+if(!BGS.some(b => b.k === bgKey)) bgKey = 'white';
+let bgCustom = localStorage.getItem(KEY_BC) || '#F4F2EE';
+/* tiny ＝ 写真を思いきり小さくした見本（ぼかし背景と「写真の色」のもと） */
+let tiny = null, tinyURL = '', autoColor = '#FFFFFF';
+
+/* いま台紙をぬる色。ぼかしは色ではないので、写真がまだ無いときの逃げ道として白を返す */
+function solidColor(){
+  if(bgKey === 'black')  return '#111111';
+  if(bgKey === 'custom') return bgCustom;
+  if(bgKey === 'auto')   return autoColor;
+  return '#FFFFFF';
+}
+function isBlur(){ return bgKey === 'blur' && !!tiny; }
+
+/* 写真を思いきり小さく（長辺32px）した見本を1枚つくる。
+   ・引きのばすと、それ自体がやわらかい「ぼかし背景」になる（重い blur を使わずに済む）
+   ・平均の色もここから取る（＝「写真の色」）
+   ⚠️ 動画は1コマ目から作り、書き出しの間もぼかしは動かさない。
+      毎コマ背景を作り直すと、それだけでコマ落ちの原因になるため。 */
+function makeTiny(){
+  tiny = null; tinyURL = ''; autoColor = '#FFFFFF';
+  if(!media || !srcW || !srcH) return;
+  try{
+    const k = 32 / Math.max(srcW, srcH);
+    const c = document.createElement('canvas');
+    c.width  = Math.max(1, Math.round(srcW * k));
+    c.height = Math.max(1, Math.round(srcH * k));
+    const cx = c.getContext('2d', {willReadFrequently:true});
+    cx.drawImage(media, 0, 0, c.width, c.height);
+    tiny = c;
+    tinyURL = c.toDataURL('image/jpeg', 0.82);
+    const d = cx.getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, b = 0;
+    for(let i = 0; i < d.length; i += 4){ r += d[i]; g += d[i+1]; b += d[i+2]; }
+    const n = d.length / 4;
+    // 平均そのままだと濃くて重たいので、少しだけ白を混ぜて「紙」らしくする
+    const mix = v => Math.round(v / n * 0.82 + 255 * 0.18);
+    autoColor = '#' + [mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('');
+  }catch(e){ tiny = null; tinyURL = ''; }
+}
+
+/* ---------- かたち・ふちの色のボタン ---------- */
+function buildShapes(box){
+  box.innerHTML = ARS.map(a =>
+    '<button type="button" class="shape" data-k="' + a.k + '">' +
+      '<span class="g' + (a.k === 'src' ? ' free' : '') + '" style="aspect-ratio:' + a.css + '"></span>' +
+      '<b>' + a.t + '</b></button>').join('');
+  box.addEventListener('click', e => {
+    const b = e.target.closest('.shape');
+    if(b && !busy) setAR(b.dataset.k);
+  });
+}
+function syncShapes(){
+  document.querySelectorAll('.shape').forEach(b => b.classList.toggle('on', b.dataset.k === arKey));
+  // 「元のまま」は何も切れないので、ぜんぶ／うめる の出番がない
+  el('seg').classList.toggle('hide', arKey === 'src');
+}
+function setAR(k){
+  arKey = k;
+  localStorage.setItem(KEY_AR, k);
+  panX = 0; panY = 0;            // かたちが変わったら、まず真ん中を残す
+  syncShapes();
+  paintPicks();
+  if(pending) disarmSave();
+  if(k === 'src') setZoom(0);    // 切らずに全部のせる状態に戻す（setZoom の中で描き直す）
+  else layout();
+}
+
+function buildChips(){
+  el('chips').innerHTML = BGS.map(b =>
+    (b.k === 'custom' ? '<label' : '<button type="button"') + ' class="chip" data-k="' + b.k + '">' +
+      '<i></i><b>' + b.t + '</b>' +
+      (b.k === 'custom' ? '<input type="color" id="cpick">' : '') +
+      (b.k === 'custom' ? '</label>' : '</button>')).join('');
+  const inp = el('cpick');
+  // 色えらびに対応していない端末では、その場で色を選べない。押せる顔をしていると嘘になるので隠す
+  if(inp.type !== 'color'){
+    inp.closest('.chip').classList.add('hide');
+    if(bgKey === 'custom') bgKey = 'white';
+  }
+  inp.value = /^#[0-9a-f]{6}$/i.test(bgCustom) ? bgCustom : '#F4F2EE';
+  inp.addEventListener('input', () => {
+    bgCustom = inp.value;
+    localStorage.setItem(KEY_BC, bgCustom);
+    setBg('custom');
+  });
+  el('chips').addEventListener('click', e => {
+    const b = e.target.closest('.chip');
+    if(b && !busy) setBg(b.dataset.k);
+  });
+}
+function syncChips(){
+  el('chips').querySelectorAll('.chip').forEach(c => {
+    const k = c.dataset.k, i = c.querySelector('i');
+    c.classList.toggle('on', k === bgKey);
+    i.style.backgroundImage = 'none';
+    if(k === 'white')       i.style.background = '#FFFFFF';
+    else if(k === 'black')  i.style.background = '#111111';
+    else if(k === 'auto')   i.style.background = autoColor;
+    else if(k === 'custom') i.style.background = bgCustom;
+    else if(k === 'blur'){
+      if(tinyURL){ i.style.background = '#fff'; i.style.backgroundImage = 'url(' + tinyURL + ')'; }
+      else i.style.background = 'linear-gradient(135deg,#DED9D0,#B7C4CC)';
+    }
+  });
+}
+function setBg(k){
+  bgKey = k;
+  localStorage.setItem(KEY_BG, k);
+  syncChips();
+  paintFrame();
+  paintPicks();
+  if(pending) disarmSave();   // 見た目が変わったので、書き出しずみのファイルは作り直し
+}
+
+/* プレビューの台紙を、いまのふちの色（またはぼかし）でぬる */
+function paintFrame(){
+  const f = el('frame');
+  if(isBlur()){
+    f.style.background = '#fff';
+    f.style.backgroundImage = 'url(' + tinyURL + ')';
+    f.style.backgroundSize = 'cover';
+    f.style.backgroundPosition = 'center';
+  }else{
+    f.style.backgroundImage = 'none';
+    f.style.background = solidColor();
+  }
+}
+/* メニューの2つのボタンを、えらんだかたち・えらんだふちの色にする（＝押す前の見本） */
+function paintPicks(){
+  const a = ARS.find(x => x.k === arKey);
+  document.documentElement.style.setProperty('--ar', a.css);
+  el('picks').classList.toggle('free', arKey === 'src');
+  const c = solidColor();
+  // 台紙が暗いときは、線画の色を明るいほうに入れかえる（見えなくならないように）
+  const lum = (parseInt(c.slice(1,3),16) * 0.299 + parseInt(c.slice(3,5),16) * 0.587
+             + parseInt(c.slice(5,7),16) * 0.114) / 255;
+  document.querySelectorAll('.pick').forEach(p => {
+    if(isBlur()){
+      p.style.background = '#fff';
+      p.style.backgroundImage = 'url(' + tinyURL + ')';
+      p.style.backgroundSize = 'cover';
+      p.style.backgroundPosition = 'center';
+      p.querySelector('svg').style.color = 'rgba(255,255,255,.85)';
+    }else{
+      p.style.backgroundImage = 'none';
+      p.style.background = c;
+      p.querySelector('svg').style.color = lum < 0.5 ? 'rgba(255,255,255,.6)' : '';
+    }
+  });
+}
+/* 見本（tiny）が新しくなったら、それを使っている所をぜんぶ描き直す */
+function afterTiny(){ syncChips(); paintFrame(); paintPicks(); }
+
+buildShapes(el('shapes1'));
+buildShapes(el('shapes2'));
+buildChips();
+syncShapes();
+syncChips();
+paintPicks();
+syncSeg();                     // 前回えらんだ「ぜんぶ／うめる」を光らせておく
 
 /* 台紙（W×H）の中身の枠と、「そのまま」「うめる」それぞれの倍率を出す */
 function fits(W, H, sw, sh){
@@ -287,7 +514,7 @@ function innerBox(){
    その写真ではスライダーの真ん中に意味がないので、目盛りも吸いつきもやめる */
 function hasFill(){
   if(!srcW || !srcH) return false;
-  const f = fits(1000, 1000 / AR, srcW, srcH);
+  const f = fits(1000, 1000 / curAR(), srcW, srcH);
   return f.cover / f.base >= 1.02;
 }
 
@@ -317,8 +544,9 @@ function layout(){
   el('rv').textContent = Math.round(rad) + '%';
   const f = el('frame'), st = el('stage'), inr = el('inner');
   if(!srcW || !srcH || !st.clientWidth) return;
-  const w = Math.floor(Math.min(st.clientWidth, st.clientHeight * AR));
-  const h = Math.round(w / AR);
+  const ar = curAR();
+  const w = Math.floor(Math.min(st.clientWidth, st.clientHeight * ar));
+  const h = Math.round(w / ar);
   f.style.width  = w + 'px';
   f.style.height = h + 'px';
   const kid = inr.firstElementChild;
@@ -402,6 +630,7 @@ function load(file, hint){
        : /^image\//.test(file.type) ? 'image'
        : (hint || 'image');
   panX = 0; panY = 0;          // 新しい写真は、まず真ん中を残す
+  tiny = null; tinyURL = ''; autoColor = '#FFFFFF';   // 前の写真の見本は捨てる
   disarmSave();
   el('inner').innerHTML = '';
 
@@ -418,6 +647,8 @@ function load(file, hint){
       srcW = v.videoWidth; srcH = v.videoHeight; media = v; ready();
       v.play().catch(()=>{});
     };
+    // 動画は、1コマ目が読めてはじめて見本（ぼかし・写真の色）を作れる
+    v.onloadeddata = () => { makeTiny(); afterTiny(); };
     v.onerror = () => toast('この動画は読み込めませんでした');
     v.src = url;
   }
@@ -449,6 +680,8 @@ function reloadMedia(){
 
 function ready(){
   if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
+  if(kind === 'image') makeTiny();      // 写真はこの時点で読めている（動画は onloadeddata で作る）
+  afterTiny();
   // 重すぎる動画（ProResなど）は、ブラウザでは再生も書き出しもできない。先に伝える
   if(kind === 'video' && media.duration > 0 && fileBytes / media.duration > HEAVY_BPS){
     heavy = 1;
@@ -504,7 +737,7 @@ el('frame').addEventListener('pointermove', e => {
   if(pts.size >= 2 && gz){
     const d = twoDist();
     if(gz.d > 8 && srcW && srcH){
-      const f = fits(1000, 1000 / AR, srcW, srcH);
+      const f = fits(1000, 1000 / curAR(), srcW, srcH);
       setZoom(tAt(scaleAt(gz.z, f.base, f.cover) * (d / gz.d), f.base, f.cover));
     }
     return;
@@ -538,14 +771,55 @@ el('frame').addEventListener('pointerup', endPoint);
 el('frame').addEventListener('pointercancel', endPoint);
 
 /* ---------- 描画（ふちをつける） ---------- */
-/* かどの丸みぶんの「白い三日月」を1つ描く。
-   まるごと切り抜く（clip）かわりに、はみ出た角だけを白でふさぐ作戦。 */
-function cornerFill(ctx, px, py, cx, cy, r, a0, a1){
-  ctx.beginPath();
-  ctx.moveTo(px, py);
-  ctx.arc(cx, cy, r, a0, a1, true);
-  ctx.closePath();
-  ctx.fill();
+/* 元の絵を、はみ出しを切りながら枠いっぱいに敷く（＝CSSの background-size:cover と同じ） */
+function coverDraw(cx, img, W, H){
+  const sw = img.width, sh = img.height;
+  const k = Math.max(W / sw, H / sh);
+  cx.drawImage(img, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
+}
+
+/* 台紙をぬる。ぼかしのときは、思いきり小さくした写真を引きのばして敷く。
+   ⚠️ 一気に引きのばすと段々になるので、いちど 1/4 の大きさに伸ばしてから広げる。
+      canvas の filter:blur() は端末によって使えないので、はじめから当てにしない。 */
+function drawBackdrop(ctx, W, H){
+  if(isBlur()){
+    const mw = Math.max(2, Math.round(W / 4)), mh = Math.max(2, Math.round(H / 4));
+    const m = document.createElement('canvas');
+    m.width = mw; m.height = mh;
+    const mc = m.getContext('2d');
+    mc.imageSmoothingEnabled = true; mc.imageSmoothingQuality = 'high';
+    coverDraw(mc, tiny, mw, mh);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(m, 0, 0, W, H);
+    return;
+  }
+  ctx.fillStyle = solidColor();
+  ctx.fillRect(0, 0, W, H);
+}
+
+/* かどの丸みぶんの「三日月」を、台紙と同じ模様で4枚つくっておく（あとは貼るだけ）。
+   ⚠️ 毎コマ切り抜く（clip）と iPhone でコマ落ちするので、小さな絵を貼る形にしている。
+      ふちが1色のときは1色の三日月、ぼかしのときはぼかしの三日月になる。 */
+function makeCorners(W, H, g){
+  const r = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);
+  if(!(r > 0.5)) return [];
+  const s = Math.ceil(r) + 1;
+  const spots = [
+    {x:g.vx,            y:g.vy,            cx:r, cy:r},   // 左上
+    {x:g.vx + g.vw - r, y:g.vy,            cx:0, cy:r},   // 右上
+    {x:g.vx + g.vw - r, y:g.vy + g.vh - r, cx:0, cy:0},   // 右下
+    {x:g.vx,            y:g.vy + g.vh - r, cx:r, cy:0}    // 左下
+  ];
+  return spots.map(o => {
+    const c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    const cx = c.getContext('2d');
+    cx.save(); cx.translate(-o.x, -o.y); drawBackdrop(cx, W, H); cx.restore();
+    cx.globalCompositeOperation = 'destination-out';
+    cx.beginPath(); cx.arc(o.cx, o.cy, r, 0, Math.PI * 2); cx.fill();   // 丸みの内側＝写真を見せる
+    cx.fillRect(r, 0, s, s); cx.fillRect(0, r, s, s);                   // r より外は使わない
+    return {x:o.x, y:o.y, c};
+  });
 }
 
 /* 1コマぶんを描く。
@@ -553,13 +827,11 @@ function cornerFill(ctx, px, py, cx, cy, r, a0, a1){
       動画のコマ落ちの原因になる。そこで
       ・切り抜き → drawImage の9引数（元のどこを使うか）で代用＝clip なし
       ・白ぬり  → 最初の1回だけ（keepBg=true で省略）。かどの丸みは角4つを白でふさぐ
-   にしている。写真1枚の書き出しでは重さは問題にならないが、同じ道を通す。 */
-function paint(ctx, src, W, H, keepBg){
+   にしている。写真1枚の書き出しでは重さは問題にならないが、同じ道を通す。
+   pre ＝ さきに作っておいた「かどの三日月」。動画のときは1回作って使い回す。 */
+function paint(ctx, src, W, H, keepBg, pre){
   const sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight;
-  if(!keepBg){
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, W, H);               // 台紙ぜんぶを白でぬる（＝白い背景）
-  }
+  if(!keepBg) drawBackdrop(ctx, W, H);      // 台紙ぜんぶをふちの色（またはぼかし）でぬる
   const g = geom(W, H, sw, sh);
   /* 「見えている場所」ぶんだけを元の写真から切り出して描く。
      こうすると拡大してはみ出しても、切り抜き（clip）を使わずにふちを守れる＝iPhoneで軽い */
@@ -567,15 +839,7 @@ function paint(ctx, src, W, H, keepBg){
   const cw = Math.max(1, Math.min(sw - sx, g.vw / g.s));
   const ch = Math.max(1, Math.min(sh - sy, g.vh / g.s));
   ctx.drawImage(src, sx, sy, cw, ch, g.vx, g.vy, g.vw, g.vh);
-  const r = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);
-  if(r > 0.5){
-    const P = Math.PI;
-    ctx.fillStyle = '#fff';
-    cornerFill(ctx, g.vx,        g.vy,        g.vx + r,         g.vy + r,         r, -P/2, -P);
-    cornerFill(ctx, g.vx + g.vw, g.vy,        g.vx + g.vw - r,  g.vy + r,         r, 0,    -P/2);
-    cornerFill(ctx, g.vx + g.vw, g.vy + g.vh, g.vx + g.vw - r,  g.vy + g.vh - r,  r, P/2,  0);
-    cornerFill(ctx, g.vx,        g.vy + g.vh, g.vx + r,         g.vy + g.vh - r,  r, P,    P/2);
-  }
+  (pre || makeCorners(W, H, g)).forEach(o => ctx.drawImage(o.c, o.x, o.y));
 }
 
 /* ---------- 保存 ---------- */
@@ -658,10 +922,11 @@ function stamp(){
 /* 出来上がり（9:16の台紙）の大きさ。写真が元の細かさのまま入るサイズを選ぶ。
    geom は比率だけで決まるので、仮の1000pxで倍率を出して逆算できる */
 function outSize(){
-  const s = geom(1000, 1000 / AR, srcW, srcH).s / 1000;
+  const ar = curAR();
+  const s = geom(1000, 1000 / ar, srcW, srcH).s / 1000;
   // 拡大するほど元の写真を細かく使うので出来上がりは小さくなる。粗くなりすぎないよう 1080 を下限にする
   const W = Math.max(1080, Math.max(2, Math.round(1 / s)));
-  return {W, H: Math.max(2, Math.round(W / AR))};
+  return {W, H: Math.max(2, Math.round(W / ar))};
 }
 
 function makeImage(){
@@ -701,6 +966,8 @@ function makeVideo(onProgress, useAudio){
     c.width = W; c.height = H;
     const ctx = c.getContext('2d', {alpha:false});
     paint(ctx, v, W, H);
+    // かどの三日月は毎コマ同じ絵なので、1回だけ作って貼り続ける
+    const corners = makeCorners(W, H, geom(W, H, v.videoWidth, v.videoHeight));
 
     /* ⚠️ 元の動画は「見えたまま」で再生する。
        透明にしたり隠したりすると、iOSはコマの通知（requestVideoFrameCallback）を
@@ -809,7 +1076,7 @@ function makeVideo(onProgress, useAudio){
        iPhoneでは①がほとんど来ないことがあり（＝2.8fpsの正体）、②が無いと動画が固まる。 */
     let lastAt = 0, endPos = 0, stalledOut = false;
     const drawFrame = () => {
-      paint(ctx, v, W, H, true);
+      paint(ctx, v, W, H, true, corners);
       lastAt = performance.now();
       if(manual){ try{ vtrack.requestFrame(); }catch(e){} }
     };
