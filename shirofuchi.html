@@ -142,9 +142,10 @@
     <label class="pick" for="filePhoto">
       <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
            stroke-linecap="round" stroke-linejoin="round" aria-label="写真をえらぶ">
-        <rect x="18" y="18" width="64" height="64" rx="13"/>
-        <circle cx="37" cy="38" r="3.4"/>
-        <path d="M21,72 L41,50 L52,61 L79,34"/>
+        <path d="M32,14 H72 a12,12 0 0 1 12,12 V66"/>
+        <rect x="16" y="24" width="64" height="64" rx="13"/>
+        <circle cx="35" cy="44" r="3.4"/>
+        <path d="M19,78 L39,56 L50,67 L77,40"/>
       </svg>
     </label>
     <label class="pick" for="fileVideo">
@@ -156,12 +157,12 @@
     </label>
   </div>
 </div>
-<input type="file" id="filePhoto" accept="image/*">
+<input type="file" id="filePhoto" accept="image/*" multiple>
 <input type="file" id="fileVideo" accept="video/*">
 
 <!-- 編集画面：1画面ぴったり。スクロールなし -->
 <div class="screen hide" id="view2">
-  <div class="stage" id="stage"><div class="frame" id="frame"><div class="inner" id="inner"></div></div></div>
+  <div class="stage" id="stage"><div class="frame" id="frame"></div></div>
 
   <div class="panel">
     <!-- 出来上がりのかたち（メニューと同じもの） -->
@@ -206,7 +207,9 @@
 <script>
 /* =========================================================
    しろふち — どんな比率の写真/動画も、えらんだかたちの台紙にのせて「写真」に保存する
-   ・かたち＝1:1 / 4:5 / 9:16 / 元のまま（写真そのままの比率＝ふちが4辺そろう）
+   ・写真は1〜4枚。2枚以上えらぶと自動で並べる（コラージュ）。
+     写真どうしの「すきま」は、外わくと同じ『ふちの太さ』を使う＝白い帯はぜんぶ同じ太さ
+   ・かたち＝1:1 / 4:5 / 9:16 / 元のまま（写真そのままの比率＝ふちが4辺そろう。1枚のときだけ）
    ・ふちの色＝しろ / くろ / ぼかし（写真そのものをぼかして敷く）/ 写真の色 / すきな色
    ・ふちの太さは出来上がりの横幅に対する％
    ・写真は切らずに全部のせる（横位置なら上下に、9:16より細長いなら左右に白がふえる）
@@ -223,7 +226,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 13;
+const VER = 14;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -236,9 +239,12 @@ const VER = 13;
 })();
 
 let kind = null;      // 'image' | 'video'
-let url  = null;      // objectURL
-let media = null;     // <img> or <video>
-let srcW = 0, srcH = 0;
+let urls = [];        // objectURL（あとで捨てるために覚えておく）
+/* えらんだもの。1つなら今までどおり、2〜4つならコラージュ。
+   {media:<img>/<canvas>/<video>, sw, sh, panX, panY, box:プレビューの入れ物} */
+let shots = [];
+const N = () => shots.length;
+const MAX_SHOTS = 4;
 let busy = false;
 
 /* ---------- ふちの太さ・かどの丸み ----------
@@ -260,11 +266,12 @@ if(!(rad >= 0 && rad <= 24)) rad = 2;
    zoom 0 ＝ いままで通り「切らずに全部のせる」
    zoom 1 ＝ 9:16 をうめる（ふちの内側いっぱい。はみ出したところは切る）
    zoom 2 ＝ そのさらに2倍まで寄れる
-   panX / panY ＝ 切ったときに「どこを残すか」。中身の横幅・たて幅に対する割合で持つので、
-                  プレビューでも書き出しでも同じ場所が残る。写真をえらび直すたびに真ん中へ戻す。 */
+   panX / panY ＝ 切ったときに「どこを残すか」。マスの横幅・たて幅に対する割合で持つので、
+                  プレビューでも書き出しでも同じ場所が残る。これは写真1枚ずつが持つ。
+   ⚠️ ズーム（ぜんぶ／うめる）は全部のマスで共通。ボタンが1組しかないので、
+      マスごとに別々の値にすると、光っているボタンが嘘になる。 */
 let zoom = parseFloat(localStorage.getItem(KEY_Z) || '0');
 if(!(zoom >= 0 && zoom <= 2)) zoom = 0;
-let panX = 0, panY = 0;
 
 el('w').value = pct;
 el('r').value = rad;
@@ -283,7 +290,7 @@ let arKey = localStorage.getItem(KEY_AR) || '9:16';
 if(!ARS.some(a => a.k === arKey)) arKey = '9:16';
 /* いまの 横÷たて。'元のまま' は写真の比率をそのまま使う（写真が来る前は 9:16 のふりをする） */
 function curAR(){
-  if(arKey === 'src') return (srcW && srcH) ? srcW / srcH : 0.5625;
+  if(arKey === 'src') return N() ? shots[0].sw / shots[0].sh : 0.5625;
   return ARS.find(a => a.k === arKey).v;
 }
 const CROP_MAX = 0.03;      // これ以内しか切れないなら、4辺のふちをそろえる（＝いままでの見た目）
@@ -319,14 +326,15 @@ function isBlur(){ return bgKey === 'blur' && !!tiny; }
       毎コマ背景を作り直すと、それだけでコマ落ちの原因になるため。 */
 function makeTiny(){
   tiny = null; tinyURL = ''; autoColor = '#FFFFFF';
-  if(!media || !srcW || !srcH) return;
+  if(!N()) return;
+  const it = shots[0];          // ぼかしも「写真の色」も、いつも1枚目からとる（決め方を1つにする）
   try{
-    const k = 32 / Math.max(srcW, srcH);
+    const k = 32 / Math.max(it.sw, it.sh);
     const c = document.createElement('canvas');
-    c.width  = Math.max(1, Math.round(srcW * k));
-    c.height = Math.max(1, Math.round(srcH * k));
+    c.width  = Math.max(1, Math.round(it.sw * k));
+    c.height = Math.max(1, Math.round(it.sh * k));
     const cx = c.getContext('2d', {willReadFrequently:true});
-    cx.drawImage(media, 0, 0, c.width, c.height);
+    cx.drawImage(it.media, 0, 0, c.width, c.height);
     tiny = c;
     tinyURL = c.toDataURL('image/jpeg', 0.82);
     const d = cx.getImageData(0, 0, c.width, c.height).data;
@@ -352,13 +360,15 @@ function buildShapes(box){
 }
 function syncShapes(){
   document.querySelectorAll('.shape').forEach(b => b.classList.toggle('on', b.dataset.k === arKey));
+  // 「元のまま」は写真1枚のときだけ（何枚もあると「元の比率」が1つに決まらない）
+  document.querySelectorAll('.shape[data-k="src"]').forEach(b => b.classList.toggle('hide', N() > 1));
   // 「元のまま」は何も切れないので、ぜんぶ／うめる の出番がない
   el('seg').classList.toggle('hide', arKey === 'src');
 }
 function setAR(k){
   arKey = k;
   localStorage.setItem(KEY_AR, k);
-  panX = 0; panY = 0;            // かたちが変わったら、まず真ん中を残す
+  shots.forEach(it => { it.panX = 0; it.panY = 0; });   // かたちが変わったら、まず真ん中を残す
   syncShapes();
   paintPicks();
   if(pending) disarmSave();
@@ -460,15 +470,37 @@ syncChips();
 paintPicks();
 syncSeg();                     // 前回えらんだ「ぜんぶ／うめる」を光らせておく
 
-/* 台紙（W×H）の中身の枠と、「そのまま」「うめる」それぞれの倍率を出す */
-function fits(W, H, sw, sh){
-  const b  = W * pct / 100;
+/* 台紙（W×H）を、写真の枚数ぶんの「マス」に割る。
+   ⚠️ 白い帯の太さは、外わくも 写真どうしのすきまも 同じ b（＝ふちの太さ）。
+      別々にすると帯の太さがちぐはぐになり、ふちの太さスライダーの意味が壊れる。
+   1枚＝そのまま／2枚＝長いほうを半分／3枚＝大きいの1つ＋小さいの2つ／4枚＝2×2。 */
+function cells(W, H, n){
+  n = n || Math.max(1, N());
+  const b = W * pct / 100;
+  const x0 = b, y0 = b;
   const iw = Math.max(1, W - b * 2), ih = Math.max(1, H - b * 2);
-  const cover = Math.max(iw / sw, ih / sh);                      // ふち内いっぱいに満たす倍率
-  const crop  = Math.max(sw * cover / iw, sh * cover / ih) - 1;   // そのとき切れる割合
-  // ほぼ9:16の写真は、いままで通り4辺そろえる。それ以外は切らずに全部のせる
-  const base  = crop <= CROP_MAX ? cover : Math.min(iw / sw, ih / sh);
-  return {b, iw, ih, base, cover};
+  const R = (x, y, w, h) => ({x, y, w: Math.max(1, w), h: Math.max(1, h)});
+  if(n <= 1) return [R(x0, y0, iw, ih)];
+  const tall = ih >= iw;                      // たて長の台紙か（切る向きを決める）
+  const cw = (iw - b) / 2, ch = (ih - b) / 2;
+  if(n === 2){
+    return tall ? [R(x0, y0, iw, ch), R(x0, y0 + ch + b, iw, ch)]
+                : [R(x0, y0, cw, ih), R(x0 + cw + b, y0, cw, ih)];
+  }
+  if(n === 3){
+    return tall ? [R(x0, y0, iw, ch), R(x0, y0 + ch + b, cw, ch), R(x0 + cw + b, y0 + ch + b, cw, ch)]
+                : [R(x0, y0, cw, ih), R(x0 + cw + b, y0, cw, ch), R(x0 + cw + b, y0 + ch + b, cw, ch)];
+  }
+  return [R(x0, y0, cw, ch),            R(x0 + cw + b, y0, cw, ch),
+          R(x0, y0 + ch + b, cw, ch),   R(x0 + cw + b, y0 + ch + b, cw, ch)];
+}
+/* 1つのマス（cw×ch）に写真（sw×sh）を入れるときの、「そのまま」「うめる」の倍率 */
+function fitCell(cw, ch, sw, sh){
+  const cover = Math.max(cw / sw, ch / sh);                      // マスいっぱいに満たす倍率
+  const crop  = Math.max(sw * cover / cw, sh * cover / ch) - 1;   // そのとき切れる割合
+  // ほぼマスと同じ比率の写真は、いままで通り4辺そろえる。それ以外は切らずに全部のせる
+  const base  = crop <= CROP_MAX ? cover : Math.min(cw / sw, ch / sh);
+  return {base, cover};
 }
 /* スライダーの値（0〜2）→ 実際の倍率。1 でちょうど「うめる」になるように折れ線でつなぐ。
    もともと切れない写真（すでに9:16）は、0〜2 をそのまま 1倍〜2倍にわりあてる */
@@ -482,39 +514,49 @@ function tAt(s, base, cover){
   return s <= cover ? (s - base) / (cover - base) : s / cover;
 }
 
-/* 台紙（W×H）の中で、写真をどこに・どの大きさで置くかを求める。
+/* マス c の中で、写真 it をどこに・どの大きさで置くかを求める。
    x,y,w,h ＝ 写真ぜんたいの場所（切られるぶんも含む）
-   vx,vy,vw,vh ＝ そのうち実際に見える場所（＝中身の枠との重なり。かどの丸みはここにつく）
+   vx,vy,vw,vh ＝ そのうち実際に見える場所（＝マスとの重なり。かどの丸みはここにつく）
    s ＝ 元の写真にかかる倍率（出来上がりサイズを決めるのに使う）
    mx,my ＝ 指で動かせる範囲（割合） */
-function geom(W, H, sw, sh){
-  const f = fits(W, H, sw, sh);
+function geomIn(c, it){
+  const f = fitCell(c.w, c.h, it.sw, it.sh);
   const s = scaleAt(zoom, f.base, f.cover);
-  const w = sw * s, h = sh * s;
-  const mx = Math.max(0, (w - f.iw) / 2), my = Math.max(0, (h - f.ih) / 2);
-  const ox = Math.max(-mx, Math.min(mx, panX * f.iw));
-  const oy = Math.max(-my, Math.min(my, panY * f.ih));
-  const x  = f.b + (f.iw - w) / 2 + ox;
-  const y  = f.b + (f.ih - h) / 2 + oy;
-  const vx = Math.max(x, f.b), vy = Math.max(y, f.b);
-  const vw = Math.max(1, Math.min(x + w, f.b + f.iw) - vx);
-  const vh = Math.max(1, Math.min(y + h, f.b + f.ih) - vy);
-  return {x, y, w, h, s, vx, vy, vw, vh, mx: mx / f.iw, my: my / f.ih};
+  const w = it.sw * s, h = it.sh * s;
+  const mx = Math.max(0, (w - c.w) / 2), my = Math.max(0, (h - c.h) / 2);
+  const ox = Math.max(-mx, Math.min(mx, it.panX * c.w));
+  const oy = Math.max(-my, Math.min(my, it.panY * c.h));
+  const x  = c.x + (c.w - w) / 2 + ox;
+  const y  = c.y + (c.h - h) / 2 + oy;
+  const vx = Math.max(x, c.x), vy = Math.max(y, c.y);
+  const vw = Math.max(1, Math.min(x + w, c.x + c.w) - vx);
+  const vh = Math.max(1, Math.min(y + h, c.y + c.h) - vy);
+  return {x, y, w, h, s, vx, vy, vw, vh, mx: mx / c.w, my: my / c.h};
 }
 
-/* プレビューの「中身の枠」を実測ピクセルで返す（指でなぞった量を割合に直すのに使う） */
-function innerBox(){
-  const f = el('frame'), w = f.clientWidth, h = f.clientHeight;
-  if(!w || !h) return null;
-  const b = w * pct / 100;
-  return {iw: Math.max(1, w - b * 2), ih: Math.max(1, h - b * 2)};
+/* 指が乗っているマスを返す（プレビューの実測ピクセルで判定）。
+   マスとマスのすきまに置いた指も、いちばん近いマスに吸わせる */
+function cellAt(clientX, clientY){
+  const f = el('frame'), r = f.getBoundingClientRect();
+  const cs = cells(f.clientWidth, f.clientHeight);
+  const x = clientX - r.left, y = clientY - r.top;
+  let best = 0, bd = Infinity;
+  for(let i = 0; i < N() && i < cs.length; i++){
+    const c = cs[i];
+    const dx = Math.max(c.x - x, 0, x - (c.x + c.w));
+    const dy = Math.max(c.y - y, 0, y - (c.y + c.h));
+    const d = dx * dx + dy * dy;
+    if(d < bd){ bd = d; best = i; }
+  }
+  return {i: best, c: cs[best]};
 }
 
-/* すでに 9:16 に近い写真は「うめる」がはじめから満たされている。
+/* すでにマスと同じ比率の写真は「うめる」がはじめから満たされている。
    その写真ではスライダーの真ん中に意味がないので、目盛りも吸いつきもやめる */
 function hasFill(){
-  if(!srcW || !srcH) return false;
-  const f = fits(1000, 1000 / curAR(), srcW, srcH);
+  if(!N()) return false;
+  const c = cells(1000, 1000 / curAR())[0];
+  const f = fitCell(c.w, c.h, shots[0].sw, shots[0].sh);
   return f.cover / f.base >= 1.02;
 }
 
@@ -538,37 +580,53 @@ function setZoom(t){
   layout();
 }
 
+/* プレビューの入れ物を、いまの枚数ぶん作り直す（枚数が変わったときだけ） */
+function render(){
+  const f = el('frame');
+  f.innerHTML = '';
+  shots.forEach(it => {
+    const box = document.createElement('div');
+    box.className = 'inner';
+    box.appendChild(it.media);
+    f.appendChild(box);
+    it.box = box;
+  });
+}
+
 /* プレビューの大きさは、余った場所を実測してぴったり収まるように決める（＝スクロールしない） */
 function layout(){
   el('wv').textContent = pct.toFixed(1) + '%';
   el('rv').textContent = Math.round(rad) + '%';
-  const f = el('frame'), st = el('stage'), inr = el('inner');
-  if(!srcW || !srcH || !st.clientWidth) return;
+  const f = el('frame'), st = el('stage');
+  if(!N() || !st.clientWidth) return;
   const ar = curAR();
   const w = Math.floor(Math.min(st.clientWidth, st.clientHeight * ar));
   const h = Math.round(w / ar);
   f.style.width  = w + 'px';
   f.style.height = h + 'px';
-  const kid = inr.firstElementChild;
-  if(!kid) return;
-  const g = geom(w, h, srcW, srcH);
-  // はみ出しの外へは動かせない。持っている値のほうも直しておく（引っぱりが空ぶりしないように）
-  panX = Math.max(-g.mx, Math.min(g.mx, panX));
-  panY = Math.max(-g.my, Math.min(g.my, panY));
-  inr.style.left   = g.vx + 'px';
-  inr.style.top    = g.vy + 'px';
-  inr.style.width  = g.vw + 'px';
-  inr.style.height = g.vh + 'px';
-  inr.style.borderRadius = (g.vw * rad / 100) + 'px';
-  kid.style.left   = (g.x - g.vx) + 'px';
-  kid.style.top    = (g.y - g.vy) + 'px';
-  kid.style.width  = g.w + 'px';
-  kid.style.height = g.h + 'px';
+  const cs = cells(w, h);
+  shots.forEach((it, i) => {
+    const kid = it.box && it.box.firstElementChild;
+    if(!kid) return;
+    const g = geomIn(cs[i], it);
+    // はみ出しの外へは動かせない。持っている値のほうも直しておく（引っぱりが空ぶりしないように）
+    it.panX = Math.max(-g.mx, Math.min(g.mx, it.panX));
+    it.panY = Math.max(-g.my, Math.min(g.my, it.panY));
+    it.box.style.left   = g.vx + 'px';
+    it.box.style.top    = g.vy + 'px';
+    it.box.style.width  = g.vw + 'px';
+    it.box.style.height = g.vh + 'px';
+    it.box.style.borderRadius = (g.vw * rad / 100) + 'px';
+    kid.style.left   = (g.x - g.vx) + 'px';
+    kid.style.top    = (g.y - g.vy) + 'px';
+    kid.style.width  = g.w + 'px';
+    kid.style.height = g.h + 'px';
+  });
 }
 el('seg').addEventListener('click', e => {
   const b = e.target.closest('.segb');
   if(!b || busy) return;
-  panX = 0; panY = 0;          // えらび直したら、まず真ん中を残す
+  shots.forEach(it => { it.panX = 0; it.panY = 0; });   // えらび直したら、まず真ん中を残す
   setZoom(parseFloat(b.dataset.z));
 });
 el('w').addEventListener('input', e => {
@@ -600,58 +658,113 @@ if(window.ResizeObserver) new ResizeObserver(relayout).observe(el('stage'));
    iPhoneの写真アプリが「写真だけ」「ビデオだけ」に絞り込まれた状態で開く */
 ['filePhoto','fileVideo'].forEach(id => {
   el(id).addEventListener('change', e => {
-    const f = e.target.files && e.target.files[0];
-    if(f) load(f, id === 'fileVideo' ? 'video' : 'image');
+    const fs = e.target.files;
+    if(fs && fs.length) load(fs, id === 'fileVideo' ? 'video' : 'image');
     e.target.value = '';
   });
 });
 el('again').addEventListener('click', () => { if(!busy) reset(); });
 
+/* えらんだものを全部かたづける（動画は止めてから捨てないと、裏で鳴り続ける） */
+function clearShots(){
+  shots.forEach(it => {
+    try{ if(it.media && it.media.pause){ it.media.pause(); it.media.removeAttribute('src'); it.media.load(); } }catch(e){}
+  });
+  shots = [];
+  urls.forEach(u => { try{ URL.revokeObjectURL(u); }catch(e){} });
+  urls = [];
+  el('frame').innerHTML = '';
+}
+
 function reset(){
   el('hint').style.display = 'none';
   el('hint').textContent = '';
-  if(url) URL.revokeObjectURL(url);
-  url = null; media = null; kind = null; srcW = 0; srcH = 0;
-  panX = 0; panY = 0;
+  clearShots();
+  kind = null;
   disarmSave();
-  el('inner').innerHTML = '';
+  syncShapes();                // 「元のまま」をまた出す（1枚のときだけの札なので）
   el('view2').classList.add('hide');
   el('view1').classList.remove('hide');
 }
 
-function load(file, hint){
-  fileBytes = file.size; heavy = 0;
+/* コラージュのときは、1枚ずつを長辺2000pxまで小さくしてから持つ。
+   ⚠️ iPhoneは大きな写真を4枚そのまま抱えると、それだけで画面が落ちることがある。
+      出来上がりの1マスは2000pxもないので、見た目は変わらない。1枚のときは元のまま持つ。 */
+const COLLAGE_MAX_PX = 2000;
+function toShot(img, n){
+  const sw = img.naturalWidth, sh = img.naturalHeight;
+  if(!sw || !sh) return null;
+  if(n > 1 && Math.max(sw, sh) > COLLAGE_MAX_PX){
+    const k = COLLAGE_MAX_PX / Math.max(sw, sh);
+    const c = document.createElement('canvas');
+    c.width  = Math.max(1, Math.round(sw * k));
+    c.height = Math.max(1, Math.round(sh * k));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return {media:c, sw:c.width, sh:c.height, panX:0, panY:0};
+  }
+  return {media:img, sw, sh, panX:0, panY:0};
+}
+
+function load(files, hint){
+  const list = [...files];
+  const first = list[0];
   el('hint').style.display = 'none';
   el('hint').textContent = '';
-  if(url) URL.revokeObjectURL(url);
-  url = URL.createObjectURL(file);
-  // 種類はファイル自身の型で判定。型が空のときは押したボタン（hint）を使う
-  kind = /^video\//.test(file.type) ? 'video'
-       : /^image\//.test(file.type) ? 'image'
-       : (hint || 'image');
-  panX = 0; panY = 0;          // 新しい写真は、まず真ん中を残す
+  clearShots();
   tiny = null; tinyURL = ''; autoColor = '#FFFFFF';   // 前の写真の見本は捨てる
+  heavy = 0;
   disarmSave();
-  el('inner').innerHTML = '';
+  // 種類はファイル自身の型で判定。型が空のときは押したボタン（hint）を使う
+  kind = /^video\//.test(first.type) ? 'video'
+       : /^image\//.test(first.type) ? 'image'
+       : (hint || 'image');
+  if(kind === 'video'){ loadVideo(first); return; }
 
-  if(kind === 'image'){
+  let use = list.filter(f => !/^video\//.test(f.type));
+  if(!use.length) use = [first];
+  const over = use.length > MAX_SHOTS;
+  if(over) use = use.slice(0, MAX_SHOTS);
+  fileBytes = use[0].size;
+  loadPhotos(use);
+  if(over) toast(MAX_SHOTS + '枚まで使います');
+}
+
+/* 何枚かをまとめて読む。えらんだ順に並べたいので、読み終わった順ではなく番号で置く */
+function loadPhotos(files){
+  const got = new Array(files.length).fill(null);
+  let left = files.length;
+  const done = () => {
+    if(--left > 0) return;
+    shots = got.filter(Boolean);
+    if(!shots.length){ toast('この画像は読み込めませんでした'); return; }
+    ready();
+  };
+  files.forEach((file, i) => {
+    const u = URL.createObjectURL(file);
+    urls.push(u);
     const img = new Image();
-    img.onload = () => { srcW = img.naturalWidth; srcH = img.naturalHeight; media = img; ready(); };
-    img.onerror = () => toast('この画像は読み込めませんでした');
-    img.src = url;
-  } else {
-    const v = document.createElement('video');
-    v.playsInline = true; v.setAttribute('playsinline','');
-    v.muted = true; v.loop = true; v.preload = 'auto';
-    v.onloadedmetadata = () => {
-      srcW = v.videoWidth; srcH = v.videoHeight; media = v; ready();
-      v.play().catch(()=>{});
-    };
-    // 動画は、1コマ目が読めてはじめて見本（ぼかし・写真の色）を作れる
-    v.onloadeddata = () => { makeTiny(); afterTiny(); };
-    v.onerror = () => toast('この動画は読み込めませんでした');
-    v.src = url;
-  }
+    img.onload  = () => { got[i] = toShot(img, files.length); done(); };
+    img.onerror = () => { done(); };
+    img.src = u;
+  });
+}
+
+function loadVideo(file){
+  fileBytes = file.size;
+  const u = URL.createObjectURL(file);
+  urls.push(u);
+  const v = document.createElement('video');
+  v.playsInline = true; v.setAttribute('playsinline','');
+  v.muted = true; v.loop = true; v.preload = 'auto';
+  v.onloadedmetadata = () => {
+    shots = [{media:v, sw:v.videoWidth, sh:v.videoHeight, panX:0, panY:0}];
+    ready();
+    v.play().catch(()=>{});
+  };
+  // 動画は、1コマ目が読めてはじめて見本（ぼかし・写真の色）を作れる
+  v.onloadeddata = () => { makeTiny(); afterTiny(); };
+  v.onerror = () => toast('この動画は読み込めませんでした');
+  v.src = u;
 }
 
 /* 同じファイルから <video> を作り直す。
@@ -663,31 +776,37 @@ function reloadMedia(){
     nv.playsInline = true; nv.setAttribute('playsinline','');
     nv.muted = true; nv.loop = true; nv.preload = 'auto';
     nv.onloadedmetadata = () => {
-      const old = media;
-      srcW = nv.videoWidth; srcH = nv.videoHeight;
-      media = nv;
-      el('inner').innerHTML = '';
-      el('inner').appendChild(nv);
+      const old = shots[0].media;
+      shots[0] = {media:nv, sw:nv.videoWidth, sh:nv.videoHeight, panX:shots[0].panX, panY:shots[0].panY};
+      render();
       try{ old.pause(); old.removeAttribute('src'); old.load(); }catch(e){}
       layout();
       nv.play().catch(()=>{});
       res();
     };
     nv.onerror = () => rej(new Error('動画を読み直せませんでした'));
-    nv.src = url;
+    nv.src = urls[0];
   });
 }
 
 function ready(){
-  if(!srcW || !srcH){ toast('サイズが読み取れませんでした'); return; }
+  if(!N()){ toast('サイズが読み取れませんでした'); return; }
+  // 「元のまま」は1枚のときだけ。コラージュでは正方形にする
+  if(N() > 1 && arKey === 'src'){ arKey = '1'; localStorage.setItem(KEY_AR, arKey); }
+  /* コラージュで「ぜんぶ」だと、マスの中にも白があいて帯の太さがちぐはぐに見える。
+     はじめは「うめる」にしておく。⚠️ ここでは覚えない（写真1枚のときの好みを書きかえないため） */
+  if(N() > 1 && zoom === 0) zoom = 1;
+  syncSeg();
+  syncShapes();
   if(kind === 'image') makeTiny();      // 写真はこの時点で読めている（動画は onloadeddata で作る）
   afterTiny();
   // 重すぎる動画（ProResなど）は、ブラウザでは再生も書き出しもできない。先に伝える
-  if(kind === 'video' && media.duration > 0 && fileBytes / media.duration > HEAVY_BPS){
+  const v = shots[0].media;
+  if(kind === 'video' && v.duration > 0 && fileBytes / v.duration > HEAVY_BPS){
     heavy = 1;
     toast('この動画は重すぎます。ふつうの画質で撮ったものをお使いください');
   }
-  el('inner').appendChild(media);
+  render();
   el('view1').classList.add('hide');
   el('view2').classList.remove('hide');
   if(heavy){
@@ -723,11 +842,19 @@ const twoDist = () => {
   return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
 };
 el('frame').addEventListener('pointerdown', e => {
-  if(busy || !media) return;
+  if(busy || !N()) return;
   try{ el('frame').setPointerCapture(e.pointerId); }catch(err){}
   pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
-  if(pts.size === 1){ moved = 0; gz = null; g1 = {x:e.clientX, y:e.clientY, px:panX, py:panY}; }
-  else if(pts.size === 2){ g1 = null; gz = {d:twoDist(), z:zoom}; moved = 99; }
+  if(pts.size === 1){
+    moved = 0; gz = null;
+    const h = cellAt(e.clientX, e.clientY);       // なぞるのは「指を置いたマス」だけ
+    g1 = {x:e.clientX, y:e.clientY, i:h.i, cw:h.c.w, ch:h.c.h, px:shots[h.i].panX, py:shots[h.i].panY};
+  }
+  else if(pts.size === 2){
+    const a = [...pts.values()];
+    const h = cellAt((a[0].x + a[1].x) / 2, (a[0].y + a[1].y) / 2);
+    g1 = null; gz = {d:twoDist(), z:zoom, i:h.i}; moved = 99;
+  }
 });
 el('frame').addEventListener('pointermove', e => {
   const p = pts.get(e.pointerId);
@@ -736,19 +863,19 @@ el('frame').addEventListener('pointermove', e => {
   e.preventDefault();
   if(pts.size >= 2 && gz){
     const d = twoDist();
-    if(gz.d > 8 && srcW && srcH){
-      const f = fits(1000, 1000 / curAR(), srcW, srcH);
+    const it = shots[gz.i];
+    if(gz.d > 8 && it){
+      const c = cells(1000, 1000 / curAR())[gz.i];
+      const f = fitCell(c.w, c.h, it.sw, it.sh);
       setZoom(tAt(scaleAt(gz.z, f.base, f.cover) * (d / gz.d), f.base, f.cover));
     }
     return;
   }
-  if(!g1) return;
-  const box = innerBox();
-  if(!box) return;
+  if(!g1 || !shots[g1.i]) return;
   const dx = p.x - g1.x, dy = p.y - g1.y;
   moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
-  panX = g1.px + dx / box.iw;
-  panY = g1.py + dy / box.ih;
+  shots[g1.i].panX = g1.px + dx / g1.cw;
+  shots[g1.i].panY = g1.py + dy / g1.ch;
   if(pending) disarmSave();
   layout();
 });
@@ -759,11 +886,13 @@ const endPoint = e => {
   if(pts.size === 1){
     // つまむ→なぞる に切り替わったとき、途中から続けられるように基準を取り直す
     const only = [...pts.values()][0];
-    g1 = {x:only.x, y:only.y, px:panX, py:panY};
+    const h = cellAt(only.x, only.y);
+    g1 = {x:only.x, y:only.y, i:h.i, cw:h.c.w, ch:h.c.h, px:shots[h.i].panX, py:shots[h.i].panY};
   } else if(pts.size === 0){
     g1 = null;
-    if(moved < 8 && !busy && kind === 'video' && media){
-      if(media.paused) media.play().catch(()=>{}); else media.pause();
+    if(moved < 8 && !busy && kind === 'video' && N()){
+      const v = shots[0].media;
+      if(v.paused) v.play().catch(()=>{}); else v.pause();
     }
   }
 };
@@ -800,26 +929,32 @@ function drawBackdrop(ctx, W, H){
 /* かどの丸みぶんの「三日月」を、台紙と同じ模様で4枚つくっておく（あとは貼るだけ）。
    ⚠️ 毎コマ切り抜く（clip）と iPhone でコマ落ちするので、小さな絵を貼る形にしている。
       ふちが1色のときは1色の三日月、ぼかしのときはぼかしの三日月になる。 */
-function makeCorners(W, H, g){
-  const r = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);
-  if(!(r > 0.5)) return [];
-  const s = Math.ceil(r) + 1;
-  const spots = [
-    {x:g.vx,            y:g.vy,            cx:r, cy:r},   // 左上
-    {x:g.vx + g.vw - r, y:g.vy,            cx:0, cy:r},   // 右上
-    {x:g.vx + g.vw - r, y:g.vy + g.vh - r, cx:0, cy:0},   // 右下
-    {x:g.vx,            y:g.vy + g.vh - r, cx:r, cy:0}    // 左下
-  ];
-  return spots.map(o => {
-    const c = document.createElement('canvas');
-    c.width = s; c.height = s;
-    const cx = c.getContext('2d');
-    cx.save(); cx.translate(-o.x, -o.y); drawBackdrop(cx, W, H); cx.restore();
-    cx.globalCompositeOperation = 'destination-out';
-    cx.beginPath(); cx.arc(o.cx, o.cy, r, 0, Math.PI * 2); cx.fill();   // 丸みの内側＝写真を見せる
-    cx.fillRect(r, 0, s, s); cx.fillRect(0, r, s, s);                   // r より外は使わない
-    return {x:o.x, y:o.y, c};
+function makeCorners(W, H){
+  const out = [];
+  const cs = cells(W, H);
+  shots.forEach((it, i) => {
+    const g = geomIn(cs[i], it);
+    const r = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);
+    if(!(r > 0.5)) return;
+    const s = Math.ceil(r) + 1;
+    const spots = [
+      {x:g.vx,            y:g.vy,            cx:r, cy:r},   // 左上
+      {x:g.vx + g.vw - r, y:g.vy,            cx:0, cy:r},   // 右上
+      {x:g.vx + g.vw - r, y:g.vy + g.vh - r, cx:0, cy:0},   // 右下
+      {x:g.vx,            y:g.vy + g.vh - r, cx:r, cy:0}    // 左下
+    ];
+    spots.forEach(o => {
+      const c = document.createElement('canvas');
+      c.width = s; c.height = s;
+      const cx = c.getContext('2d');
+      cx.save(); cx.translate(-o.x, -o.y); drawBackdrop(cx, W, H); cx.restore();
+      cx.globalCompositeOperation = 'destination-out';
+      cx.beginPath(); cx.arc(o.cx, o.cy, r, 0, Math.PI * 2); cx.fill();   // 丸みの内側＝写真を見せる
+      cx.fillRect(r, 0, s, s); cx.fillRect(0, r, s, s);                   // r より外は使わない
+      out.push({x:o.x, y:o.y, c});
+    });
   });
+  return out;
 }
 
 /* 1コマぶんを描く。
@@ -829,17 +964,19 @@ function makeCorners(W, H, g){
       ・白ぬり  → 最初の1回だけ（keepBg=true で省略）。かどの丸みは角4つを白でふさぐ
    にしている。写真1枚の書き出しでは重さは問題にならないが、同じ道を通す。
    pre ＝ さきに作っておいた「かどの三日月」。動画のときは1回作って使い回す。 */
-function paint(ctx, src, W, H, keepBg, pre){
-  const sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight;
+function paint(ctx, W, H, keepBg, pre){
   if(!keepBg) drawBackdrop(ctx, W, H);      // 台紙ぜんぶをふちの色（またはぼかし）でぬる
-  const g = geom(W, H, sw, sh);
-  /* 「見えている場所」ぶんだけを元の写真から切り出して描く。
-     こうすると拡大してはみ出しても、切り抜き（clip）を使わずにふちを守れる＝iPhoneで軽い */
-  let sx = Math.max(0, (g.vx - g.x) / g.s), sy = Math.max(0, (g.vy - g.y) / g.s);
-  const cw = Math.max(1, Math.min(sw - sx, g.vw / g.s));
-  const ch = Math.max(1, Math.min(sh - sy, g.vh / g.s));
-  ctx.drawImage(src, sx, sy, cw, ch, g.vx, g.vy, g.vw, g.vh);
-  (pre || makeCorners(W, H, g)).forEach(o => ctx.drawImage(o.c, o.x, o.y));
+  const cs = cells(W, H);
+  shots.forEach((it, i) => {
+    const g = geomIn(cs[i], it);
+    /* 「見えている場所」ぶんだけを元の写真から切り出して描く。
+       こうすると拡大してはみ出しても、切り抜き（clip）を使わずにふちを守れる＝iPhoneで軽い */
+    const sx = Math.max(0, (g.vx - g.x) / g.s), sy = Math.max(0, (g.vy - g.y) / g.s);
+    const cw = Math.max(1, Math.min(it.sw - sx, g.vw / g.s));
+    const ch = Math.max(1, Math.min(it.sh - sy, g.vh / g.s));
+    ctx.drawImage(it.media, sx, sy, cw, ch, g.vx, g.vy, g.vw, g.vh);
+  });
+  (pre || makeCorners(W, H)).forEach(o => ctx.drawImage(o.c, o.x, o.y));
 }
 
 /* ---------- 保存 ---------- */
@@ -923,10 +1060,15 @@ function stamp(){
    geom は比率だけで決まるので、仮の1000pxで倍率を出して逆算できる */
 function outSize(){
   const ar = curAR();
-  const s = geom(1000, 1000 / ar, srcW, srcH).s / 1000;
+  const cs = cells(1000, 1000 / ar);
   // 拡大するほど元の写真を細かく使うので出来上がりは小さくなる。粗くなりすぎないよう 1080 を下限にする
-  const W = Math.max(1080, Math.max(2, Math.round(1 / s)));
-  return {W, H: Math.max(2, Math.round(W / ar))};
+  // 何枚かあるときは、いちばん細かさが要る1枚に合わせる（どの写真もぼやけないように）
+  let W = 1080;
+  shots.forEach((it, i) => {
+    const s = geomIn(cs[i], it).s / 1000;
+    if(s > 0) W = Math.max(W, Math.round(1 / s));
+  });
+  return {W: Math.max(2, W), H: Math.max(2, Math.round(W / ar))};
 }
 
 function makeImage(){
@@ -936,7 +1078,7 @@ function makeImage(){
   if(W * H > maxPx){ const k = Math.sqrt(maxPx / (W * H)); W = Math.round(W * k); H = Math.round(H * k); }
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
-  paint(c.getContext('2d'), media, W, H);
+  paint(c.getContext('2d'), W, H);
   return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('画像を作れませんでした')), 'image/jpeg', 0.95));
 }
 
@@ -951,7 +1093,7 @@ let audioCtx = null;
 
 function makeVideo(onProgress, useAudio){
   return new Promise(async (resolve, reject) => {
-    const v = media;
+    const v = shots[0].media;
     const mime = pickMime();
     if(!mime || !HTMLCanvasElement.prototype.captureStream){
       return reject(new Error('この端末では動画のふちづけに対応していません（写真は使えます）'));
@@ -965,9 +1107,9 @@ function makeVideo(onProgress, useAudio){
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const ctx = c.getContext('2d', {alpha:false});
-    paint(ctx, v, W, H);
+    paint(ctx, W, H);
     // かどの三日月は毎コマ同じ絵なので、1回だけ作って貼り続ける
-    const corners = makeCorners(W, H, geom(W, H, v.videoWidth, v.videoHeight));
+    const corners = makeCorners(W, H);
 
     /* ⚠️ 元の動画は「見えたまま」で再生する。
        透明にしたり隠したりすると、iOSはコマの通知（requestVideoFrameCallback）を
@@ -1076,7 +1218,7 @@ function makeVideo(onProgress, useAudio){
        iPhoneでは①がほとんど来ないことがあり（＝2.8fpsの正体）、②が無いと動画が固まる。 */
     let lastAt = 0, endPos = 0, stalledOut = false;
     const drawFrame = () => {
-      paint(ctx, v, W, H, true, corners);
+      paint(ctx, W, H, true, corners);
       lastAt = performance.now();
       if(manual){ try{ vtrack.requestFrame(); }catch(e){} }
     };
