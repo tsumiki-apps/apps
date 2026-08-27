@@ -25,6 +25,7 @@ TITLES = {
     "minnawari":   "みんなわり",
     "akima":       "あきま",
     "seikyu":      "請求書",
+    "mitsumori":   "みつもり",
     "shirofuchi":  "しろふち",
     "ironokoshi":  "いろのこし",
     "hiyou":       "費用図鑑",

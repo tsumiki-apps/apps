@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-mitsumori.png">
+<meta name="apple-mobile-web-app-title" content="みつもり">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131109" media="(prefers-color-scheme: dark)">
+<title>みつもり</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5; --ink:#1d1a15;
+    --ink-mid:#5b554a; --ink-soft:#8f8877; --line:#e2ded4; --line-2:#d8d3c7;
+    --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
+    --good:#4c7a51; --good-wash:#dde9dd; --warn:#b0522a; --warn-wash:#f2e0d4;
+    --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
+    --serif:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Songti SC",serif;
+    --sans:"Hiragino Kaku Gothic ProN","Yu Gothic",YuGothic,Meiryo,sans-serif;
+    /* つみきのブランド名（公式ロゴの横のタイトル）だけに使う公式書体。
+       請求書アプリと同じ意匠でそろえる＝2枚は対の道具なので */
+    --brand-font:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+    --col:620px;      /* 本文の最大幅。固定px幅はここだけ（中央寄せの器） */
+    --pv-zoom:1;      /* PCで右に出す紙の縮み具合。900px以上でだけ効く */
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#131109; --surface:#1d1a12; --surface-2:#26221a; --ink:#efe8da;
+      --ink-mid:#a89e8b; --ink-soft:#7d7566; --line:#2f2b21; --line-2:#3a352a;
+      --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+      --good:#7fae82; --good-wash:#23301f; --warn:#d9825a; --warn-wash:#39251a;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:var(--paper); color:var(--ink); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased; font-feature-settings:"palt" 1; -webkit-text-size-adjust:100%;
+    min-height:100dvh;
+  }
+  .tnum{font-variant-numeric:tabular-nums;}
+
+  /* ---------- 上のバー ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:20; background:color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter:saturate(1.3) blur(10px); -webkit-backdrop-filter:saturate(1.3) blur(10px);
+    border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 8px) 0 8px;
+  }
+  .topbar .inner{
+    max-width:var(--col); margin:0 auto; display:flex; align-items:center; gap:8px;
+    padding-left:calc(env(safe-area-inset-left) + 14px); padding-right:calc(env(safe-area-inset-right) + 14px);
+  }
+  .brand{display:flex; align-items:center; gap:9px; min-width:0;}
+  .brand .mark{  /* つみき公式ロゴ（アイソメの積み木3つ）＝index.html と同一座標 */
+    width:22px; height:22px; flex:none; display:block; border-radius:5px;
+    box-shadow:0 2px 7px rgba(36,35,33,.18);
+  }
+  .brand h1{font-family:var(--brand-font); font-weight:700; font-size:1.1rem; margin:0; letter-spacing:.02em; white-space:nowrap;}
+  .spacer{flex:1;}
+  .iconbtn{
+    width:44px; height:44px; flex:none; border:1px solid var(--line); background:var(--surface);
+    border-radius:11px; color:var(--ink-mid); display:grid; place-items:center; cursor:pointer; padding:0;
+  }
+  .iconbtn:active{transform:scale(.94);}
+  .iconbtn svg{width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
+  .backbtn{
+    border:0; background:none; color:var(--accent); font-family:var(--sans); font-size:.95rem;
+    min-height:44px; padding:0 8px 0 0; cursor:pointer; display:flex; align-items:center; gap:3px;
+  }
+
+  /* ---------- 本文 ---------- */
+  .stage{
+    max-width:var(--col); margin:0 auto;
+    padding:14px calc(env(safe-area-inset-right) + 14px) calc(env(safe-area-inset-bottom) + 96px) calc(env(safe-area-inset-left) + 14px);
+  }
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:15px;
+    padding:14px 14px 15px; box-shadow:var(--shadow); margin-bottom:12px;
+  }
+  .label{
+    display:block; font-size:.7rem; font-weight:700; letter-spacing:.09em;
+    color:var(--ink-soft); margin-bottom:2px;
+  }
+  .label.accent{color:var(--accent-2);}
+  .gnote{font-size:.79rem; color:var(--ink-soft); line-height:1.65;}
+  .gnote.warn{color:var(--warn);}
+  .sec-h{font-family:var(--serif); font-size:1.02rem; font-weight:600; margin:0 0 10px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
+
+  /* ---------- 入力 ---------- */
+  .field{margin-bottom:10px;}
+  .field:last-child{margin-bottom:0;}
+  .field > span.ft{display:block; font-size:.76rem; color:var(--ink-mid); margin-bottom:4px; font-weight:600;}
+  input[type=text], input[type=date], input[type=number], input[type=email], textarea, select{
+    width:100%; font-family:var(--sans); font-size:16px;   /* iOSの自動ズーム防止＝16px以上 */
+    color:var(--ink); background:var(--surface-2); border:1px solid var(--line);
+    border-radius:10px; padding:11px; line-height:1.5; -webkit-appearance:none; appearance:none;
+    min-height:44px;
+  }
+  select{background-image:linear-gradient(45deg,transparent 50%,var(--ink-soft) 50%),linear-gradient(135deg,var(--ink-soft) 50%,transparent 50%);
+    background-position:calc(100% - 15px) calc(50% + 1px), calc(100% - 10px) calc(50% + 1px);
+    background-size:5px 5px,5px 5px; background-repeat:no-repeat; padding-right:30px;}
+  textarea{min-height:88px; resize:vertical; line-height:1.7;}
+  input:focus, textarea:focus, select:focus{outline:none; border-color:var(--accent); background:var(--surface);}
+  input.num{text-align:right; font-variant-numeric:tabular-nums;}
+  .row2{display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:9px;}
+
+  /* 型えらび。7列は320pxに入らないので、必ず折り返す組みにする */
+  .plans{display:grid; grid-template-columns:repeat(auto-fit, minmax(132px, 1fr)); gap:8px;}
+  .plan{
+    border:1px solid var(--line-2); background:var(--surface-2); border-radius:12px;
+    padding:10px 10px 11px; text-align:left; cursor:pointer; font-family:var(--sans);
+    color:var(--ink); min-height:44px; display:block;
+  }
+  .plan:active{transform:scale(.98);}
+  .plan .pn{display:block; font-size:.9rem; font-weight:700;}
+  .plan .pb{display:block; font-size:.74rem; color:var(--ink-soft); margin-top:2px; font-variant-numeric:tabular-nums;}
+  .plan.on{background:var(--accent-wash); border-color:var(--accent); color:var(--accent-2);}
+  .plan.on .pb{color:var(--accent-2);}
+
+  /* ---------- ボタン ---------- */
+  .btn{
+    font-family:var(--sans); font-size:.93rem; font-weight:600; border-radius:11px;
+    padding:12px 15px; border:1px solid var(--line-2); background:var(--surface);
+    color:var(--ink); cursor:pointer; line-height:1.3; min-height:44px;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .btn.ghost{background:transparent;}
+  .btn.sm{font-size:.85rem; padding:9px 12px; border-radius:9px; min-height:44px;}
+  .btn[disabled]{opacity:.42; cursor:default;}
+  .btnrow{display:flex; gap:9px; flex-wrap:wrap;}
+  .edit-link{
+    border:0; background:none; color:var(--accent); font-family:var(--sans);
+    font-size:.85rem; min-height:44px; padding:0; cursor:pointer; text-align:left;
+  }
+  .card-foot{display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; padding-top:6px; border-top:1px solid var(--line);}
+
+  /* 画面の下に固定する主ボタン */
+  .fab{
+    position:fixed; left:0; right:0; bottom:0; z-index:15;
+    padding:10px calc(env(safe-area-inset-right) + 14px) calc(env(safe-area-inset-bottom) + 10px) calc(env(safe-area-inset-left) + 14px);
+    background:color-mix(in srgb, var(--paper) 90%, transparent);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+  }
+  .fab .inner{max-width:var(--col); margin:0 auto; display:flex; gap:9px;}
+  .fab .btn{flex:1; white-space:nowrap;}
+  /* 320px では「プレビュー / 印刷」が言葉の間で折れて2行になる。桁は足りているので字だけ詰める */
+  @media screen and (max-width:360px){ .fab .btn{font-size:.85rem; padding-left:8px; padding-right:8px;} }
+
+  /* ---------- 一覧 ---------- */
+  .stats{display:grid; grid-template-columns:repeat(3, 1fr); gap:9px; margin-bottom:12px;}
+  .stat{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:11px 10px 12px; box-shadow:var(--shadow); text-align:center;
+  }
+  .stat .sv{display:block; font-size:1.5rem; font-weight:700; line-height:1.15; font-variant-numeric:tabular-nums;}
+  .stat .sl{display:block; font-size:.7rem; color:var(--ink-soft); margin-top:3px;}
+  .stat.hit .sv{color:var(--good);}
+  .q{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    border:0; border-bottom:1px solid var(--line); background:none; color:inherit;
+    font-family:var(--sans); padding:12px 2px; cursor:pointer; min-height:44px;
+  }
+  .q:last-child{border-bottom:0;}
+  .q:active{background:var(--surface-2);}
+  .q .ib{flex:1; min-width:0;}
+  .q .cl{display:block; font-size:.95rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .q .mt{display:block; font-size:.75rem; color:var(--ink-soft); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .q .am{font-size:.98rem; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .chip{
+    font-size:.68rem; font-weight:700; padding:3px 8px; border-radius:99px; white-space:nowrap;
+    background:var(--surface-2); color:var(--ink-soft); border:1px solid var(--line);
+  }
+  .chip.sent{background:var(--accent-wash); color:var(--accent-2); border-color:transparent;}
+  .chip.won{background:var(--good-wash); color:var(--good); border-color:transparent;}
+  .chip.lost{background:var(--surface-2); color:var(--ink-soft);}
+  .chip.over{background:var(--warn-wash); color:var(--warn); border-color:transparent;}
+  .empty{text-align:center; color:var(--ink-soft); padding:24px 8px; font-size:.87rem;}
+  .empty .em{font-size:1.8rem; display:block; margin-bottom:8px;}
+
+  /* ---------- 明細の行 ---------- */
+  .line{border:1px solid var(--line); border-radius:12px; padding:11px; margin-bottom:9px; background:var(--surface-2);}
+  .line-h{display:flex; align-items:center; gap:8px; margin-bottom:8px;}
+  .line-h .n{font-size:.72rem; font-weight:700; color:var(--ink-soft); letter-spacing:.06em;}
+  .line-h .del{margin-left:auto; border:0; background:none; color:var(--ink-soft); font-size:1.2rem; cursor:pointer; width:44px; height:44px; line-height:1;}
+  .line input, .line select, .line textarea{background:var(--surface);}
+  .line .amtrow{display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:8px; margin-top:8px;}
+  .line.locked{border-style:dashed; border-color:var(--accent);}
+
+  /* 合計 */
+  .sum{margin-top:13px; border-top:1px solid var(--line); padding-top:11px;}
+  .sum .r{display:flex; align-items:baseline; gap:10px; font-size:.88rem; padding:3px 0; color:var(--ink-mid);}
+  .sum .r .v{margin-left:auto; font-variant-numeric:tabular-nums;}
+  .sum .r.total{font-size:1.14rem; font-weight:700; color:var(--ink); margin-top:6px; padding-top:9px; border-top:1px solid var(--line);}
+
+  /* 出す前チェック */
+  .chk{display:flex; align-items:flex-start; gap:10px; padding:9px 0; font-size:.87rem; cursor:pointer; min-height:44px;}
+  .chk input{width:21px; height:21px; flex:none; margin:3px 0 0; accent-color:var(--accent);}
+
+  /* 特記事項（たたんで置く） */
+  details.nt{border-bottom:1px solid var(--line);}
+  details.nt:last-of-type{border-bottom:0;}
+  details.nt > summary{
+    list-style:none; cursor:pointer; padding:12px 2px; font-size:.88rem; font-weight:600;
+    display:flex; align-items:center; gap:8px; min-height:44px;
+  }
+  details.nt > summary::-webkit-details-marker{display:none;}
+  details.nt > summary::after{content:'›'; margin-left:auto; color:var(--ink-soft); font-size:1.1rem; transition:transform .15s;}
+  details.nt[open] > summary::after{transform:rotate(90deg);}
+  details.nt .nb{padding:0 2px 12px;}
+
+  .toast{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 82px); transform:translateX(-50%) translateY(8px);
+    background:var(--ink); color:var(--paper); font-size:.84rem; padding:10px 16px; border-radius:99px;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:60; max-width:88vw; text-align:center;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%);}
+
+  /* ===================== 見積書そのもの（プレビュー＆印刷） =====================
+     ここは画面のテーマに追従させない。紙は常に白＋黒で、暗い画面でも
+     「印刷したらこう出る」が一致するようにする（印刷事故を防ぐため）。 */
+  .sheet{
+    display:none; background:#fff; color:#1d1a15; font-family:var(--sans);
+    max-width:760px; margin:0 auto; padding:26px 20px 40px; line-height:1.75;
+  }
+  body.previewing .stage, body.previewing .fab{display:none;}
+  body.previewing .sheet{display:block;}
+  .sheet .sh-title{
+    font-family:var(--serif); font-size:1.6rem; letter-spacing:.32em; text-indent:.32em;
+    text-align:center; font-weight:600; margin:4px 0 20px;
+  }
+  .sheet .meta{width:100%; border-collapse:collapse; font-size:.8rem; margin-left:auto; max-width:300px;}
+  .sheet .meta td{padding:2px 0; vertical-align:top;}
+  .sheet .meta td:first-child{color:#5b554a; white-space:nowrap; padding-right:12px;}
+  .sheet .meta td:last-child{text-align:right; font-variant-numeric:tabular-nums;}
+  .sheet .to{font-size:1.16rem; font-weight:600; margin:16px 0 3px; border-bottom:1px solid #1d1a15; padding-bottom:5px; display:inline-block; min-width:56%;}
+  .sheet .lead{font-size:.83rem; margin:12px 0 14px; color:#3d382f;}
+  .sheet .subj{font-size:.94rem; margin:0 0 14px; font-weight:600;}
+  .sheet .grand{
+    display:flex; align-items:baseline; gap:12px; border-top:2px solid #1d1a15; border-bottom:2px solid #1d1a15;
+    padding:11px 4px; margin-bottom:6px; flex-wrap:wrap;
+  }
+  .sheet .grand .gl{font-size:.92rem; font-weight:600; letter-spacing:.08em;}
+  .sheet .grand .gv{margin-left:auto; font-size:1.45rem; font-weight:700; font-variant-numeric:tabular-nums;}
+  .sheet .taxnote{font-size:.75rem; color:#5b554a; margin:0 0 20px;}
+  .sheet h3{font-size:.78rem; font-weight:700; letter-spacing:.12em; color:#5b554a; margin:22px 0 8px; border-bottom:1px solid #d8d3c7; padding-bottom:5px;}
+  .sheet h4{font-size:.85rem; font-weight:700; margin:15px 0 5px; color:#1d1a15;}
+  .tw{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .sheet table.det{width:100%; border-collapse:collapse; font-size:.8rem; min-width:0;}
+  .sheet table.det th{
+    background:#f2efe8; font-weight:600; font-size:.72rem; letter-spacing:.05em; color:#5b554a;
+    border:1px solid #d8d3c7; padding:6px 7px; text-align:left;
+  }
+  .sheet table.det td{border:1px solid #d8d3c7; padding:7px; vertical-align:top;}
+  .sheet table.det td.no{width:2.2em; text-align:right; color:#8f8877; font-variant-numeric:tabular-nums;}
+  .sheet table.det td.nm{font-weight:600; width:30%;}
+  .sheet table.det td.am{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; width:22%;}
+  .sheet table.det tr.sub td{background:#faf8f4;}
+  .sheet table.det tr.tot td{background:#f2efe8; font-weight:700; font-size:.88rem;}
+  .sheet ul.notes{margin:0; padding-left:1.15em; font-size:.81rem;}
+  .sheet ul.notes li{margin-bottom:5px;}
+  .sheet .maint{border:1px solid #d8d3c7; border-radius:8px; padding:9px 11px; font-size:.81rem; margin-top:10px;}
+  .sheet .from{
+    margin-top:26px; border-top:1px solid #d8d3c7; border-bottom:1px solid #d8d3c7;
+    padding:12px 2px; font-size:.8rem; line-height:1.75;
+  }
+  .sheet .from b{font-size:.92rem; font-family:var(--serif); letter-spacing:.03em;}
+  .sheet .warnbox{
+    border:1px dashed #b0522a; color:#b0522a; border-radius:9px; padding:9px 11px;
+    font-size:.79rem; margin-bottom:16px;
+  }
+
+  /* 画面が狭いときのプレビュー。A4の表をそのまま375pxに入れると「内容」欄が
+     1文字ずつ折れるので、ここだけ詰める（印刷はA4のままなので影響しない） */
+  @media screen and (max-width:600px){
+    .sheet{padding:20px 14px 34px;}
+    .sheet table.det{font-size:.74rem;}
+    .sheet table.det td{padding:6px 5px;}
+    .sheet table.det td.nm{width:27%;}
+    .sheet table.det td.am{width:24%;}
+    .sheet .sh-title{font-size:1.4rem;}
+    .sheet .grand .gv{font-size:1.25rem;}
+    .stats{grid-template-columns:repeat(3,1fr); gap:7px;}
+    .stat .sv{font-size:1.3rem;}
+  }
+  @media screen and (max-width:340px){
+    .sheet .meta{max-width:none;}
+  }
+
+  .pv-bar{
+    position:sticky; top:0; z-index:30; display:none; gap:9px; align-items:center;
+    padding:calc(env(safe-area-inset-top) + 9px) 14px 9px;
+    background:color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-bottom:1px solid var(--line);
+  }
+  body.previewing .pv-bar{display:flex; flex-wrap:wrap;}
+  body.previewing .topbar{display:none;}
+
+  /* ===================== 900px以上＝編集しながら紙を見る =====================
+     PCで620pxの一本柱にすると横が丸ごと余る。右に紙を置いて、
+     打ったそばから仕上がりが見えるようにする（縮尺は幅に合わせて変える）。 */
+  .side{display:none;}
+  @media screen and (min-width:900px){
+    :root{ --pv-zoom:.60; }
+    body.two .stage{
+      max-width:1360px; display:grid; grid-template-columns:minmax(360px, 560px) 1fr; gap:22px;
+      align-items:start;
+    }
+    body.two.previewing .stage{display:none;}   /* ← two より後に書く。同じ強さなので順番で決まる */
+    body.two .side{display:block; position:sticky; top:76px;}
+    body.two .topbar .inner{max-width:1360px;}   /* 本文が広がったらバーも合わせる */
+    body.two .side .paper{
+      background:#fff; border-radius:14px; box-shadow:var(--shadow); overflow:hidden;
+      zoom:var(--pv-zoom);
+    }
+    body.two .side .paper .sheet{display:block; max-width:none; padding:30px 26px 36px;}
+    body.two .side .cap{font-size:.75rem; color:var(--ink-soft); margin:0 0 7px;}
+    body.previewing .side{display:none;}
+    .fab .inner{max-width:1360px;}
+  }
+  @media screen and (min-width:1200px){ :root{ --pv-zoom:.74; } }
+  @media screen and (min-width:1440px){ :root{ --pv-zoom:.86; } }
+  @media screen and (min-width:1700px){ :root{ --pv-zoom:1; } }
+
+  /* 印刷（＝PDFで保存）。A4に紙だけを流す */
+  @page{size:A4; margin:15mm 14mm 16mm;}
+  @media print{
+    body{background:#fff;}
+    .topbar, .stage, .fab, .pv-bar, .toast, #tsumikiEdge, #tsumikiPeek{display:none !important;}
+    .sheet{display:block !important; max-width:none; margin:0; padding:0;}
+    .sheet table.det, .sheet .from, .sheet .maint{break-inside:avoid;}
+    .sheet h3, .sheet h4{break-after:avoid;}
+    .tw{overflow:visible !important;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="inner">
+    <button class="backbtn" id="btnBack" style="display:none;">‹ 一覧</button>
+    <span class="brand" id="brand"><svg class="mark" viewBox="0 0 100 100" aria-label="つみき"><rect width="100" height="100" rx="24" fill="#242321"/><g fill="#242321" stroke="#F4F2EE" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"><polygon points="35,46 50,53.5 35,61 20,53.5"/><polygon points="20,53.5 35,61 35,76 20,68.5"/><polygon points="50,53.5 35,61 35,76 50,68.5"/><polygon points="65,46 80,53.5 65,61 50,53.5"/><polygon points="50,53.5 65,61 65,76 50,68.5"/><polygon points="80,53.5 65,61 65,76 80,68.5"/><polygon points="50,24 65,31.5 50,39 35,31.5"/><polygon points="35,31.5 50,39 50,54 35,46.5"/><polygon points="65,31.5 50,39 50,54 65,46.5"/></g></svg><h1>みつもり</h1></span>
+    <span class="spacer"></span>
+    <button class="iconbtn" id="btnSet" aria-label="自分の情報の設定">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.5 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.14 15a1.7 1.7 0 0 0-1.56-1H2.5a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.05 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.5 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V10a1.7 1.7 0 0 0 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="pv-bar">
+  <button class="btn ghost sm" id="pvClose">‹ 編集にもどる</button>
+  <span class="spacer"></span>
+  <button class="btn ghost sm" id="pvMail">メール本文をコピー</button>
+  <button class="btn primary sm" id="pvPrint">印刷 / PDFで保存</button>
+</div>
+
+<main class="stage">
+  <div id="wrap"></div>
+  <aside class="side" id="side"></aside>
+</main>
+<div class="fab" id="fab"><div class="inner"></div></div>
+<div class="sheet" id="sheet"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   みつもり（つみき）
+   ねらい＝`契約書ひな形_Tsumiki/02_見積書_ひな形.md` を、毎回そのまま出せる形にする。
+   このアプリが守っているのは、ひな形の「役割」の一文：
+
+     つみきの見積書は、金額を伝える紙ではない。
+     お客様が最初に読む"約束の書面"であり、特記事項が本体で、金額表はその一部でしかない。
+
+   だから手で書くと必ず抜ける4か所を、機械の側で持つ：
+     1. No.1「ヒアリング 0（無償）」と No.6「ライセンス／著作権 委託料に含む(0)」の行
+        → 消せない（値引きに見せない・他社の見積書に無い行を見せる）
+     2. 提供形態（ライセンス／買い取り）を変えたら「権利について」の文が丸ごと入れ替わる
+        → 手で直すと片方だけ残って、書面として矛盾する
+     3. 消費税の書き方（適格請求書を出せるか）は、発行日とインボイス登録日で自動で決まる
+     4. 有効期限30日・着手金50%・検収後60日以内（フリーランス新法 第4条）
+
+   自分の情報（屋号・住所・登録番号）は**この端末のlocalStorageにだけ**置く。
+   ここは公開リポジトリなので、ソースにも、どこかのサーバーにも書き込まない。
+   （請求書アプリ seikyu.html と同じ持ち方。2枚で対の道具になる：見積 TSM- / 請求 TSM-I-）
+   ========================================================================= */
+
+const KEY='tsumiki_mitsumori_v1';
+
+function blank(){
+  return {
+    me:{ biz:'', rep:'', zip:'', addr:'', mail:'', web:'', tno:'', tnoFrom:'' },
+    prefix:'TSM',        /* 見積は TSM-、請求は TSM-I- で分ける */
+    serial:{},           /* {'2026': 3} ＝その年に何件出したか */
+    quotes:[]
+  };
+}
+let db=blank();
+let view='list';      /* list | edit | set */
+let curId=null;
+
+function load(){ try{ const s=localStorage.getItem(KEY); if(s) db=Object.assign(blank(), JSON.parse(s)); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(db)); }catch(e){ toast('保存できませんでした'); } }
+load();
+
+/* ---------- 小さい道具 ---------- */
+const uid=()=>Math.random().toString(36).slice(2,10);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function todayISO(){ return isoOf(new Date()); }
+function addDays(iso,n){ const [y,m,d]=iso.split('-').map(Number); const t=new Date(y,m-1,d); t.setDate(t.getDate()+n); return isoOf(t); }
+function fmtJP(iso){ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return `${y}年${Number(m)}月${Number(d)}日`; }
+function fmtMD(iso){ if(!iso) return ''; const [,m,d]=iso.split('-'); return `${Number(m)}/${Number(d)}`; }
+function yen(n){ return '￥'+Number(n||0).toLocaleString('ja-JP'); }
+function man(n){ const v=Number(n||0)/10000; return (Math.round(v*10)/10)+'万'; }
+function daysBetween(a,b){ return Math.round((new Date(b)-new Date(a))/86400000); }
+
+let toastT=null;
+function toast(msg){
+  const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'), 2200);
+}
+
+/* =========================================================================
+   型（プラン）
+   価格の正本＝Vault Decisions/2026-07-28-existing-app-deployment-pricing.md と
+   2026-08-08-total-cost-pricing-on-site.md。ここは「標準構成の値段」を持つ場所であって、
+   「〜から」の下限ではない。だから帯ではなく std（標準額）を先に入れる。
+   ========================================================================= */
+const PLANS={
+  ready:{ name:'そのまま導入', band:'一律 5万', std:50000,
+    note:'既製アプリを御社専用の鍵つきでお渡しする段。中身は変えません。1つでも変えたら「微調整」へ。' },
+  tweak:{ name:'微調整あり', band:'8〜15万', std:100000,
+    note:'⚠️ この帯はサイトに出していない社内の帯。相手には「この構成でいくら」と総額だけを伝えます。' },
+  small:{ name:'小規模の受託', band:'15〜45万', std:150000,
+    note:'標準的な構成が15万。足すものがあるぶんだけ上に積みます（「15万から」とは言わない）。' },
+  full:{  name:'本格の受託', band:'40〜60万', std:400000,
+    note:'標準的な構成が40万。' },
+  free:{  name:'実績協力（0円）', band:'通常価格 − 同額', std:150000,
+    note:'0円でも見積書は出します。通常価格を書いて、名目つきで同額を引く＝タダではなく「今回だけ0円」と伝わります。' }
+};
+
+/* 内訳のひな形。lock:true の行は消せない（ひな形02の要件） */
+function linesFor(plan, form){
+  const buyout = form==='buyout';
+  if(plan==='ready'){
+    return [
+      {id:uid(), lock:true, name:'業務ヒアリング・課題の整理', detail:'やりたいことの聞き取り、解決する課題の特定、Must/Want の仕分け', kind:'free', amount:0},
+      {id:uid(), name:'導入の設定', detail:'御社専用の鍵の発行、「◯◯さま専用」の表示、初期設定', kind:'yen', amount:PLANS.ready.std},
+      {id:uid(), name:'納品・ご説明', detail:'アプリ本体（御社専用・鍵つき）、簡易運用手順書の納品、操作のご説明', kind:'incl', amount:0},
+      {id:uid(), lock:true, name:'利用ライセンス（買い切り）', detail:'御社専用の鍵つき／利用端末 1台／無断コピー・横流しの防止／月額なし', kind:'incl', amount:0}
+    ];
+  }
+  const std = (PLANS[plan]||PLANS.small).std;
+  return [
+    {id:uid(), lock:true, name:'業務ヒアリング・要件の整理', detail:'業務内容の聞き取り、解決する課題の特定、Must/Want の仕分け', kind:'free', amount:0},
+    {id:uid(), name:'設計', detail:'画面構成、データの持ち方、動作の流れの設計', kind:'yen', amount:Math.round(std*0.2)},
+    {id:uid(), name:'開発', detail:'本ソフトウェアの制作、制作中の修正対応を含む', kind:'yen', amount:Math.round(std*0.6)},
+    {id:uid(), name:'動作確認', detail:'実際の業務データを想定した動作確認', kind:'yen', amount:Math.round(std*0.2)},
+    {id:uid(), name:'納品・ご説明', detail: buyout
+        ? 'ソースコード一式・説明資料・簡易運用手順書の納品、操作説明'
+        : 'アプリ本体（御社専用・鍵つき）・説明資料・簡易運用手順書の納品、操作説明', kind:'incl', amount:0},
+    {id:uid(), lock:true, name: buyout ? '著作権の譲渡' : '利用ライセンス（買い切り）',
+      detail: buyout
+        ? '著作権法第27条・第28条に定める権利を含む全部の譲渡／著作者人格権の不行使'
+        : '御社専用の鍵つき／利用端末 1台／無断コピー・横流しの防止／月額なし',
+      kind:'incl', amount:0}
+  ];
+}
+
+/* =========================================================================
+   特記事項＝この見積書の本体。ひな形02の11項目から、お客様が読む文だけを持つ。
+   key を持たせているのは、提供形態・登録日が変わったときに
+   その章だけを差し替えられるようにするため。
+   ========================================================================= */
+function noteKenri(form){
+  if(form==='buyout') return { key:'kenri', h:'権利について', b:
+    '納品物の著作権は、委託料の全額をお支払いいただいた時点で、すべて御社に譲渡します。\n'+
+    '譲渡には、著作権法第27条（翻案権等）および第28条（二次的著作物の利用権）に定める権利を含みます。\n'+
+    'この譲渡の対価は、上記委託料に含まれます。別途の費用は発生しません。\n'+
+    '当方は、納品物について著作者人格権を行使しません。\n'+
+    '御社は、当方以外の会社に保守や改造を依頼することができます。' };
+  return { key:'kenri', h:'権利について', b:
+    '本アプリは、御社専用の鍵つきでお渡しする買い切りです。月額の縛りはありません。\n'+
+    'アプリの著作権は当方が保有しますが、御社は買い切りで、期間の定めなく業務にお使いいただけます。\n'+
+    '無断のコピー・第三者への配布（横流し）はご遠慮いただきます。利用できる端末数の範囲でお使いください。万一よそに出回った場合、その鍵を止める（失効させる）ことがあります。\n'+
+    'もし止まっても御社が困らないよう、当方や当方のサーバーの不在・障害を理由にアプリが停止しない設計にしています。当方に何かあっても、御社はそのまま使い続けられます。\n'+
+    'ソースごと他社に引き継げる形（ソースのお渡し・著作権の譲渡）をご希望の場合は、買い取りを別途ご相談ください。' };
+}
+function noteNouhin(form){
+  return { key:'nouhin', h:'納品するもの', b: (form==='buyout'
+    ? 'ソースコード一式（動かすために必要なファイルのすべて。鍵を外してお渡しします）\n'
+    : 'アプリ本体（御社専用の鍵つき。プロダクトキーでお使いいただけます）\n')
+    + '説明資料（何をするものか、どこに置けば動くか）\n'
+    + '簡易運用手順書（日常の使い方）\n'
+    + (form==='buyout' ? '中身を隠したり、当方だけが分かる形で納品したりすることはありません。' : 'いずれも電子データでお渡しします。') };
+}
+/* 消費税の章は「発行日にインボイス登録が済んでいるか」で自動で決まる。
+   ひな形02は AとBのどちらか一方だけを残せ、と書いてある＝手で選ぶと必ず事故る所 */
+function noteZei(issue){
+  const t=(db.me.tno||'').trim(), from=(db.me.tnoFrom||'').trim();
+  const live = t && (!from || issue>=from);
+  if(live) return { key:'zei', h:'消費税等について', b:
+    '上記金額に消費税等を加算してご請求いたします。当方は適格請求書発行事業者です（登録番号：'+t+'）。適格請求書を発行いたします。' };
+  return { key:'zei', h:'消費税等について', b:
+    '上記金額に消費税等相当額を加算してご請求いたします。\n'+
+    'なお、当方は現在、適格請求書発行事業者ではないため、適格請求書（インボイス）を発行できません。御社において仕入税額控除の取扱いが変わる可能性がありますので、あらかじめお知らせいたします。ご不明な点はお申し付けください。' };
+}
+function defaultNotes(q){
+  const form=q.form, issue=q.issue;
+  return [
+    { key:'kane', h:'金額について（着手後、金額は変わりません）', b:
+      '本お見積りの金額は、ご発注後に増額することはありません。\n'+
+      '制作にあたって当方の想定より工数がかかった場合も、金額は変わりません。\n'+
+      'ただし、「含まれるもの」の範囲を超える機能の追加や、仕様の重要な変更をご希望の場合に限り、あらためてお見積りをご提示し、書面またはメールでご合意いただいたうえで変更いたします。合意のない変更は行いません。' },
+    noteNouhin(form),
+    noteKenri(form),
+    { key:'hani', h:'本お見積りに含まれるもの／含まれないもの', b:
+      '【含まれるもの】課題の整理とご提案／アプリの制作／制作中の修正（触っていただいて、違和感を直すところまで）／納品時の使い方のご説明／納品後6か月間の不具合修正（無償）\n'+
+      '【含まれないもの】納品後の機能追加・重要な仕様変更／継続的な運用サポート（別途ご相談ください）／大規模な基幹システムの開発／24時間365日の運用保守／御社の既存システムそのものの改修／御社のPC・ネットワーク・第三者サービスの調達や設定' },
+    { key:'shiharai', h:'お支払いについて', b:
+      '着手金 50%：ご発注後30日以内\n'+
+      '残金 50%：検収完了後、60日以内\n'+
+      'お振込手数料は御社にてご負担をお願いいたします。\n'+
+      '当方は「特定受託事業者に係る取引の適正化等に関する法律」上の特定受託事業者にあたります。同法第4条により、お支払期日は納品日から60日以内とさせていただいております。' },
+    { key:'hiyou', h:'ヒアリング・お見積りの費用', b:
+      'ヒアリングとお見積りは無料です。\n'+
+      '本お見積りの内容にご納得いただけない場合、費用は一切発生しません。どうぞご遠慮なくお申し付けください。' },
+    { key:'kigen', h:'有効期限', b:
+      '本お見積りの有効期限は、発行日から'+(q.validDays||30)+'日間です。\n'+
+      '期限を過ぎた場合は、あらためてお見積りをご提示いたします。' },
+    noteZei(issue),
+    { key:'taisei', h:'制作の体制・ご連絡について', b:
+      '制作は代表がひとりで担当します。外注や再委託は行いません。伺った内容を見る人が、他にいません。\n'+
+      '稼働は平日夜間・土日を中心としております。平日日中の即時のご対応が難しい場合があります。\n'+
+      'ご連絡には2〜3日以内を目安にご返信いたします。' },
+    { key:'himitsu', h:'秘密の保持', b:
+      '伺った業務の内容を、他社や第三者にお話しすることはありません。\n'+
+      'ご希望があれば、秘密保持契約（NDA）を締結いたします。お申し付けください。' },
+    { key:'zentei', h:'前提条件', b:
+      '本お見積りは、別添の「Must/Want仕分けシート」に記載した「今回作る」欄の内容を前提としています。\n'+
+      'ヒアリングで伺った内容に事実と異なる点があった場合、金額が変わることがあります（この場合は着手前に必ずご相談します）。' }
+  ];
+}
+
+/* ---------- 見積書の作成 ---------- */
+function newQuote(){
+  const issue=todayISO();
+  const q={
+    id:uid(), no:nextNo(issue), issue, validDays:30,
+    client:'', subject:'', plan:'small', form:'license', devices:1,
+    lines:linesFor('small','license'),
+    discLabel:'', discAmount:0, discFull:false,
+    maint:0, taxMode:'add',
+    status:'draft', sentAt:'', closedAt:'',
+    checked:[false,false,false,false,false]
+  };
+  q.notes=defaultNotes(q);
+  return q;
+}
+function nextNo(iso){
+  const y=iso.slice(0,4);
+  const n=(db.serial[y]||0)+1;
+  return `${db.prefix}-${y}-${String(n).padStart(3,'0')}`;
+}
+function bumpSerial(iso){ const y=iso.slice(0,4); db.serial[y]=(db.serial[y]||0)+1; }
+function cur(){ return db.quotes.find(x=>x.id===curId)||null; }
+function validUntil(q){ return addDays(q.issue, Number(q.validDays||30)); }
+
+/* ---------- 金額の計算 ----------
+   kind: yen=金額に入れる / incl=委託料に含む(0) / free=無償(0)
+   税＝ひな形02はAでもBでも「加算する」書き方。だから既定は加算。
+   （請求書アプリ側は免税のあいだ加算しない作りだが、あちらは請求＝実際に受け取る額なので別物） */
+function calc(q){
+  const sub=q.lines.reduce((s,l)=> s + (l.kind==='yen' ? Number(l.amount||0) : 0), 0);
+  /* 値引きは 0〜小計 の間に丸める。マイナスを打つと合計が水増しされるため（テストで出た） */
+  const disc=q.discFull ? sub : Math.min(Math.max(0, Number(q.discAmount||0)), sub);
+  const base=Math.max(0, sub-disc);
+  const taxable=q.taxMode!=='none';
+  const tax=taxable?Math.floor(base*0.1):0;
+  return {sub, disc, base, taxable, tax, total:base+tax};
+}
+function statusOf(q){
+  if(q.status==='won')  return {k:'won',  t:'決まった'};
+  if(q.status==='lost') return {k:'lost', t:'見送り'};
+  if(q.status==='sent'){
+    if(todayISO()>validUntil(q)) return {k:'over', t:'期限すぎ'};
+    return {k:'sent', t:'返事待ち'};
+  }
+  return {k:'draft', t:'下書き'};
+}
+
+/* =========================== 画面 =========================== */
+const wrap=document.getElementById('wrap');
+const side=document.getElementById('side');
+const fab=document.getElementById('fab').querySelector('.inner');
+
+function render(){
+  document.getElementById('btnBack').style.display = (view==='list') ? 'none' : '';
+  document.getElementById('brand').style.display   = (view==='list') ? '' : 'none';
+  document.body.classList.toggle('two', view==='edit');
+  if(view==='list') renderList();
+  else if(view==='edit') renderEdit();
+  else renderSet();
+  renderSide();
+  window.scrollTo(0,0);
+}
+function renderSide(){
+  if(view!=='edit'){ side.innerHTML=''; return; }
+  const q=cur(); if(!q){ side.innerHTML=''; return; }
+  side.innerHTML=`<p class="cap">出るかたち</p><div class="paper"><div class="sheet" id="sideSheet"></div></div>`;
+  document.getElementById('sideSheet').innerHTML=sheetHTML(q);
+}
+
+/* ---------- 一覧 ---------- */
+function renderList(){
+  const qs=db.quotes.slice().sort((a,b)=> (b.issue||'').localeCompare(a.issue||'') || b.no.localeCompare(a.no));
+  const ym=todayISO().slice(0,7);
+  const sentThisMonth=qs.filter(x=>x.sentAt && x.sentAt.slice(0,7)===ym).length;
+  const waiting=qs.filter(x=>x.status==='sent');
+  const won=qs.filter(x=>x.status==='won');
+  let h='';
+
+  /* 8月に決めた勝ち条件＝「金額を書いた見積りを1本送った」。
+     数えるものを1つに絞る＝ここは点数板であって、読みものにしない */
+  h+=`<div class="stats">
+    <div class="stat ${sentThisMonth?'hit':''}"><span class="sv tnum">${sentThisMonth}</span><span class="sl">今月 送った</span></div>
+    <div class="stat"><span class="sv tnum">${waiting.length}</span><span class="sl">返事待ち</span></div>
+    <div class="stat"><span class="sv tnum">${won.length}</span><span class="sl">決まった</span></div>
+  </div>`;
+
+  if(!sentThisMonth){
+    h+=`<div class="card" style="border-color:var(--accent);">
+      <p style="margin:0; font-size:.9rem;">今月はまだ1本も出ていません。<span class="gnote">送ることは自分の都合だけで決まります。</span></p>
+    </div>`;
+  }else if(waiting.length){
+    const sum=waiting.reduce((s,x)=>s+calc(x).total,0);
+    const soon=waiting.filter(x=>daysBetween(todayISO(), validUntil(x))<=7 && daysBetween(todayISO(), validUntil(x))>=0).length;
+    h+=`<div class="card">
+      <span class="label">返事待ちの合計</span>
+      <div style="display:flex; align-items:baseline; gap:10px; margin-top:4px;">
+        <span style="font-size:1.4rem; font-weight:700;" class="tnum">${yen(sum)}</span>
+        <span class="gnote">${waiting.length}件</span>
+      </div>
+      ${soon?`<div class="gnote warn" style="margin-top:7px;">有効期限まで1週間を切っているものが ${soon}件。一度だけ確認の連絡を。</div>`:''}
+    </div>`;
+  }
+
+  /* 設定が空のうちは、先に埋めてもらう。ここが空だと書面として成立しない */
+  if(!db.me.biz || !db.me.addr){
+    h+=`<div class="card" style="border-color:var(--accent);">
+      <span class="label accent">さいしょに</span>
+      <p style="margin:6px 0 11px; font-size:.88rem;">屋号・住所を一度だけ入れておくと、以後の見積書に自動で入ります。
+      <span class="gnote">この端末の中だけに保存され、どこにも送信しません。</span></p>
+      <button class="btn primary" data-act="go-set">自分の情報を入れる</button>
+    </div>`;
+  }
+
+  h+=`<div class="card">`;
+  h+=`<span class="label">見積書 ${qs.length?qs.length+'件':''}</span>`;
+  if(qs.length){
+    h+=`<div style="margin-top:6px;">`+qs.map(x=>{
+      const st=statusOf(x), c=calc(x);
+      return `<button class="q" data-act="open" data-id="${x.id}">
+        <span class="ib">
+          <span class="cl">${esc(x.client||'（宛先未記入）')}</span>
+          <span class="mt tnum">${esc(x.no)} ・ ${fmtMD(x.issue)}発行${x.status==='sent'?' ・ 期限 '+fmtMD(validUntil(x)):''}</span>
+        </span>
+        <span class="am">${yen(c.total)}</span>
+        <span class="chip ${st.k}">${st.t}</span>
+      </button>`;
+    }).join('')+`</div>`;
+  }else{
+    h+=`<div class="empty"><span class="em">📄</span>まだ1枚もありません。<br>金額は、最初の接触で出す。</div>`;
+  }
+  h+=`</div>`;
+
+  wrap.innerHTML=h;
+  fab.innerHTML=`<button class="btn primary" data-act="new">＋ 新しい見積書</button>`;
+}
+
+/* ---------- 編集 ---------- */
+function renderEdit(){
+  const q=cur(); if(!q){ view='list'; return render(); }
+  const c=calc(q), st=statusOf(q), P=PLANS[q.plan]||PLANS.small;
+  let h='';
+
+  h+=`<div class="card">
+    <div style="display:flex; align-items:center; gap:9px; margin-bottom:11px;">
+      <span class="label" style="margin:0;">${esc(q.no)}</span>
+      <span class="chip ${st.k}">${st.t}</span>
+    </div>
+    <div class="field"><span class="ft">宛先（御中の前に入る名前）</span>
+      <input type="text" data-f="client" value="${esc(q.client)}" placeholder="株式会社◯◯"></div>
+    <div class="field"><span class="ft">件名</span>
+      <input type="text" data-f="subject" value="${esc(q.subject)}" placeholder="シフト希望とりまとめアプリの開発"></div>
+    <div class="row2">
+      <div class="field"><span class="ft">発行日</span><input type="date" data-f="issue" value="${esc(q.issue)}"></div>
+      <div class="field"><span class="ft">有効期限（日数）</span><input type="number" class="num" inputmode="numeric" data-f="validDays" value="${q.validDays||30}"></div>
+    </div>
+    <p class="gnote" style="margin:2px 0 0;">${fmtJP(validUntil(q))} まで有効。</p>
+  </div>`;
+
+  /* 型 */
+  h+=`<div class="card">
+    <h2 class="sec-h">どの型か</h2>
+    <div class="plans">
+      ${Object.keys(PLANS).map(k=>`<button class="plan ${q.plan===k?'on':''}" data-act="plan" data-k="${k}">
+        <span class="pn">${PLANS[k].name}</span><span class="pb">${PLANS[k].band}</span></button>`).join('')}
+    </div>
+    <p class="gnote" style="margin:10px 0 0;">${esc(P.note)}</p>
+  </div>`;
+
+  /* 提供形態 */
+  h+=`<div class="card">
+    <h2 class="sec-h">お渡しのかたち</h2>
+    <div class="plans">
+      <button class="plan ${q.form==='license'?'on':''}" data-act="form" data-k="license">
+        <span class="pn">ライセンス</span><span class="pb">鍵つき・買い切り</span></button>
+      <button class="plan ${q.form==='buyout'?'on':''}" data-act="form" data-k="buyout">
+        <span class="pn">買い取り</span><span class="pb">ソース＋著作権</span></button>
+    </div>
+    <p class="gnote" style="margin:10px 0 0;">切り替えると、内訳の最後の行と特記事項「権利について」「納品するもの」が入れ替わります。手で直すと片方だけ残って矛盾するところです。</p>
+  </div>`;
+
+  /* 明細 */
+  h+=`<div class="card">
+    <h2 class="sec-h">お見積りの内訳</h2>
+    <p class="gnote" style="margin:-4px 0 11px;">点線の2行は消せません。0円で載せるから「もともと無償」に見える＝値引きに見せると、次から値切られます。</p>`;
+  h+=q.lines.map((l,i)=>`
+    <div class="line ${l.lock?'locked':''}">
+      <div class="line-h"><span class="n">No.${i+1}</span>
+        ${l.lock?'':`<button class="del" data-act="line-del" data-id="${l.id}" aria-label="この行を消す">×</button>`}</div>
+      <div class="field"><input type="text" data-line="${l.id}" data-f="name" value="${esc(l.name)}" placeholder="項目"></div>
+      <div class="field"><input type="text" data-line="${l.id}" data-f="detail" value="${esc(l.detail)}" placeholder="内容（相手が読む説明）"></div>
+      <div class="amtrow">
+        <select data-line="${l.id}" data-f="kind">
+          <option value="yen"  ${l.kind==='yen'?'selected':''}>金額に入れる</option>
+          <option value="incl" ${l.kind==='incl'?'selected':''}>委託料に含む（0）</option>
+          <option value="free" ${l.kind==='free'?'selected':''}>無償（0）</option>
+        </select>
+        <input type="number" class="num" inputmode="numeric" data-line="${l.id}" data-f="amount"
+          value="${l.kind==='yen'?(l.amount||''):''}" placeholder="0" ${l.kind==='yen'?'':'disabled style="opacity:.4;"'}>
+      </div>
+    </div>`).join('');
+  h+=`<button class="edit-link" data-act="line-add">＋ 行をふやす</button>`;
+
+  h+=`<div class="row2" style="margin-top:13px;">
+    <div class="field"><span class="ft">値引きの名目</span>
+      <input type="text" data-f="discLabel" value="${esc(q.discLabel)}" placeholder="初回実績協力につき"></div>
+    <div class="field"><span class="ft">値引き額</span>
+      <input type="number" class="num" inputmode="numeric" data-f="discAmount" value="${q.discFull?c.sub:(q.discAmount||'')}" placeholder="0" ${q.discFull?'disabled style="opacity:.5;"':''}></div>
+  </div>
+  <label class="chk"><input type="checkbox" data-full="1" ${q.discFull?'checked':''}><span>小計と同額を引く（お支払額 0円にする）</span></label>
+  <p class="gnote" style="margin:0;">値引きは名目とセットで。理由なく下げると、次からその額が定価になります。</p>`;
+
+  h+=`<div class="sum" id="sumBox">${sumHTML(q)}</div></div>`;
+
+  /* 保守と消費税 */
+  h+=`<div class="card">
+    <h2 class="sec-h">添えるもの</h2>
+    <div class="row2">
+      <div class="field"><span class="ft">任意の月額保守（円/月）</span>
+        <input type="number" class="num" inputmode="numeric" data-f="maint" value="${q.maint||''}" placeholder="10000"></div>
+      <div class="field"><span class="ft">消費税</span>
+        <select data-f="taxMode">
+          <option value="add"  ${q.taxMode!=='none'?'selected':''}>10%を加算する</option>
+          <option value="none" ${q.taxMode==='none'?'selected':''}>加算しない</option>
+        </select></div>
+    </div>
+    <p class="gnote" style="margin:2px 0 0;">保守は0のままなら紙に出ません。入れると「任意です・加入しなくても使えます」の一文つきで1行だけ出ます。</p>
+  </div>`;
+
+  /* 特記事項 */
+  h+=`<div class="card">
+    <h2 class="sec-h">特記事項 <span class="gnote">${(q.notes||[]).length}項目</span></h2>
+    <p class="gnote" style="margin:-4px 0 4px;">ここが見積書の本体です。金額表はその一部でしかありません。</p>
+    ${(q.notes||[]).map((n,i)=>`<details class="nt"><summary>${esc(n.h)}</summary>
+      <div class="nb"><textarea data-note="${i}" placeholder="1行1文">${esc(n.b)}</textarea></div></details>`).join('')}
+    <div class="card-foot"><button class="edit-link" data-act="notes-reset">ひな形の文にもどす</button></div>
+  </div>`;
+
+  /* 出す前チェック */
+  const CHECKS=[
+    '金額を、口でも先に伝えた（黙っていると「無料」と読まれます）',
+    'No.1 のヒアリング0円と、最後の行（ライセンス／著作権）を消していない',
+    'お渡しのかたちと、特記事項「権利について」の文が合っている',
+    'Must/Want仕分けシートの「今回作る」欄と、内訳が一致している',
+    '交通費・現地の時間など、出ていく実費を入れた（または入れないと決めた）'
+  ];
+  const done=(q.checked||[]).filter(Boolean).length;
+  h+=`<div class="card">
+    <h2 class="sec-h">出す前チェック <span class="gnote tnum">${done}/5</span></h2>
+    ${CHECKS.map((t,i)=>`<label class="chk"><input type="checkbox" data-chk="${i}" ${q.checked&&q.checked[i]?'checked':''}><span>${esc(t)}</span></label>`).join('')}
+  </div>`;
+
+  /* 記録 */
+  h+=`<div class="card">
+    <h2 class="sec-h">記録</h2>
+    <div class="btnrow">
+      ${q.status==='draft'?`<button class="btn primary" data-act="mark-sent" ${done<5?'disabled':''}>送った</button>`:''}
+      ${q.status==='sent'?`<button class="btn" data-act="mark-won">決まった</button>
+                           <button class="btn ghost" data-act="mark-lost">見送りになった</button>
+                           <button class="btn ghost" data-act="mark-draft">下書きにもどす</button>`:''}
+      ${(q.status==='won'||q.status==='lost')?`<span class="gnote">${esc(q.sentAt?fmtJP(q.sentAt)+'に送付':'')}${q.closedAt?' ・ '+fmtJP(q.closedAt)+'に'+(q.status==='won'?'受注':'見送り'):''}</span>
+                           <button class="btn ghost sm" data-act="mark-sent2">返事待ちにもどす</button>`:''}
+    </div>
+    ${(q.status==='draft'&&done<5)?`<p class="gnote" style="margin:9px 0 0;">出す前チェックが5つ埋まると押せます。</p>`:''}
+    <div class="card-foot"><button class="edit-link" style="color:var(--warn);" data-act="del">この見積書を消す</button></div>
+  </div>`;
+
+  wrap.innerHTML=h;
+  fab.innerHTML=`<button class="btn ghost" data-act="mail">メール本文</button><button class="btn primary" data-act="preview">プレビュー / 印刷</button>`;
+}
+
+function sumHTML(q){
+  const c=calc(q);
+  return `<div class="r"><span>小計</span><span class="v">${yen(c.sub)}</span></div>
+    ${c.disc?`<div class="r"><span>${esc(q.discLabel||'値引き')}</span><span class="v">− ${yen(c.disc)}</span></div>`:''}
+    ${c.taxable?`<div class="r"><span>消費税等（10%）</span><span class="v">${yen(c.tax)}</span></div>`
+               :`<div class="r"><span>消費税等</span><span class="v">加算なし</span></div>`}
+    <div class="r total"><span>お見積金額</span><span class="v">${yen(c.total)}</span></div>`;
+}
+
+/* ---------- 設定（自分の情報） ---------- */
+function renderSet(){
+  const m=db.me;
+  const f=(k,label,ph,type)=>`<div class="field"><span class="ft">${label}</span>
+    <input type="${type||'text'}" data-me="${k}" value="${esc(m[k]||'')}" placeholder="${esc(ph||'')}"></div>`;
+  let h=`<div class="card">
+    <h2 class="sec-h">見積書に出る自分の情報</h2>
+    <p class="gnote" style="margin:-4px 0 12px;">この端末の中にだけ保存します。どこにも送信しません。</p>
+    ${f('biz','屋号','つみき（Tsumiki）')}
+    ${f('rep','代表者名','髙橋 弘大')}
+    ${f('zip','郵便番号','〒000-0000')}
+    ${f('addr','住所','')}
+    ${f('mail','メール','support.tsumiki@gmail.com','email')}
+    ${f('web','Web','https://tsumiki-apps.com')}
+  </div>
+
+  <div class="card">
+    <h2 class="sec-h">インボイス登録番号</h2>
+    <p class="gnote" style="margin:-4px 0 11px;">
+      番号と<b>登録日</b>を入れておくと、特記事項の「消費税等について」が発行日で自動的に切り替わります
+      （登録日より前の発行 ＝ 適格請求書を発行できない旨の文／登録日以降 ＝ 番号入りの文）。<br>
+      空のままなら、常に「発行できない」側の文が入ります。
+    </p>
+    ${f('tno','登録番号','T0000000000000')}
+    <div class="field"><span class="ft">登録日（この日から有効）</span>
+      <input type="date" data-me="tnoFrom" value="${esc(m.tnoFrom||'')}"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="sec-h">番号の付け方</h2>
+    <div class="field"><span class="ft">見積番号の頭</span>
+      <input type="text" data-pref="1" value="${esc(db.prefix)}" placeholder="TSM"></div>
+    <p class="gnote" style="margin:6px 0 0;">年ごとの連番で <b>${esc(db.prefix)}-${new Date().getFullYear()}-001</b> のように振られます。請求書（TSM-I-）とは別に数えます。</p>
+  </div>`;
+  wrap.innerHTML=h;
+  fab.innerHTML=`<button class="btn primary" data-act="set-done">できた</button>`;
+}
+
+/* =========================== 紙 =========================== */
+function sheetHTML(q){
+  const m=db.me, c=calc(q);
+  const lines=q.lines.map((l,i)=>`
+    <tr>
+      <td class="no">${i+1}</td>
+      <td class="nm">${esc(l.name)}</td>
+      <td>${esc(l.detail)}</td>
+      <td class="am">${l.kind==='yen'?yen(l.amount):(l.kind==='incl'?'委託料に含む（0）':'0（無償）')}</td>
+    </tr>`).join('');
+
+  const missing=[];
+  if(!q.client) missing.push('宛先');
+  if(!q.subject) missing.push('件名');
+  if(!m.biz) missing.push('屋号');
+  if(!m.addr) missing.push('住所');
+
+  const notes=(q.notes||[]).filter(n=>String(n.b||'').trim()).map((n,i)=>
+    `<h4>${i+1}. ${esc(n.h)}</h4><ul class="notes">`+
+    String(n.b).split('\n').filter(s=>s.trim()).map(s=>`<li>${esc(s)}</li>`).join('')+
+    `</ul>`).join('');
+
+  return `
+    ${missing.length?`<div class="warnbox">${esc(missing.join('・'))}が空です。埋めてから印刷してください。</div>`:''}
+    <div class="sh-title">御見積書</div>
+    <table class="meta">
+      <tr><td>見積番号</td><td>${esc(q.no)}</td></tr>
+      <tr><td>発行日</td><td>${fmtJP(q.issue)}</td></tr>
+      <tr><td><b>有効期限</b></td><td><b>${fmtJP(validUntil(q))}</b></td></tr>
+    </table>
+
+    <div class="to">${esc(q.client||'　')}　御中</div>
+    <p class="lead">いつもお世話になっております。<br>下記のとおりお見積り申し上げます。</p>
+    ${q.subject?`<p class="subj">件名：${esc(q.subject)}</p>`:''}
+
+    <div class="grand"><span class="gl">お見積金額</span><span class="gv">${yen(c.total)}−</span></div>
+    <p class="taxnote">${c.taxable?'消費税等（10%）を含みます。':'消費税等の加算はありません。'}</p>
+
+    <h3>お見積りの内訳</h3>
+    <div class="tw"><table class="det">
+      <tr><th style="width:2.2em; text-align:right;">No.</th><th>項目</th><th>内容</th><th style="text-align:right;">金額（円）</th></tr>
+      ${lines}
+      <tr class="sub"><td colspan="3" style="text-align:right;">小計</td><td class="am">${yen(c.sub)}</td></tr>
+      ${c.disc?`<tr class="sub"><td colspan="3" style="text-align:right;">${esc(q.discLabel||'値引き')}</td><td class="am">− ${yen(c.disc)}</td></tr>`:''}
+      ${c.taxable?`<tr class="sub"><td colspan="3" style="text-align:right;">消費税等（10%）</td><td class="am">${yen(c.tax)}</td></tr>`:''}
+      <tr class="tot"><td colspan="3" style="text-align:right;">合計</td><td class="am">${yen(c.total)}</td></tr>
+    </table></div>
+    ${Number(q.maint||0)>0?`<div class="maint"><b>任意の月額保守：${yen(q.maint)} ／ 月</b><br>
+      ご希望の場合のみお申し付けください。加入されなくても、納品したアプリはそのままお使いいただけます。</div>`:''}
+
+    ${notes?`<h3>特記事項</h3>${notes}`:''}
+
+    <div class="from">
+      <b>${esc(m.biz||'　')}</b>${m.rep?`　代表　${esc(m.rep)}`:''}<br>
+      ${esc([m.zip,m.addr].filter(Boolean).join('　'))}<br>
+      ${[m.mail?'Mail：'+esc(m.mail):'', m.web?'Web：'+esc(m.web):''].filter(Boolean).join('　／　')}
+    </div>`;
+}
+function renderSheet(q){ document.getElementById('sheet').innerHTML=sheetHTML(q); }
+
+/* ---------- メール本文 ----------
+   文体は Vault Preferences/business-mail-voice に合わせる：
+   ■で章分け・算用数字・過剰に丁寧な段落は書かない・そのまま送れる状態で出す */
+function mailText(q){
+  const m=db.me, c=calc(q);
+  const items=q.lines.filter(l=>l.kind!=='free').map(l=>'・'+l.name).join('\n');
+  const L=[];
+  L.push(`${q.client||'◯◯'} 御中`);
+  L.push('');
+  L.push(`お世話になっております。${m.biz||'つみき'}の${m.rep||''}です。`);
+  L.push(`${q.subject||'ご相談いただいた件'}について、お見積りをお送りいたします。`);
+  L.push('');
+  L.push('■ お見積金額');
+  L.push(`${yen(c.total)}（${c.taxable?'消費税等 10% を含む':'消費税等の加算なし'}）`);
+  L.push(`有効期限：${fmtJP(validUntil(q))}（発行日から${q.validDays||30}日）`);
+  if(c.disc) L.push(`※ ${q.discLabel||'値引き'}として ${yen(c.disc)} を差し引いた金額です。`);
+  L.push('');
+  L.push('■ 含まれるもの');
+  L.push(items||'・（内訳をご覧ください）');
+  L.push('※ ヒアリングとお見積りは無料です。');
+  L.push('');
+  L.push('■ お支払い');
+  L.push('着手金 50%（ご発注後30日以内）、残金 50%（検収完了後60日以内）でお願いしております。');
+  L.push('着手後に金額が増えることはありません。範囲を超える追加をご希望の場合のみ、あらためてお見積りをお出しします。');
+  if(Number(q.maint||0)>0){
+    L.push('');
+    L.push('■ 保守について');
+    L.push(`月額 ${yen(q.maint)} の保守を任意でお付けできます。加入されなくても、納品したアプリはそのままお使いいただけます。`);
+  }
+  L.push('');
+  L.push('■ ご相談');
+  L.push('削って安くできる箇所もあります。ご予算に合わせて構成を組み直せますので、遠慮なくお申し付けください。');
+  L.push('');
+  L.push('添付の見積書に、権利・納品物・秘密保持まで書いております。ご確認のうえ、ご不明な点をお聞かせください。');
+  L.push('');
+  L.push('----');
+  L.push(`${m.biz||''}${m.rep?'　'+m.rep:''}`);
+  L.push([m.zip,m.addr].filter(Boolean).join('　'));
+  L.push([m.mail, m.web].filter(Boolean).join('　／　'));
+  return L.join('\n');
+}
+function copyText(t){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(()=>toast('コピーしました'), ()=>fallbackCopy(t));
+  }else fallbackCopy(t);
+}
+function fallbackCopy(t){
+  const ta=document.createElement('textarea');
+  ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); toast('コピーしました'); }catch(e){ toast('コピーできませんでした'); }
+  document.body.removeChild(ta);
+}
+
+/* =========================== 操作 =========================== */
+document.addEventListener('click', e=>{
+  const btn=e.target.closest('[data-act]'); if(!btn) return;
+  const act=btn.dataset.act;
+  const q=cur();
+
+  if(act==='new'){
+    const x=newQuote();
+    db.quotes.push(x); bumpSerial(x.issue); save();
+    curId=x.id; view='edit'; render(); return;
+  }
+  if(act==='open'){ curId=btn.dataset.id; view='edit'; render(); return; }
+  if(act==='go-set'){ view='set'; render(); return; }
+  if(act==='set-done'){ view='list'; render(); return; }
+
+  if(!q) return;
+
+  if(act==='plan'){
+    const k=btn.dataset.k; if(k===q.plan) return;
+    q.plan=k;
+    q.lines=linesFor(k, q.form);
+    if(k==='free'){ q.discFull=true; if(!q.discLabel) q.discLabel='初回実績協力につき'; }
+    else q.discFull=false;
+    save(); render(); return;
+  }
+  if(act==='form'){
+    const k=btn.dataset.k; if(k===q.form) return;
+    q.form=k;
+    /* 最後の行（ライセンス／著作権）と、納品・権利の章を入れ替える */
+    q.lines=linesFor(q.plan, k);
+    q.notes=(q.notes||[]).map(n=> n.key==='kenri' ? noteKenri(k) : (n.key==='nouhin' ? noteNouhin(k) : n));
+    save(); render(); toast(k==='buyout'?'買い取りの文に入れ替えました':'ライセンスの文に入れ替えました'); return;
+  }
+  if(act==='line-add'){
+    q.lines.push({id:uid(), name:'', detail:'', kind:'yen', amount:0}); save(); render(); return;
+  }
+  if(act==='line-del'){
+    const l=q.lines.find(x=>x.id===btn.dataset.id);
+    if(l&&l.lock){ toast('この行は消せません'); return; }
+    q.lines=q.lines.filter(x=>x.id!==btn.dataset.id); save(); render(); return;
+  }
+  if(act==='notes-reset'){ q.notes=defaultNotes(q); save(); render(); toast('ひな形の文にもどしました'); return; }
+
+  if(act==='mark-sent'){ q.status='sent'; q.sentAt=todayISO(); save(); render(); toast('送りました。今月1本。'); return; }
+  if(act==='mark-sent2'){ q.status='sent'; q.closedAt=''; save(); render(); return; }
+  if(act==='mark-won'){ q.status='won'; q.closedAt=todayISO(); save(); render(); toast('🎉 決まりました'); return; }
+  if(act==='mark-lost'){ q.status='lost'; q.closedAt=todayISO(); save(); render(); return; }
+  if(act==='mark-draft'){ q.status='draft'; q.sentAt=''; save(); render(); return; }
+
+  if(act==='del'){
+    if(!confirm(`${q.no}（${q.client||'宛先未記入'}）を消します。よろしいですか？`)) return;
+    db.quotes=db.quotes.filter(x=>x.id!==q.id); curId=null; save();
+    view='list'; render(); toast('消しました'); return;
+  }
+  if(act==='mail'){ copyText(mailText(q)); return; }
+  if(act==='preview'){ renderSheet(q); document.body.classList.add('previewing'); window.scrollTo(0,0); return; }
+});
+
+/* 入力は打った端から保存する（全体を描き直さないのでカーソルが飛ばない） */
+document.addEventListener('input', e=>{
+  const el=e.target;
+
+  if(el.dataset.me!==undefined){
+    db.me[el.dataset.me]=el.value; save();
+    return;
+  }
+  if(el.dataset.pref!==undefined){ db.prefix=el.value.trim()||'TSM'; save(); return; }
+
+  const q=cur(); if(!q) return;
+
+  if(el.dataset.chk!==undefined){
+    if(!q.checked) q.checked=[false,false,false,false,false];
+    q.checked[Number(el.dataset.chk)]=el.checked; save();
+    renderEdit(); return;   /* 5つ揃うと「送った」が押せるようになるので描き直す */
+  }
+  if(el.dataset.full!==undefined){
+    q.discFull=el.checked;
+    if(q.discFull && !q.discLabel) q.discLabel='初回実績協力につき';
+    save(); renderEdit(); renderSide(); return;
+  }
+  if(el.dataset.note!==undefined){
+    const i=Number(el.dataset.note);
+    if(q.notes && q.notes[i]){ q.notes[i].b=el.value; save(); refreshSide(); }
+    return;
+  }
+  if(el.dataset.line!==undefined){
+    const l=q.lines.find(x=>x.id===el.dataset.line); if(!l) return;
+    const f=el.dataset.f;
+    if(f==='amount') l.amount=Number(el.value||0); else l[f]=el.value;
+    save();
+    if(f==='amount') refreshSum();
+    refreshSide();
+    return;
+  }
+  const f=el.dataset.f; if(!f) return;
+  if(f==='discAmount'){ q.discAmount=Number(el.value||0); save(); refreshSum(); refreshSide(); return; }
+  if(f==='maint'){ q.maint=Number(el.value||0); save(); refreshSide(); return; }
+  if(f==='validDays'){
+    q.validDays=Math.max(1, Number(el.value||30)); save();
+    q.notes=(q.notes||[]).map(n=> n.key==='kigen'
+      ? {key:'kigen', h:'有効期限', b:'本お見積りの有効期限は、発行日から'+q.validDays+'日間です。\n期限を過ぎた場合は、あらためてお見積りをご提示いたします。'} : n);
+    save(); refreshSide(); return;
+  }
+  q[f]=el.value; save();
+  if(f==='issue'){
+    /* 発行日をまたぐと消費税の章が変わることがあるので、そこだけ入れ替える */
+    q.notes=(q.notes||[]).map(n=> n.key==='zei' ? noteZei(q.issue) : n);
+    save();
+  }
+  refreshSide();
+});
+
+document.addEventListener('change', e=>{
+  const el=e.target;
+  const q=cur(); if(!q) return;
+  if(el.dataset.line!==undefined && el.dataset.f==='kind'){
+    const l=q.lines.find(x=>x.id===el.dataset.line); if(!l) return;
+    l.kind=el.value; if(l.kind!=='yen') l.amount=0;
+    save(); renderEdit(); renderSide(); return;
+  }
+  if(el.dataset.f==='taxMode'){ q.taxMode=el.value; save(); refreshSum(); refreshSide(); return; }
+  if(el.dataset.f==='issue'){ refreshSide(); return; }
+});
+
+/* 合計だけ差し替える（入力中に全体を描き直すとカーソルが飛ぶ） */
+function refreshSum(){
+  const q=cur(); if(!q) return;
+  const box=document.getElementById('sumBox'); if(box) box.innerHTML=sumHTML(q);
+}
+/* 右の紙も同じ理由で中身だけ差し替える */
+let sideT=null;
+function refreshSide(){
+  const el=document.getElementById('sideSheet'); if(!el) return;
+  clearTimeout(sideT);
+  sideT=setTimeout(()=>{ const q=cur(); if(q) el.innerHTML=sheetHTML(q); }, 180);
+}
+
+document.getElementById('btnBack').onclick=()=>{ view='list'; curId=null; render(); };
+document.getElementById('btnSet').onclick =()=>{ view= (view==='set'?'list':'set'); render(); };
+document.getElementById('pvClose').onclick=()=>{ document.body.classList.remove('previewing'); };
+document.getElementById('pvPrint').onclick=()=>{ window.print(); };
+document.getElementById('pvMail').onclick =()=>{ const q=cur(); if(q) copyText(mailText(q)); };
+
+render();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
