@@ -40,7 +40,7 @@ try:
 
     cmd("Page.enable")
     cmd("Emulation.setDeviceMetricsOverride", {
-        "width": W, "height": H, "deviceScaleFactor": 2, "mobile": MOBILE,
+        "width": W, "height": H, "deviceScaleFactor": float(os.environ.get("SHOT_DSF", 2)), "mobile": MOBILE,
         "screenWidth": W, "screenHeight": H})
     if MOBILE:
         cmd("Emulation.setTouchEmulationEnabled", {"enabled": True})

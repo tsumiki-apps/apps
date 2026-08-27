@@ -31,6 +31,7 @@ TITLES = {
     "tsumijikan":  "つみじかん",
     "dakkobakari": "だっこばかり",
     "rokuga":      "画面収録",
+    "instapost":   "インスタ投稿",
 }
 
 VIEWPORT_RE = re.compile(r'(<meta\s+name="viewport"[^>]*>)', re.IGNORECASE)

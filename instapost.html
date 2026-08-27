@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-instapost.png">
+<meta name="apple-mobile-web-app-title" content="インスタ投稿">
+<title>インスタ投稿づくり — つみき</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ===========================================================
+   つみき Instagram 投稿づくり
+   1枚 1080×1350（4:5）のカルーセルを、業種データから組み立てる。
+   絵柄は tsumiki-apps.com の線画をそのまま（sc-line / sc-soft / sc-accent）。
+   =========================================================== */
+:root{
+  --paper:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3;
+  --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+  --accent:#D14E26; --accent-soft:#F1CDBB;
+  --s:1;                      /* プレビューの縮小率（JSが入れる） */
+}
+*{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+html{-webkit-text-size-adjust:100%;}
+body{
+  font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,
+    "Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+  background:var(--surface); color:var(--ink); line-height:1.85;
+  -webkit-font-smoothing:antialiased;
+  padding:calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 40px);
+}
+
+/* ---------- 操作バー ---------- */
+.bar{
+  max-width:1100px; margin:0 auto 18px; background:var(--card);
+  border:1px solid var(--line); border-radius:16px; padding:14px 16px;
+  display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center;
+}
+.bar h1{font-size:16px; font-weight:700; letter-spacing:.04em; line-height:1.4; margin-right:auto;}
+.bar label{font-size:13px; color:var(--sub); display:flex; align-items:center; gap:7px;}
+.bar select{
+  font-family:inherit; font-size:16px;      /* iOSの自動ズーム防止で16px以上 */
+  padding:9px 12px; min-height:44px; border:1px solid var(--line);
+  border-radius:10px; background:var(--paper); color:var(--ink);
+}
+.hint{max-width:1100px; margin:0 auto 18px; font-size:13px; color:var(--sub); line-height:1.9;}
+
+/* ---------- スライド ---------- */
+.deck{max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:26px; align-items:center;}
+.frame{                                    /* 縮小の器。高さは scale ぶんだけ確保する */
+  width:100%; max-width:1080px;
+  height:calc(1350px * var(--s));
+}
+.slide{
+  width:1080px; height:1350px; flex:0 0 auto;
+  transform:scale(var(--s)); transform-origin:top left;
+  background:var(--paper); color:var(--ink);
+  position:relative; overflow:hidden;
+  display:flex; flex-direction:column;
+  padding:100px 100px 96px;
+}
+.slide::after{                              /* プレビュー時だけの外枠。撮影では消す */
+  content:""; position:absolute; inset:0; border:1px solid var(--line); pointer-events:none;
+}
+body.shot{background:#fff; padding:0;}
+body.shot .bar,body.shot .hint{display:none;}
+body.shot .deck{gap:0; max-width:none;}
+body.shot .frame{height:1350px; max-width:none; width:1080px;}
+body.shot .slide{transform:none;}
+body.shot .slide::after{display:none;}
+
+/* ---------- スライド内の共通パーツ ---------- */
+.s-head{display:flex; align-items:center; gap:20px; min-height:56px;}
+.chip{
+  display:inline-block; border:2px solid var(--ink); border-radius:999px;
+  padding:6px 24px; font-size:30px; font-weight:700; letter-spacing:.06em; line-height:1.6;
+}
+.part{font-size:30px; font-weight:700; letter-spacing:.14em; color:var(--accent);}
+.part .num{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:44px; height:44px; border-radius:50%; background:var(--accent); color:var(--paper);
+  font-size:26px; margin-right:14px; vertical-align:-9px; letter-spacing:0;
+}
+.slide:has(.note) .s-foot{margin-top:44px;}
+.s-foot{
+  margin-top:auto; display:flex; align-items:center; gap:16px;
+  font-size:26px; color:var(--sub); letter-spacing:.04em;
+}
+.s-foot .mark{width:46px; height:46px; flex:0 0 auto; border-radius:11px;}
+.s-foot .no{margin-left:auto; font-size:26px; color:var(--ghost); letter-spacing:.1em;}
+.swipe{
+  margin:26px 0 0 auto; font-size:28px; color:var(--sub);
+  letter-spacing:.1em; display:flex; align-items:center; gap:10px;
+}
+.art{margin-top:auto;}
+.swipe .ar{font-size:34px; color:var(--accent);}
+
+h2.big{font-size:66px; font-weight:700; line-height:1.62; letter-spacing:.005em; margin-top:40px;}
+h2.big em{font-style:normal; background:linear-gradient(transparent 62%, var(--accent-soft) 62%);}
+p.lead{font-size:32px; color:var(--sub); line-height:1.9; margin-top:28px;}
+.applead{font-size:36px; color:var(--ink); line-height:1.95; margin-top:34px;}
+
+.scene{width:100%; display:block;}
+.sc-line{fill:none; stroke:var(--ink); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+.sc-soft{stroke:var(--ghost);}
+.sc-accent{stroke:var(--accent);}
+.sc-fillsoft{fill:var(--accent-soft);}
+
+/* 課題の3項目 */
+.items{margin-top:44px; margin-bottom:20px; flex:1; display:flex; flex-direction:column; justify-content:center; gap:52px;}
+.item{display:flex; gap:32px; align-items:flex-start;}
+.item .ic{width:132px; height:104px; flex:0 0 auto;}
+.item .tx{padding-top:4px;}
+.item .t{font-size:42px; font-weight:700; line-height:1.55;}
+.item .d{font-size:29px; color:var(--sub); line-height:1.8; margin-top:8px;}
+
+/* アプリ名 */
+.appname{margin-top:34px; display:flex; align-items:baseline; gap:22px; flex-wrap:wrap;}
+.appname .nm{
+  font-size:96px; font-weight:700; letter-spacing:.02em; line-height:1.3;
+  border-bottom:6px solid var(--accent); padding-bottom:6px;
+}
+.appname .kd{font-size:30px; color:var(--sub); letter-spacing:.06em;}
+
+/* できること */
+.cans{display:flex; gap:48px; margin-top:40px; flex:1; align-items:center;}
+.cans .mock{width:360px; flex:0 0 auto;}
+.cans ul{list-style:none; display:flex; flex-direction:column; gap:34px; padding-top:12px;}
+.cans li .t{font-size:40px; font-weight:700; line-height:1.5;}
+.cans li .d{font-size:28px; color:var(--sub); line-height:1.75; margin-top:6px;}
+.cans li .t::before{
+  content:""; display:inline-block; width:16px; height:16px; border-radius:50%;
+  background:var(--accent); margin-right:16px; vertical-align:6px;
+}
+.note{
+  font-size:27px; color:var(--sub);
+  background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px 28px; line-height:1.8;
+}
+
+/* CTA */
+.cta-q{font-size:66px; font-weight:700; line-height:1.6; margin-top:36px;}
+.cta-q{letter-spacing:.005em;}
+.cta-sub{font-size:32px; color:var(--sub); line-height:1.9; margin-top:26px;}
+.cta-id{margin-top:36px; font-size:34px; font-weight:700; letter-spacing:.04em;}
+.cta-id span{display:block; font-size:28px; font-weight:400; color:var(--sub); letter-spacing:.02em; margin-top:6px;}
+
+/* ---------- 画面幅への追従（プレビュー側だけ） ---------- */
+@media (max-width:900px){
+  .bar h1{width:100%; margin-right:0;}
+}
+@media (max-width:600px){
+  body{padding-left:8px; padding-right:8px;}
+  .bar{padding:12px; border-radius:12px;}
+  .bar label{width:100%;}
+  .bar select{width:100%;}
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <h1>インスタ投稿づくり<span style="font-weight:400;color:var(--sub);font-size:13px;">（1080×1350・5枚組）</span></h1>
+  <label>業種
+    <select id="pick"></select>
+  </label>
+</div>
+<p class="hint" id="hint"></p>
+
+<div class="deck" id="deck"></div>
+
+<script>
+/* ===========================================================
+   1) 線画パーツ — サイトの実物の座標をそのまま使う
+      どれも「左上を原点」に正規化してある。translate(x,y) scale(s) で置く。
+   =========================================================== */
+const g = (x, y, s, inner, cls) =>
+  `<g class="${cls||'sc-line'}" transform="translate(${x},${y})${s&&s!==1?` scale(${s})`:''}">${inner}</g>`;
+
+const P = {
+  /* 人＝頭の丸1つ＋上半身のアーチ1本だけ。顔・手・足は描かない（絵柄の芯） */
+  person:(x,y,s=1,arm=0)=>g(x,y,s,
+    `<circle cx="18" cy="11" r="11"/><path d="M0 71c-2-20 8-34 18-34s18 14 18 30"/>`+
+    (arm===1?`<path d="M30 39c14 4 26 12 34 22"/>`:'')+
+    (arm===-1?`<path d="M6 39c-14 4-26 12-34 22"/>`:'')),
+
+  /* 御社・園・お店（四角＋三角屋根） */
+  building:(x,y,s=1)=>g(x,y,s,
+    `<path d="M0 20l38-20 38 20"/><rect x="8" y="20" width="60" height="64" rx="3"/>
+     <path d="M30 84v-24h16v24" class="sc-soft"/>
+     <path d="M16 34h10M46 34h10M16 48h10M46 48h10" class="sc-soft"/>`),
+
+  /* 端末（角丸の縦長四角） */
+  phone:(x,y,s=1,lines=1)=>g(x,y,s,
+    `<rect x="0" y="0" width="64" height="124" rx="12"/>
+     <circle cx="32" cy="10" r="1.7" fill="currentColor" stroke="none"/>`+
+    (lines?`<path d="M12 34h40M12 46h40M12 58h26" class="sc-soft"/>`:'')),
+
+  /* 紙・書類 */
+  paper:(x,y,s=1,rot=0)=>`<g class="sc-line" transform="translate(${x},${y}) scale(${s}) rotate(${rot})">
+     <rect x="0" y="0" width="36" height="46" rx="3"/>
+     <path d="M7 12h22M7 20h22M7 28h14" class="sc-soft"/></g>`,
+
+  /* A4（できあがりの1枚。淡朱で塗る＝主役の印） */
+  a4:(x,y,s=1,fill=0)=>g(x,y,s,
+    `<rect x="0" y="0" width="44" height="58" rx="2" ${fill?'class="sc-fillsoft"':''}/>
+     <path d="M8 13h28M8 22h28M8 31h18M8 40h28" class="sc-soft"/>`),
+
+  /* 写真（山の線が1本入るだけ） */
+  photo:(x,y,s=1,rot=0)=>`<g class="sc-line" transform="translate(${x},${y}) scale(${s}) rotate(${rot})">
+     <rect x="0" y="0" width="34" height="26" rx="3"/>
+     <path d="M5 20l7-8 5 5 4-5 8 8" class="sc-soft"/></g>`,
+
+  /* カレンダー */
+  calendar:(x,y,s=1)=>g(x,y,s,
+    `<rect x="0" y="6" width="76" height="66" rx="4"/><path d="M0 22h76" class="sc-soft"/>
+     <path d="M18 6V0M58 6V0"/>
+     <g class="sc-soft"><path d="M12 34h8M32 34h8M52 34h8M12 48h8M32 48h8M52 48h8M12 60h8M32 60h8"/></g>`),
+
+  /* 名簿（名前の行が並ぶ） */
+  roster:(x,y,s=1)=>g(x,y,s,
+    `<rect x="0" y="0" width="96" height="72" rx="4"/>
+     <g class="sc-soft"><path d="M10 18h48M10 34h48M10 50h48"/>
+     <circle cx="76" cy="18" r="6"/><circle cx="76" cy="34" r="6"/><circle cx="76" cy="50" r="6"/></g>`),
+
+  /* 吹き出し（点3つ） */
+  bubble:(x,y,s=1)=>g(x,y,s,
+    `<rect x="0" y="0" width="52" height="34" rx="11"/><path d="M16 34l-6 10 16-10"/>
+     <g fill="currentColor" stroke="none"><circle cx="16" cy="17" r="2.2"/><circle cx="26" cy="17" r="2.2"/><circle cx="36" cy="17" r="2.2"/></g>`),
+
+  /* 時計（＝夜なべ・締切） */
+  clock:(x,y,s=1)=>g(x,y,s,`<circle cx="17" cy="17" r="17"/><path d="M17 8v9l7 5"/>`),
+
+  /* 電卓 */
+  calc:(x,y,s=1)=>g(x,y,s,
+    `<rect x="0" y="0" width="48" height="66" rx="5"/><rect x="8" y="8" width="32" height="14" rx="2" class="sc-soft"/>
+     <g class="sc-soft"><path d="M10 34h6M22 34h6M34 34h6M10 46h6M22 46h6M34 46h6M10 58h6M22 58h6M34 58h6"/></g>`),
+
+  /* 錠前（朱＝守る・変わらない） */
+  lock:(x,y,s=1)=>g(x,y,s,
+    `<rect x="0" y="9" width="28" height="21" rx="4"/><path d="M5 9V4a9 9 0 0 1 18 0v5"/>`,'sc-line sc-accent'),
+
+  /* 届いた印（朱のチェック） */
+  check:(x,y,s=1)=>g(x,y,s,`<path d="M0 9l9 9 17-19"/>`,'sc-line sc-accent'),
+
+  /* 止める印（朱の禁止マーク） */
+  ban:(x,y,s=1)=>g(x,y,s,`<circle cx="24" cy="24" r="24"/><path d="M7 7l34 34"/>`,'sc-line sc-accent'),
+
+  /* 地面・机の線 */
+  ground:(x,y,w)=>`<path d="M${x} ${y}h${w}" class="sc-line sc-soft"/>`,
+
+  /* 点線の道（左から右へ運ばれる） */
+  path:(d)=>`<path d="${d}" class="sc-line sc-soft" stroke-dasharray="1 9"/>`,
+
+  /* 矢印（→） */
+  arrow:(x,y,s=1)=>g(x,y,s,`<path d="M0 10h44M34 2l10 8-10 8"/>`,'sc-line sc-soft'),
+};
+
+/* 絵をSVGの器に入れる */
+const svg = (vb, inner, cls) => `<svg class="scene ${cls||''}" viewBox="${vb}" role="img" aria-hidden="true">${inner}</svg>`;
+
+/* ===========================================================
+   2) 使い回す場面（どの業種でも中身だけ差し替えて使う）
+   =========================================================== */
+const SCENES = {
+  /* 夜、机に向かって手作業している人。紙が散らばり、時計が回っている */
+  yonabe: () => svg('50 26 500 200',
+    P.ground(60,214,480) +
+    P.person(140,132,1.15,1) +
+    P.photo(248,158,1.1,-8) +
+    P.paper(300,166,1.05,5) +
+    P.paper(352,160,1.05,-5) +
+    P.photo(404,160,1.1,7) +
+    P.clock(468,112,1.2) +
+    P.bubble(138,40,1.2)),
+
+  /* 手で数えている（正の字・名簿・鉛筆） */
+  tegaki: () => svg('50 26 500 200',
+    P.ground(60,214,480) +
+    P.person(132,132,1.15,1) +
+    P.roster(244,117,1.35) +
+    P.paper(414,159,1.2,6) +
+    P.bubble(130,40,1.2)),
+
+  /* 二重管理（同じことを2か所に書いている） */
+  nijuu: () => svg('50 62 500 168',
+    P.ground(60,214,480) +
+    P.person(110,136,1.1,1) +
+    P.calendar(236,120,1.32) +
+    P.arrow(362,152,1.0) +
+    P.phone(432,84,1.05) +
+    P.ban(450,156,0.85)),
+
+  /* できあがり：端末 → 点線 → A4が出る → 朱のチェック */
+  dekiagari: () => svg('50 45 500 182',
+    P.ground(60,214,480) +
+    P.phone(146,59,1.25) +
+    P.path('M238 108 C 316 62, 372 96, 408 132') +
+    P.a4(396,136,1.35,1) +
+    P.check(444,104,1.3)),
+
+  /* 向かい合って話す（相談） */
+  soudan: () => svg('60 16 470 194',
+    P.ground(70,196,460) +
+    P.person(156,114,1.15,1) +
+    P.bubble(154,26,1.2) +
+    P.path('M242 120 C 296 92, 330 100, 356 118') +
+    P.building(354,91,1.25) +
+    P.check(408,60,1.05)),
+};
+
+/* 小さいアイコン（課題3項目の左に置く。viewBox 0 0 132 104） */
+const IC = {
+  photo:  svg('0 0 132 104', P.photo(14,26,1.5,-8)+P.photo(58,34,1.5,6)),
+  paper:  svg('0 0 132 104', P.paper(20,18,1.4,-6)+P.paper(64,26,1.4,7)),
+  clock:  svg('0 0 132 104', P.clock(40,20,1.6)),
+  roster: svg('0 0 132 104', P.roster(16,20,1.05)),
+  calc:   svg('0 0 132 104', P.calc(42,18,1.15)),
+  phone:  svg('0 0 132 104', P.phone(48,10,0.7)),
+  calendar:svg('0 0 132 104',P.calendar(28,20,1.0)),
+  bubble: svg('0 0 132 104', P.bubble(24,26,1.5)),
+  ban:    svg('0 0 132 104', P.ban(42,26,1.1)),
+  a4:     svg('0 0 132 104', P.a4(44,18,1.3,1)),
+  building:svg('0 0 132 104',P.building(28,14,1.0)),
+};
+
+/* 端末のモック（スライド4の左） */
+const MOCK = (rows) => svg('0 0 200 300',
+  `<g class="sc-line"><rect x="34" y="8" width="132" height="284" rx="22"/>
+   <circle cx="100" cy="26" r="3" fill="currentColor" stroke="none"/></g>` +
+  rows.map((r,i)=>{
+    const y = 54 + i*46;
+    if(r==='fill') return `<g class="sc-line"><rect x="52" y="${y}" width="96" height="34" rx="6" class="sc-fillsoft"/></g>`;
+    if(r==='btn')  return `<g class="sc-line sc-accent"><rect x="52" y="${y}" width="96" height="34" rx="17"/></g>`;
+    return `<g class="sc-line sc-soft"><path d="M52 ${y+10}h96M52 ${y+24}h58"/></g>`;
+  }).join(''));
+
+/* つみきの公式ロゴ（立体・アイソメ。座標は ~/制作物/index.html と同一） */
+const LOGO = `<svg class="mark" viewBox="0 0 100 100" aria-label="つみき">
+  <rect width="100" height="100" rx="24" fill="#242321"/>
+  <g fill="#242321" stroke="#F4F2EE" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round">
+    <polygon points="35,46 50,53.5 35,61 20,53.5"/>
+    <polygon points="20,53.5 35,61 35,76 20,68.5"/>
+    <polygon points="50,53.5 35,61 35,76 50,68.5"/>
+    <polygon points="65,46 80,53.5 65,61 50,53.5"/>
+    <polygon points="50,53.5 65,61 65,76 50,68.5"/>
+    <polygon points="80,53.5 65,61 65,76 80,68.5"/>
+    <polygon points="50,24 65,31.5 50,39 35,31.5"/>
+    <polygon points="35,31.5 50,39 50,54 35,46.5"/>
+    <polygon points="65,31.5 50,39 50,54 65,46.5"/>
+  </g></svg>`;
+
+/* ===========================================================
+   3) 業種データ — ここだけ書き足せば1業種ぶん増える
+   =========================================================== */
+const DATA = {
+
+  hoikuen: {
+    label:'保育園・こども園',
+    cover:{ h:'園だよりの原稿を、<br><em>夜に書いていませんか。</em>', lead:'毎月かならず来る仕事です。', scene:'yonabe' },
+    mondai:{ ttl:'毎月、同じところで止まる', items:[
+      {ic:'photo', t:'写真を選ぶだけで30分', d:'撮ってはある。どれを載せるかで止まる。'},
+      {ic:'paper', t:'レイアウトが毎回ずれる', d:'写真を1枚足すと、下の文章が全部動く。'},
+      {ic:'clock', t:'結局、月末の夜に書く', d:'先月なにを書いたかを探すところから始まる。'},
+    ]},
+    app:{ name:'おたより', kana:'保育園むけ', lead:'その日の写真と一言を、<br>思い出したときに入れておく。<br>月末に、A4のPDFが1枚できあがります。', scene:'dekiagari' },
+    naka:{ mock:['fill','line','fill','line','btn'], cans:[
+      {t:'写真をえらぶ', d:'スマホの中から、押すだけ。'},
+      {t:'一言そえる', d:'「泥だんごを作りました」で十分です。'},
+      {t:'月末に1枚のPDF', d:'そのまま印刷して配れます。'},
+    ], note:'ログインは要りません。写真も文章も、園の端末の中に残ります。' },
+  },
+
+  ballet: {
+    label:'バレエ・ダンス教室',
+    cover:{ h:'振替の残り回数を、<br><em>記憶で数えていませんか。</em>', lead:'月謝袋の裏の、あの正の字のことです。', scene:'tegaki' },
+    mondai:{ ttl:'数えることが、仕事になっている', items:[
+      {ic:'roster', t:'誰が何回残っているか', d:'名簿と記憶と付箋。講師が2人だと、さらにずれる。'},
+      {ic:'bubble', t:'その場で聞かれると答えられない', d:'「あと何回でしたっけ」に、すぐ出てこない。'},
+      {ic:'paper', t:'月末に、全員ぶん数え直す', d:'欠席の連絡を遡って、また1から数える。'},
+    ]},
+    app:{ name:'ふりかえ帳', kana:'教室むけ', lead:'欠席で ＋1、振替で −1。<br>押すのは、それだけ。<br>残り回数は、いつでも一覧で見えています。', scene:'dekiagari' },
+    naka:{ mock:['line','fill','line','fill','btn'], cans:[
+      {t:'名前を押して ＋1 / −1', d:'レッスン中でも、片手で終わります。'},
+      {t:'残り5回で色が変わる', d:'声をかけるきっかけが、向こうから出てきます。'},
+      {t:'A4で印刷して共有', d:'講師が2人でも、同じ紙を見られます。'},
+    ], note:'振替の期限（失効）は入れません。「期限なし」が売りだからです。' },
+  },
+
+  rental: {
+    label:'レンタルスペース・貸し会場',
+    cover:{ h:'今月の空き枠を、<br><em>何回打ち直しましたか。</em>', lead:'カレンダーと、DMと、ホームページと。', scene:'nijuu' },
+    mondai:{ ttl:'同じことを、3か所に書いている', items:[
+      {ic:'calendar', t:'まず手元のカレンダーに', d:'埋まった枠に線を引く。ここまでは1分。'},
+      {ic:'bubble', t:'つぎに告知文を打ち直す', d:'毎月おなじ文面を、毎月ゼロから打っている。'},
+      {ic:'ban', t:'直したのに、片方が古いまま', d:'見た人から「空いてますか」と来て気づく。'},
+    ]},
+    app:{ name:'あきスペース', kana:'貸しスペースむけ', lead:'カレンダーの枠を押して、空きにする。<br>告知文とA4の貼り紙が、<br>そのまま出てきます。', scene:'dekiagari' },
+    naka:{ mock:['fill','line','line','fill','btn'], cans:[
+      {t:'枠を押すだけ', d:'空き・予約済み・準備中を、指で切り替え。'},
+      {t:'告知文をコピー', d:'そのままInstagramに貼れる文面が出ます。'},
+      {t:'A4の貼り紙', d:'印刷して、入口に貼れます。'},
+    ], note:'お客様が書き込む仕組みではありません。中の人が1台で回す道具です。' },
+  },
+
+};
+
+const CTA = {
+  q:'「うちのこれ、<br>なんとかなりますか。」',
+  sub:'——だけで大丈夫です。<br>お話を伺うのも、お見積りも無料です。',
+  scene:'soudan',
+};
+
+/* ===========================================================
+   4) 組み立て
+   =========================================================== */
+const foot = (n) => `<div class="s-foot">${LOGO}<span>つみき ／ tsumiki-apps.com</span><span class="no">${n} / 5</span></div>`;
+
+function build(key){
+  const d = DATA[key];
+  const S = [];
+
+  /* 1枚目：表紙 */
+  S.push(`<section class="slide">
+    <div class="s-head"><span class="chip">${d.label}</span></div>
+    <h2 class="big">${d.cover.h}</h2>
+    <p class="lead">${d.cover.lead}</p>
+    <div class="art">${SCENES[d.cover.scene]()}</div>
+    <div class="swipe"><span>つづきを見る</span><span class="ar">→</span></div>
+    ${foot(1)}
+  </section>`);
+
+  /* 2枚目：①いまの困りごと */
+  S.push(`<section class="slide">
+    <div class="s-head"><span class="part"><span class="num">1</span>いまの困りごと</span></div>
+    <h2 class="big" style="font-size:60px;margin-top:34px">${d.mondai.ttl}</h2>
+    <div class="items">
+      ${d.mondai.items.map(it=>`<div class="item">
+        <div class="ic">${IC[it.ic]}</div>
+        <div class="tx"><p class="t">${it.t}</p><p class="d">${it.d}</p></div>
+      </div>`).join('')}
+    </div>
+    ${foot(2)}
+  </section>`);
+
+  /* 3枚目：②つみきなら（アプリの宣言） */
+  S.push(`<section class="slide">
+    <div class="s-head"><span class="part"><span class="num">2</span>つみきなら</span></div>
+    <div class="appname"><span class="nm">${d.app.name}</span><span class="kd">${d.app.kana}</span></div>
+    <p class="applead">${d.app.lead}</p>
+    <div class="art" style="margin-bottom:36px">${SCENES[d.app.scene]()}</div>
+    ${foot(3)}
+  </section>`);
+
+  /* 4枚目：中身（できること3つ） */
+  S.push(`<section class="slide">
+    <div class="s-head"><span class="part"><span class="num">2</span>できること</span></div>
+    <div class="cans">
+      <div class="mock">${MOCK(d.naka.mock)}</div>
+      <ul>${d.naka.cans.map(c=>`<li><p class="t">${c.t}</p><p class="d">${c.d}</p></li>`).join('')}</ul>
+    </div>
+    <p class="note">${d.naka.note}</p>
+    ${foot(4)}
+  </section>`);
+
+  /* 5枚目：さいごに */
+  S.push(`<section class="slide">
+    <div class="s-head"><span class="chip">${d.label}のかた へ</span></div>
+    <p class="cta-q">${CTA.q}</p>
+    <p class="cta-sub">${CTA.sub}</p>
+    <div class="art" style="margin-bottom:26px">${SCENES[CTA.scene]()}</div>
+    <p class="cta-id">@tsumiki.apps<span>プロフィールのリンクから、これまでに作った道具が見られます</span></p>
+    ${foot(5)}
+  </section>`);
+
+  return S;
+}
+
+/* ===========================================================
+   5) 表示
+   =========================================================== */
+const q = new URLSearchParams(location.search);
+const shot = q.get('shot') === '1';
+const only = q.get('s') ? parseInt(q.get('s'),10) : 0;
+let cur = q.get('ind') && DATA[q.get('ind')] ? q.get('ind') : Object.keys(DATA)[0];
+
+const pick = document.getElementById('pick');
+Object.keys(DATA).forEach(k=>{
+  const o = document.createElement('option');
+  o.value = k; o.textContent = DATA[k].label; pick.appendChild(o);
+});
+pick.value = cur;
+pick.addEventListener('change', ()=>{ cur = pick.value; render(); });
+
+function render(){
+  const all = build(cur);
+  const list = only ? [all[only-1]] : all;
+  document.getElementById('deck').innerHTML =
+    list.map(s=>`<div class="frame">${s}</div>`).join('');
+  document.getElementById('hint').textContent =
+    `${DATA[cur].label} ／ 5枚組（1・2枚目＝いまの困りごと、3・4枚目＝つみきなら、5枚目＝さいごに）`;
+  fit();
+}
+
+/* 1080幅のスライドを、画面の幅に合わせて縮める（撮影モードでは等倍） */
+function fit(){
+  if(shot){ document.documentElement.style.setProperty('--s', 1); return; }
+  const deck = document.getElementById('deck');
+  const w = deck.clientWidth;
+  document.documentElement.style.setProperty('--s', Math.min(1, w/1080));
+}
+window.addEventListener('resize', fit);
+
+if(shot) document.body.classList.add('shot');
+render();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
