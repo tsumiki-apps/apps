@@ -20,7 +20,7 @@
         -webkit-text-size-adjust:100%; }
   a{ color:var(--muted); }
   .wrap{ max-width:1180px; margin:0 auto; padding:20px 16px 64px; }
-  #list{ display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr));
+  #list{ display:grid; grid-template-columns:repeat(auto-fill, minmax(min(360px, 100%), 1fr));
     gap:12px; grid-auto-rows:1fr; }
 
   /* ロック画面 */
@@ -121,6 +121,7 @@
   .act{ font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:10px;
     border:1px solid var(--hair); background:var(--control); color:var(--ink); }
   .act.danger{ color:var(--shu); border-color:#E4D2CD; }
+  .act.del{ color:var(--shu); border-color:#E4D2CD; background:#F7EEEB; margin-left:auto; }
   .empty{ text-align:center; color:var(--muted); font-size:13px; padding:40px 0; }
   .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
     background:var(--ink); color:var(--paper); font-size:13px; padding:10px 16px;
@@ -346,6 +347,7 @@
         +   '<button class="act" data-act="toggle" data-key="'+esc(r.key)+'" data-active="'+(r.active?'1':'0')+'">'+(r.active?'無効化する':'復活させる')+'</button>'
         +   '<button class="act" data-act="max" data-key="'+esc(r.key)+'" data-max="'+r.max_devices+'">台数を変更</button>'
         +   '<button class="act danger" data-act="reset" data-key="'+esc(r.key)+'">端末リセット</button>'
+        +   '<button class="act del" data-act="delete" data-key="'+esc(r.key)+'" data-customer="'+esc(r.customer)+'" data-devices="'+r.device_count+'">削除</button>'
         + '</div>'
         + '</div>';
     }).join('');
@@ -483,6 +485,24 @@
       if(!confirm('このキーの登録端末をすべて消しますか？（お客様は次回また台数枠を使えます）')) return;
       rpc('admin_reset_devices', { p_secret:secret, p_key:key })
         .then(function(res){ if(res.ok){ toast(res.data+'台の端末を解除'); load(); } else toast('失敗'); });
+    } else if(act==='delete'){
+      var dc  = b.getAttribute('data-customer') || 'このお渡し先';
+      var dn  = parseInt(b.getAttribute('data-devices'),10) || 0;
+      var msg = '「'+dc+'」のキーを台帳から完全に削除します。\n\n'
+              + '・元に戻せません（発行の記録も消えます）\n'
+              + (dn ? '・登録されている端末 '+dn+'台 も一緒に消えます\n' : '')
+              + '・お客様の手元のアプリは、次に開いたときロックされます\n\n'
+              + '一時的に止めたいだけなら「無効化する」で足ります。\n\n削除しますか？';
+      if(!confirm(msg)) return;
+      if(!confirm('最後の確認です。\n\n'+key+'\n\nこのキーを削除します。よろしいですか？')) return;
+      b.disabled = true;
+      rpc('admin_delete', { p_secret:secret, p_key:key })
+        .then(function(res){
+          b.disabled = false;
+          if(res.ok && res.data === true){ toast('削除しました'); load(); }
+          else if(res.ok){ toast('見つかりませんでした'); load(); }
+          else { toast('削除できませんでした'); }
+        }, function(){ b.disabled=false; toast('通信エラー'); });
     } else if(act==='image'){
       openImageModal({
         customer: b.getAttribute('data-customer') || '',

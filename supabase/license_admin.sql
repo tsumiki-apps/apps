@@ -98,6 +98,21 @@ end; $$;
 revoke execute on function public.admin_reset_devices(text, text) from public, authenticated;
 grant execute on function public.admin_reset_devices(text, text) to anon;
 
+-- ライセンスを台帳から完全に削除（2026-08-27 追加）
+-- 端末（license_devices）は FK の on delete cascade で一緒に消える。元に戻せないので
+-- 管理画面側では二段確認にしている。「一時的に止める」用途は admin_set_active(false) を使う。
+create or replace function public.admin_delete(p_secret text, p_key text) returns boolean
+language plpgsql security definer set search_path='' as $$
+declare n int;
+begin
+  if not public.admin_verify(p_secret) then perform pg_sleep(0.5); raise exception 'unauthorized'; end if;
+  if coalesce(trim(p_key),'') = '' then raise exception 'key required'; end if;
+  delete from public.licenses where key = p_key;
+  get diagnostics n = row_count; return n > 0;
+end; $$;
+revoke execute on function public.admin_delete(text, text) from public, authenticated;
+grant execute on function public.admin_delete(text, text) to anon;
+
 -- お渡し先名（透かし）・メモの編集
 create or replace function public.admin_set_info(
   p_secret text, p_key text, p_customer text, p_note text
