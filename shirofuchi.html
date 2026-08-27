@@ -11,12 +11,46 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
+  /* ===========================================================
+     しろふち — 見た目のきまり（世界観＝「工作机」）
+     ・つみきの紙 #F4F2EE と 墨 #242321 が土台。差し色は積み木の木口 #C4653F だけ
+     ・面は「線で囲う」のではなく「紙が重なる（影と段差）」で分ける
+     ・余白・字の大きさは 4px の倍数でひと続きの尺度にする（場当たりの数字を作らない）
+     =========================================================== */
   :root{
-    --paper:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3;
-    --ink:#242321; --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+    /* --- 色 --- */
+    --paper:#F4F2EE;      /* 机の紙（地） */
+    --card:#FBFAF7;       /* 上にのる紙（パネル） */
+    --card-hi:#FFFEFC;    /* いちばん上の紙（選ばれたもの） */
+    --tray:#E9E5DD;       /* 道具入れのくぼみ */
+    --ink:#242321;        /* 墨 */
+    --sub:#6F6A62;        /* そえ書き用の弱い墨（紙の上で 4.5:1 を満たす） */
+    --sub-2:#5E5952;      /* くぼみ（トレイ）の上に置く字。地が濃いぶん、こちらを濃くする */
+    --line:#DFDAD1;       /* 紙のきわ */
+    --ghost:#B6B0A6;
+    --wood:#C4653F;       /* 積み木の木口＝差し色。使うのは2か所だけ
+                             ①スライダーの通った所 ②「あと1回おす」待ちの保存ボタン */
+    --wood-deep:#A9502C;  /* ⚠️ 字と、字をのせる面には必ずこちら（#C4653F は白字で 3.97:1 しかない） */
+
+    /* --- 余白の尺度（4の倍数。ここ以外の数字を使わない） --- */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px;
+
+    /* --- 角の丸み --- */
+    --r-lg:20px; --r-md:14px; --r-sm:10px;
+
+    /* --- 紙の重なり（影） --- */
+    --lift-1:0 1px 2px rgba(36,35,33,.05), 0 3px 8px rgba(36,35,33,.045);
+    --lift-2:0 2px 4px rgba(36,35,33,.06), 0 10px 24px rgba(36,35,33,.075);
+    --lift-3:0 6px 14px rgba(36,35,33,.10), 0 22px 44px rgba(36,35,33,.13);
+    --sink:inset 0 1px 2px rgba(36,35,33,.08), inset 0 0 0 1px rgba(36,35,33,.035);
+
+    /* --- 動き（速さは3段だけ） --- */
+    --t-fast:.12s; --t-mid:.2s; --t-slow:.3s;
+    --ease:cubic-bezier(.2,.8,.3,1);
+
     /* 画面のふちからの逃げ（iPhoneの丸い角・ホームバーにパネルがかからないように） */
-    --gutter:22px;
-    /* えらんだ「かたち」（出来上がりの 横/たて）。メニューのボタンの形にも使う */
+    --gutter:20px;
+    /* えらんだ「かたち」（出来上がりの 横/たて）。台紙の見本にも使う */
     --ar:9/16;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
@@ -27,183 +61,395 @@
     -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
     height:100dvh; overflow:hidden; overscroll-behavior:none;
     display:flex; flex-direction:column;
-    padding:calc(env(safe-area-inset-top) + 16px)
+    padding:calc(env(safe-area-inset-top) + var(--s4))
             calc(env(safe-area-inset-right) + var(--gutter))
-            calc(env(safe-area-inset-bottom) + 18px)
+            calc(env(safe-area-inset-bottom) + var(--s4))
             calc(env(safe-area-inset-left) + var(--gutter));
   }
-  .screen{flex:1; min-height:0; display:flex; flex-direction:column; width:100%; max-width:520px; margin:0 auto;}
+  /* 紙の繊維。ごく薄く敷くだけ（写真の色を邪魔しない濃さ） */
+  body::before{
+    content:''; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.5;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.045'/%3E%3C/svg%3E");
+  }
+  .screen{position:relative; z-index:1; flex:1; min-height:0; display:flex; flex-direction:column;
+    width:100%; max-width:520px; margin:0 auto;}
   .hide{display:none !important;}
+  h1{font-size:19px; font-weight:700; letter-spacing:.02em; line-height:1.2;}
 
-  /* ---- えらぶ画面：かたちをえらぶ → 写真 / 動画 ---- */
-  #view1{justify-content:center; gap:22px;}
-  #view1 .seg{margin-bottom:0; flex:0 0 auto;}
-  .picks{display:flex; gap:14px; align-items:center; justify-content:center; width:100%; min-height:0;}
-  /* えらんだ「かたち」と「ふちの色」のとおりの形・色にする＝押す前に出来上がりが分かる。
-     画面が低いときは max-height ではみ出しを防ぐ */
-  .pick{flex:1; aspect-ratio:var(--ar); max-height:100%;
+  /* ===== ①えらぶ画面：机の上に、台紙と、これから置く紙が2枚 ===== */
+  #view1{gap:var(--s4); animation:rise var(--t-slow) var(--ease);}
+  /* かたち・2枚の紙・そえ書きは「ひとかたまり」。まとめて中央に置く
+     （それぞれを別々に置くと、あいだが空いてつながりが見えない） */
+  .stack{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:center; gap:var(--s4);}
+  .deskhead{display:flex; align-items:center; gap:var(--s3); flex:0 0 auto;}
+  .deskhead .mark{width:34px; height:34px; flex:0 0 auto; display:block;}
+  .deskhead p{margin-top:3px; font-size:12px; line-height:1.5; color:var(--sub);}
+
+  /* 台紙のかたち（①では見出しつきのくぼみに入れる） */
+  .well{background:var(--tray); border-radius:var(--r-md); padding:var(--s1) var(--s1) var(--s1);
+    box-shadow:var(--sink); display:flex; flex-direction:column; gap:var(--s1); flex:0 0 auto;}
+  .cap{display:block; font-size:11px; font-weight:700; letter-spacing:.1em; color:var(--sub-2);
+    padding:var(--s1) var(--s1) 0 var(--s2); line-height:1.4;}
+
+  .picks{flex:0 1 auto; min-height:0; display:flex; gap:var(--s3); align-items:center; justify-content:center; width:100%;}
+  /* えらんだ「かたち」と「ふちの色」のとおりの台紙にする＝押す前に出来上がりが分かる */
+  .pick{position:relative; flex:1 1 0; min-width:0; aspect-ratio:var(--ar); max-height:100%;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
-    background:var(--card); border:1px solid var(--line); border-radius:26px;
-    box-shadow:0 10px 26px rgba(36,35,33,.10);
-    transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease;}
-  .pick:active{transform:scale(.965) translateY(2px); border-color:var(--ghost);
-    box-shadow:0 3px 10px rgba(36,35,33,.10);}
-  .pick svg{width:54%; height:auto; color:var(--ghost); transition:color .16s ease;}
-  .pick:active svg{color:var(--sub);}
-  /* 「元のまま」＝写真しだいなので、形を言い切らない（破線） */
-  .picks.free .pick{border-style:dashed;}
+    color:#6F6A62; background:var(--card-hi);
+    border-radius:var(--r-sm); box-shadow:var(--lift-2), 0 0 0 1px rgba(36,35,33,.05);
+    transition:transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);}
+  .pick:active{transform:translateY(2px) scale(.985); box-shadow:var(--lift-1), 0 0 0 1px rgba(36,35,33,.06);}
+  /* 「そのまま」＝写真しだいなので、台紙のかたちを言い切らない（破線） */
+  .picks.free .pick{box-shadow:var(--lift-2), 0 0 0 1px rgba(36,35,33,.05), inset 0 0 0 1.6px rgba(36,35,33,.10);}
+  /* 中の破線＝「ここに写真がのる」場所 */
+  .pick-in{position:absolute; inset:7%; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:var(--s2);}
+  .pick-in::before{content:''; position:absolute; inset:0; border:1.6px dashed currentColor;
+    border-radius:var(--r-sm); opacity:.3;}
+  .pick svg{width:34%; max-width:60px; height:auto; opacity:.9; display:block;}
+  .pick b{font-size:13px; font-weight:700; letter-spacing:.01em; white-space:nowrap;}
+  /* ⚠️ ここを --ghost にすると紙の上で 1.9:1 しかなく読めない。弱くするのは大きさと長さで */
+  .picks-note{flex:0 0 auto; text-align:center; font-size:11.5px; line-height:1.5; color:var(--sub);}
   input[type=file]{display:none;}
 
-  /* ---- プレビュー ---- */
-  .stage{flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:6px 0 16px;}
-  .frame{position:relative; background:#fff; overflow:hidden; border-radius:5px;
-    box-shadow:0 14px 36px rgba(36,35,33,.16), 0 0 0 1px rgba(36,35,33,.07);
+  /* ===== ②編集画面 ===== */
+  #view2{animation:rise var(--t-slow) var(--ease);}
+  @keyframes rise{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;}}
+
+  /* ---- プレビュー：机に置いた1枚 ---- */
+  .stage{flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:var(--s1) 0 var(--s3);}
+  .frame{position:relative; background:#fff; overflow:hidden; border-radius:4px;
+    /* ⚠️ 白いふち＋紙色の地だと、1枚のきわが消える。きわの線は少し濃いめにする */
+    box-shadow:var(--lift-3), 0 0 0 1px rgba(36,35,33,.11);
     touch-action:none; -webkit-user-select:none; user-select:none;}
   /* 拡大して切るとき、ふちからはみ出したぶんをここで隠す（かどの丸みもここでつける） */
   .inner{position:absolute; overflow:hidden;}
   .inner > *{position:absolute; display:block; -webkit-user-drag:none; -webkit-touch-callout:none;}
 
-  /* ---- 操作パネル ---- */
-  .panel{flex:0 0 auto; background:var(--card); border:1px solid var(--line);
-    border-radius:22px; padding:12px 16px 16px;}
-  .ctl{display:grid; grid-template-columns:24px 1fr 44px; align-items:center; gap:10px;}
-  .ctl .ic{width:24px; height:24px; color:var(--sub); display:block;}
-  .ctl .val{font-size:12px; color:var(--sub); text-align:right; font-variant-numeric:tabular-nums;}
-  input[type=range]{-webkit-appearance:none; appearance:none; width:100%; height:36px; background:transparent; display:block;}
-  input[type=range]::-webkit-slider-runnable-track{height:6px; border-radius:999px; background:var(--surface); border:1px solid var(--line);}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:28px; height:28px; border-radius:50%;
-    margin-top:-12px; background:#fff; border:1px solid var(--line); box-shadow:0 2px 6px rgba(36,35,33,.18);}
+  /* ---- 道具トレイ（操作パネル） ---- */
+  .panel{flex:0 0 auto; background:var(--card); border-radius:var(--r-lg);
+    padding:var(--s3) var(--s3) var(--s4);
+    box-shadow:var(--lift-2), 0 0 0 1px rgba(36,35,33,.05), inset 0 1px 0 rgba(255,255,255,.8);
+    display:flex; flex-direction:column; gap:var(--s3);}
+  /* ふちの3つ（太さ・色・角）は仲間なので、ほかより近くに置く＝かたまりに見える */
+  .grp{display:flex; flex-direction:column; gap:var(--s2);}
 
-  /* ---- 写真の大きさ：スライダーではなくボタンでえらぶ ---- */
-  .seg{display:flex; gap:6px; background:var(--surface); border:1px solid var(--line);
-    border-radius:15px; padding:4px; margin-bottom:10px;}
-  .segb{flex:1; min-height:44px; padding:0 8px;
-    font-family:inherit; font-size:13px; font-weight:700; letter-spacing:.02em;
-    color:#6A665F; background:transparent; border:0; border-radius:11px; cursor:pointer;
-    transition:background .16s ease, color .16s ease, transform .15s ease, box-shadow .16s ease;}
-  .segb:active{transform:scale(.97);}
-  .segb.on{background:#fff; color:var(--ink); box-shadow:0 1px 3px rgba(36,35,33,.18);}
+  /* かたち／のせ方は「くぼみ」に沈める＝ふだん触らない側だと目で分かる */
+  .panel .well{gap:var(--s1);}
+  .panel .well .seg{margin:0;}
 
-  /* ---- かたち（出来上がりの比率）。メニューと操作パネルの両方に同じものを置く ---- */
-  .shape{flex:1; min-width:0; min-height:44px; padding:0 3px;
+  /* ---- セグメント（かたち・のせ方） ---- */
+  .seg{display:flex; gap:var(--s1); border-radius:var(--r-sm); padding:0;}
+  .segb{flex:1; min-width:0; min-height:44px; padding:0 var(--s2);
+    font-family:inherit; font-size:13px; font-weight:700; letter-spacing:.01em;
+    color:var(--sub-2); background:transparent; border:0; border-radius:var(--r-sm); cursor:pointer;
+    transition:background var(--t-mid) var(--ease), color var(--t-mid) var(--ease),
+               transform var(--t-fast) var(--ease), box-shadow var(--t-mid) var(--ease);}
+  .segb:active{transform:translateY(1px) scale(.98);}
+  .segb.on{background:var(--card-hi); color:var(--ink); box-shadow:var(--lift-1), 0 0 0 1px rgba(36,35,33,.05);}
+
+  /* ---- かたち（出来上がりの比率）。①と②に同じものを置く ---- */
+  .shape{flex:1 1 0; min-width:0; min-height:44px; padding:0 2px;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-    font-family:inherit; color:var(--sub); background:transparent; border:0; border-radius:11px;
-    cursor:pointer; transition:background .16s ease, color .16s ease, transform .15s ease;}
-  .shape:active{transform:scale(.96);}
-  .shape .g{display:block; height:16px; border:1.8px solid currentColor; border-radius:3px;}
+    font-family:inherit; color:var(--sub-2); background:transparent; border:0; border-radius:var(--r-sm);
+    cursor:pointer; transition:background var(--t-mid) var(--ease), color var(--t-mid) var(--ease),
+               transform var(--t-fast) var(--ease), box-shadow var(--t-mid) var(--ease);}
+  .shape:active{transform:translateY(1px) scale(.97);}
+  .shape .g{display:block; height:15px; border:1.8px solid currentColor; border-radius:2px;}
   .shape .g.free{border-style:dashed;}
-  .shape b{font-size:11px; font-weight:700; letter-spacing:-.02em; white-space:nowrap;}
-  .shape.on{background:var(--ink); color:#fff;}
+  .shape b{font-size:11px; font-weight:700; letter-spacing:-.03em; white-space:nowrap;}
+  /* ⚠️ えらばれた印は、かたちも のせ方も同じにする（片方だけ黒い札にすると読み方が2つになる）。
+     くぼみ（トレイ）の中で、その札だけ紙が浮いて見える＝えらばれている */
+  .shape.on{background:var(--card-hi); color:var(--ink); box-shadow:var(--lift-1), 0 0 0 1px rgba(36,35,33,.05);}
 
-  /* ---- ふちの色：しろ／くろ／ぼかし／写真の色／すきな色 ---- */
-  .chips{display:flex; gap:5px; margin-top:6px;}
-  .chip{position:relative; flex:1; min-width:0; min-height:44px; padding:0;
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
-    font-family:inherit; color:var(--sub); background:transparent; border:0; border-radius:11px;
-    cursor:pointer; transition:color .16s ease, transform .15s ease;}
-  .chip:active{transform:scale(.94);}
-  .chip i{width:23px; height:23px; border-radius:7px; border:1px solid var(--line); display:block;
-    background-size:cover; background-position:center;}
-  .chip b{font-size:clamp(9.8px, 2.9vw, 11px); font-weight:700; letter-spacing:-.04em; white-space:nowrap;}
+  /* ---- ふち（主役）：見出し＋値を1行、スライダーは幅いっぱい ---- */
+  .field{display:flex; flex-direction:column; gap:var(--s1);}
+  .field-h{display:flex; align-items:center; gap:var(--s2); padding:0 var(--s1);}
+  .field-h .ic{width:17px; height:17px; color:var(--sub); flex:0 0 auto; display:block;}
+  .field-h b{flex:1; font-size:12.5px; font-weight:700; letter-spacing:.02em; color:var(--ink);}
+  .val{font-size:12.5px; font-weight:700; color:var(--sub); font-variant-numeric:tabular-nums;
+    letter-spacing:.01em;}
+
+  input[type=range]{-webkit-appearance:none; appearance:none; width:100%; height:44px;
+    background:transparent; display:block; cursor:pointer;}
+  /* 定規の目盛り＋通ったところ（木口色）。--p は JS が入れる */
+  input[type=range]::-webkit-slider-runnable-track{
+    height:10px; border-radius:999px;
+    background:
+      linear-gradient(90deg, var(--wood) 0 var(--p,20%), rgba(0,0,0,0) var(--p,20%)),
+      repeating-linear-gradient(90deg, rgba(36,35,33,.14) 0 1px, rgba(0,0,0,0) 1px 12.5%),
+      var(--tray);
+    box-shadow:var(--sink);}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:28px; height:28px; border-radius:50%;
+    margin-top:-9px; background:var(--card-hi); box-shadow:0 0 0 1px rgba(36,35,33,.10), var(--lift-2);
+    transition:transform var(--t-fast) var(--ease);}
+  input[type=range]:active::-webkit-slider-thumb{transform:scale(1.1);}
+  input[type=range]::-moz-range-track{height:10px; border-radius:999px; background:var(--tray); border:0;}
+  input[type=range]::-moz-range-progress{height:10px; border-radius:999px; background:var(--wood);}
+  input[type=range]::-moz-range-thumb{width:26px; height:26px; border:0; border-radius:50%;
+    background:var(--card-hi); box-shadow:0 0 0 1px rgba(36,35,33,.10), var(--lift-2);}
+
+  /* ---- ふちの色：色紙のきれはし ---- */
+  .chips{display:flex; gap:var(--s1);}
+  .chip{position:relative; flex:1 1 0; min-width:0; min-height:44px; padding:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+    font-family:inherit; color:var(--sub); background:transparent; border:0; border-radius:var(--r-sm);
+    cursor:pointer; transition:color var(--t-mid) var(--ease), transform var(--t-fast) var(--ease);}
+  .chip:active{transform:translateY(1px) scale(.95);}
+  .chip i{width:24px; height:24px; border-radius:6px; display:block;
+    background-size:cover; background-position:center;
+    box-shadow:0 0 0 1px rgba(36,35,33,.12), 0 1px 2px rgba(36,35,33,.10);
+    transition:box-shadow var(--t-mid) var(--ease), transform var(--t-mid) var(--ease);}
+  .chip b{font-size:clamp(9.8px, 2.9vw, 11px); font-weight:700; letter-spacing:-.05em; white-space:nowrap;}
   .chip.on{color:var(--ink);}
-  .chip.on i{box-shadow:0 0 0 2px var(--card), 0 0 0 3.5px var(--ink);}
-  /* すきな色＝チップぜんたいが色えらび。透明にして重ねると、タップでそのままiPhoneの色パネルが出る */
+  /* えらばれた色紙は「一段つまみ上げた」ように見せる（大きさは変えない） */
+  .chip.on i{transform:translateY(-2px);
+    box-shadow:0 0 0 1.6px var(--ink), 0 4px 8px rgba(36,35,33,.22);}
+  /* 好きな色＝チップぜんたいが色えらび。透明にして重ねると、タップでそのままiPhoneの色パネルが出る */
   .chip input[type=color]{position:absolute; inset:0; width:100%; height:100%; opacity:0;
     border:0; padding:0; margin:0; background:transparent; -webkit-appearance:none; appearance:none;}
 
-  .actions{display:flex; gap:10px; margin-top:8px;}
-  .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
-    font-family:inherit; font-size:16px; font-weight:700; letter-spacing:.02em;
-    padding:15px 10px; border-radius:16px; border:1px solid var(--ink); background:var(--ink); color:#fff;
-    cursor:pointer; transition:transform .15s ease, opacity .15s ease;}
-  .btn:active{transform:scale(.97);}
-  .btn[disabled]{opacity:.55;}
-  /* 書き出しずみ＝あとは押すだけの状態。もう一度おしてほしいので、そっと目立たせる */
-  .btn.ready{animation:ready 1.6s ease-in-out infinite;}
-  @keyframes ready{0%,100%{box-shadow:0 0 0 0 rgba(36,35,33,.26);} 50%{box-shadow:0 0 0 7px rgba(36,35,33,0);}}
-  .btn.ghost{flex:0 0 auto; width:58px; padding:15px 0; background:var(--surface);
-    color:var(--sub); border-color:var(--ghost);}
-  .btn svg{width:22px; height:22px; display:block;}
-  .bar{height:5px; border-radius:999px; background:var(--surface); overflow:hidden; margin-top:10px; display:none;}
-  .hint{display:none; margin-top:8px; text-align:center; font-size:12px; line-height:1.5; color:var(--sub); white-space:pre-line;}
-  .bar i{display:block; height:100%; width:0%; background:var(--ink); transition:width .2s linear;}
+  /* ---- 角の丸み：ふだんは1行にたたんでおく（たまにしか触らないので） ---- */
+  /* ひらいたら、見出しの行とスライダーがひとつの面になる（別々に浮かないように） */
+  .fold{border-radius:var(--r-sm); transition:background var(--t-mid) var(--ease);}
+  .fold.open{background:var(--tray); padding-bottom:var(--s1);}
+  .more{display:flex; align-items:center; gap:var(--s2); width:100%; min-height:44px;
+    padding:0 var(--s2); font-family:inherit; color:var(--sub); background:transparent;
+    border:0; border-radius:var(--r-sm); cursor:pointer; text-align:left;
+    transition:transform var(--t-fast) var(--ease);}
+  .more:active{transform:translateY(1px);}
+  .more .ic{width:16px; height:16px; flex:0 0 auto; display:block;}
+  .more span.t{flex:1; font-size:12.5px; font-weight:700; letter-spacing:.02em;}
+  .more .chev{width:14px; height:14px; flex:0 0 auto; display:block; opacity:.7;
+    transition:transform var(--t-mid) var(--ease);}
+  .fold.open .chev{transform:rotate(180deg);}
+  .fold.open span.t{color:var(--ink);}
+  .fold .field{padding:0 var(--s2);}
 
-  #toast{position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 100px); transform:translateX(-50%) translateY(12px);
+  /* ---- 下の2つ：やり直す／保存する ---- */
+  .actions{display:flex; gap:var(--s2);}
+  .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:var(--s2);
+    min-height:50px; font-family:inherit; font-size:16px; font-weight:700; letter-spacing:.04em;
+    padding:0 var(--s3); border-radius:var(--r-md); border:0; background:var(--ink); color:var(--card-hi);
+    cursor:pointer; box-shadow:var(--lift-1);
+    transition:transform var(--t-fast) var(--ease), background var(--t-mid) var(--ease),
+               opacity var(--t-mid) var(--ease), box-shadow var(--t-fast) var(--ease);}
+  .btn:active{transform:translateY(2px); box-shadow:none;}
+  /* 書き出し中は「押せない」より「働いている」。％の字がかすれると、進んでいるのか分からない */
+  .btn[disabled]{opacity:1; background:#3B3733;}
+  .btn.ghost[disabled]{opacity:.45; background:var(--tray);}
+  /* 書き出しずみ＝あとは押すだけ。木口色にして「ここだけ状態が違う」ことを色で言う */
+  .btn.ready{background:var(--wood-deep); animation:ready 1.7s var(--ease) infinite;}
+  @keyframes ready{0%,100%{box-shadow:0 0 0 0 rgba(196,101,63,.42);} 55%{box-shadow:0 0 0 9px rgba(196,101,63,0);}}
+  .btn.ghost{flex:0 0 auto; width:54px; padding:0; background:var(--tray);
+    color:var(--sub); box-shadow:var(--sink);}
+  .btn.ghost:active{transform:translateY(1px); box-shadow:var(--sink);}
+  .btn svg{width:21px; height:21px; display:block;}
+
+  .bar{height:6px; border-radius:999px; background:var(--tray); box-shadow:var(--sink);
+    overflow:hidden; display:none;}
+  .bar i{display:block; height:100%; width:0%; background:var(--wood); transition:width .2s linear;}
+  .hint,.note{display:none; text-align:center; font-size:12px; line-height:1.55; color:var(--sub);
+    white-space:pre-line;}
+  .note{color:var(--wood-deep);}
+
+  /* ---- しらせ（トースト）＝机に置いたラベル ---- */
+  #toast{position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 100px);
+    transform:translateX(-50%) translateY(10px) scale(.96);
     /* bottom は出すときにJSで測り直す（パネルの高さは設定の数で変わるため） */
-    background:rgba(36,35,33,.94); color:#fff; font-size:13.5px; padding:11px 18px; border-radius:999px;
-    opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease; z-index:50; max-width:84vw; text-align:center;}
-  #toast.on{opacity:1; transform:translateX(-50%) translateY(0);}
+    background:var(--ink); color:var(--card-hi); font-size:13px; font-weight:500; line-height:1.5;
+    padding:var(--s3) var(--s5); border-radius:var(--r-md); box-shadow:var(--lift-3);
+    opacity:0; pointer-events:none;
+    transition:opacity var(--t-mid) var(--ease), transform var(--t-mid) var(--ease);
+    z-index:50; max-width:min(84vw, 420px); text-align:center;}
+  #toast.on{opacity:1; transform:translateX(-50%) translateY(0) scale(1);}
+
+  /* ===== 幅 600px 以上（大きめの画面・タブレット） ===== */
+  @media (min-width:600px){
+    :root{--gutter:28px;}
+    .screen{max-width:560px;}
+    h1{font-size:21px;}
+    .deskhead .mark{width:38px; height:38px;}
+    .deskhead p{font-size:13.5px;}
+    .pick b{font-size:14px;}
+    .segb,.field-h b,.val,.more span.t{font-size:13.5px;}
+    .shape b{font-size:12px;}
+    .panel{padding:var(--s4) var(--s4) var(--s5);}
+  }
+  /* ===== 幅 900px 以上（パソコン） ===== */
+  @media (min-width:900px){
+    .screen{max-width:600px;}
+    .picks{gap:var(--s4);}
+    #toast{font-size:14px;}
+  }
+  /* ===== 背の低い画面（横向き・小さいiPhone）＝詰める ===== */
+  @media (max-height:700px){
+    body{padding-top:calc(env(safe-area-inset-top) + var(--s2));
+         padding-bottom:calc(env(safe-area-inset-bottom) + var(--s2));}
+    .panel{gap:var(--s2); padding:var(--s2) var(--s3) var(--s3);}
+    .stage{padding:0 0 var(--s2);}
+    .field-h{padding:0 var(--s1);}
+    .grp{gap:var(--s1);}
+    .btn{min-height:46px; font-size:15px;}
+    #view1{gap:var(--s3);}
+    .stack{gap:var(--s3);}
+    .picks-note{display:none;}
+  }
+  @media (max-height:560px){
+    /* たてが足りないときは、台紙の見本を「たてが基準」にする（よこ基準だと画面からはみ出す）。
+       ⚠️ 高さを % で持たせるには、親（.picks）の高さが先に決まっている必要がある。
+          flex:1 1 0 にしないと「中身で決まる高さ」の堂々めぐりになり、紙がつぶれる */
+    #view1 .picks{flex:1 1 0; min-height:0;}
+    .pick{flex:0 1 auto; width:auto; height:100%; max-width:calc(50% - var(--s2));}
+    .deskhead p{display:none;}
+  }
+  /* ===== よこ長の画面＝机を横に使う：左に「いま作っている1枚」・右に道具トレイ =====
+     ⚠️ 1列のままだと、横向きでプレビューが数pxまでつぶれる（812x375 で 7x12 になった）。
+        たてが足りないぶんは、よこの余りで取り返す。パソコンでも同じ形にする。 */
+  @media (min-width:560px) and (min-aspect-ratio:5/4){
+    #view2{flex-direction:row; align-items:stretch; gap:var(--s4); max-width:1040px;}
+    #view2 .stage{flex:1; min-width:0; padding:0;}
+    /* トレイは伸ばさず、中身ぴったりの高さで机の右に置く（伸ばすと中に大きな空きができる） */
+    #view2 .panel{flex:0 0 clamp(300px, 38%, 390px); align-self:center; max-height:100%;
+      /* ⚠️ たてが 320px しかない端末（横向きのSEなど）だけ、ここが足りなくなる。
+         使えない画面にするよりは、トレイの中だけスクロールできるほうがまし */
+      overflow-y:auto; overscroll-behavior:contain;}
+    /* ⚠️ align-items:center にすると .stack の高さが「中身しだい」になり、
+       たてが基準の台紙見本（height:100%）が 0 につぶれる。stretch のまま使う */
+    #view1{flex-direction:row; align-items:stretch; gap:var(--s5); max-width:920px;}
+    #view1 .deskhead{flex-direction:column; align-items:flex-start; justify-content:center;
+      flex:0 0 auto; gap:var(--s2); align-self:center; max-width:34%;}
+    #view1 .stack{flex:1; min-width:0; align-items:center;}
+    /* 台紙のかたちの列だけが2枚の紙より広がると、へその位置がずれて見える */
+    #view1 .well{width:100%; max-width:560px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.01ms !important; transition-duration:.01ms !important;}
+  }
 </style>
 </head>
 <body>
 
-<!-- えらぶ画面：かたちをえらんでから、左＝写真だけ／右＝動画だけ
+<!-- ①えらぶ画面：台紙のかたちをえらんでから、左＝写真だけ／右＝動画だけ
      （iPhoneの写真アプリが絞り込まれて開く） -->
 <div class="screen" id="view1">
-  <!-- 出来上がりのかたち。えらんだ形が、下の2つのボタンの形になる -->
-  <div class="seg" id="shapes1"></div>
+  <header class="deskhead">
+    <svg class="mark" viewBox="0 0 100 100" aria-label="つみき">
+      <rect width="100" height="100" rx="24" fill="#242321"/>
+      <g fill="#242321" stroke="#F4F2EE" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round">
+        <polygon points="35,46 50,53.5 35,61 20,53.5"/>
+        <polygon points="20,53.5 35,61 35,76 20,68.5"/>
+        <polygon points="50,53.5 35,61 35,76 50,68.5"/>
+        <polygon points="65,46 80,53.5 65,61 50,53.5"/>
+        <polygon points="50,53.5 65,61 65,76 50,68.5"/>
+        <polygon points="80,53.5 65,61 65,76 80,68.5"/>
+        <polygon points="50,24 65,31.5 50,39 35,31.5"/>
+        <polygon points="35,31.5 50,39 50,54 35,46.5"/>
+        <polygon points="65,31.5 50,39 50,54 65,46.5"/>
+      </g>
+    </svg>
+    <div>
+      <h1>しろふち</h1>
+      <p>写真や動画に、ふちをつけて保存します。</p>
+    </div>
+  </header>
+
+  <div class="stack">
+  <!-- 出来上がりの台紙。えらんだかたちが、下の2枚の紙のかたちになる -->
+  <div class="well">
+    <span class="cap">台紙のかたち</span>
+    <div class="seg" id="shapes1"></div>
+  </div>
+
   <div class="picks" id="picks">
     <label class="pick" for="filePhoto">
-      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
-           stroke-linecap="round" stroke-linejoin="round" aria-label="写真をえらぶ">
-        <path d="M29,13 H75 a12,12 0 0 1 12,12 V65"/>
-        <rect x="13" y="23" width="64" height="64" rx="13"/>
-        <circle cx="32" cy="42" r="3.4"/>
-        <path d="M20,73 L37,54 L47,64 L70,42"/>
-      </svg>
+      <span class="pick-in">
+        <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M29,13 H75 a12,12 0 0 1 12,12 V65"/>
+          <rect x="13" y="23" width="64" height="64" rx="13"/>
+          <circle cx="32" cy="42" r="3.4"/>
+          <path d="M20,73 L37,54 L47,64 L70,42"/>
+        </svg>
+        <b>写真をのせる</b>
+      </span>
     </label>
     <label class="pick" for="fileVideo">
-      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
-           stroke-linecap="round" stroke-linejoin="round" aria-label="動画をえらぶ">
-        <rect x="18" y="18" width="64" height="64" rx="13"/>
-        <path d="M42,36 L68,50 L42,64 Z"/>
-      </svg>
+      <span class="pick-in">
+        <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4.5"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="18" y="18" width="64" height="64" rx="13"/>
+          <path d="M42,36 L68,50 L42,64 Z"/>
+        </svg>
+        <b>動画をのせる</b>
+      </span>
     </label>
+  </div>
+  <p class="picks-note">写真は4枚まで。2枚以上でコラージュになります。</p>
   </div>
 </div>
 <input type="file" id="filePhoto" accept="image/*" multiple>
 <input type="file" id="fileVideo" accept="video/*">
 
-<!-- 編集画面：1画面ぴったり。スクロールなし -->
+<!-- ②編集画面：1画面ぴったり。スクロールなし -->
 <div class="screen hide" id="view2">
   <div class="stage" id="stage"><div class="frame" id="frame"></div></div>
 
+  <!-- 道具トレイ。上のくぼみ＝台紙まわり（ときどき触る）／下の面＝ふち（いつも触る） -->
   <div class="panel">
-    <!-- 出来上がりのかたち（メニューと同じもの） -->
-    <div class="seg" id="shapes2"></div>
-    <!-- 写真の大きさ。ぜんぶ＝切らずに全部のせる／うめる＝台紙をうめる（はみ出しは切る） -->
-    <div class="seg" id="seg">
-      <button type="button" class="segb on" data-z="0">ぜんぶ</button>
-      <button type="button" class="segb" data-z="1">うめる</button>
+    <div class="well">
+      <!-- 出来上がりのかたち（①と同じもの） -->
+      <div class="seg" id="shapes2"></div>
+      <!-- 写真ののせ方。全部のせる＝切らずに全部／台紙いっぱい＝はみ出しは切る -->
+      <div class="seg" id="seg">
+        <button type="button" class="segb on" data-z="0">全部のせる</button>
+        <button type="button" class="segb" data-z="1">台紙いっぱい</button>
+      </div>
     </div>
-    <!-- ふちの太さ -->
-    <div class="ctl">
-      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linejoin="round">
-        <rect x="1.9" y="1.9" width="20.2" height="20.2" rx="3.4" stroke-width="2.2"/>
-        <rect x="6.5" y="6.5" width="11" height="11" rx="1.8" stroke-width="2.2"/></svg>
+
+    <!-- ここから下が「ふち」。いちばんよく触るので、面の上に直に置く -->
+    <div class="grp">
+    <div class="field">
+      <div class="field-h">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linejoin="round">
+          <rect x="1.9" y="1.9" width="20.2" height="20.2" rx="3.4" stroke-width="2.2"/>
+          <rect x="6.5" y="6.5" width="11" height="11" rx="1.8" stroke-width="2.2"/></svg>
+        <b>ふちの太さ</b>
+        <span class="val" id="wv">2.0%</span>
+      </div>
       <input type="range" id="w" min="0.5" max="8" step="0.1" value="2" aria-label="ふちの太さ">
-      <span class="val" id="wv">2.0%</span>
     </div>
-    <!-- かどの丸み -->
-    <div class="ctl">
-      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-           stroke-linecap="round"><path d="M2.9,21.1 L2.9,10 A7.1,7.1 0 0 1 10,2.9 L21.1,2.9"/></svg>
-      <input type="range" id="r" min="0" max="24" step="1" value="2" aria-label="かどの丸み">
-      <span class="val" id="rv">2%</span>
-    </div>
+
     <!-- ふちの色。ぼかし＝写真そのものをぼかして敷く／写真の色＝写真の平均の色 -->
     <div class="chips" id="chips"></div>
 
+    <!-- 角の丸み。ふだんはたたんでおく -->
+    <div class="fold" id="radFold">
+    <button type="button" class="more" id="radBtn" aria-expanded="false" aria-controls="radRow">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round"><path d="M2.9,21.1 L2.9,10 A7.1,7.1 0 0 1 10,2.9 L21.1,2.9"/></svg>
+      <span class="t">角の丸み</span>
+      <span class="val" id="rv">2%</span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M5,9 L12,16 L19,9"/></svg>
+    </button>
+    <div class="field hide" id="radRow">
+      <input type="range" id="r" min="0" max="24" step="1" value="2" aria-label="角の丸み">
+    </div>
+    </div>
+    </div>
+
     <div class="actions">
-      <button class="btn ghost" id="again" aria-label="えらびなおす">
+      <button class="btn ghost" id="again" aria-label="はじめからやり直す">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
              stroke-linecap="round" stroke-linejoin="round">
           <path d="M20.5,12a8.5,8.5 0 1 1-2.5-6"/><path d="M14,6 L18,6 L18,2"/></svg>
       </button>
-      <button class="btn" id="save">保存</button>
+      <button class="btn" id="save">保存する</button>
     </div>
     <div class="bar" id="bar"><i></i></div>
     <div class="hint" id="hint"></div>
+    <div class="note" id="note"></div>
   </div>
 </div>
 
@@ -214,13 +460,13 @@
    しろふち — どんな比率の写真/動画も、えらんだかたちの台紙にのせて「写真」に保存する
    ・写真は1〜4枚。2枚以上えらぶと自動で並べる（コラージュ）。
      写真どうしの「すきま」は、外わくと同じ『ふちの太さ』を使う＝白い帯はぜんぶ同じ太さ
-   ・かたち＝1:1 / 4:5 / 9:16 / 元のまま（写真そのままの比率＝ふちが4辺そろう。1枚のときだけ）
-   ・ふちの色＝しろ / くろ / ぼかし（写真そのものをぼかして敷く）/ 写真の色 / すきな色
+   ・かたち＝1:1 / 4:5 / 9:16 / そのまま（写真そのままの比率＝ふちが4辺そろう。1枚のときだけ）
+   ・ふちの色＝白 / 黒 / ぼかし（写真そのものをぼかして敷く）/ 写真の色 / 好きな色
    ・ふちの太さは出来上がりの横幅に対する％
    ・写真は切らずに全部のせる（横位置なら上下に、9:16より細長いなら左右に白がふえる）
    ・ただし切れるのが 3% までで収まるとき（＝ほぼ9:16の写真）は、
      いままで通り4辺のふちをぴったりそろえる（cover）
-   ・「ぜんぶ／うめる」のボタンで、切らずに全部のせるか、拡大して9:16をうめるかを切りかえる。
+   ・「全部のせる／台紙いっぱい」のボタンで、切らずに全部のせるか、拡大して台紙をうめるかを切りかえる。
      切れているときは指でなぞって位置を、2本指でつまんでさらに大きさを変えられる
    ・画面は1画面ぴったり（スクロールなし）。プレビューの大きさはJSで実測して決める
    ========================================================= */
@@ -231,7 +477,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 16;
+const VER = 17;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -289,7 +535,7 @@ const ARS = [
   {k:'1',    css:'1/1',  v:1,      t:'1:1'},
   {k:'4:5',  css:'4/5',  v:0.8,    t:'4:5'},
   {k:'9:16', css:'9/16', v:0.5625, t:'9:16'},
-  {k:'src',  css:'1/1',  v:0,      t:'元のまま'}
+  {k:'src',  css:'1/1',  v:0,      t:'そのまま'}
 ];
 let arKey = localStorage.getItem(KEY_AR) || '9:16';
 if(!ARS.some(a => a.k === arKey)) arKey = '9:16';
@@ -301,13 +547,13 @@ function curAR(){
 const CROP_MAX = 0.03;      // これ以内しか切れないなら、4辺のふちをそろえる（＝いままでの見た目）
 
 /* ---------- ふちの色 ----------
-   しろ／くろ／ぼかし（写真そのものをぼかして敷く）／写真の色（写真の平均の色）／すきな色 */
+   白／黒／ぼかし（写真そのものをぼかして敷く）／写真の色（写真の平均の色）／好きな色 */
 const BGS = [
-  {k:'white',  t:'しろ'},
-  {k:'black',  t:'くろ'},
+  {k:'white',  t:'白'},
+  {k:'black',  t:'黒'},
   {k:'blur',   t:'ぼかし'},
   {k:'auto',   t:'写真の色'},
-  {k:'custom', t:'すきな色'}
+  {k:'custom', t:'好きな色'}
 ];
 let bgKey = localStorage.getItem(KEY_BG) || 'white';
 if(!BGS.some(b => b.k === bgKey)) bgKey = 'white';
@@ -366,9 +612,9 @@ function buildShapes(box){
 }
 function syncShapes(){
   document.querySelectorAll('.shape').forEach(b => b.classList.toggle('on', b.dataset.k === arKey));
-  // 「元のまま」は写真1枚のときだけ（何枚もあると「元の比率」が1つに決まらない）
+  // 「そのまま」は写真1枚のときだけ（何枚もあると「元の比率」が1つに決まらない）
   document.querySelectorAll('.shape[data-k="src"]').forEach(b => b.classList.toggle('hide', N() > 1));
-  // 「元のまま」は何も切れないので、ぜんぶ／うめる の出番がない
+  // 「そのまま」は何も切れないので、のせ方（全部のせる／台紙いっぱい）の出番がない
   el('seg').classList.toggle('hide', arKey === 'src');
 }
 function setAR(k){
@@ -442,7 +688,7 @@ function paintFrame(){
     f.style.background = solidColor();
   }
 }
-/* メニューの2つのボタンを、えらんだかたち・えらんだふちの色にする（＝押す前の見本） */
+/* ①の2枚の紙を、えらんだかたち・えらんだふちの色にする（＝押す前の見本） */
 function paintPicks(){
   const a = ARS.find(x => x.k === arKey);
   document.documentElement.style.setProperty('--ar', a.css);
@@ -457,16 +703,33 @@ function paintPicks(){
       p.style.backgroundImage = 'url(' + tinyURL + ')';
       p.style.backgroundSize = 'cover';
       p.style.backgroundPosition = 'center';
-      p.querySelector('svg').style.color = 'rgba(255,255,255,.85)';
+      /* 線画も文字も currentColor。台紙の明るさで、まとめて入れかえる */
+      p.style.color = 'rgba(255,255,255,.9)';
     }else{
       p.style.backgroundImage = 'none';
       p.style.background = c;
-      p.querySelector('svg').style.color = lum < 0.5 ? 'rgba(255,255,255,.6)' : '';
+      p.style.color = lum < 0.5 ? 'rgba(255,255,255,.8)' : '';
     }
   });
 }
 /* 見本（tiny）が新しくなったら、それを使っている所をぜんぶ描き直す */
 function afterTiny(){ syncChips(); paintFrame(); paintPicks(); }
+
+/* 角の丸みは、ふだんはたたんでおく。
+   ⚠️ ふちの太さ・色と同じ強さで並べると、よく使うものが埋もれる。
+      たたんだ行に「角の丸み ○%」と値を出しておけば、ひらかなくても今の状態は分かる。 */
+const KEY_ROPEN = 'shirofuchi_ropen';
+function setRadOpen(open){
+  el('radRow').classList.toggle('hide', !open);
+  el('radFold').classList.toggle('open', open);
+  el('radBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  localStorage.setItem(KEY_ROPEN, open ? '1' : '0');
+  relayout();                  // パネルの高さが変わるので、プレビューを測り直す
+}
+el('radBtn').addEventListener('click', () => {
+  if(busy) return;
+  setRadOpen(el('radRow').classList.contains('hide'));
+});
 
 buildShapes(el('shapes1'));
 buildShapes(el('shapes2'));
@@ -474,7 +737,7 @@ buildChips();
 syncShapes();
 syncChips();
 paintPicks();
-syncSeg();                     // 前回えらんだ「ぜんぶ／うめる」を光らせておく
+syncSeg();                     // 前回えらんだ「全部のせる／台紙いっぱい」を光らせておく
 
 /* 台紙（W×H）を、写真の枚数ぶんの「マス」に割る。
    ⚠️ 白い帯の太さは、外わくも 写真どうしのすきまも 同じ b（＝ふちの太さ）。
@@ -603,6 +866,9 @@ function render(){
 function layout(){
   el('wv').textContent = pct.toFixed(1) + '%';
   el('rv').textContent = Math.round(rad) + '%';
+  // 定規の「通ったところ」を木口色でぬる（--p は CSS の track が読む）
+  el('w').style.setProperty('--p', ((pct - 0.5) / 7.5 * 100).toFixed(1) + '%');
+  el('r').style.setProperty('--p', (rad / 24 * 100).toFixed(1) + '%');
   const f = el('frame'), st = el('stage');
   if(!N() || !st.clientWidth) return;
   const ar = curAR();
@@ -658,6 +924,9 @@ function relayout(){
 window.addEventListener('resize', relayout);
 window.addEventListener('orientationchange', () => setTimeout(layout, 250));
 if(window.ResizeObserver) new ResizeObserver(relayout).observe(el('stage'));
+/* 角の丸みの開け閉めを前回のとおりに戻す。
+   ⚠️ relayout を使うので、layoutQ を作ったあと（＝ここ）で呼ぶこと */
+setRadOpen(localStorage.getItem(KEY_ROPEN) === '1');
 
 /* ---------- ファイルをえらぶ ----------
    写真用・動画用で入力欄を分けている。accept を絞っておくと、
@@ -688,7 +957,7 @@ function reset(){
   clearShots();
   kind = null;
   disarmSave();
-  syncShapes();                // 「元のまま」をまた出す（1枚のときだけの札なので）
+  syncShapes();                // 「そのまま」をまた出す（1枚のときだけの札なので）
   el('view2').classList.add('hide');
   el('view1').classList.remove('hide');
 }
@@ -732,7 +1001,7 @@ function load(files, hint){
   if(over) use = use.slice(0, MAX_SHOTS);
   fileBytes = use[0].size;
   loadPhotos(use);
-  if(over) toast(MAX_SHOTS + '枚まで使います');
+  if(over) toast('写真は' + MAX_SHOTS + '枚まで。はじめの' + MAX_SHOTS + '枚を使います');
 }
 
 /* 何枚かをまとめて読む。えらんだ順に並べたいので、読み終わった順ではなく番号で置く */
@@ -797,7 +1066,7 @@ function reloadMedia(){
 
 function ready(){
   if(!N()){ toast('サイズが読み取れませんでした'); return; }
-  // 「元のまま」は1枚のときだけ。コラージュでは正方形にする
+  // 「そのまま」は1枚のときだけ。コラージュでは正方形にする
   if(N() > 1 && arKey === 'src'){ arKey = '1'; localStorage.setItem(KEY_AR, arKey); }
   /* コラージュで「ぜんぶ」だと、マスの中にも白があいて帯の太さがちぐはぐに見える。
      はじめは「うめる」にしておく。⚠️ ここでは覚えない（写真1枚のときの好みを書きかえないため） */
@@ -1002,12 +1271,12 @@ async function save(){
   btn.disabled = true; el('again').disabled = true;
   try{
     if(kind === 'image'){
-      btn.textContent = '…';
+      btn.textContent = '書き出し中';
       const blob = await makeImage();
       handOver(new File([blob], stamp() + '.jpg', {type:'image/jpeg'}));
     } else {
       const prog = (p, left) => {
-        btn.textContent = Math.round(p * 100) + '%';
+        btn.textContent = '書き出し中 ' + Math.round(p * 100) + '%';
         el('bar').querySelector('i').style.width = (p * 100) + '%';
         el('hint').textContent = leftText(left);
       };
@@ -1019,7 +1288,7 @@ async function save(){
         blob = await makeVideo(prog, useAudio);
       }catch(e){
         if(e && e.stalled && useAudio){
-          toast('音なしでやり直します');
+          toast('音を入れられませんでした。音なしでやり直します');
           await reloadMedia();          // WebAudioにつながれた動画を作り直して縁を切る
           blob = await makeVideo(prog, false);
           localStorage.setItem(KEY_NA, '1');   // 音なしで成功したときだけ覚える
@@ -1033,7 +1302,7 @@ async function save(){
     }
   }catch(e){
     toast((e && e.message) ? e.message : '保存できませんでした');
-    btn.textContent = '保存';
+    btn.textContent = '保存する';
   }
   el('bar').style.display = 'none';
   el('bar').querySelector('i').style.width = '0%';
@@ -1049,12 +1318,22 @@ function armSave(file){
   const btn = el('save');
   btn.textContent = '写真に保存';
   btn.classList.add('ready');
+  /* ⚠️ なぜ2回おすのか、を画面に残す。
+     iPhoneは「タップしてから数秒以内」でないと共有シートを開けない決まりで、
+     書き出しの間にその権利が切れる。理由がないと「壊れた」に見える。
+     save() の後片づけが消すのは #hint だけなので、この行は #note に置く。 */
+  const n = el('note');
+  n.textContent = 'できあがりました。iPhoneの決まりで、もう一度おすと写真アプリに保存できます。';
+  n.style.display = 'block';
+  relayout();
 }
 function disarmSave(){
   pending = null;
   const btn = el('save');
-  btn.textContent = '保存';
+  btn.textContent = '保存する';
   btn.classList.remove('ready');
+  const n = el('note');
+  if(n.style.display !== 'none'){ n.style.display = 'none'; n.textContent = ''; relayout(); }
 }
 
 function stamp(){
