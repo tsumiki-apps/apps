@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<link rel="apple-touch-icon" href="icons/icon-itsutsu.png">
+<meta name="apple-mobile-web-app-title" content="いつつ">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#242321">
+<title>いつつ</title>
+<style>
+  /* ── 配色は Swift版 DesignTokens と同一（warm neutral monochrome・赤は使わない） ── */
+  :root{
+    --paper:#F4F2EE; --surface:#ECE9E3; --ink:#242321; --muted:#77736B;
+    --hair:#D8D4CC; --ghost:#BEB9B0; --control:#F8F7F4;
+    --on:rgba(255,255,255,.92);      /* カメラ上のアイコン/満ちた点 */
+    --onmuted:rgba(255,255,255,.34); /* 空の点 */
+    --veil:rgba(36,35,33,.34);       /* カメラ上の薄い暗幕 */
+    --edge:24px;                     /* 画面端の余白 */
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%; overflow:hidden}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"Hiragino Maru Gothic ProN","Zen Maru Gothic",-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+    display:flex; align-items:center; justify-content:center;
+    overscroll-behavior:none; touch-action:manipulation;
+  }
+  /* ── 舞台。スマホでは全面、広い画面では縦9:16を中央に置く（固定px幅は作らない） ── */
+  #stage{
+    position:relative; width:100%; height:100dvh; overflow:hidden;
+    background:#0f0f0e;
+    container-type:size;   /* 中の文字は「舞台の幅」を基準にする（画面幅ではなく） */
+  }
+  @media (min-width:600px){
+    #stage{
+      height:calc(100dvh - 48px);
+      width:min(100%, calc((100dvh - 48px) * 9 / 16));
+      border-radius:16px; box-shadow:0 18px 60px rgba(36,35,33,.22);
+    }
+  }
+  @media (min-width:900px){
+    #stage{ height:calc(100dvh - 80px); width:min(100%, calc((100dvh - 80px) * 9 / 16)); }
+  }
+
+  video.fill{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#0f0f0e}
+  #cam.mirror{transform:scaleX(-1)}
+
+  .layer{position:absolute; inset:0; display:flex; flex-direction:column;
+         padding:calc(env(safe-area-inset-top) + 6px) var(--edge) calc(env(safe-area-inset-bottom) + 24px);
+         transition:opacity .25s ease}
+  [hidden]{display:none !important}
+  .layer[hidden]{display:none !important}
+  .veil{position:absolute; inset:0; background:var(--veil)}
+  .paperbg{position:absolute; inset:0; background:var(--paper)}
+
+  .row{display:flex; align-items:center; justify-content:space-between; gap:12px; position:relative; z-index:2}
+  .grow{flex:1}
+  .bottomrow{display:flex; align-items:center; justify-content:center; position:relative; z-index:2; padding-bottom:16px}
+
+  /* ── 薄い下地つきアイコンボタン（明るい被写体でも見える） ── */
+  .glyph{
+    width:44px; height:44px; border:0; border-radius:50%; background:var(--veil);
+    color:var(--on); display:flex; align-items:center; justify-content:center; cursor:pointer;
+    flex:0 0 auto;
+  }
+  .glyph svg{width:21px; height:21px; display:block}
+  .glyph:active{transform:scale(.94)}
+
+  /* ── 進捗の点（5/10/20） ── */
+  .slots{display:flex; flex-direction:column; gap:12px; padding:10px 6px; cursor:pointer; min-height:44px; justify-content:center}
+  .slots .dotrow{display:flex; gap:12px}
+  .slots .dot{width:8px; height:8px; border-radius:50%; background:var(--onmuted);
+              box-shadow:0 .5px 2px rgba(0,0,0,.22); transition:background .25s ease}
+  .slots .dot.on{background:var(--on)}
+  .slots.n10 .dot{width:7px; height:7px} .slots.n10, .slots.n10 .dotrow{gap:9px}
+  .slots.n20 .dot{width:6px; height:6px} .slots.n20, .slots.n20 .dotrow{gap:7px}
+
+  /* ── 撮影ボタン（2秒でリングが一周） ── */
+  .recwrap{position:relative; width:76px; height:76px}
+  .rec{position:absolute; inset:0; width:76px; height:76px; border:0; background:transparent; cursor:pointer;
+       filter:drop-shadow(0 1px 6px rgba(0,0,0,.25))}
+  .rec svg{width:76px; height:76px; display:block}
+  .rec .track{fill:none; stroke:rgba(255,255,255,.45); stroke-width:4}
+  .rec .ring{fill:none; stroke:var(--on); stroke-width:4; stroke-linecap:round;
+             stroke-dasharray:213.6; stroke-dashoffset:213.6; transform:rotate(-90deg); transform-origin:50% 50%}
+  .rec .core{fill:var(--control)}
+  .rec.recording .ring{transition:stroke-dashoffset 2s linear; stroke-dashoffset:0}
+
+  /* ── 「今日を見る」（満ちた点が寄り集まった形） ── */
+  .see{position:absolute; left:calc(var(--edge) + 20px); bottom:calc(env(safe-area-inset-bottom) + 40px);
+       width:44px; height:44px; border:0; background:transparent; cursor:pointer;
+       display:flex; align-items:center; justify-content:center}
+  .see i{width:18px; height:30px; border-radius:5px; background:var(--on);
+         display:flex; align-items:center; justify-content:center; box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .see svg{width:10px; height:10px; color:var(--ink)}
+
+  /* ── 採用（大きい白丸のチェック） ── */
+  .accept{width:64px; height:64px; border:0; border-radius:50%; background:var(--control); color:var(--ink);
+          display:flex; align-items:center; justify-content:center; cursor:pointer;
+          box-shadow:0 1px 8px rgba(0,0,0,.28); flex:0 0 auto}
+  .accept svg{width:27px; height:27px}
+  .accept:active{transform:scale(.96)}
+  .accept.done{background:var(--on)}
+
+  /* ── 極薄グリッド ── */
+  .grid{position:absolute; inset:0; pointer-events:none; opacity:.16;
+        background:
+          linear-gradient(to right, transparent calc(33.333% - .5px), #fff calc(33.333% - .5px), #fff calc(33.333% + .5px), transparent calc(33.333% + .5px)),
+          linear-gradient(to right, transparent calc(66.666% - .5px), #fff calc(66.666% - .5px), #fff calc(66.666% + .5px), transparent calc(66.666% + .5px)),
+          linear-gradient(to bottom, transparent calc(33.333% - .5px), #fff calc(33.333% - .5px), #fff calc(33.333% + .5px), transparent calc(33.333% + .5px)),
+          linear-gradient(to bottom, transparent calc(66.666% - .5px), #fff calc(66.666% - .5px), #fff calc(66.666% + .5px), transparent calc(66.666% + .5px));}
+
+  /* ── 今日のプレビュー ── */
+  #dayVideo{transition:transform .3s ease, border-radius .3s ease}
+  #uiDay.framed #dayVideo{transform:scale(.9); border-radius:2vw; border-radius:2cqw}
+  .clock{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+         font-size:clamp(40px, 15vw, 104px); font-size:clamp(40px, 10.4cqw, 104px); color:rgba(255,255,255,.84); letter-spacing:.02em;
+         text-shadow:0 1px 5px rgba(0,0,0,.28); font-variant-numeric:tabular-nums;
+         padding:24px 32px; cursor:pointer; user-select:none; -webkit-user-select:none; z-index:2;
+         transition:transform .3s ease}
+  #uiDay.framed .clock{font-size:clamp(36px, 13.5vw, 94px); font-size:clamp(36px, 9.4cqw, 94px)}
+  .clock.rot{transform:translate(-50%,-50%) rotate(90deg)}
+  #uiDay.framed .clock.rot{transform:translate(-50%,-50%) rotate(90deg)}
+  .tapcatch{position:absolute; inset:0; z-index:1}
+
+  /* ── めくって削除 ── */
+  .strip{position:relative; z-index:2; display:flex; gap:12px; overflow-x:auto; padding:8px 0 4px;
+         -webkit-overflow-scrolling:touch; scrollbar-width:none}
+  .strip::-webkit-scrollbar{display:none}
+  .card{position:relative; flex:0 0 auto; width:clamp(84px, 26vw, 130px); width:clamp(84px, 26cqw, 130px); aspect-ratio:9/16;
+        border-radius:10px; overflow:hidden; background:#1a1a19; box-shadow:0 2px 10px rgba(0,0,0,.3)}
+  .card video{width:100%; height:100%; object-fit:cover}
+  .card .t{position:absolute; left:0; right:0; bottom:0; padding:4px 6px; font-size:11px;
+           color:rgba(255,255,255,.9); background:linear-gradient(transparent,rgba(0,0,0,.5)); text-align:center}
+  .card .del{position:absolute; top:4px; right:4px; width:26px; height:26px; border:0; border-radius:50%;
+             background:rgba(36,35,33,.6); color:var(--on); display:flex; align-items:center; justify-content:center; cursor:pointer}
+  .card .del svg{width:12px; height:12px}
+  .center{flex:1; display:flex; align-items:center; justify-content:center; position:relative; z-index:2}
+
+  /* ── 書き出し中 ── */
+  .exportbox{display:flex; flex-direction:column; align-items:center; gap:22px}
+  .frame{position:relative; width:90px; height:160px; border-radius:10px;
+         background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.4);
+         display:flex; align-items:center; justify-content:center; color:var(--on)}
+  .frame svg{width:42px; height:42px; opacity:0; transition:opacity .3s ease}
+  .frame.saved svg{opacity:1}
+  .dots{display:flex; gap:12px}
+  .dots .dot{width:8px; height:8px; border-radius:50%; background:var(--onmuted); transition:background .2s ease}
+  .dots .dot.on{background:var(--on)}
+
+  /* ── 権限・エラー（ここだけ最小限の文字を許す） ── */
+  #uiPerm{background:var(--paper); align-items:center; justify-content:center; text-align:center; gap:20px}
+  #uiPerm svg{width:40px; height:40px; color:var(--muted)}
+  #uiPerm p{font-size:15px; line-height:1.8; color:var(--muted); max-width:34ch}
+  .btn{font:inherit; font-size:15px; color:var(--ink); background:var(--surface); border:0;
+       border-radius:12px; padding:12px 20px; min-height:44px; cursor:pointer}
+  .toast{position:absolute; left:50%; bottom:calc(env(safe-area-inset-bottom) + 130px); transform:translateX(-50%);
+         background:rgba(36,35,33,.82); color:#fff; font-size:13px; line-height:1.6; padding:10px 16px;
+         border-radius:12px; max-width:min(88%, 34ch); text-align:center; z-index:9; opacity:0;
+         transition:opacity .3s ease; pointer-events:none}
+  .toast.show{opacity:1}
+  canvas.hidden, video.hidden{position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; left:-9999px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- 背景：カメラ映像（常時） -->
+  <video id="cam" class="fill" autoplay muted playsinline></video>
+  <div class="grid" id="grid"></div>
+
+  <!-- ① カメラ -->
+  <div class="layer" id="uiCamera">
+    <div class="row">
+      <div class="slots" id="slots"></div>
+      <button class="glyph" id="btnSwitch" aria-label="前後切替">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8a8 8 0 0 1 13.7-5.6L20 4"/><path d="M20 1v4h-4"/>
+          <path d="M20 16a8 8 0 0 1-13.7 5.6L4 20"/><path d="M4 23v-4h4"/>
+        </svg>
+      </button>
+    </div>
+    <div class="grow"></div>
+    <div class="bottomrow">
+      <div class="recwrap">
+        <button class="rec" id="btnRec" aria-label="撮る">
+          <svg viewBox="0 0 76 76"><circle class="track" cx="38" cy="38" r="34"/><circle class="ring" cx="38" cy="38" r="34"/><circle class="core" cx="38" cy="38" r="24"/></svg>
+        </button>
+      </div>
+    </div>
+    <button class="see" id="btnSee" hidden aria-label="今日を見る">
+      <i><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></i>
+    </button>
+  </div>
+
+  <!-- ② 撮った1本の確認 -->
+  <div class="layer" id="uiClip" hidden>
+    <div class="veil"></div>
+    <video id="clipVideo" class="fill" playsinline loop></video>
+    <div class="grow"></div>
+    <div class="row">
+      <button class="glyph" id="btnRetake" aria-label="撮り直す">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+        </svg>
+      </button>
+      <button class="accept" id="btnKeep" aria-label="これでよい">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ③ 今日のプレビュー -->
+  <div class="layer" id="uiDay" hidden>
+    <div class="veil" id="dayBg"></div>
+    <video id="dayVideo" class="fill" playsinline></video>
+    <div class="tapcatch" id="dayTap"></div>
+    <div class="clock" id="dayClock"></div>
+    <div class="row">
+      <button class="glyph" id="btnDayBack" aria-label="戻る">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <button class="glyph" id="btnManage" aria-label="めくって削除">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="7" y="3" width="14" height="14" rx="2.5"/><path d="M17 21H5.5A2.5 2.5 0 0 1 3 18.5V7"/>
+        </svg>
+      </button>
+    </div>
+    <div class="grow"></div>
+    <div class="row">
+      <button class="glyph" id="btnDiscard" hidden aria-label="捨てる">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>
+        </svg>
+      </button>
+      <div class="grow"></div>
+      <button class="accept" id="btnSave" aria-label="保存する">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ④ めくって削除 -->
+  <div class="layer" id="uiManage" hidden>
+    <div class="veil"></div>
+    <div class="row">
+      <button class="glyph" id="btnManageBack" aria-label="戻る">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+    </div>
+    <div class="center"><div class="strip" id="strip"></div></div>
+  </div>
+
+  <!-- ⑤ 書き出し中 -->
+  <div class="layer" id="uiExport" hidden style="align-items:center; justify-content:center">
+    <div class="veil"></div>
+    <div class="exportbox" style="position:relative; z-index:2">
+      <div class="frame" id="expFrame">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>
+      </div>
+      <div class="dots" id="expDots"></div>
+    </div>
+  </div>
+
+  <!-- ⑥ 権限 -->
+  <div class="layer" id="uiPerm" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H8l1.5-2h5L16 6h2.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/>
+      <circle cx="12" cy="12.5" r="3.5"/>
+    </svg>
+    <p id="permText">カメラを使えるようにしてください</p>
+    <button class="btn" id="btnPerm">カメラを使う</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <canvas id="canvas" class="hidden" width="1080" height="1920"></canvas>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ══════════════════════════════════════════════════════════════
+     いつつ（Web版・個人用）
+     Swift版と同じ憲法で動く:
+       1本でも今日 / 失敗したら回数を消費しない / 1タップ2秒固定 /
+       文字は最小 / 映像はカラー・UIはモノクロ / 保存成功前に消さない
+     Web固有の割り切り:
+       - 写真アプリへは「共有シート → ビデオを保存」で入る（Webから直接は書けない）
+       - タップAF/露出補正/水平器は Web に API が無いので載せない
+     ══════════════════════════════════════════════════════════════ */
+
+  var CLIP_SEC = 2.0;          // 1本の長さ
+  var MIN_SEC = 1.2;           // これ未満は失敗扱い（回数を消費しない）
+  var COUNT_OPTIONS = [5,10,20];
+  var OUT_W = 1080, OUT_H = 1920, OUT_FPS = 30;
+  var DAY_START_HOUR = 4;      // 1日は 4:00〜翌3:59
+
+  var $ = function(id){ return document.getElementById(id); };
+  var stage=$('stage'), cam=$('cam');
+
+  /* ── 状態 ─────────────────────────────────────────────── */
+  var state = {
+    route: 'camera',
+    dayKey: '',
+    clips: [],            // {id, dayKey, capturedAt(ms), blob, url}
+    rescue: null,         // 前日の未保存分 {dayKey, clips}
+    pending: null,        // 撮影直後の確認待ち
+    maxClips: pref('maxClips', 5, true),
+    framed: pref('framed', false),
+    clockRotated: pref('clockRotated', false),
+    exportedAt: null,
+    facing: pref('facing','environment'),
+    recording: false,
+    busy: false
+  };
+
+  function pref(k, dflt, num){
+    try{
+      var v = localStorage.getItem('itsutsu-web:'+k);
+      if(v === null) return dflt;
+      if(num){ var n = parseInt(v,10); return COUNT_OPTIONS.indexOf(n)>=0 ? n : dflt; }
+      if(v === 'true') return true;
+      if(v === 'false') return false;
+      return v;
+    }catch(e){ return dflt; }
+  }
+  function savePref(k,v){ try{ localStorage.setItem('itsutsu-web:'+k, String(v)); }catch(e){} }
+
+  /* ── 日付（4時境界） ───────────────────────────────────── */
+  function dayKeyOf(d){
+    var t = new Date(d.getTime() - DAY_START_HOUR*3600*1000);
+    var m = t.getMonth()+1, day = t.getDate();
+    return t.getFullYear() + '-' + (m<10?'0':'') + m + '-' + (day<10?'0':'') + day;
+  }
+  function hhmm(ms){
+    var d = new Date(ms), h = d.getHours(), m = d.getMinutes();
+    return (h<10?'0':'')+h + ':' + (m<10?'0':'')+m;
+  }
+
+  /* ── IndexedDB（クリップ本体を持つ） ──────────────────── */
+  var db = null;
+  function openDB(){
+    return new Promise(function(res, rej){
+      var req = indexedDB.open('itsutsu-web', 1);
+      req.onupgradeneeded = function(e){
+        var d = e.target.result;
+        if(!d.objectStoreNames.contains('clips')){
+          var s = d.createObjectStore('clips', {keyPath:'id'});
+          s.createIndex('dayKey','dayKey',{unique:false});
+        }
+        if(!d.objectStoreNames.contains('days')) d.createObjectStore('days', {keyPath:'dayKey'});
+      };
+      req.onsuccess = function(){ res(req.result); };
+      req.onerror = function(){ rej(req.error); };
+    });
+  }
+  function tx(store, mode){ return db.transaction(store, mode).objectStore(store); }
+  function reqP(r){ return new Promise(function(res,rej){ r.onsuccess=function(){res(r.result);}; r.onerror=function(){rej(r.error);}; }); }
+  function putClip(c){ return reqP(tx('clips','readwrite').put(c)); }
+  function delClip(id){ return reqP(tx('clips','readwrite').delete(id)); }
+  function allClips(){ return reqP(tx('clips','readonly').getAll()); }
+  function getDay(k){ return reqP(tx('days','readonly').get(k)); }
+  function putDay(o){ return reqP(tx('days','readwrite').put(o)); }
+
+  /* ── 表示 ──────────────────────────────────────────────── */
+  function show(route){
+    state.route = route;
+    ['uiCamera','uiClip','uiDay','uiManage','uiExport','uiPerm'].forEach(function(id){
+      $(id).hidden = (id !== 'ui' + route.charAt(0).toUpperCase() + route.slice(1));
+    });
+    if(route !== 'day'){ var dv=$('dayVideo'); dv.pause(); }
+    if(route !== 'clip'){ var cv=$('clipVideo'); cv.pause(); }
+  }
+  var toastTimer=null;
+  function toast(msg){
+    var t=$('toast'); t.textContent=msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer=setTimeout(function(){ t.classList.remove('show'); }, 3200);
+  }
+
+  function renderSlots(){
+    var el=$('slots'), total=state.maxClips, filled=state.clips.length;
+    el.className = 'slots' + (total<=5 ? '' : (total<=10 ? ' n10' : ' n20'));
+    var perRow = total<=10 ? total : 10, html='', i=0;
+    while(i < total){
+      html += '<div class="dotrow">';
+      for(var j=0; j<perRow && i<total; j++, i++) html += '<div class="dot'+(i<filled?' on':'')+'"></div>';
+      html += '</div>';
+    }
+    el.innerHTML = html;
+    $('btnSee').hidden = !(state.clips.length>0 || (state.rescue && state.rescue.clips.length>0)) || state.recording;
+  }
+
+  /* ── カメラ ────────────────────────────────────────────── */
+  var stream=null, recorder=null;
+
+  function pickMime(){
+    var list = [
+      'video/mp4;codecs="avc1.42E01E,mp4a.40.2"','video/mp4',
+      'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'
+    ];
+    if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    for(var i=0;i<list.length;i++) if(MediaRecorder.isTypeSupported(list[i])) return list[i];
+    return '';
+  }
+  var MIME = '';
+  function ext(){ return (MIME.indexOf('mp4')>=0) ? 'mp4' : 'webm'; }
+
+  function stopStream(){
+    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream=null; }
+  }
+
+  async function startCamera(){
+    if(location.search.indexOf('fake=1') >= 0){ stream = fakeStream(); attach(); return true; }
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      permScreen('このブラウザではカメラを使えません'); return false;
+    }
+    stopStream();
+    var base = {facingMode:{ideal:state.facing}, width:{ideal:1080}, height:{ideal:1920}};
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({audio:true, video:base});
+    }catch(e){
+      try{ // マイク拒否でも無音で撮り続ける
+        stream = await navigator.mediaDevices.getUserMedia({audio:false, video:base});
+      }catch(e2){
+        permScreen(e2 && e2.name === 'NotAllowedError'
+          ? 'カメラを使えるようにしてください'
+          : 'カメラを開けませんでした'); return false;
+      }
+    }
+    attach(); return true;
+
+    function attach(){
+      cam.srcObject = stream;
+      cam.classList.toggle('mirror', state.facing === 'user');
+      var p = cam.play(); if(p && p.catch) p.catch(function(){});
+    }
+  }
+  function permScreen(msg){ $('permText').textContent = msg; show('perm'); }
+
+  /* 検証用のダミー映像（?fake=1）。カメラ権限なしで録画〜書き出しを通せる。 */
+  function fakeStream(){
+    var c = document.createElement('canvas'); c.width=720; c.height=1280;
+    var g = c.getContext('2d'), t0 = Date.now();
+    (function loop(){
+      var t = (Date.now()-t0)/1000;
+      g.fillStyle = 'hsl(' + ((t*40)%360) + ',45%,52%)'; g.fillRect(0,0,c.width,c.height);
+      g.fillStyle = 'rgba(255,255,255,.9)'; g.font='64px sans-serif'; g.textAlign='center';
+      g.fillText(t.toFixed(1)+'s', c.width/2, c.height/2);
+      g.beginPath(); g.arc(c.width/2 + Math.sin(t*2)*220, c.height*0.75, 60, 0, 7); g.fill();
+      requestAnimationFrame(loop);
+    })();
+    return c.captureStream(30);
+  }
+
+  /* ── 撮影（1タップ＝2秒固定） ──────────────────────────── */
+  async function tapRecord(){
+    if(state.recording || state.busy) return;
+    if(state.clips.length >= state.maxClips){ openDay(); return; }   // 撮り切ったら今日を見る
+    if(!stream){ var ok = await startCamera(); if(!ok) return; }
+    if(!MIME){ toast('この端末では録画できません'); return; }
+
+    var btn=$('btnRec'), chunks=[], started=Date.now();
+    try{
+      recorder = new MediaRecorder(stream, {mimeType:MIME, videoBitsPerSecond:6000000});
+    }catch(e){
+      try{ recorder = new MediaRecorder(stream); }catch(e2){ toast('この端末では録画できません'); return; }
+    }
+    state.recording = true; renderSlots();
+    btn.classList.remove('recording'); void btn.offsetWidth; btn.classList.add('recording');
+    vibrate(8);
+
+    recorder.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = function(){
+      state.recording = false;
+      btn.classList.remove('recording');
+      var elapsed = (Date.now()-started)/1000;
+      var blob = new Blob(chunks, {type: MIME || 'video/webm'});
+      // 失敗（短すぎ/空）は回数を消費しない
+      if(!blob.size || elapsed < MIN_SEC){ renderSlots(); toast('撮れませんでした'); return; }
+      state.pending = {blob:blob, url:URL.createObjectURL(blob), capturedAt:Date.now(), duration:Math.min(elapsed, CLIP_SEC)};
+      var v=$('clipVideo'); v.src = state.pending.url; v.muted = false; v.currentTime = 0;
+      show('clip'); var p=v.play(); if(p&&p.catch) p.catch(function(){ v.muted=true; v.play(); });
+      renderSlots();
+    };
+    recorder.start();
+    setTimeout(function(){ try{ if(recorder && recorder.state !== 'inactive') recorder.stop(); }catch(e){} }, CLIP_SEC*1000);
+  }
+
+  function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+
+  async function keepPending(){
+    if(!state.pending) return;
+    var p = state.pending;
+    var clip = {id: p.capturedAt + '-' + Math.random().toString(36).slice(2,8),
+                dayKey: state.dayKey, capturedAt: p.capturedAt, blob: p.blob};
+    try{ await putClip(clip); }
+    catch(e){ toast('保存できませんでした'); return; }   // 保存できていなければスロットを埋めない
+    clip.url = p.url;
+    state.clips.push(clip);
+    state.clips.sort(function(a,b){ return a.capturedAt - b.capturedAt; });
+    state.pending = null;
+    vibrate(12);
+    show('camera'); renderSlots();
+  }
+  function retakePending(){
+    if(state.pending){ URL.revokeObjectURL(state.pending.url); state.pending = null; }
+    show('camera'); renderSlots();
+  }
+
+  /* ── 今日のプレビュー（撮った分を順に流す） ───────────── */
+  var dayList = [], dayIdx = 0, dayIsRescue = false;
+
+  function openDay(){
+    dayIsRescue = (state.clips.length === 0 && state.rescue && state.rescue.clips.length > 0);
+    dayList = dayIsRescue ? state.rescue.clips.slice() : state.clips.slice();
+    if(!dayList.length) return;
+    $('btnDiscard').hidden = !dayIsRescue;
+    $('uiDay').classList.toggle('framed', state.framed);
+    $('dayBg').style.background = state.framed ? 'var(--paper)' : 'var(--veil)';
+    $('btnSave').classList.toggle('done', !dayIsRescue && !!state.exportedAt);
+    $('dayClock').classList.toggle('rot', state.clockRotated);
+    show('day');
+    dayIdx = 0; playDayFrom(0);
+  }
+  function playDayFrom(i){
+    var v = $('dayVideo'), c = dayList[i];
+    if(!c) return;
+    dayIdx = i;
+    $('dayClock').textContent = hhmm(c.capturedAt);
+    v.src = c.url; v.muted = false; v.currentTime = 0;
+    var p = v.play(); if(p && p.catch) p.catch(function(){ v.muted = true; v.play().catch(function(){}); });
+  }
+  $('dayVideo').addEventListener('ended', function(){
+    if(state.route !== 'day') return;
+    playDayFrom((dayIdx + 1) % dayList.length);   // ぐるぐる回る
+  });
+  $('dayVideo').addEventListener('timeupdate', function(){
+    if(state.route === 'day' && this.currentTime > CLIP_SEC + 0.05) this.currentTime = 0.0001, playDayFrom((dayIdx+1)%dayList.length);
+  });
+
+  /* ── めくって削除 ─────────────────────────────────────── */
+  function openManage(){
+    var strip = $('strip'); strip.innerHTML = '';
+    dayList.forEach(function(c){
+      var card = document.createElement('div'); card.className = 'card';
+      var v = document.createElement('video');
+      v.src = c.url; v.muted = true; v.playsInline = true; v.preload = 'metadata';
+      v.setAttribute('playsinline',''); v.setAttribute('muted','');
+      card.appendChild(v);
+      var t = document.createElement('div'); t.className='t'; t.textContent = hhmm(c.capturedAt); card.appendChild(t);
+      var b = document.createElement('button'); b.className='del'; b.setAttribute('aria-label','消す');
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>';
+      b.addEventListener('click', function(){ removeClip(c); });
+      card.appendChild(b);
+      card.addEventListener('click', function(){ v.currentTime = 0; v.play().catch(function(){}); });
+      strip.appendChild(card);
+    });
+    show('manage');
+  }
+  async function removeClip(c){
+    try{ await delClip(c.id); }catch(e){}
+    var pool = dayIsRescue ? state.rescue.clips : state.clips;
+    var i = pool.indexOf(c); if(i>=0) pool.splice(i,1);
+    var j = dayList.indexOf(c); if(j>=0) dayList.splice(j,1);
+    URL.revokeObjectURL(c.url);
+    renderSlots();
+    if(!dayList.length){ show('camera'); return; }
+    openManage();
+  }
+
+  /* ── 書き出し（canvasで連結＋時刻の焼き込み） ─────────── */
+  function roundRectPath(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    if(ctx.roundRect){ ctx.roundRect(x,y,w,h,r); return; }
+    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+  }
+  function drawFrame(ctx, v, timeText){
+    var W=OUT_W, H=OUT_H;
+    ctx.save();
+    if(state.framed){
+      ctx.fillStyle = '#F4F2EE'; ctx.fillRect(0,0,W,H);
+      var w=W*0.9, h=H*0.9, x=(W-w)/2, y=(H-h)/2;
+      roundRectPath(ctx,x,y,w,h,w*0.02); ctx.clip();
+      fillVideo(ctx, v, x, y, w, h);
+    }else{
+      ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+      fillVideo(ctx, v, 0, 0, W, H);
+    }
+    ctx.restore();
+
+    // 撮影時刻（HH:mm）。ハードカットで、そのカットの間だけ出る。
+    var scale = state.framed ? 0.9 : 1.0;
+    ctx.save();
+    ctx.translate(W/2, H/2);
+    if(state.clockRotated) ctx.rotate(Math.PI/2);
+    ctx.font = '400 ' + Math.round(112*scale) + 'px "Hiragino Maru Gothic ProN","Zen Maru Gothic",-apple-system,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.shadowColor='rgba(0,0,0,.28)'; ctx.shadowBlur=10; ctx.shadowOffsetY=2;
+    ctx.fillStyle='rgba(255,255,255,.84)';
+    ctx.fillText(timeText, 0, 0);
+    ctx.restore();
+  }
+  function fillVideo(ctx, v, x, y, w, h){
+    var vw=v.videoWidth, vh=v.videoHeight;
+    if(!vw || !vh) return;
+    var s = Math.max(w/vw, h/vh), dw = vw*s, dh = vh*s;
+    ctx.drawImage(v, x + (w-dw)/2, y + (h-dh)/2, dw, dh);
+  }
+
+  /* 待ちが返ってこない環境でも先へ進むための保険。 */
+  function withTimeout(p, ms){
+    return new Promise(function(res){
+      var done=false;
+      var t=setTimeout(function(){ if(!done){ done=true; res(null); } }, ms);
+      Promise.resolve(p).then(function(v){ if(!done){ done=true; clearTimeout(t); res(v); } },
+                              function(){ if(!done){ done=true; clearTimeout(t); res(null); } });
+    });
+  }
+
+  function renderDots(p){
+    var el=$('expDots'), html='';
+    for(var i=0;i<5;i++) html += '<div class="dot'+(((i+1)/5) <= p + 0.001 ? ' on':'')+'"></div>';
+    el.innerHTML = html;
+  }
+
+  async function exportAndSave(){
+    if(state.busy) return;
+    if(!dayList.length) return;
+    if(!MIME){ toast('この端末では書き出せません'); return; }
+    state.busy = true;
+    $('expFrame').classList.remove('saved'); renderDots(0); show('export');
+
+    var clips = dayList.slice().sort(function(a,b){ return a.capturedAt-b.capturedAt; });
+    var canvas = $('canvas'); canvas.width = OUT_W; canvas.height = OUT_H;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,OUT_W,OUT_H);
+
+    var ac=null, dest=null;
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(AC){
+        ac = new AC();
+        // resume() はユーザー操作が無いと解決しないことがある。待ちきらずに先へ進む（音なしで書き出す）。
+        if(ac.state === 'suspended') await withTimeout(ac.resume(), 1200);
+        dest = ac.createMediaStreamDestination();
+      }
+    }catch(e){ ac = null; }
+
+    // 素材の <video> を用意し、ユーザー操作の流れの中で1度 play/pause して再生を解錠する（iOS対策）
+    var vids = clips.map(function(c){
+      var v = document.createElement('video');
+      v.src = c.url; v.playsInline = true; v.setAttribute('playsinline',''); v.preload='auto';
+      v.className='hidden'; document.body.appendChild(v);
+      return v;
+    });
+    for(var i=0;i<vids.length;i++){
+      try{ await withTimeout(vids[i].play(), 1500); vids[i].pause(); vids[i].currentTime = 0; }catch(e){}
+      if(ac && dest){ try{ ac.createMediaElementSource(vids[i]).connect(dest); }catch(e){} }
+    }
+
+    var out = canvas.captureStream(OUT_FPS);
+    if(dest) dest.stream.getAudioTracks().forEach(function(t){ out.addTrack(t); });
+
+    var chunks=[], rec;
+    try{ rec = new MediaRecorder(out, {mimeType:MIME, videoBitsPerSecond:8000000}); }
+    catch(e){ rec = new MediaRecorder(out); }
+    var done = new Promise(function(res){ rec.onstop = res; });
+    rec.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+    rec.start();
+
+    // 描画は setInterval で回す（rAF は画面が隠れると止まり、1コマも録れないため）。
+    var current = 0;
+    var drawTimer = setInterval(function(){
+      var v = vids[current];
+      if(v && v.videoWidth) drawFrame(ctx, v, hhmm(clips[current].capturedAt));
+    }, Math.round(1000/OUT_FPS));
+
+    for(var k=0;k<vids.length;k++){
+      current = k;
+      await playOnce(vids[k], k, vids.length);
+    }
+    clearInterval(drawTimer);
+    try{ rec.stop(); }catch(e){}
+    await done;
+
+    vids.forEach(function(v){ try{ v.pause(); v.remove(); }catch(e){} });
+    if(ac){ try{ ac.close(); }catch(e){} }
+    renderDots(1);
+
+    var blob = new Blob(chunks, {type: MIME});
+    // 空＝1コマも録れていない（書き出し中に画面が隠れた等）。保存済みにせず、素材も残したまま戻る。
+    if(blob.size < 1024){
+      state.busy = false; show('day');
+      toast('書き出せませんでした。画面を開いたままもう一度お試しください');
+      return;
+    }
+    var name = 'itsutsu-' + (dayIsRescue ? state.rescue.dayKey : state.dayKey) + '.' + ext();
+    var saved = await handOff(blob, name);
+
+    if(saved){
+      $('expFrame').classList.add('saved'); vibrate(16);
+      if(dayIsRescue){
+        for(var m=0;m<state.rescue.clips.length;m++){ try{ await delClip(state.rescue.clips[m].id); }catch(e){} }
+        state.rescue = null;
+      }else{
+        state.exportedAt = Date.now();
+        try{ await putDay({dayKey: state.dayKey, exportedAt: state.exportedAt}); }catch(e){}
+      }
+      setTimeout(function(){ state.busy=false; show('camera'); renderSlots(); }, 900);
+    }else{
+      state.busy = false; show('day');
+    }
+
+    function playOnce(v, idx, total){
+      return new Promise(function(res){
+        var finished = false;
+        function finish(){ if(finished) return; finished = true; try{ v.pause(); }catch(e){} clearInterval(iv); res(); }
+        var iv = setInterval(function(){
+          renderDots((idx + Math.min(v.currentTime/CLIP_SEC, 1)) / total);
+          if(v.currentTime >= CLIP_SEC - 0.02 || v.ended) finish();
+        }, 40);
+        v.addEventListener('ended', finish, {once:true});
+        try{ v.currentTime = 0; }catch(e){}
+        var p = v.play();
+        if(p && p.catch) p.catch(function(){ setTimeout(finish, CLIP_SEC*1000); });
+        setTimeout(finish, CLIP_SEC*1000 + 1500);   // 保険（再生が始まらない端末）
+      });
+    }
+  }
+
+  /* 完成した動画をユーザーへ渡す。共有シート→「ビデオを保存」で写真アプリへ入る。 */
+  async function handOff(blob, name){
+    var file = null;
+    try{ file = new File([blob], name, {type: blob.type}); }catch(e){}
+    if(file && navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file]}); return true; }
+      catch(e){ if(e && e.name === 'AbortError') return false; }
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+    toast('ダウンロードしました。写真に残すときは動画を開いて共有から保存してください');
+    return true;
+  }
+
+  /* ── 起動 ──────────────────────────────────────────────── */
+  async function boot(){
+    MIME = pickMime();
+    state.dayKey = dayKeyOf(new Date());
+    try{ db = await openDB(); }catch(e){ db = null; }
+
+    if(db){
+      var all = [];
+      try{ all = await allClips(); }catch(e){ all = []; }
+      all.sort(function(a,b){ return a.capturedAt-b.capturedAt; });
+      var byDay = {};
+      all.forEach(function(c){ (byDay[c.dayKey] = byDay[c.dayKey] || []).push(c); });
+
+      // 今日
+      state.clips = (byDay[state.dayKey] || []).map(withURL);
+      var d = null; try{ d = await getDay(state.dayKey); }catch(e){}
+      state.exportedAt = d ? d.exportedAt : null;
+
+      // 前日以前の未保存分＝持ち越し（一番新しい1日だけ救済し、それより古い日は片付ける）
+      var others = Object.keys(byDay).filter(function(k){ return k !== state.dayKey; }).sort();
+      var rescueKey = others.length ? others[others.length-1] : null;
+      for(var i=0;i<others.length;i++){
+        var k = others[i];
+        var day = null; try{ day = await getDay(k); }catch(e){}
+        if(k === rescueKey && !(day && day.exportedAt)){
+          state.rescue = {dayKey:k, clips: byDay[k].map(withURL)};
+        }else{
+          for(var j=0;j<byDay[k].length;j++){ try{ await delClip(byDay[k][j].id); }catch(e){} }
+        }
+      }
+    }
+
+    renderSlots();
+    show('camera');
+    var ok = await startCamera();
+    if(ok && state.rescue) toast('昨日の分が残っています（左下の▶から保存か削除を）');
+
+    function withURL(c){ c.url = URL.createObjectURL(c.blob); return c; }
+  }
+
+  /* ── 操作 ──────────────────────────────────────────────── */
+  $('btnRec').addEventListener('click', tapRecord);
+  $('btnSwitch').addEventListener('click', async function(){
+    if(state.recording) return;                       // 録画中の切替は防ぐ
+    state.facing = (state.facing === 'user') ? 'environment' : 'user';
+    savePref('facing', state.facing);
+    await startCamera();
+  });
+  $('slots').addEventListener('click', function(){
+    if(state.clips.length > 0) return;                // 1本目を撮ったらその日は固定
+    var i = COUNT_OPTIONS.indexOf(state.maxClips);
+    state.maxClips = COUNT_OPTIONS[(i+1) % COUNT_OPTIONS.length];
+    savePref('maxClips', state.maxClips);
+    renderSlots();
+  });
+  $('btnSee').addEventListener('click', openDay);
+  $('btnKeep').addEventListener('click', keepPending);
+  $('btnRetake').addEventListener('click', retakePending);
+  $('btnDayBack').addEventListener('click', function(){ show('camera'); renderSlots(); });
+  $('btnManage').addEventListener('click', openManage);
+  $('btnManageBack').addEventListener('click', function(){ openDay(); });
+  $('btnSave').addEventListener('click', exportAndSave);
+  $('btnDiscard').addEventListener('click', async function(){
+    if(!state.rescue) return;
+    for(var i=0;i<state.rescue.clips.length;i++){ try{ await delClip(state.rescue.clips[i].id); }catch(e){} }
+    state.rescue = null; show('camera'); renderSlots();
+  });
+  $('dayTap').addEventListener('click', function(){
+    state.framed = !state.framed; savePref('framed', state.framed);
+    $('uiDay').classList.toggle('framed', state.framed);
+    $('dayBg').style.background = state.framed ? 'var(--paper)' : 'var(--veil)';
+  });
+  $('dayClock').addEventListener('click', function(e){
+    e.stopPropagation();
+    state.clockRotated = !state.clockRotated; savePref('clockRotated', state.clockRotated);
+    $('dayClock').classList.toggle('rot', state.clockRotated);
+  });
+  $('btnPerm').addEventListener('click', async function(){
+    var ok = await startCamera(); if(ok){ show('camera'); renderSlots(); }
+  });
+
+  // 背面へ回ったらカメラを止め、戻ったら開き直す（日付が変わっていたら今日を作り直す）
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){ if(!state.busy) stopStream(); }
+    else if(state.route === 'camera'){
+      var k = dayKeyOf(new Date());
+      if(k !== state.dayKey){ location.reload(); return; }
+      if(!stream) startCamera();
+    }
+  });
+
+  // ピンチでズーム（対応端末のみ）
+  var pinchBase = null;
+  stage.addEventListener('touchstart', function(e){ if(e.touches.length === 2) pinchBase = null; }, {passive:true});
+  stage.addEventListener('touchmove', function(e){
+    if(e.touches.length !== 2 || !stream) return;
+    var t = stream.getVideoTracks()[0]; if(!t || !t.getCapabilities) return;
+    var caps = t.getCapabilities(); if(!caps || !caps.zoom) return;
+    var d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    if(pinchBase === null){ pinchBase = {d:d, z:(t.getSettings().zoom || caps.zoom.min)}; return; }
+    var z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, pinchBase.z * (d/pinchBase.d)));
+    try{ t.applyConstraints({advanced:[{zoom:z}]}); }catch(err){}
+  }, {passive:true});
+
+  // 検証用の覗き窓（動作には影響しない）
+  window.__itsutsu = {state:state, drawFrame:drawFrame, dayKeyOf:dayKeyOf, hhmm:hhmm};
+
+  boot();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
