@@ -119,16 +119,13 @@
   /* まる型のアイコンボタン（撮る順・鏡・撮りなおす・保存） */
   .ib{
     -webkit-appearance:none; appearance:none; cursor:pointer;
-    min-width:52px; height:56px; padding:0 9px; border-radius:19px;
-    background:var(--panel); border:1px solid var(--line); color:var(--dim);
-    display:flex; align-items:center; justify-content:center; gap:3px;
-    transition:transform .12s ease, color .15s ease, background .15s ease, border-color .15s ease;
+    width:58px; height:58px; border-radius:50%; padding:0;
+    background:var(--panel); border:1px solid var(--line); color:var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .16s ease;
   }
-  .ib:active{transform:scale(.94);}
-  .ib[aria-pressed="true"]{background:var(--panel2); border-color:#4a453d; color:var(--ink);}
-  .ib svg{width:25px; height:25px;}
-  .ib .ar{width:10px; height:23px; opacity:.6;}
-  .ib .ar svg{width:10px; height:23px; stroke-width:2;}
+  .ib:active{transform:scale(.92) rotate(-180deg);}
+  .ib svg{width:26px; height:26px;}
 
   .rd{
     -webkit-appearance:none; appearance:none; cursor:pointer;
@@ -162,7 +159,7 @@
   @media (max-height:520px){
     .shutter{width:60px; height:60px;} .shutter::after{width:46px; height:46px;}
     .rd{width:54px; height:54px;} .rd.go{width:62px; height:62px;}
-    .ib{height:48px; min-width:48px;} .big{width:74px; height:74px;}
+    .ib{width:50px; height:50px;} .big{width:74px; height:74px;}
   }
 </style>
 </head>
@@ -176,7 +173,12 @@
   <g id="i-x"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></g>
   <g id="i-save"><path d="M12 15.2V3.6"/><path d="M8.2 7.2L12 3.4l3.8 3.8"/><path d="M5.4 12.6v6.2a1.6 1.6 0 0 0 1.6 1.6h10a1.6 1.6 0 0 0 1.6-1.6v-6.2"/></g>
   <g id="i-ok"><path d="M5 12.6l4.6 4.6L19 7.4"/></g>
-  <g id="i-ar"><path d="M3.5 5.5l4.5 6.5-4.5 6.5"/></g>
+  <g id="i-swap">
+    <path d="M4.48 9.26A8 8 0 0 1 19.52 9.26"/>
+    <path d="M20.55 12.08L17.73 9.91L21.31 8.61Z" fill="currentColor" stroke-width="1.1"/>
+    <path d="M19.52 14.74A8 8 0 0 1 4.48 14.74"/>
+    <path d="M3.45 11.92L6.27 14.09L2.69 15.39Z" fill="currentColor" stroke-width="1.1"/>
+  </g>
 </defs></svg>
 
 <div class="app">
@@ -210,10 +212,8 @@
     <div class="row" id="dockShoot">
       <span class="spacer"></span>
       <button class="shutter" id="shot" aria-label="撮る" disabled></button>
-      <button class="ib" id="orderBtn" aria-label="外と内をいれかえる">
-        <svg viewBox="0 0 24 24" id="oA"><use href="#i-out"></use></svg>
-        <span class="ar"><svg viewBox="0 0 12 24"><use href="#i-ar"></use></svg></span>
-        <svg viewBox="0 0 24 24" id="oB"><use href="#i-in"></use></svg>
+      <button class="ib" id="orderBtn" aria-label="外と内をきりかえる">
+        <svg viewBox="0 0 24 24"><use href="#i-swap"></use></svg>
       </button>
     </div>
 
@@ -562,13 +562,12 @@ function fit(){
   frame.style.setProperty('--fitw', Math.max(80, Math.floor(h*aw/ah))+'px');
 }
 
-function drawOrder(){
-  $('#oA').querySelector('use').setAttribute('href', state.first==='back' ? '#i-out' : '#i-in');
-  $('#oB').querySelector('use').setAttribute('href', state.first==='back' ? '#i-in'  : '#i-out');
-}
+/* 押すと、いま映すカメラを外／内で入れかえる。
+   （そのまま「先に撮るほう」になる。どちら側かはプレビューを見れば分かるので、
+     ボタン自体に印は出さない） */
 $('#orderBtn').addEventListener('click', async () => {
   state.first = state.first==='back' ? 'front' : 'back';
-  drawOrder(); persist();
+  persist();
   if(!shots && stream && !busy){ try{ await open(state.first); }catch(e){ fail(e); } }
 });
 $('#again').addEventListener('click', again);
@@ -609,7 +608,6 @@ function toast(m){ show(m); }
 /* ---------- はじめの表示 ---------- */
 applyAspect();
 [...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c.dataset.ar===state.aspect)));
-drawOrder();
 
 if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
   veilMsg.textContent = 'このブラウザではカメラを使えません';
