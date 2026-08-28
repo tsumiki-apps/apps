@@ -419,25 +419,63 @@
       permScreen('このブラウザではカメラを使えません'); return false;
     }
     stopStream();
-    var base = {facingMode:{ideal:state.facing}, width:{ideal:1080}, height:{ideal:1920}};
-    try{
-      stream = await navigator.mediaDevices.getUserMedia({audio:true, video:base});
-    }catch(e){
-      try{ // マイク拒否でも無音で撮り続ける
-        stream = await navigator.mediaDevices.getUserMedia({audio:false, video:base});
-      }catch(e2){
-        permScreen(e2 && e2.name === 'NotAllowedError'
-          ? 'カメラを使えるようにしてください'
-          : 'カメラを開けませんでした'); return false;
-      }
+
+    // 内カメラは「一番広角」で受け取る。
+    //   縦9:16(1080x1920)を要求すると iOS Safari はセンサーの端を切って作るので、
+    //   標準のカメラアプリより画角が狭く＝寄って見える。だから内カメラでは
+    //   縦横比を指定せず、端末が出す一番広い画をそのまま受け取り、9:16へは
+    //   こちらの表示と書き出しで切る（resizeMode:none＝ブラウザに切らせない）。
+    // 外カメラは今まで通り（広角レンズ始まりで寄って見えないため変えない）。
+    var front = (state.facing === 'user');
+    var candidates = front
+      ? [ {facingMode:{ideal:'user'}, width:{ideal:1920}, resizeMode:{ideal:'none'}},
+          {facingMode:{ideal:'user'}, resizeMode:{ideal:'none'}},
+          {facingMode:{ideal:'user'}} ]
+      : [ {facingMode:{ideal:'environment'}, width:{ideal:1080}, height:{ideal:1920}},
+          {facingMode:{ideal:'environment'}} ];
+
+    stream = await tryGet(candidates, true);
+    if(!stream) stream = await tryGet(candidates, false);   // マイク拒否でも無音で撮り続ける
+    if(!stream){
+      permScreen(lastError && lastError.name === 'NotAllowedError'
+        ? 'カメラを使えるようにしてください'
+        : 'カメラを開けませんでした'); return false;
     }
+    if(front) await widestZoom(stream);
     attach(); return true;
 
     function attach(){
       cam.srcObject = stream;
       cam.classList.toggle('mirror', state.facing === 'user');
       var p = cam.play(); if(p && p.catch) p.catch(function(){});
+      try{
+        var t0 = stream.getVideoTracks()[0];
+        camInfo = t0 && t0.getSettings ? t0.getSettings() : null;   // 実際に何で開けたか（確認用）
+      }catch(e){ camInfo = null; }
     }
+  }
+
+  /* 候補を順に試し、最初に開けたものを返す（開けなければ null）。 */
+  var lastError = null, camInfo = null;
+  async function tryGet(candidates, withAudio){
+    for(var i=0;i<candidates.length;i++){
+      try{ return await navigator.mediaDevices.getUserMedia({audio:withAudio, video:candidates[i]}); }
+      catch(e){ lastError = e; }
+    }
+    return null;
+  }
+
+  /* ズームを持つ端末（Android等）では一番広い倍率に戻す。内カメラだけに効かせる
+     （外カメラで最小にすると超広角へ飛んでしまう端末があるため）。 */
+  async function widestZoom(s){
+    try{
+      var t = s.getVideoTracks()[0];
+      if(!t || !t.getCapabilities) return;
+      var caps = t.getCapabilities();
+      if(caps && caps.zoom && typeof caps.zoom.min === 'number'){
+        await t.applyConstraints({advanced:[{zoom: caps.zoom.min}]});
+      }
+    }catch(e){}
   }
   function permScreen(msg){ $('permText').textContent = msg; show('perm'); }
 
@@ -856,7 +894,8 @@
   }, {passive:true});
 
   // 検証用の覗き窓（動作には影響しない）
-  window.__itsutsu = {state:state, drawFrame:drawFrame, dayKeyOf:dayKeyOf, hhmm:hhmm};
+  window.__itsutsu = {state:state, drawFrame:drawFrame, dayKeyOf:dayKeyOf, hhmm:hhmm,
+                      cam:function(){ return camInfo; }};
 
   boot();
 })();
