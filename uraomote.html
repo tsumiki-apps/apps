@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-uraomote.png">
+<meta name="apple-mobile-web-app-title" content="うらおもて">
+<title>うらおもて — 外と内をいっぺんに</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#111110; --panel:#1c1b19; --panel2:#26241f;
+    --ink:#F4F2EE; --sub:#9b968c; --line:#332f2a; --ghost:#5d574f;
+    --accent:#F4F2EE;
+    --stage:min(560px, 100%);
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.7;
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+    overflow:hidden;
+  }
+  .app{
+    height:100dvh; display:flex; flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  /* ---------- ヘッダー ---------- */
+  .bar{
+    flex:0 0 auto; display:flex; align-items:center; gap:10px;
+    padding:12px 16px 8px; width:100%; max-width:var(--stage); margin:0 auto;
+  }
+  .bar .name{font-size:15px; font-weight:700; letter-spacing:.04em;}
+  .bar .why{font-size:11px; color:var(--sub); letter-spacing:.02em;}
+  .chips{margin-left:auto; display:flex; gap:6px;}
+  .chip{
+    -webkit-appearance:none; appearance:none; font-family:inherit; cursor:pointer;
+    min-height:44px; min-width:44px; padding:0 13px; border-radius:999px; line-height:1;
+    background:transparent; border:1px solid var(--line); color:var(--sub);
+    font-size:12px; font-weight:500; letter-spacing:.02em;
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .chip[aria-pressed="true"]{background:var(--panel2); border-color:var(--ghost); color:var(--ink);}
+  .chip:active{transform:scale(.95);}
+
+  /* ---------- 舞台（プレビュー） ---------- */
+  .stage{
+    flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center;
+    padding:6px 16px; width:100%; max-width:var(--stage); margin:0 auto;
+  }
+  .frame{
+    position:relative; aspect-ratio:var(--ar, 3/4);
+    width:min(100%, var(--fitw, 100%));
+    background:#000; border-radius:18px; overflow:hidden;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);
+  }
+  .frame video, .frame canvas{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; display:block;
+  }
+  .frame canvas{object-fit:contain; background:#000; touch-action:none;}
+  #v.mir{transform:scaleX(-1);}
+  .flash{
+    position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none;
+    transition:opacity .09s ease;
+  }
+  .flash.on{opacity:.85; transition:none;}
+  .badge{
+    position:absolute; top:10px; left:10px; z-index:3;
+    font-size:11px; font-weight:500; letter-spacing:.06em;
+    background:rgba(0,0,0,.55); color:#fff; border-radius:999px; padding:4px 11px;
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  }
+
+  /* 起動前・エラーの覆い */
+  .veil{
+    position:absolute; inset:0; z-index:5; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px; text-align:center;
+    padding:28px 22px; background:var(--panel);
+  }
+  .veil p{font-size:13px; color:var(--sub); line-height:1.85; max-width:34em;}
+  .veil .em{font-size:34px;}
+  .veil.hidden{display:none;}
+
+  /* ---------- 操作 ---------- */
+  .dock{
+    flex:0 0 auto; width:100%; max-width:var(--stage); margin:0 auto;
+    padding:10px 16px calc(14px + env(safe-area-inset-bottom));
+  }
+  .row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .shutter{
+    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
+    width:74px; height:74px; flex:0 0 auto; border-radius:50%;
+    background:transparent; border:3px solid var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .12s ease, opacity .15s ease;
+  }
+  .shutter::after{content:""; width:58px; height:58px; border-radius:50%; background:var(--ink);
+    transition:transform .12s ease;}
+  .shutter:active::after{transform:scale(.9);}
+  .shutter[disabled]{opacity:.35; cursor:default;}
+  .side{
+    flex:1 1 0; min-width:0; display:flex; flex-direction:column; gap:6px; align-items:center;
+  }
+  .side.l{align-items:flex-start;} .side.r{align-items:flex-end;}
+  .tgl{
+    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
+    min-height:44px; padding:6px 13px; border-radius:14px; text-align:left;
+    background:var(--panel); border:1px solid var(--line); color:var(--ink);
+    font-size:12px; font-weight:500; line-height:1.35;
+    display:flex; flex-direction:column; gap:1px;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .tgl:active{transform:scale(.97);}
+  .tgl .k{font-size:10px; color:var(--sub); letter-spacing:.08em;}
+  .tgl .v{font-size:13px; font-weight:700;}
+
+  .btns{display:flex; gap:10px; align-items:stretch;}
+  .btn{
+    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
+    flex:1 1 0; min-height:52px; border-radius:16px; padding:10px 14px;
+    font-size:15px; font-weight:700; letter-spacing:.04em; line-height:1.3;
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    border:1px solid var(--line); background:var(--panel); color:var(--ink);
+    transition:transform .12s ease, background .15s ease;
+  }
+  .btn.primary{background:var(--ink); color:#141311; border-color:var(--ink);}
+  .btn:active{transform:scale(.97);}
+  .btn[disabled]{opacity:.4; cursor:default;}
+
+  .hint{
+    text-align:center; font-size:11.5px; color:var(--sub); letter-spacing:.02em;
+    margin-top:10px; line-height:1.65;
+  }
+  .hint b{color:var(--ghost); font-weight:500;}
+  .gap{font-variant-numeric:tabular-nums;}
+
+  .hidden{display:none !important;}
+
+  /* ---------- トースト ---------- */
+  #toast{
+    position:fixed; left:50%; bottom:calc(28px + env(safe-area-inset-bottom));
+    transform:translate(-50%, 14px); z-index:60;
+    background:rgba(20,19,17,.94); color:#fff; border:1px solid var(--line);
+    border-radius:999px; padding:10px 20px; font-size:13px; font-weight:500;
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+    opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+    max-width:calc(100% - 36px); text-align:center;
+  }
+  #toast.on{opacity:1; transform:translate(-50%,0);}
+
+  /* ---------- 広い画面 ---------- */
+  @media (min-width:900px){
+    :root{--stage:min(460px, 100%);}
+    .bar{padding-top:20px;}
+  }
+  /* 横向き・低い画面では舞台を高さ基準に */
+  @media (max-height:520px){
+    .shutter{width:62px; height:62px;} .shutter::after{width:48px; height:48px;}
+    .bar{padding-top:8px; padding-bottom:4px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="bar">
+    <div>
+      <div class="name">うらおもて</div>
+      <div class="why">外と内を、ひと押しで</div>
+    </div>
+    <div class="chips" id="chips">
+      <button class="chip" data-ar="3:4" aria-pressed="true">たて</button>
+      <button class="chip" data-ar="1:1" aria-pressed="false">ましかく</button>
+      <button class="chip" data-ar="9:16" aria-pressed="false">たて長</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="frame" id="frame">
+      <video id="v" playsinline muted autoplay></video>
+      <canvas id="out" class="hidden"></canvas>
+      <div class="flash" id="flash"></div>
+      <div class="badge hidden" id="badge">外カメラ</div>
+
+      <div class="veil" id="veil">
+        <div class="em">📷</div>
+        <p id="veilMsg">外（うしろ）と内（じぶん）を続けて撮って、<br>1枚に重ねます。<br>カメラの使用をゆるしてください。</p>
+        <button class="btn primary" id="startBtn" style="flex:0 0 auto; min-width:200px;">カメラをはじめる</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dock">
+    <!-- 撮影モード -->
+    <div id="dockShoot">
+      <div class="row">
+        <div class="side l">
+          <button class="tgl" id="orderBtn">
+            <span class="k">さいしょに</span><span class="v" id="orderV">外</span>
+          </button>
+        </div>
+        <button class="shutter" id="shot" aria-label="撮る" disabled></button>
+        <div class="side r">
+          <button class="tgl" id="mirrorBtn" style="text-align:right; align-items:flex-end;">
+            <span class="k">内カメ</span><span class="v" id="mirrorV">鏡のまま</span>
+          </button>
+        </div>
+      </div>
+      <div class="hint" id="hintShoot">外を撮ってすぐ内に切りかわります。<b>そのまま持っていてください</b></div>
+    </div>
+
+    <!-- 確認モード -->
+    <div id="dockDone" class="hidden">
+      <div class="btns">
+        <button class="btn" id="again">撮りなおす</button>
+        <button class="btn primary" id="save">写真に保存</button>
+      </div>
+      <div class="hint">小窓は<b>ドラッグで移動</b>／<b>タップで入れかえ</b>　<span class="gap" id="gapTxt"></span></div>
+    </div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   うらおもて — 外カメラと内カメラを続けて撮り、1枚に重ねる。
+
+   ■ なぜ「同時」ではなく「続けて」なのか
+     iOS の Safari は、前と後ろのカメラを同時に開けない（新しく開くと
+     前のカメラの映像が止まる、という昔からの決まり）。
+     そこで「外を撮る → カメラを切りかえる → 内を撮る」を素早く続ける。
+     本家 BeReal も実際には数秒あけた連続撮影なので、やり方は同じ。
+     実際にあいた時間は、撮ったあとに ms（ミリ秒＝1000分の1秒）で表示する。
+
+   ■ 向きのねじれ（EXIF）について
+     ここでは保存ずみの画像ファイルではなく、映っている映像を直接
+     切り取っているので、写真ファイルの向き情報（EXIF）でねじれる問題は起きない。
+   ============================================================ */
+
+const $ = s => document.querySelector(s);
+
+const AR = {'3:4':[3,4], '1:1':[1,1], '9:16':[9,16]};
+const KEY = 'uraomote-v1';
+
+/* カメラを切りかえたあと、明るさが落ち着くのを待つ時間（ミリ秒）。
+   短すぎると内カメが暗いまま写る。 */
+const SETTLE = 170;
+
+const state = {
+  aspect:'3:4',
+  mirror:true,        // 内カメを鏡のまま（プレビューと同じ見た目）にする
+  first:'back',       // さいしょに撮るほう
+  swap:false,         // 大きいほうを内カメにする
+  px:0.0, py:0.0      // 小窓の位置（0〜1）
+};
+try{
+  const s = JSON.parse(localStorage.getItem(KEY) || '{}');
+  ['aspect','mirror','first','px','py'].forEach(k => { if(s[k]!==undefined) state[k]=s[k]; });
+}catch(e){}
+function persist(){
+  try{ localStorage.setItem(KEY, JSON.stringify({
+    aspect:state.aspect, mirror:state.mirror, first:state.first, px:state.px, py:state.py
+  })); }catch(e){}
+}
+
+const video = $('#v'), out = $('#out'), frame = $('#frame');
+const veil = $('#veil'), veilMsg = $('#veilMsg'), startBtn = $('#startBtn');
+const shotBtn = $('#shot'), badge = $('#badge'), flash = $('#flash');
+const dockShoot = $('#dockShoot'), dockDone = $('#dockDone');
+
+let stream = null;      // いま開いているカメラ
+let facing = null;      // 'back' | 'front'
+let shots = null;       // {back:canvas, front:canvas}
+let busy = false;
+let oneCamOnly = false; // カメラが1つしかない端末（パソコンなど）
+
+/* ---------- カメラを開く ---------- */
+function stopStream(){
+  if(stream){ stream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} }); }
+  stream = null;
+}
+
+function constraintsFor(want){
+  const size = {width:{ideal:1920}, height:{ideal:1920}};
+  return want === 'back'
+    ? [ {facingMode:{exact:'environment'}}, {facingMode:'environment'}, {} ]
+        .map(c => ({video:Object.assign({}, size, c), audio:false}))
+    : [ {facingMode:{exact:'user'}}, {facingMode:'user'}, {} ]
+        .map(c => ({video:Object.assign({}, size, c), audio:false}));
+}
+
+async function open(want){
+  stopStream();
+  let last = null;
+  const list = constraintsFor(want);
+  for(let i=0; i<list.length; i++){
+    try{
+      stream = await navigator.mediaDevices.getUserMedia(list[i]);
+      if(i === 2) oneCamOnly = true;   // 向きの指定が通らなかった＝選べるカメラがない
+      facing = want;
+      video.srcObject = stream;
+      video.classList.toggle('mir', want === 'front' && state.mirror);
+      try{ await video.play(); }catch(e){}
+      await ready();
+      return;
+    }catch(e){ last = e; }
+  }
+  throw last || new Error('カメラを開けませんでした');
+}
+
+function ready(){
+  return new Promise(res => {
+    if(video.videoWidth > 0) return res();
+    const t = setInterval(() => {
+      if(video.videoWidth > 0){ clearInterval(t); res(); }
+    }, 30);
+    setTimeout(() => { clearInterval(t); res(); }, 3000);
+  });
+}
+
+/* 新しい映像が1コマ来るのを待つ */
+function nextFrame(){
+  return new Promise(res => {
+    if(video.requestVideoFrameCallback){
+      let done = false;
+      video.requestVideoFrameCallback(() => { if(!done){ done = true; res(); } });
+      setTimeout(() => { if(!done){ done = true; res(); } }, 400);
+    }else{
+      setTimeout(res, 90);
+    }
+  });
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* いま映っている1コマを切り取る */
+function grab(){
+  const w = video.videoWidth, h = video.videoHeight;
+  const c = document.createElement('canvas');
+  c.width = w || 1080; c.height = h || 1440;
+  if(w) c.getContext('2d').drawImage(video, 0, 0, w, h);
+  return c;
+}
+
+/* ---------- 合成 ---------- */
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  if(ctx.roundRect){ ctx.roundRect(x, y, w, h, r); return; }
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y,   x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x,   y+h, r);
+  ctx.arcTo(x,   y+h, x,   y,   r);
+  ctx.arcTo(x,   y,   x+w, y,   r);
+  ctx.closePath();
+}
+
+/* はみ出しを切って枠いっぱいに敷く（object-fit:cover と同じ考え方） */
+function cover(ctx, src, dx, dy, dw, dh, mirror){
+  const sw = src.width, sh = src.height;
+  if(!sw || !sh) return;
+  const s = Math.max(dw/sw, dh/sh);
+  const w = sw*s, h = sh*s;
+  const x = dx + (dw-w)/2, y = dy + (dh-h)/2;
+  ctx.save();
+  if(mirror){
+    const cx = dx + dw/2;
+    ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0);
+  }
+  ctx.drawImage(src, x, y, w, h);
+  ctx.restore();
+}
+
+function pipRect(W, H){
+  const pw = W * 0.30, ph = pw * H / W;
+  const m  = W * 0.035;
+  return {
+    x: m + state.px * Math.max(0, W - pw - m*2),
+    y: m + state.py * Math.max(0, H - ph - m*2),
+    w: pw, h: ph, r: pw * 0.11, m: m
+  };
+}
+
+function render(cv, W){
+  const [aw, ah] = AR[state.aspect];
+  const H = Math.round(W * ah / aw);
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  if(!shots) return;
+
+  const mainK = state.swap ? 'front' : 'back';
+  const subK  = state.swap ? 'back'  : 'front';
+
+  cover(ctx, shots[mainK], 0, 0, W, H, mainK === 'front' && state.mirror);
+
+  const p = pipRect(W, H);
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.5)';
+  ctx.shadowBlur = W * 0.025; ctx.shadowOffsetY = W * 0.007;
+  roundRect(ctx, p.x, p.y, p.w, p.h, p.r);
+  ctx.fillStyle = '#000'; ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  roundRect(ctx, p.x, p.y, p.w, p.h, p.r); ctx.clip();
+  cover(ctx, shots[subK], p.x, p.y, p.w, p.h, subK === 'front' && state.mirror);
+  ctx.restore();
+
+  ctx.save();
+  roundRect(ctx, p.x, p.y, p.w, p.h, p.r);
+  ctx.lineWidth = Math.max(2, W * 0.0038);
+  ctx.strokeStyle = 'rgba(255,255,255,.92)';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function preview(){
+  const w = Math.max(1, Math.round(frame.clientWidth * Math.min(2, window.devicePixelRatio || 1)));
+  render(out, Math.min(1200, w));
+}
+
+/* ---------- 撮る ---------- */
+async function shoot(){
+  if(busy) return;
+  busy = true; shotBtn.disabled = true;
+
+  const a = state.first, b = a === 'back' ? 'front' : 'back';
+  const label = k => k === 'back' ? '外カメラ' : '内カメラ';
+  shots = {};
+
+  try{
+    if(facing !== a){ badge.textContent = label(a); await open(a); await wait(SETTLE); }
+
+    blink();
+    shots[a] = grab();
+    badge.textContent = label(b); badge.classList.remove('hidden');
+
+    const t0 = performance.now();
+    await open(b);
+    await nextFrame();
+    await wait(SETTLE);
+    const gapMs = Math.round(performance.now() - t0);
+    blink();
+    shots[b] = grab();
+
+    badge.classList.add('hidden');
+    $('#gapTxt').textContent = oneCamOnly
+      ? '（カメラが1つの端末です）'
+      : '2枚のあいだ ' + gapMs + 'ms';
+
+    video.classList.add('hidden'); out.classList.remove('hidden');
+    dockShoot.classList.add('hidden'); dockDone.classList.remove('hidden');
+    preview();
+    stopStream();
+  }catch(e){
+    // 切りかえに失敗しても行き止まりにしない。撮影画面へ戻してもう一度おせるようにする。
+    shots = null;
+    badge.classList.add('hidden');
+    toast('カメラを切りかえられませんでした。もう一度おしてください');
+    try{ await open(state.first); }catch(e2){ fail(e2); }
+  }finally{
+    busy = false; shotBtn.disabled = false;
+  }
+}
+
+function blink(){
+  flash.classList.add('on');
+  requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove('on')));
+}
+
+async function again(){
+  shots = null;
+  out.classList.add('hidden'); video.classList.remove('hidden');
+  dockDone.classList.add('hidden'); dockShoot.classList.remove('hidden');
+  try{ await open(state.first); }catch(e){ fail(e); }
+}
+
+/* ---------- 小窓のドラッグ／入れかえ ---------- */
+let drag = null;
+out.addEventListener('pointerdown', e => {
+  if(!shots) return;
+  const r = out.getBoundingClientRect();
+  const [aw, ah] = AR[state.aspect];
+  // canvas は object-fit:contain。実際に絵が出ている矩形を求める
+  const s = Math.min(r.width/aw, r.height/ah);
+  const dw = aw*s, dh = ah*s;
+  const ox = r.left + (r.width-dw)/2, oy = r.top + (r.height-dh)/2;
+  const W = 1000, H = Math.round(W*ah/aw);
+  const p = pipRect(W, H);
+  const x = (e.clientX - ox) / dw * W, y = (e.clientY - oy) / dh * H;
+  if(x < p.x || x > p.x+p.w || y < p.y || y > p.y+p.h) return;
+  drag = {sx:e.clientX, sy:e.clientY, ox, oy, dw, dh, W, H, gx:x-p.x, gy:y-p.y, moved:false};
+  out.setPointerCapture(e.pointerId);
+});
+out.addEventListener('pointermove', e => {
+  if(!drag) return;
+  if(Math.abs(e.clientX-drag.sx) + Math.abs(e.clientY-drag.sy) > 6) drag.moved = true;
+  if(!drag.moved) return;
+  const {ox, oy, dw, dh, W, H} = drag;
+  const p = pipRect(W, H);
+  const m = W*0.035;
+  const x = (e.clientX - ox)/dw*W - drag.gx;
+  const y = (e.clientY - oy)/dh*H - drag.gy;
+  const fx = Math.max(0, W - p.w - m*2), fy = Math.max(0, H - p.h - m*2);
+  state.px = fx ? Math.min(1, Math.max(0, (x-m)/fx)) : 0;
+  state.py = fy ? Math.min(1, Math.max(0, (y-m)/fy)) : 0;
+  preview();
+});
+out.addEventListener('pointerup', e => {
+  if(!drag) return;
+  if(!drag.moved){ state.swap = !state.swap; preview(); }
+  drag = null; persist();
+});
+out.addEventListener('pointercancel', () => { drag = null; });
+
+/* ---------- 保存（iPhoneは共有シートの「画像を保存」） ---------- */
+function fileName(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return `うらおもて_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
+}
+
+/* ⚠️ navigator.share は「タップから数秒以内」でないと開けない。
+   そのため await を挟まずに呼ぶ。書き出しは先に済ませておく。 */
+function handOver(file){
+  const tries = (file.__tries || 0) + 1; file.__tries = tries;
+  let can = false;
+  try{ can = !!(navigator.canShare && navigator.canShare({files:[file]})); }catch(e){}
+  if(can){
+    const failed = err => {
+      if(err && err.name === 'AbortError'){ arm(file); return; }
+      if(tries >= 2){ download(file); return; }
+      arm(file); toast('できました。もう一度おしてください');
+    };
+    try{
+      navigator.share({files:[file]}).then(() => { disarm(); toast('保存しました'); }).catch(failed);
+      return;
+    }catch(e){ failed(e); return; }
+  }
+  download(file);
+}
+function download(file){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+  disarm(); toast('保存しました');
+}
+let armed = null;
+function arm(file){ armed = file; $('#save').textContent = '写真に保存'; }
+function disarm(){ armed = null; $('#save').textContent = '写真に保存'; }
+
+$('#save').addEventListener('click', () => {
+  if(armed){ handOver(armed); return; }
+  const cv = document.createElement('canvas');
+  render(cv, 1440);
+  cv.toBlob(b => {
+    if(!b){ toast('画像を作れませんでした'); return; }
+    const file = new File([b], fileName(), {type:'image/jpeg'});
+    arm(file);
+    handOver(file);
+  }, 'image/jpeg', 0.94);
+});
+
+/* ---------- 操作まわり ---------- */
+$('#chips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if(!b) return;
+  state.aspect = b.dataset.ar;
+  [...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+  applyAspect(); persist();
+  if(shots) preview();
+});
+function applyAspect(){
+  const [aw, ah] = AR[state.aspect];
+  frame.style.setProperty('--ar', aw + '/' + ah);
+  fit();
+}
+
+/* 舞台（stage）の高さに枠がおさまる上限幅を出す。
+   CSS の max-height だけだと幅は100%のままなので、比率がくずれて
+   「見えている絵」と「保存される絵」の切り取り位置がずれてしまう。 */
+function fit(){
+  const stage = document.querySelector('.stage');
+  const [aw, ah] = AR[state.aspect];
+  const h = stage.clientHeight - 12;            // 上下のすきま
+  frame.style.setProperty('--fitw', Math.max(80, Math.floor(h * aw / ah)) + 'px');
+}
+
+$('#orderBtn').addEventListener('click', async () => {
+  state.first = state.first === 'back' ? 'front' : 'back';
+  $('#orderV').textContent = state.first === 'back' ? '外' : '内';
+  persist();
+  if(!shots && stream){ try{ await open(state.first); }catch(e){ fail(e); } }
+});
+$('#mirrorBtn').addEventListener('click', () => {
+  state.mirror = !state.mirror;
+  $('#mirrorV').textContent = state.mirror ? '鏡のまま' : '実物どおり';
+  video.classList.toggle('mir', facing === 'front' && state.mirror);
+  persist();
+  if(shots) preview();
+});
+$('#again').addEventListener('click', again);
+shotBtn.addEventListener('click', shoot);
+
+startBtn.addEventListener('click', async () => {
+  startBtn.disabled = true; startBtn.textContent = 'ひらいています…';
+  try{
+    await open(state.first);
+    veil.classList.add('hidden');
+    shotBtn.disabled = false;
+    if(oneCamOnly) toast('カメラが1つの端末です。同じ絵が2枚になります');
+  }catch(e){
+    startBtn.disabled = false; startBtn.textContent = 'もう一度ためす';
+    fail(e);
+  }
+});
+
+function fail(e){
+  const n = (e && e.name) || '';
+  let msg;
+  if(!window.isSecureContext) msg = 'カメラは https のページでしか使えません。';
+  else if(n === 'NotAllowedError') msg = 'カメラの使用がことわられています。<br>設定 → Safari → カメラ、または画面左上の「ぁあ」→「Webサイトの設定」から許可してください。';
+  else if(n === 'NotFoundError' || n === 'OverconstrainedError') msg = 'この端末で使えるカメラが見つかりませんでした。';
+  else if(n === 'NotReadableError') msg = 'ほかのアプリがカメラを使っているようです。<br>ほかのカメラアプリを閉じてから、もう一度ためしてください。';
+  else msg = 'カメラを開けませんでした。<br>ページを読み込みなおしてください。<br><span style="font-size:11px">（' + (n || e) + '）</span>';
+  veilMsg.innerHTML = msg;
+  veil.classList.remove('hidden');
+  startBtn.classList.remove('hidden');
+  startBtn.disabled = false;
+  startBtn.textContent = 'もう一度ためす';
+}
+
+/* ---------- トースト ---------- */
+let tt = null;
+function toast(m){
+  const t = $('#toast'); t.textContent = m; t.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2200);
+}
+
+/* ---------- はじめの表示 ---------- */
+applyAspect();
+[...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c.dataset.ar === state.aspect)));
+$('#orderV').textContent = state.first === 'back' ? '外' : '内';
+$('#mirrorV').textContent = state.mirror ? '鏡のまま' : '実物どおり';
+
+if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+  veilMsg.innerHTML = 'このブラウザではカメラを使えません。<br>Safari か Chrome でひらいてください。';
+  startBtn.classList.add('hidden');
+}
+
+window.addEventListener('resize', () => { fit(); if(shots) preview(); });
+if(window.ResizeObserver){
+  new ResizeObserver(() => { fit(); if(shots) preview(); })
+    .observe(document.querySelector('.stage'));
+}
+document.addEventListener('visibilitychange', () => {
+  // 裏に回ったらカメラを離す（電池と発熱のため）。戻ってきたら開きなおす。
+  const running = veil.classList.contains('hidden');   // 覆いが消えている＝撮影中の画面
+  if(document.hidden){ if(!shots) stopStream(); }
+  else if(running && !shots && !busy){ open(state.first).catch(() => {}); }
+});
+
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
