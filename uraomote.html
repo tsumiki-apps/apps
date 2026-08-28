@@ -173,7 +173,6 @@
   <g id="i-out"><circle cx="8" cy="7.2" r="2.3"/><path d="M3 18.5l5.6-6.6 3.7 4.3 2.6-2.9L21 18.5z"/></g>
   <g id="i-in"><circle cx="12" cy="8.6" r="3.5"/><path d="M4.8 19.6c1.3-3.5 4.1-5.2 7.2-5.2s5.9 1.7 7.2 5.2"/></g>
   <g id="i-cam"><path d="M3.5 8.6h3.8L9 5.6h6l1.7 3h3.8v11.8H3.5z"/><circle cx="12" cy="14.3" r="3.9"/></g>
-  <g id="i-flip"><path d="M12 2.4v19.2" stroke-dasharray="2 3.2"/><path d="M8.7 6.3L3.2 12l5.5 5.7z" fill="currentColor"/><path d="M15.3 6.3L20.8 12l-5.5 5.7z"/></g>
   <g id="i-x"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></g>
   <g id="i-save"><path d="M12 15.2V3.6"/><path d="M8.2 7.2L12 3.4l3.8 3.8"/><path d="M5.4 12.6v6.2a1.6 1.6 0 0 0 1.6 1.6h10a1.6 1.6 0 0 0 1.6-1.6v-6.2"/></g>
   <g id="i-ok"><path d="M5 12.6l4.6 4.6L19 7.4"/></g>
@@ -209,14 +208,13 @@
 
   <div class="dock">
     <div class="row" id="dockShoot">
-      <button class="ib" id="orderBtn" aria-label="撮る順">
+      <span class="spacer"></span>
+      <button class="shutter" id="shot" aria-label="撮る" disabled></button>
+      <button class="ib" id="orderBtn" aria-label="外と内をいれかえる">
         <svg viewBox="0 0 24 24" id="oA"><use href="#i-out"></use></svg>
         <span class="ar"><svg viewBox="0 0 12 24"><use href="#i-ar"></use></svg></span>
         <svg viewBox="0 0 24 24" id="oB"><use href="#i-in"></use></svg>
       </button>
-      <button class="shutter" id="shot" aria-label="撮る" disabled></button>
-      <button class="ib" id="mirrorBtn" aria-pressed="true" aria-label="内カメを鏡にする">
-        <svg viewBox="0 0 24 24"><use href="#i-flip"></use></svg></button>
     </div>
 
     <div class="row hidden" id="dockDone">
@@ -260,16 +258,19 @@ const SETTLE = 170;   // 切りかえ後、明るさが落ち着くのを待つ�
    選ばせず固定にする（本家に合わせる）。 */
 const GAP = 2000;
 
+/* 内カメは「画面で見えているとおり（鏡のまま）」で残す。切りかえは持たない。 */
+const MIRROR = true;
+
 const state = {
-  aspect:'3:4', mirror:true, first:'back', swap:false, px:0, py:0
+  aspect:'3:4', first:'back', swap:false, px:0, py:0
 };
 try{
   const s = JSON.parse(localStorage.getItem(KEY) || '{}');
-  ['aspect','mirror','first','px','py'].forEach(k => { if(s[k]!==undefined) state[k]=s[k]; });
+  ['aspect','first','px','py'].forEach(k => { if(s[k]!==undefined) state[k]=s[k]; });
 }catch(e){}
 function persist(){
   try{ localStorage.setItem(KEY, JSON.stringify({
-    aspect:state.aspect, mirror:state.mirror, first:state.first, px:state.px, py:state.py
+    aspect:state.aspect, first:state.first, px:state.px, py:state.py
   })); }catch(e){}
 }
 
@@ -301,7 +302,7 @@ async function open(want){
       if(i === 2) oneCamOnly = true;      // 向きの指定が通らない＝選べるカメラがない
       facing = want;
       video.srcObject = stream;
-      video.classList.toggle('mir', want === 'front' && state.mirror);
+      video.classList.toggle('mir', want === 'front' && MIRROR);
       try{ await video.play(); }catch(e){}
       await ready();
       return;
@@ -371,7 +372,7 @@ function render(cv, W){
   if(!shots) return;
   const mainK = state.swap ? 'front' : 'back';
   const subK  = state.swap ? 'back'  : 'front';
-  cover(ctx, shots[mainK], 0, 0, W, H, mainK==='front' && state.mirror);
+  cover(ctx, shots[mainK], 0, 0, W, H, mainK==='front' && MIRROR);
 
   const p = pipRect(W, H);
   ctx.save();
@@ -380,7 +381,7 @@ function render(cv, W){
   ctx.restore();
   ctx.save();
   roundRect(ctx,p.x,p.y,p.w,p.h,p.r); ctx.clip();
-  cover(ctx, shots[subK], p.x, p.y, p.w, p.h, subK==='front' && state.mirror);
+  cover(ctx, shots[subK], p.x, p.y, p.w, p.h, subK==='front' && MIRROR);
   ctx.restore();
   ctx.save();
   roundRect(ctx,p.x,p.y,p.w,p.h,p.r);
@@ -570,13 +571,6 @@ $('#orderBtn').addEventListener('click', async () => {
   drawOrder(); persist();
   if(!shots && stream && !busy){ try{ await open(state.first); }catch(e){ fail(e); } }
 });
-$('#mirrorBtn').addEventListener('click', () => {
-  state.mirror = !state.mirror;
-  $('#mirrorBtn').setAttribute('aria-pressed', String(state.mirror));
-  video.classList.toggle('mir', facing==='front' && state.mirror);
-  persist();
-  if(shots) preview();
-});
 $('#again').addEventListener('click', again);
 shotBtn.addEventListener('click', shoot);
 
@@ -616,7 +610,6 @@ function toast(m){ show(m); }
 applyAspect();
 [...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c.dataset.ar===state.aspect)));
 drawOrder();
-$('#mirrorBtn').setAttribute('aria-pressed', String(state.mirror));
 
 if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
   veilMsg.textContent = 'このブラウザではカメラを使えません';
