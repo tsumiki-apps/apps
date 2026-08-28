@@ -33,6 +33,7 @@
   .chip{
     -webkit-appearance:none; appearance:none; cursor:pointer; background:none; border:0;
     width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    flex:0 0 auto;
     color:var(--dim); border-radius:14px; transition:color .15s ease, background .15s ease;
   }
   .chip[aria-pressed="true"]{color:var(--ink); background:var(--panel2);}
@@ -99,7 +100,10 @@
     flex:0 0 auto; width:100%; max-width:var(--stage,560px); margin:0 auto;
     padding:8px 14px calc(12px + env(safe-area-inset-bottom));
   }
-  .row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  /* シャッターを画面のまん中に固定する（左右のボタンの幅がちがっても動かない） */
+  .row{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px;}
+  .row > :first-child{justify-self:start;}
+  .row > :last-child{justify-self:end;}
   .shutter{
     -webkit-appearance:none; appearance:none; cursor:pointer;
     width:74px; height:74px; flex:0 0 auto; border-radius:50%;
@@ -115,7 +119,7 @@
   /* まる型のアイコンボタン（撮る順・鏡・撮りなおす・保存） */
   .ib{
     -webkit-appearance:none; appearance:none; cursor:pointer;
-    min-width:56px; height:56px; padding:0 10px; border-radius:20px;
+    min-width:52px; height:56px; padding:0 9px; border-radius:19px;
     background:var(--panel); border:1px solid var(--line); color:var(--dim);
     display:flex; align-items:center; justify-content:center; gap:3px;
     transition:transform .12s ease, color .15s ease, background .15s ease, border-color .15s ease;
@@ -123,8 +127,8 @@
   .ib:active{transform:scale(.94);}
   .ib[aria-pressed="true"]{background:var(--panel2); border-color:#4a453d; color:var(--ink);}
   .ib svg{width:25px; height:25px;}
-  .ib .ar{width:11px; height:23px; opacity:.6;}
-  .ib .ar svg{width:11px; height:23px; stroke-width:2;}
+  .ib .ar{width:10px; height:23px; opacity:.6;}
+  .ib .ar svg{width:10px; height:23px; stroke-width:2;}
 
   .rd{
     -webkit-appearance:none; appearance:none; cursor:pointer;
@@ -251,6 +255,10 @@ const $ = s => document.querySelector(s);
 const AR = {'3:4':[3,4], '1:1':[1,1], '9:16':[9,16]};
 const KEY = 'uraomote-v1';
 const SETTLE = 170;   // 切りかえ後、明るさが落ち着くのを待つ時間（ミリ秒）
+
+/* 2枚目までの間（ま）。BeReal と同じで、1枚目を撮ったあと数秒おいて2枚目が撮れる。
+   選ばせず固定にする（本家に合わせる）。 */
+const GAP = 2000;
 
 const state = {
   aspect:'3:4', mirror:true, first:'back', swap:false, px:0, py:0
@@ -404,8 +412,9 @@ async function shoot(){
     await open(b);
     await nextFrame();
     await wait(SETTLE);
-    const gap = Math.round(performance.now() - t0);
+    const gap = Math.round(performance.now() - t0);   // 切りかえにかかった時間（間は含めない）
     aim.classList.remove('on');
+    await wait(GAP);                                  // ここで構える（本家と同じ数秒の間）
     blink();
     shots[b] = grab();
 
