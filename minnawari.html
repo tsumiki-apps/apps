@@ -23,18 +23,36 @@
     --deep:#8E3418;      /* 淡朱の上に載せる濃い朱の文字 */
     --ok:#6B8F71;        /* 同期中の点 */
     --warn:#A33221;      /* 削除など取り返しのつかない操作 */
-    --radius:20px;
+    /* かたち。角丸は3段だけにして、同じ役割のものは必ず同じ値を使う */
+    --r-s:12px;          /* 横に並ぶ小さい操作（タブ・セグメント・絵文字） */
+    --r-m:14px;          /* 入力欄・カード・行・ボタン（いちばん使う） */
+    --r-l:20px;          /* 大きな面（ヒーロー・バナー） */
+    --r-pill:999px;      /* チップ・バッジ */
+    --radius:var(--r-l); /* 旧名（互換） */
+    /* 高さ。単独で置く操作は52px、横に並ぶ操作は44px（Apple HIGの最小値） */
+    --h-ctl:52px;
+    --h-ctl-s:44px;
+    --pad-x:16px;        /* 本文の左右余白 */
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   [hidden]{display:none !important;}
-  html,body{overscroll-behavior-y:none;}
+  /* 横スクロールを起こさせない。clip は「そもそも横のスクロール箱を作らない」指定で、
+     hidden は clip に未対応の古いSafari向けの控え。overscroll-behavior で端のバウンドも止める */
+  html,body{
+    overscroll-behavior:none;
+    width:100%; max-width:100%;
+    overflow-x:hidden; overflow-x:clip;
+  }
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
     background:var(--bg); color:var(--ink); line-height:1.6;
     padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 92px);
-    -webkit-font-smoothing:antialiased; min-height:100vh;
+    -webkit-font-smoothing:antialiased; min-height:100dvh;
   }
-  .wrap{max-width:560px; margin:0 auto; padding:0 16px;}
+  /* 横向きのiPhoneでノッチに文字がかぶらないよう、左右もセーフエリアぶん逃がす */
+  .wrap{max-width:560px; margin:0 auto;
+    padding-left:max(var(--pad-x), env(safe-area-inset-left));
+    padding-right:max(var(--pad-x), env(safe-area-inset-right));}
   button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
   input,select,textarea{font-family:inherit; font-size:16px;}
   .num{font-variant-numeric:tabular-nums;}
@@ -54,14 +72,16 @@
   .sync .dot{width:7px; height:7px; border-radius:50%; background:var(--ok); flex:0 0 auto;}
   .sync .dot.off{background:var(--ghost);} .sync .dot.busy{background:var(--accent);}
   .backbar{display:flex; align-items:center; gap:6px; padding:16px 0 2px;}
-  .backbar button{display:inline-flex; align-items:center; gap:4px; font-size:15px;
-    font-weight:700; color:var(--accent); padding:6px 6px 6px 0;}
-  .backbar .right{margin-left:auto; display:flex; gap:4px;}
-  .backbar .right button{color:var(--sub); font-size:14px; padding:6px;}
+  /* 3つとも「押せる面」として同じ高さ44pxに揃える（見た目の色分けだけ変える） */
+  .backbar button{display:inline-flex; align-items:center; justify-content:center; gap:4px;
+    font-size:15px; font-weight:700; color:var(--accent);
+    min-height:var(--h-ctl-s); min-width:var(--h-ctl-s); padding:0 8px 0 0; border-radius:var(--r-s);}
+  .backbar .right{margin-left:auto; display:flex; gap:2px;}
+  .backbar .right button{color:var(--sub); font-size:14px; padding:0 8px;}
 
   /* ===== スタート画面 ===== */
   .hero{background:linear-gradient(160deg,var(--card),var(--surface)); border:1px solid var(--line);
-    border-radius:var(--radius); padding:22px 20px; text-align:center; margin-top:4px;}
+    border-radius:var(--r-l); padding:22px 20px; text-align:center; margin-top:4px;}
   .hero .big{font-size:40px;}
   /* つみきサイトと同じ「小さな英字ラベルだけ朱」の使い方 */
   .hero .en{display:block; font-size:11px; letter-spacing:.22em; color:var(--accent);
@@ -71,17 +91,19 @@
   .hero .feat{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:14px;}
   .hero .feat span{font-size:11px; font-weight:700; background:var(--card);
     border:1px solid var(--line); color:var(--ink); border-radius:999px; padding:4px 10px;}
-  .cta{width:100%; margin-top:14px; background:var(--ink); color:var(--bg); padding:16px;
-    border-radius:16px; font-weight:800; font-size:16px; box-shadow:0 6px 16px rgba(36,35,33,.18);}
+  .cta{width:100%; margin-top:14px; background:var(--ink); color:var(--bg);
+    min-height:var(--h-ctl); padding:0 16px;
+    border-radius:var(--r-m); font-weight:800; font-size:16px; box-shadow:0 6px 16px rgba(36,35,33,.18);}
   .cta:active{transform:scale(.97);}
-  .sectitle{font-size:13px; font-weight:700; color:var(--sub); margin:22px 4px 8px;
-    display:flex; align-items:center;}
+  /* 区切りの見出しは1種類だけ。明細の日付（.daygroup）も同じ書式を使う */
+  .sectitle,.daygroup{font-size:12px; font-weight:700; color:var(--sub); margin:20px 4px 8px;
+    display:flex; align-items:center; letter-spacing:.02em;}
   .sectitle .cnt{margin-left:auto; font-weight:600;}
   .gcard{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
-    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    font:inherit; background:var(--card); border:1px solid var(--line); border-radius:var(--r-m);
     padding:13px 14px; margin-bottom:9px;}
   .gcard:active{transform:scale(.99);}
-  .gcard .ge{font-size:22px; width:42px; height:42px; flex:0 0 auto; border-radius:13px;
+  .gcard .ge{font-size:22px; width:42px; height:42px; flex:0 0 auto; border-radius:var(--r-s);
     background:var(--bg); display:flex; align-items:center; justify-content:center;}
   .gcard .gi{min-width:0; flex:1;}
   .gcard .gn{display:block; font-size:16px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -92,25 +114,27 @@
 
   /* ===== タブ ===== */
   .tabs{display:flex; gap:6px; background:var(--card); border:1px solid var(--line);
-    border-radius:14px; padding:4px; margin:12px 0 4px;}
-  .tabs button{flex:1; padding:9px 4px; border-radius:11px; font-size:13px; font-weight:700;
+    border-radius:var(--r-m); padding:4px; margin:12px 0 4px;}
+  .tabs button{flex:1; min-width:0; min-height:var(--h-ctl-s); padding:0 4px;
+    border-radius:var(--r-s); font-size:13px; font-weight:700;
     color:var(--sub); transition:all .12s;}
   .tabs button.on{background:var(--soft); color:var(--ink);}
 
   /* ===== サマリー ===== */
-  .sums{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
-  .sumc{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:12px 14px;}
+  .sums{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:12px;}
+  .sumc{min-width:0; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--r-m); padding:12px 14px;}
+  .sumc .vl{overflow-wrap:anywhere;}
   .sumc .nm{font-size:11px; color:var(--sub); font-weight:700;}
   .sumc .vl{font-size:20px; font-weight:800; margin-top:2px; letter-spacing:-.02em;}
   .sumc .sb{font-size:11px; color:var(--sub);}
 
   /* ===== 明細 ===== */
-  .daygroup{font-size:12px; font-weight:700; color:var(--sub); margin:16px 4px 7px;}
-  .entry{display:flex; align-items:center; gap:11px; width:100%; min-width:100%; text-align:left;
-    background:var(--card); border:1px solid var(--line); border-radius:14px;
-    padding:11px 13px; margin-bottom:8px;}
+  .entry{display:flex; align-items:center; gap:11px; width:100%; text-align:left; font:inherit;
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-m);
+    min-height:var(--h-ctl); padding:11px 13px; margin-bottom:8px;}
   .entry:active{transform:scale(.99);}
-  .entry .ce{font-size:18px; width:37px; height:37px; flex:0 0 auto; border-radius:11px;
+  .entry .ce{font-size:18px; width:37px; height:37px; flex:0 0 auto; border-radius:var(--r-s);
     background:var(--bg); display:flex; align-items:center; justify-content:center;}
   .entry .info{min-width:0; flex:1;}
   .entry .ti{display:block; font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -120,19 +144,19 @@
   .entry .amt{font-weight:800; font-size:16px;}
   .entry .amt small{font-size:11px; color:var(--sub); font-weight:600; display:block; margin-top:-3px;}
   /* 朱は「選んでいる所」だけに取っておきたいので、一覧のタグは紙と墨の濃淡で分ける */
-  .tag{font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px;
+  .tag{font-size:10px; font-weight:700; padding:1px 7px; border-radius:var(--r-pill);
     background:var(--surface); color:var(--ink); white-space:nowrap;}
   .tag.gray{background:transparent; border:1px solid var(--line); color:var(--sub);}
 
   /* ===== 精算 ===== */
   .banner{background:linear-gradient(160deg,var(--card),var(--surface)); border:1px solid var(--line);
-    border-radius:var(--radius); padding:18px; text-align:center; margin-top:12px;}
+    border-radius:var(--r-l); padding:18px; text-align:center; margin-top:12px;}
   .banner.done{background:linear-gradient(160deg,#FAEDE6,var(--soft)); border-color:#E4BCA8;}
   .banner .lab{font-size:12px; color:var(--sub); font-weight:700;}
   .banner .big{font-size:30px; font-weight:800; letter-spacing:-.02em; margin-top:2px;
     color:var(--accent);}
   .banner .doneico{font-size:34px;}
-  .trow{background:var(--card); border:1px solid var(--line); border-radius:16px;
+  .trow{background:var(--card); border:1px solid var(--line); border-radius:var(--r-m);
     padding:13px 14px; margin-bottom:9px;}
   .trow.paid{opacity:.5;}
   .trow .flow{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
@@ -142,7 +166,8 @@
   .trow .amt{margin-left:auto; font-size:19px; font-weight:800; flex:0 0 auto;}
   .trow.paid .amt{text-decoration:line-through;}
   .trow .acts{display:flex; gap:7px; margin-top:11px;}
-  .trow .acts button{flex:1; padding:9px 6px; border-radius:11px; font-size:13px; font-weight:700;
+  .trow .acts button{flex:1; min-width:0; min-height:var(--h-ctl-s); padding:0 6px;
+    border-radius:var(--r-s); font-size:13px; font-weight:700;
     border:1px solid var(--line); background:var(--bg); color:var(--ink);}
   .trow .acts button.pp{background:var(--ink); border-color:var(--ink); color:var(--bg);}
   .trow .acts button.dn{background:var(--soft); border-color:#E4BCA8; color:var(--deep);}
@@ -150,7 +175,7 @@
   .mine{border-color:var(--accent); box-shadow:0 0 0 2px rgba(209,78,38,.15);}
 
   .bal{display:flex; align-items:center; gap:10px; background:var(--card);
-    border:1px solid var(--line); border-radius:14px; padding:11px 13px; margin-bottom:8px;}
+    border:1px solid var(--line); border-radius:var(--r-m); padding:11px 13px; margin-bottom:8px;}
   .bal .av{width:32px; height:32px; border-radius:50%; flex:0 0 auto; color:#fff;
     display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800;}
   .bal .bn{display:block; font-size:15px; font-weight:700; min-width:0; overflow:hidden;
@@ -160,14 +185,16 @@
   .bv.plus{color:var(--ink);} .bv.minus{color:var(--accent);}
 
   .unitrow{display:flex; gap:6px; margin-top:14px;}
-  .unitrow button{flex:1; padding:10px 2px; border-radius:12px; border:1.5px solid var(--line);
+  .unitrow button{flex:1; min-width:0; min-height:var(--h-ctl-s); padding:8px 2px;
+    border-radius:var(--r-s); border:1.5px solid var(--line);
     background:var(--card); font-size:12px; font-weight:700; color:var(--sub);}
   .unitrow button.on{border-color:var(--accent); background:var(--soft); color:var(--ink);}
   .unitrow button small{display:block; font-size:10px; font-weight:600; color:var(--sub);}
 
   /* ===== メンバー ===== */
-  .mrow{display:flex; width:100%; text-align:left; align-items:center; gap:10px; background:var(--card);
-    border:1px solid var(--line); border-radius:14px; padding:11px 13px; margin-bottom:8px;}
+  .mrow{display:flex; width:100%; text-align:left; align-items:center; gap:10px; font:inherit;
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-m);
+    min-height:var(--h-ctl); padding:11px 13px; margin-bottom:8px;}
   .mrow .av{width:34px; height:34px; border-radius:50%; flex:0 0 auto; color:#fff;
     display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800;}
   .mrow .mn{display:block; font-size:15px; font-weight:700; min-width:0; overflow:hidden;
@@ -175,26 +202,31 @@
   .mrow .bs{display:block; line-height:1.5;}
   .mrow .mw{font-size:12px; color:var(--sub); font-weight:700; flex:0 0 auto;}
   .mrow .chev{color:var(--ghost); font-size:18px; flex:0 0 auto;}
+  /* 「追加」ボタンはアプリ中で1種類だけ。主ボタン(.btn.primary/.save)と
+     高さ・角丸・文字サイズを完全に揃え、塗りか破線かだけで主/副を分ける */
   .adds{display:flex; align-items:center; justify-content:center; gap:6px; width:100%;
-    padding:14px; border:1.5px dashed var(--line); border-radius:16px; color:var(--accent);
-    font-weight:700; font-size:14px; background:rgba(251,250,247,.6); margin-bottom:8px;}
+    min-height:var(--h-ctl); padding:0 14px;
+    border:1.5px dashed var(--ghost); border-radius:var(--r-m); color:var(--accent);
+    font-weight:800; font-size:15px; background:rgba(251,250,247,.6); margin-bottom:8px;}
   .adds:active{transform:scale(.985);}
 
-  .note{background:var(--card); border:1px solid var(--line); border-radius:14px;
+  .note{background:var(--card); border:1px solid var(--line); border-radius:var(--r-m);
     padding:12px 14px; font-size:12px; color:var(--sub); margin-top:12px; line-height:1.75;}
   .note b{color:var(--ink);}
-  .ro{background:#F7E7DE; border:1px solid #E4BCA8; color:var(--deep); border-radius:14px;
+  .ro{background:#F7E7DE; border:1px solid #E4BCA8; color:var(--deep); border-radius:var(--r-m);
     padding:11px 14px; font-size:12px; font-weight:700; margin-top:12px;}
 
   /* ===== アクションバー ===== */
   .actionbar{position:fixed; left:0; right:0; bottom:0; z-index:40;
-    padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);
+    padding-top:10px; padding-bottom:calc(env(safe-area-inset-bottom) + 10px);
+    padding-left:max(var(--pad-x), env(safe-area-inset-left));
+    padding-right:max(var(--pad-x), env(safe-area-inset-right));
     background:linear-gradient(to top, var(--bg) 68%, rgba(244,242,238,0));
     display:flex; gap:9px; max-width:560px; margin:0 auto;}
-  .btn{flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
-    padding:14px; border-radius:15px; font-weight:800; font-size:15px;}
+  .btn{flex:1; min-width:0; display:flex; align-items:center; justify-content:center; gap:6px;
+    min-height:var(--h-ctl); padding:0 14px; border-radius:var(--r-m); font-weight:800; font-size:15px;}
   .btn.primary{background:var(--ink); color:var(--bg); box-shadow:0 6px 16px rgba(36,35,33,.2);}
-  .btn.ghost{flex:0 0 auto; width:54px; background:var(--card); border:1px solid var(--line);}
+  .btn.ghost{flex:0 0 auto; width:var(--h-ctl); background:var(--card); border:1px solid var(--line);}
   .btn:active{transform:scale(.96);}
 
   /* ===== シート ===== */
@@ -203,7 +235,10 @@
     transition:opacity .2s ease; backdrop-filter:blur(2px);}
   .ov.show{opacity:1; pointer-events:auto;}
   .sheet{width:100%; max-width:560px; background:var(--bg); border-radius:24px 24px 0 0;
-    padding:8px 18px calc(env(safe-area-inset-bottom) + 20px); max-height:92vh; overflow-y:auto;
+    padding-top:8px; padding-bottom:calc(env(safe-area-inset-bottom) + 20px);
+    padding-left:max(18px, env(safe-area-inset-left));
+    padding-right:max(18px, env(safe-area-inset-right));
+    max-height:92dvh; overflow-y:auto; overflow-x:hidden;
     transform:translateY(24px); transition:transform .25s cubic-bezier(.2,.8,.2,1);
     -webkit-overflow-scrolling:touch;}
   .ov.show .sheet{transform:translateY(0);}
@@ -212,54 +247,80 @@
   .sheet .sd{font-size:12px; color:var(--sub); margin-bottom:15px;}
   .field{margin-bottom:14px;}
   .field label{display:block; font-size:12px; font-weight:700; color:var(--sub); margin-bottom:6px;}
+  /* 入力欄はすべて同じ高さ・同じ角丸。日付だけ別物に見えないよう type=date も同じ指定に入れる */
   .field input[type=text],.field input[type=number],.field input[type=date],.field select,.field textarea{
-    width:100%; padding:13px 14px; border:1px solid var(--line); border-radius:13px;
-    background:var(--card); color:var(--ink); outline:none; font-size:16px;}
+    width:100%; min-height:var(--h-ctl); padding:0 14px;
+    border:1px solid var(--line); border-radius:var(--r-m);
+    background:var(--card); color:var(--ink); outline:none; font-size:16px; font-family:inherit;}
+  .field textarea{padding-top:13px; padding-bottom:13px;}
   .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);}
+  /* 日付欄はブラウザ標準の見た目のまま、高さ・角丸・余白だけ他の入力欄に合わせる。
+     （appearance:none にするとカレンダーのアイコンが真ん中に寄ってしまうので触らない） */
+  .field input[type=date]{text-align:left;}
+  .field input[type=date]::-webkit-date-and-time-value{text-align:left; margin:0;}
+  .field input[type=date]::-webkit-inner-spin-button{display:none;}
+  .field input[type=date]::-webkit-calendar-picker-indicator{opacity:.6; cursor:pointer; padding:6px;}
   .row2{display:flex; gap:9px;} .row2>*{flex:1; min-width:0;}
   .seg{display:flex; gap:6px; flex-wrap:wrap;}
-  .seg button{flex:1; min-width:72px; padding:11px 4px; border-radius:12px; border:1.5px solid var(--line);
+  .seg button{flex:1; min-width:72px; min-height:var(--h-ctl-s); padding:8px 4px;
+    border-radius:var(--r-s); border:1.5px solid var(--line);
     background:var(--card); font-weight:700; font-size:13px; color:var(--sub);}
   .seg button.on{border-color:var(--accent); background:var(--soft); color:var(--ink);}
   .chips{display:flex; flex-wrap:wrap; gap:7px;}
-  .chip{padding:9px 13px; border-radius:999px; border:1.5px solid var(--line); background:var(--card);
+  /* チップは指で押すものなので、小さいほうも含めて高さ44pxを下回らせない */
+  .chip{display:inline-flex; align-items:center; justify-content:center;
+    min-height:var(--h-ctl-s); padding:0 14px; border-radius:var(--r-pill);
+    border:1.5px solid var(--line); background:var(--card);
     font-size:14px; font-weight:700; color:var(--sub);}
   .chip.on{border-color:var(--accent); background:var(--soft); color:var(--ink);}
-  .chip.sm{padding:6px 11px; font-size:12px;}
-  .emojipick{display:grid; grid-template-columns:repeat(6,44px); gap:7px; justify-content:start;}
-  .emojipick button{width:44px; height:44px; font-size:21px; border-radius:12px;
-    border:1.5px solid var(--line); background:var(--card);
+  .chip.sm{padding:0 12px; font-size:13px;}
+  /* 固定px幅をやめ、幅に応じて列数が変わるようにする（320pxでもはみ出さない） */
+  .emojipick{display:grid; grid-template-columns:repeat(auto-fill,minmax(46px,1fr)); gap:7px;}
+  .emojipick button{aspect-ratio:1; min-height:var(--h-ctl-s); font-size:21px;
+    border-radius:var(--r-s); border:1.5px solid var(--line); background:var(--card);
     display:flex; align-items:center; justify-content:center;}
   .emojipick button.on{border-color:var(--accent); background:var(--soft);}
   .mline{display:flex; align-items:center; gap:9px; margin-bottom:8px;}
   .mline .nm{flex:1; min-width:0; font-size:14px; font-weight:700; overflow:hidden;
     text-overflow:ellipsis; white-space:nowrap;}
-  .mline input[type=number]{width:104px; flex:0 0 auto; padding:10px 11px; font-size:16px;
-    border:1px solid var(--line); border-radius:11px; background:var(--card); outline:none; text-align:right;}
-  .mline input[type=text]{flex:1; min-width:0; padding:11px 12px; font-size:16px;
-    border:1px solid var(--line); border-radius:11px; background:var(--card); outline:none;}
-  .mline .x{flex:0 0 auto; color:var(--ghost); font-size:19px; padding:4px 6px;}
-  .itemcard{background:var(--card); border:1px solid var(--line); border-radius:14px;
+  .mline input[type=number]{flex:0 0 auto; width:clamp(88px,28%,116px);
+    min-height:var(--h-ctl-s); padding:0 11px; font-size:16px;
+    border:1px solid var(--line); border-radius:var(--r-s); background:var(--card);
+    outline:none; text-align:right;}
+  .mline input[type=text]{flex:1; min-width:0; min-height:var(--h-ctl-s); padding:0 12px; font-size:16px;
+    border:1px solid var(--line); border-radius:var(--r-s); background:var(--card); outline:none;}
+  .mline input:focus{border-color:var(--accent);}
+  .mline .x{flex:0 0 auto; color:var(--ghost); font-size:19px;
+    width:var(--h-ctl-s); height:var(--h-ctl-s); border-radius:var(--r-s);
+    display:flex; align-items:center; justify-content:center; padding:0;}
+  .itemcard{background:var(--card); border:1px solid var(--line); border-radius:var(--r-m);
     padding:11px 12px; margin-bottom:9px;}
   .itemcard .top{display:flex; gap:8px; align-items:center;}
   .itemcard .top input[type=text]{flex:1; min-width:0;}
-  .itemcard .top input[type=number]{width:98px; flex:0 0 auto; text-align:right;}
-  .itemcard .top input{padding:10px 11px; font-size:16px; border:1px solid var(--line);
-    border-radius:11px; background:var(--bg); outline:none;}
+  .itemcard .top input[type=number]{width:clamp(84px,28%,110px); flex:0 0 auto; text-align:right;}
+  .itemcard .top input{min-height:var(--h-ctl-s); padding:0 11px; font-size:16px;
+    border:1px solid var(--line); border-radius:var(--r-s); background:var(--bg); outline:none;}
+  .itemcard .top input:focus{border-color:var(--accent);}
+  .itemcard .top .x{flex:0 0 auto; color:var(--ghost); font-size:19px;
+    width:var(--h-ctl-s); height:var(--h-ctl-s); border-radius:var(--r-s);
+    display:flex; align-items:center; justify-content:center; padding:0;}
   .itemcard .chips{margin-top:9px;}
   .sumline{display:flex; align-items:center; font-size:13px; font-weight:700; color:var(--sub);
     padding:4px 2px 0;}
   .sumline .v{margin-left:auto; color:var(--ink); font-size:15px;}
   .sumline .v.bad{color:var(--warn);}
-  .sheetbtns{display:flex; gap:9px; margin-top:10px;}
-  .sheetbtns .save{flex:1; background:var(--ink); color:var(--bg); padding:15px; border-radius:14px;
+  /* 保存ボタンは日付などの入力欄と同じ高さ・角丸。上に余白を足して「入力の続き」に見えないようにする */
+  .sheetbtns{display:flex; gap:9px; margin-top:20px;}
+  .sheetbtns .save{flex:1; min-width:0; background:var(--ink); color:var(--bg);
+    min-height:var(--h-ctl); padding:0 15px; border-radius:var(--r-m);
     font-weight:800; font-size:16px;}
   .sheetbtns .save:active{transform:scale(.97);}
   .sheetbtns .save[disabled]{opacity:.45;}
   .delbtn{width:100%; text-align:center; color:var(--warn); font-weight:700; font-size:14px;
-    padding:14px; margin-top:4px;}
+    min-height:var(--h-ctl-s); padding:0 14px; border-radius:var(--r-m); margin-top:4px;}
   .secbtn{width:100%; display:flex; align-items:center; justify-content:center; gap:7px;
-    background:var(--card); border:1px solid var(--line); padding:14px; border-radius:14px;
+    background:var(--card); border:1px solid var(--line);
+    min-height:var(--h-ctl); padding:10px 14px; border-radius:var(--r-m);
     font-weight:700; font-size:15px; margin-bottom:9px;}
   .secbtn:active{transform:scale(.98);}
   .secbtn small{font-weight:600; color:var(--sub); font-size:11px;}
@@ -267,8 +328,9 @@
 
   .toast{position:fixed; bottom:calc(env(safe-area-inset-bottom) + 96px); left:50%;
     transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--bg);
-    padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600;
-    z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; max-width:88vw; text-align:center;}
+    padding:11px 20px; border-radius:var(--r-pill); font-size:13px; font-weight:600;
+    z-index:200; opacity:0; transition:all .25s ease; pointer-events:none;
+    max-width:min(88%, 420px); text-align:center;}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
 
   /* ===== 3つの面。スマホは1つずつ（タブ切替）、PCは横に並べる ===== */
@@ -278,13 +340,13 @@
   .panehead h3{font-size:15px; font-weight:800; letter-spacing:-.01em;}
   .panehead .pc{font-size:12px; color:var(--sub); font-weight:700;}
   .panehead .addhere{margin-left:auto; background:var(--ink); color:var(--bg);
-    padding:9px 15px; border-radius:12px; font-weight:800; font-size:13px;
-    box-shadow:0 4px 12px rgba(36,35,33,.18);}
+    min-height:var(--h-ctl-s); padding:0 16px; border-radius:var(--r-m);
+    font-weight:800; font-size:14px; box-shadow:0 4px 12px rgba(36,35,33,.18);}
   .panehead .addhere:active{transform:scale(.96);}
   .glist{display:block;}
 
-  /* ===== PC（横幅を使い切る） ===== */
-  @media (min-width:1000px){
+  /* ===== PC（横幅を使い切る）。ブレイクポイントは900と1300の2本だけ ===== */
+  @media (min-width:900px){
     body{padding-bottom:44px;}
     .wrap{max-width:1180px; padding:0 24px;}
     header{padding-top:14px;}
@@ -303,12 +365,13 @@
     .hero h2{font-size:24px;}
     .hero p{font-size:14px;}
     .cta{max-width:340px; margin-left:auto; margin-right:auto;}
-    .glist{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+    .actionbar{display:none;}
+    .glist{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr)); gap:10px;}
     .gcard{margin-bottom:0;}
     .empty{padding:30px 20px;}
     /* シートは下からではなく中央のダイアログに */
-    .ov{align-items:center;}
-    .sheet{max-width:580px; border-radius:22px; max-height:86vh; padding:22px 24px 24px;}
+    .ov{align-items:center; padding:16px;}
+    .sheet{max-width:580px; border-radius:var(--r-l); max-height:86dvh; padding:22px 24px 24px;}
     .grip{display:none;}
     .toast{bottom:34px;}
     @media(hover:hover){
@@ -316,7 +379,7 @@
     }
   }
   /* ===== 大きいPC（3列に展開） ===== */
-  @media (min-width:1400px){
+  @media (min-width:1300px){
     .wrap{max-width:1460px;}
     #body{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,.85fr);}
     #paneList{grid-column:1; grid-row:1;}
@@ -889,7 +952,7 @@ function sheetCreate(){
       <div class="emojipick" id="cEmoji">${EMOJIS.map(e=>`<button data-e="${e}" class="${e===emoji?'on':''}">${e}</button>`).join('')}</div></div>
     <div class="field"><label>メンバー（あとで追加できます）</label>
       <div id="cMems"></div>
-      <button class="adds" id="cAdd" style="padding:11px;margin-top:2px">＋ メンバーを増やす</button></div>
+      <button class="adds" id="cAdd" style="margin-top:2px">＋ メンバーを追加</button></div>
     <div class="sheetbtns"><button class="save" id="cSave">つくる</button></div>
     <div class="hint">できたグループのURLをLINEなどで送れば、相手は登録なしでそのまま入力できます。</div>
   `, sheet=>{
@@ -967,6 +1030,7 @@ function sheetExpense(id){
       <div class="emojipick" style="margin-top:8px" id="eEmoji">
         ${EX_EMOJIS.map(x=>`<button data-e="${x}" class="${x===e.emoji?'on':''}">${x}</button>`).join('')}</div>
     </div>
+    <div class="field"><label>いつ？</label><input type="date" id="eDate" value="${esc(e.at)}"></div>
     <div class="field"><label>誰が払った？</label>
       <div class="chips" id="ePayer">
         ${s.members.map(m=>`<button class="chip" data-m="${esc(m.id)}">${esc(m.name)}</button>`).join('')}</div>
@@ -976,7 +1040,6 @@ function sheetExpense(id){
     </div>
     <div id="eAmountBox"></div>
     <div id="eSplitBox"></div>
-    <div class="field"><label>日付</label><input type="date" id="eDate" value="${esc(e.at)}"></div>
     <div class="sheetbtns"><button class="save" id="eSave">${editing ? '保存する' : '追加する'}</button></div>
     ${editing ? '<button class="delbtn" id="eDel">この立替を削除</button>' : ''}
   `, sheet=>{
@@ -1056,13 +1119,13 @@ function sheetExpense(id){
               <div class="top">
                 <input type="text" data-n="${i}" placeholder="例）刺身盛り" maxlength="24" value="${esc(it.name)}">
                 <input type="number" data-a="${i}" inputmode="numeric" placeholder="0" value="${it.amount===''?'':it.amount}">
-                <button class="x" data-x="${i}" style="color:var(--ghost);font-size:19px;padding:4px">×</button>
+                <button class="x" data-x="${i}" aria-label="この品目を消す">×</button>
               </div>
               <div class="chips" data-t="${i}">
                 ${s.members.map(m=>`<button class="chip sm ${(it.targets||[]).includes(m.id)?'on':''}" data-m="${esc(m.id)}">${esc(m.name)}</button>`).join('')}
               </div>
             </div>`).join('')}</div>
-          <button class="adds" id="itAdd" style="padding:11px">＋ 品目を増やす</button>
+          <button class="adds" id="itAdd">＋ 品目を追加</button>
           <div class="sumline">品目の合計 <span class="v num">${fmt(sum)}</span></div>
           </div>`;
         box.querySelectorAll('input[data-n]').forEach(i=> i.oninput = ()=>{ e.items[+i.dataset.n].name = i.value; });
