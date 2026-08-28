@@ -5,180 +5,186 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="apple-touch-icon" href="icons/icon-uraomote.png">
 <meta name="apple-mobile-web-app-title" content="うらおもて">
-<title>うらおもて — 外と内をいっぺんに</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<title>うらおもて</title>
 <style>
   :root{
-    --bg:#111110; --panel:#1c1b19; --panel2:#26241f;
-    --ink:#F4F2EE; --sub:#9b968c; --line:#332f2a; --ghost:#5d574f;
-    --accent:#F4F2EE;
-    --stage:min(560px, 100%);
+    --bg:#111110; --panel:#1c1b19; --panel2:#2b2823;
+    --ink:#F4F2EE; --dim:#6f6a62; --line:#332f2a;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
   body{
-    font-family:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans","Helvetica Neue",Arial,sans-serif;
-    background:var(--bg); color:var(--ink); line-height:1.7;
-    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
-    overflow:hidden;
+    font:400 14px/1.6 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    background:var(--bg); color:var(--ink);
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%; overflow:hidden;
   }
   .app{
     height:100dvh; display:flex; flex-direction:column;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
+  svg{display:block; fill:none; stroke:currentColor; stroke-width:1.8;
+      stroke-linecap:round; stroke-linejoin:round;}
 
-  /* ---------- ヘッダー ---------- */
+  /* ---------- 上：かたち ---------- */
   .bar{
-    flex:0 0 auto; display:flex; align-items:center; gap:10px;
-    padding:12px 16px 8px; width:100%; max-width:var(--stage); margin:0 auto;
+    flex:0 0 auto; display:flex; justify-content:flex-end; gap:2px;
+    padding:8px 14px 4px; width:100%; max-width:var(--stage,560px); margin:0 auto;
   }
-  .bar .name{font-size:15px; font-weight:700; letter-spacing:.04em;}
-  .bar .why{font-size:11px; color:var(--sub); letter-spacing:.02em;}
-  .chips{margin-left:auto; display:flex; gap:6px;}
   .chip{
-    -webkit-appearance:none; appearance:none; font-family:inherit; cursor:pointer;
-    min-height:44px; min-width:44px; padding:0 13px; border-radius:999px; line-height:1;
-    background:transparent; border:1px solid var(--line); color:var(--sub);
-    font-size:12px; font-weight:500; letter-spacing:.02em;
-    display:inline-flex; align-items:center; justify-content:center;
-    transition:background .15s ease, color .15s ease, border-color .15s ease;
+    -webkit-appearance:none; appearance:none; cursor:pointer; background:none; border:0;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    color:var(--dim); border-radius:14px; transition:color .15s ease, background .15s ease;
   }
-  .chip[aria-pressed="true"]{background:var(--panel2); border-color:var(--ghost); color:var(--ink);}
-  .chip:active{transform:scale(.95);}
+  .chip[aria-pressed="true"]{color:var(--ink); background:var(--panel2);}
+  .chip:active{transform:scale(.92);}
+  .chip svg{width:24px; height:24px;}
 
-  /* ---------- 舞台（プレビュー） ---------- */
+  /* ---------- 中：プレビュー ---------- */
   .stage{
     flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center;
-    padding:6px 16px; width:100%; max-width:var(--stage); margin:0 auto;
+    padding:4px 14px; width:100%; max-width:var(--stage,560px); margin:0 auto;
   }
   .frame{
-    position:relative; aspect-ratio:var(--ar, 3/4);
-    width:min(100%, var(--fitw, 100%));
+    position:relative; aspect-ratio:var(--ar,3/4); width:min(100%, var(--fitw,100%));
     background:#000; border-radius:18px; overflow:hidden;
     box-shadow:0 10px 40px rgba(0,0,0,.5);
   }
-  .frame video, .frame canvas{
-    position:absolute; inset:0; width:100%; height:100%;
-    object-fit:cover; display:block;
-  }
+  .frame video, .frame canvas{position:absolute; inset:0; width:100%; height:100%; display:block;}
+  .frame video{object-fit:cover;}
   .frame canvas{object-fit:contain; background:#000; touch-action:none;}
   #v.mir{transform:scaleX(-1);}
-  .flash{
-    position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none;
-    transition:opacity .09s ease;
-  }
+  .flash{position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none;
+    transition:opacity .1s ease;}
   .flash.on{opacity:.85; transition:none;}
-  .badge{
-    position:absolute; top:10px; left:10px; z-index:3;
-    font-size:11px; font-weight:500; letter-spacing:.06em;
-    background:rgba(0,0,0,.55); color:#fff; border-radius:999px; padding:4px 11px;
-    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+
+  /* 切りかえ中に、いま向いているほうを絵で見せる */
+  .aim{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:rgba(255,255,255,.75); pointer-events:none; opacity:0; transition:opacity .18s ease;
+  }
+  .aim.on{opacity:1;}
+  .aim svg{width:38%; max-width:120px; height:auto; stroke-width:1.1;
+    filter:drop-shadow(0 2px 10px rgba(0,0,0,.6));}
+
+  /* 経過（ミリ秒）— いちばん小さく、じゃまにならない位置に */
+  .ms{
+    position:absolute; right:10px; bottom:9px; z-index:3;
+    font-size:11px; font-variant-numeric:tabular-nums; letter-spacing:.03em;
+    color:rgba(255,255,255,.55); text-shadow:0 1px 4px rgba(0,0,0,.7);
   }
 
-  /* 起動前・エラーの覆い */
+  /* はじめ／エラーの覆い */
   .veil{
     position:absolute; inset:0; z-index:5; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:16px; text-align:center;
-    padding:28px 22px; background:var(--panel);
+    align-items:center; justify-content:center; gap:18px; text-align:center;
+    padding:24px 20px; background:var(--panel);
   }
-  .veil p{font-size:13px; color:var(--sub); line-height:1.85; max-width:34em;}
-  .veil .em{font-size:34px;}
   .veil.hidden{display:none;}
-
-  /* ---------- 操作 ---------- */
-  .dock{
-    flex:0 0 auto; width:100%; max-width:var(--stage); margin:0 auto;
-    padding:10px 16px calc(14px + env(safe-area-inset-bottom));
-  }
-  .row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
-  .shutter{
-    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
-    width:74px; height:74px; flex:0 0 auto; border-radius:50%;
-    background:transparent; border:3px solid var(--ink);
+  #veilMsg{font-size:13px; line-height:1.9; color:var(--dim); max-width:32em;}
+  #veilMsg:empty{display:none;}
+  .big{
+    -webkit-appearance:none; appearance:none; cursor:pointer;
+    width:92px; height:92px; border-radius:50%; flex:0 0 auto;
+    background:var(--ink); color:#141311; border:0;
     display:flex; align-items:center; justify-content:center;
-    transition:transform .12s ease, opacity .15s ease;
+    transition:transform .12s ease, opacity .2s ease;
   }
-  .shutter::after{content:""; width:58px; height:58px; border-radius:50%; background:var(--ink);
-    transition:transform .12s ease;}
-  .shutter:active::after{transform:scale(.9);}
-  .shutter[disabled]{opacity:.35; cursor:default;}
-  .side{
-    flex:1 1 0; min-width:0; display:flex; flex-direction:column; gap:6px; align-items:center;
-  }
-  .side.l{align-items:flex-start;} .side.r{align-items:flex-end;}
-  .tgl{
-    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
-    min-height:44px; padding:6px 13px; border-radius:14px; text-align:left;
-    background:var(--panel); border:1px solid var(--line); color:var(--ink);
-    font-size:12px; font-weight:500; line-height:1.35;
-    display:flex; flex-direction:column; gap:1px;
-    transition:border-color .15s ease, background .15s ease;
-  }
-  .tgl:active{transform:scale(.97);}
-  .tgl .k{font-size:10px; color:var(--sub); letter-spacing:.08em;}
-  .tgl .v{font-size:13px; font-weight:700;}
+  .big svg{width:40px; height:40px; stroke-width:1.6;}
+  .big:active{transform:scale(.94);}
+  .big[disabled]{opacity:.45;}
+  .big.hidden{display:none;}
 
-  .btns{display:flex; gap:10px; align-items:stretch;}
-  .btn{
-    -webkit-appearance:none; appearance:none; cursor:pointer; font-family:inherit;
-    flex:1 1 0; min-height:52px; border-radius:16px; padding:10px 14px;
-    font-size:15px; font-weight:700; letter-spacing:.04em; line-height:1.3;
-    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  /* ---------- 下：操作 ---------- */
+  .dock{
+    flex:0 0 auto; width:100%; max-width:var(--stage,560px); margin:0 auto;
+    padding:8px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+  .row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .shutter{
+    -webkit-appearance:none; appearance:none; cursor:pointer;
+    width:74px; height:74px; flex:0 0 auto; border-radius:50%;
+    background:none; border:3px solid var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    transition:opacity .15s ease;
+  }
+  .shutter::after{content:""; width:58px; height:58px; border-radius:50%;
+    background:var(--ink); transition:transform .12s ease;}
+  .shutter:active::after{transform:scale(.88);}
+  .shutter[disabled]{opacity:.3;}
+
+  /* まる型のアイコンボタン（撮る順・鏡・撮りなおす・保存） */
+  .ib{
+    -webkit-appearance:none; appearance:none; cursor:pointer;
+    min-width:56px; height:56px; padding:0 10px; border-radius:20px;
+    background:var(--panel); border:1px solid var(--line); color:var(--dim);
+    display:flex; align-items:center; justify-content:center; gap:3px;
+    transition:transform .12s ease, color .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .ib:active{transform:scale(.94);}
+  .ib[aria-pressed="true"]{background:var(--panel2); border-color:#4a453d; color:var(--ink);}
+  .ib svg{width:25px; height:25px;}
+  .ib .ar{width:11px; height:23px; opacity:.6;}
+  .ib .ar svg{width:11px; height:23px; stroke-width:2;}
+
+  .rd{
+    -webkit-appearance:none; appearance:none; cursor:pointer;
+    width:64px; height:64px; border-radius:50%; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
     border:1px solid var(--line); background:var(--panel); color:var(--ink);
-    transition:transform .12s ease, background .15s ease;
+    transition:transform .12s ease;
   }
-  .btn.primary{background:var(--ink); color:#141311; border-color:var(--ink);}
-  .btn:active{transform:scale(.97);}
-  .btn[disabled]{opacity:.4; cursor:default;}
-
-  .hint{
-    text-align:center; font-size:11.5px; color:var(--sub); letter-spacing:.02em;
-    margin-top:10px; line-height:1.65;
-  }
-  .hint b{color:var(--ghost); font-weight:500;}
-  .gap{font-variant-numeric:tabular-nums;}
+  .rd svg{width:26px; height:26px;}
+  .rd.go{background:var(--ink); color:#141311; border-color:var(--ink); width:74px; height:74px;}
+  .rd.go svg{width:30px; height:30px;}
+  .rd:active{transform:scale(.94);}
+  .spacer{width:64px; height:1px; flex:0 0 auto;}
 
   .hidden{display:none !important;}
 
-  /* ---------- トースト ---------- */
+  /* ---------- 短いおしらせ ---------- */
   #toast{
-    position:fixed; left:50%; bottom:calc(28px + env(safe-area-inset-bottom));
-    transform:translate(-50%, 14px); z-index:60;
+    position:fixed; left:50%; bottom:calc(26px + env(safe-area-inset-bottom));
+    transform:translate(-50%,12px); z-index:60;
     background:rgba(20,19,17,.94); color:#fff; border:1px solid var(--line);
-    border-radius:999px; padding:10px 20px; font-size:13px; font-weight:500;
+    border-radius:999px; min-width:52px; padding:9px 18px; font-size:13px; text-align:center;
     -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
     opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
-    max-width:calc(100% - 36px); text-align:center;
+    max-width:calc(100% - 32px);
   }
   #toast.on{opacity:1; transform:translate(-50%,0);}
+  #toast svg{width:22px; height:22px; margin:0 auto; stroke-width:2.4;}
 
-  /* ---------- 広い画面 ---------- */
-  @media (min-width:900px){
-    :root{--stage:min(460px, 100%);}
-    .bar{padding-top:20px;}
-  }
-  /* 横向き・低い画面では舞台を高さ基準に */
+  @media (min-width:900px){ :root{--stage:460px;} }
   @media (max-height:520px){
-    .shutter{width:62px; height:62px;} .shutter::after{width:48px; height:48px;}
-    .bar{padding-top:8px; padding-bottom:4px;}
+    .shutter{width:60px; height:60px;} .shutter::after{width:46px; height:46px;}
+    .rd{width:54px; height:54px;} .rd.go{width:62px; height:62px;}
+    .ib{height:48px; min-width:48px;} .big{width:74px; height:74px;}
   }
 </style>
 </head>
 <body>
+
+<!-- 絵の部品（使い回し） -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>
+  <g id="i-out"><circle cx="8" cy="7.2" r="2.3"/><path d="M3 18.5l5.6-6.6 3.7 4.3 2.6-2.9L21 18.5z"/></g>
+  <g id="i-in"><circle cx="12" cy="8.6" r="3.5"/><path d="M4.8 19.6c1.3-3.5 4.1-5.2 7.2-5.2s5.9 1.7 7.2 5.2"/></g>
+  <g id="i-cam"><path d="M3.5 8.6h3.8L9 5.6h6l1.7 3h3.8v11.8H3.5z"/><circle cx="12" cy="14.3" r="3.9"/></g>
+  <g id="i-flip"><path d="M12 2.4v19.2" stroke-dasharray="2 3.2"/><path d="M8.7 6.3L3.2 12l5.5 5.7z" fill="currentColor"/><path d="M15.3 6.3L20.8 12l-5.5 5.7z"/></g>
+  <g id="i-x"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></g>
+  <g id="i-save"><path d="M12 15.2V3.6"/><path d="M8.2 7.2L12 3.4l3.8 3.8"/><path d="M5.4 12.6v6.2a1.6 1.6 0 0 0 1.6 1.6h10a1.6 1.6 0 0 0 1.6-1.6v-6.2"/></g>
+  <g id="i-ok"><path d="M5 12.6l4.6 4.6L19 7.4"/></g>
+  <g id="i-ar"><path d="M3.5 5.5l4.5 6.5-4.5 6.5"/></g>
+</defs></svg>
+
 <div class="app">
 
-  <div class="bar">
-    <div>
-      <div class="name">うらおもて</div>
-      <div class="why">外と内を、ひと押しで</div>
-    </div>
-    <div class="chips" id="chips">
-      <button class="chip" data-ar="3:4" aria-pressed="true">たて</button>
-      <button class="chip" data-ar="1:1" aria-pressed="false">ましかく</button>
-      <button class="chip" data-ar="9:16" aria-pressed="false">たて長</button>
-    </div>
+  <div class="bar" id="chips">
+    <button class="chip" data-ar="3:4" aria-pressed="true" aria-label="たて">
+      <svg viewBox="0 0 24 24"><rect x="5.25" y="3" width="13.5" height="18" rx="2.6"/></svg></button>
+    <button class="chip" data-ar="1:1" aria-pressed="false" aria-label="ましかく">
+      <svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="2.6"/></svg></button>
+    <button class="chip" data-ar="9:16" aria-pressed="false" aria-label="たて長">
+      <svg viewBox="0 0 24 24"><rect x="6.95" y="3" width="10.1" height="18" rx="2.2"/></svg></button>
   </div>
 
   <div class="stage">
@@ -186,42 +192,35 @@
       <video id="v" playsinline muted autoplay></video>
       <canvas id="out" class="hidden"></canvas>
       <div class="flash" id="flash"></div>
-      <div class="badge hidden" id="badge">外カメラ</div>
+      <div class="aim" id="aim"><svg viewBox="0 0 24 24"><use href="#i-in"></use></svg></div>
+      <div class="ms hidden" id="ms"></div>
 
       <div class="veil" id="veil">
-        <div class="em">📷</div>
-        <p id="veilMsg">外（うしろ）と内（じぶん）を続けて撮って、<br>1枚に重ねます。<br>カメラの使用をゆるしてください。</p>
-        <button class="btn primary" id="startBtn" style="flex:0 0 auto; min-width:200px;">カメラをはじめる</button>
+        <button class="big" id="startBtn" aria-label="カメラをはじめる">
+          <svg viewBox="0 0 24 24"><use href="#i-cam"></use></svg></button>
+        <div id="veilMsg"></div>
       </div>
     </div>
   </div>
 
   <div class="dock">
-    <!-- 撮影モード -->
-    <div id="dockShoot">
-      <div class="row">
-        <div class="side l">
-          <button class="tgl" id="orderBtn">
-            <span class="k">さいしょに</span><span class="v" id="orderV">外</span>
-          </button>
-        </div>
-        <button class="shutter" id="shot" aria-label="撮る" disabled></button>
-        <div class="side r">
-          <button class="tgl" id="mirrorBtn" style="text-align:right; align-items:flex-end;">
-            <span class="k">内カメ</span><span class="v" id="mirrorV">鏡のまま</span>
-          </button>
-        </div>
-      </div>
-      <div class="hint" id="hintShoot">外を撮ってすぐ内に切りかわります。<b>そのまま持っていてください</b></div>
+    <div class="row" id="dockShoot">
+      <button class="ib" id="orderBtn" aria-label="撮る順">
+        <svg viewBox="0 0 24 24" id="oA"><use href="#i-out"></use></svg>
+        <span class="ar"><svg viewBox="0 0 12 24"><use href="#i-ar"></use></svg></span>
+        <svg viewBox="0 0 24 24" id="oB"><use href="#i-in"></use></svg>
+      </button>
+      <button class="shutter" id="shot" aria-label="撮る" disabled></button>
+      <button class="ib" id="mirrorBtn" aria-pressed="true" aria-label="内カメを鏡にする">
+        <svg viewBox="0 0 24 24"><use href="#i-flip"></use></svg></button>
     </div>
 
-    <!-- 確認モード -->
-    <div id="dockDone" class="hidden">
-      <div class="btns">
-        <button class="btn" id="again">撮りなおす</button>
-        <button class="btn primary" id="save">写真に保存</button>
-      </div>
-      <div class="hint">小窓は<b>ドラッグで移動</b>／<b>タップで入れかえ</b>　<span class="gap" id="gapTxt"></span></div>
+    <div class="row hidden" id="dockDone">
+      <button class="rd" id="again" aria-label="撮りなおす">
+        <svg viewBox="0 0 24 24"><use href="#i-x"></use></svg></button>
+      <button class="rd go" id="save" aria-label="保存">
+        <svg viewBox="0 0 24 24"><use href="#i-save"></use></svg></button>
+      <span class="spacer"></span>
     </div>
   </div>
 
@@ -236,32 +235,25 @@
    うらおもて — 外カメラと内カメラを続けて撮り、1枚に重ねる。
 
    ■ なぜ「同時」ではなく「続けて」なのか
-     iOS の Safari は、前と後ろのカメラを同時に開けない（新しく開くと
-     前のカメラの映像が止まる、という昔からの決まり）。
-     そこで「外を撮る → カメラを切りかえる → 内を撮る」を素早く続ける。
-     本家 BeReal も実際には数秒あけた連続撮影なので、やり方は同じ。
-     実際にあいた時間は、撮ったあとに ms（ミリ秒＝1000分の1秒）で表示する。
+     iOS の Safari は前と後ろのカメラを同時に開けない（新しく開くと
+     前のカメラの映像が止まる、という昔からの決まり）。そこで
+     「外を撮る → カメラを切りかえる → 内を撮る」を素早く続ける。
+     本家 BeReal も実際は数秒あけた連続撮影なので、やり方は同じ。
+     かかった時間は右下に小さく秒で出す。
 
-   ■ 向きのねじれ（EXIF）について
-     ここでは保存ずみの画像ファイルではなく、映っている映像を直接
-     切り取っているので、写真ファイルの向き情報（EXIF）でねじれる問題は起きない。
+   ■ 文字を置かない方針
+     操作はすべて絵（アイコン）と形で示す。文字を出すのは
+     「うまくいかなかったとき」だけ。
    ============================================================ */
 
 const $ = s => document.querySelector(s);
 
 const AR = {'3:4':[3,4], '1:1':[1,1], '9:16':[9,16]};
 const KEY = 'uraomote-v1';
-
-/* カメラを切りかえたあと、明るさが落ち着くのを待つ時間（ミリ秒）。
-   短すぎると内カメが暗いまま写る。 */
-const SETTLE = 170;
+const SETTLE = 170;   // 切りかえ後、明るさが落ち着くのを待つ時間（ミリ秒）
 
 const state = {
-  aspect:'3:4',
-  mirror:true,        // 内カメを鏡のまま（プレビューと同じ見た目）にする
-  first:'back',       // さいしょに撮るほう
-  swap:false,         // 大きいほうを内カメにする
-  px:0.0, py:0.0      // 小窓の位置（0〜1）
+  aspect:'3:4', mirror:true, first:'back', swap:false, px:0, py:0
 };
 try{
   const s = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -273,40 +265,32 @@ function persist(){
   })); }catch(e){}
 }
 
-const video = $('#v'), out = $('#out'), frame = $('#frame');
-const veil = $('#veil'), veilMsg = $('#veilMsg'), startBtn = $('#startBtn');
-const shotBtn = $('#shot'), badge = $('#badge'), flash = $('#flash');
-const dockShoot = $('#dockShoot'), dockDone = $('#dockDone');
+const video=$('#v'), out=$('#out'), frame=$('#frame'), veil=$('#veil'), veilMsg=$('#veilMsg');
+const startBtn=$('#startBtn'), shotBtn=$('#shot'), flash=$('#flash'), aim=$('#aim');
+const dockShoot=$('#dockShoot'), dockDone=$('#dockDone');
 
-let stream = null;      // いま開いているカメラ
-let facing = null;      // 'back' | 'front'
-let shots = null;       // {back:canvas, front:canvas}
-let busy = false;
-let oneCamOnly = false; // カメラが1つしかない端末（パソコンなど）
+let stream=null, facing=null, shots=null, busy=false, oneCamOnly=false;
 
 /* ---------- カメラを開く ---------- */
 function stopStream(){
-  if(stream){ stream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} }); }
+  if(stream) stream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} });
   stream = null;
 }
-
 function constraintsFor(want){
   const size = {width:{ideal:1920}, height:{ideal:1920}};
-  return want === 'back'
-    ? [ {facingMode:{exact:'environment'}}, {facingMode:'environment'}, {} ]
-        .map(c => ({video:Object.assign({}, size, c), audio:false}))
-    : [ {facingMode:{exact:'user'}}, {facingMode:'user'}, {} ]
-        .map(c => ({video:Object.assign({}, size, c), audio:false}));
+  const list = want === 'back'
+    ? [{facingMode:{exact:'environment'}}, {facingMode:'environment'}, {}]
+    : [{facingMode:{exact:'user'}}, {facingMode:'user'}, {}];
+  return list.map(c => ({video:Object.assign({}, size, c), audio:false}));
 }
-
 async function open(want){
   stopStream();
-  let last = null;
   const list = constraintsFor(want);
+  let last = null;
   for(let i=0; i<list.length; i++){
     try{
       stream = await navigator.mediaDevices.getUserMedia(list[i]);
-      if(i === 2) oneCamOnly = true;   // 向きの指定が通らなかった＝選べるカメラがない
+      if(i === 2) oneCamOnly = true;      // 向きの指定が通らない＝選べるカメラがない
       facing = want;
       video.srcObject = stream;
       video.classList.toggle('mir', want === 'front' && state.mirror);
@@ -315,34 +299,26 @@ async function open(want){
       return;
     }catch(e){ last = e; }
   }
-  throw last || new Error('カメラを開けませんでした');
+  throw last || new Error('camera');
 }
-
 function ready(){
   return new Promise(res => {
     if(video.videoWidth > 0) return res();
-    const t = setInterval(() => {
-      if(video.videoWidth > 0){ clearInterval(t); res(); }
-    }, 30);
+    const t = setInterval(() => { if(video.videoWidth > 0){ clearInterval(t); res(); } }, 30);
     setTimeout(() => { clearInterval(t); res(); }, 3000);
   });
 }
-
-/* 新しい映像が1コマ来るのを待つ */
 function nextFrame(){
   return new Promise(res => {
     if(video.requestVideoFrameCallback){
       let done = false;
-      video.requestVideoFrameCallback(() => { if(!done){ done = true; res(); } });
-      setTimeout(() => { if(!done){ done = true; res(); } }, 400);
-    }else{
-      setTimeout(res, 90);
-    }
+      video.requestVideoFrameCallback(() => { if(!done){ done=true; res(); } });
+      setTimeout(() => { if(!done){ done=true; res(); } }, 400);
+    }else setTimeout(res, 90);
   });
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
-/* いま映っている1コマを切り取る */
 function grab(){
   const w = video.videoWidth, h = video.videoHeight;
   const c = document.createElement('canvas');
@@ -356,166 +332,156 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.beginPath();
   if(ctx.roundRect){ ctx.roundRect(x, y, w, h, r); return; }
   ctx.moveTo(x+r, y);
-  ctx.arcTo(x+w, y,   x+w, y+h, r);
-  ctx.arcTo(x+w, y+h, x,   y+h, r);
-  ctx.arcTo(x,   y+h, x,   y,   r);
-  ctx.arcTo(x,   y,   x+w, y,   r);
+  ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);     ctx.arcTo(x, y, x+w, y, r);
   ctx.closePath();
 }
-
-/* はみ出しを切って枠いっぱいに敷く（object-fit:cover と同じ考え方） */
 function cover(ctx, src, dx, dy, dw, dh, mirror){
   const sw = src.width, sh = src.height;
   if(!sw || !sh) return;
-  const s = Math.max(dw/sw, dh/sh);
-  const w = sw*s, h = sh*s;
+  const s = Math.max(dw/sw, dh/sh), w = sw*s, h = sh*s;
   const x = dx + (dw-w)/2, y = dy + (dh-h)/2;
   ctx.save();
-  if(mirror){
-    const cx = dx + dw/2;
-    ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0);
-  }
+  if(mirror){ const cx = dx+dw/2; ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
   ctx.drawImage(src, x, y, w, h);
   ctx.restore();
 }
-
 function pipRect(W, H){
-  const pw = W * 0.30, ph = pw * H / W;
-  const m  = W * 0.035;
+  const pw = W*0.30, ph = pw*H/W, m = W*0.035;
   return {
-    x: m + state.px * Math.max(0, W - pw - m*2),
-    y: m + state.py * Math.max(0, H - ph - m*2),
-    w: pw, h: ph, r: pw * 0.11, m: m
+    x: m + state.px * Math.max(0, W-pw-m*2),
+    y: m + state.py * Math.max(0, H-ph-m*2),
+    w: pw, h: ph, r: pw*0.11, m: m
   };
 }
-
 function render(cv, W){
   const [aw, ah] = AR[state.aspect];
-  const H = Math.round(W * ah / aw);
+  const H = Math.round(W*ah/aw);
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
   if(!shots) return;
-
   const mainK = state.swap ? 'front' : 'back';
   const subK  = state.swap ? 'back'  : 'front';
-
-  cover(ctx, shots[mainK], 0, 0, W, H, mainK === 'front' && state.mirror);
+  cover(ctx, shots[mainK], 0, 0, W, H, mainK==='front' && state.mirror);
 
   const p = pipRect(W, H);
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,.5)';
-  ctx.shadowBlur = W * 0.025; ctx.shadowOffsetY = W * 0.007;
-  roundRect(ctx, p.x, p.y, p.w, p.h, p.r);
-  ctx.fillStyle = '#000'; ctx.fill();
+  ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=W*0.025; ctx.shadowOffsetY=W*0.007;
+  roundRect(ctx,p.x,p.y,p.w,p.h,p.r); ctx.fillStyle='#000'; ctx.fill();
   ctx.restore();
-
   ctx.save();
-  roundRect(ctx, p.x, p.y, p.w, p.h, p.r); ctx.clip();
-  cover(ctx, shots[subK], p.x, p.y, p.w, p.h, subK === 'front' && state.mirror);
+  roundRect(ctx,p.x,p.y,p.w,p.h,p.r); ctx.clip();
+  cover(ctx, shots[subK], p.x, p.y, p.w, p.h, subK==='front' && state.mirror);
   ctx.restore();
-
   ctx.save();
-  roundRect(ctx, p.x, p.y, p.w, p.h, p.r);
-  ctx.lineWidth = Math.max(2, W * 0.0038);
-  ctx.strokeStyle = 'rgba(255,255,255,.92)';
-  ctx.stroke();
+  roundRect(ctx,p.x,p.y,p.w,p.h,p.r);
+  ctx.lineWidth = Math.max(2, W*0.0038); ctx.strokeStyle='rgba(255,255,255,.92)'; ctx.stroke();
   ctx.restore();
 }
-
 function preview(){
-  const w = Math.max(1, Math.round(frame.clientWidth * Math.min(2, window.devicePixelRatio || 1)));
-  render(out, Math.min(1200, w));
+  const w = Math.round(frame.clientWidth * Math.min(2, window.devicePixelRatio||1));
+  render(out, Math.min(1200, Math.max(1, w)));
 }
 
 /* ---------- 撮る ---------- */
+function showAim(which){
+  aim.querySelector('use').setAttribute('href', which==='back' ? '#i-out' : '#i-in');
+  aim.classList.add('on');
+}
 async function shoot(){
   if(busy) return;
   busy = true; shotBtn.disabled = true;
-
-  const a = state.first, b = a === 'back' ? 'front' : 'back';
-  const label = k => k === 'back' ? '外カメラ' : '内カメラ';
+  const a = state.first, b = a==='back' ? 'front' : 'back';
   shots = {};
-
   try{
-    if(facing !== a){ badge.textContent = label(a); await open(a); await wait(SETTLE); }
-
+    if(facing !== a){ showAim(a); await open(a); await wait(SETTLE); aim.classList.remove('on'); }
     blink();
     shots[a] = grab();
-    badge.textContent = label(b); badge.classList.remove('hidden');
 
+    showAim(b);
     const t0 = performance.now();
     await open(b);
     await nextFrame();
     await wait(SETTLE);
-    const gapMs = Math.round(performance.now() - t0);
+    const gap = Math.round(performance.now() - t0);
+    aim.classList.remove('on');
     blink();
     shots[b] = grab();
 
-    badge.classList.add('hidden');
-    $('#gapTxt').textContent = oneCamOnly
-      ? '（カメラが1つの端末です）'
-      : '2枚のあいだ ' + gapMs + 'ms';
+    const ms = $('#ms');
+    if(oneCamOnly){ ms.classList.add('hidden'); }
+    else { ms.textContent = (gap/1000).toFixed(1) + 's'; ms.classList.remove('hidden'); }
 
     video.classList.add('hidden'); out.classList.remove('hidden');
     dockShoot.classList.add('hidden'); dockDone.classList.remove('hidden');
-    preview();
-    stopStream();
+    preview(); stopStream(); nudge();
   }catch(e){
-    // 切りかえに失敗しても行き止まりにしない。撮影画面へ戻してもう一度おせるようにする。
-    shots = null;
-    badge.classList.add('hidden');
-    toast('カメラを切りかえられませんでした。もう一度おしてください');
+    // 行き止まりにしない。撮影画面へ戻して、もう一度おせるようにする
+    shots = null; aim.classList.remove('on');
+    toast('もう一度おしてください');
     try{ await open(state.first); }catch(e2){ fail(e2); }
   }finally{
     busy = false; shotBtn.disabled = false;
   }
 }
-
 function blink(){
   flash.classList.add('on');
-  requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove('on')));
+  setTimeout(() => flash.classList.remove('on'), 60);
 }
-
 async function again(){
   shots = null;
+  $('#ms').classList.add('hidden');
   out.classList.add('hidden'); video.classList.remove('hidden');
   dockDone.classList.add('hidden'); dockShoot.classList.remove('hidden');
   try{ await open(state.first); }catch(e){ fail(e); }
 }
 
-/* ---------- 小窓のドラッグ／入れかえ ---------- */
+/* はじめて撮れたときだけ、小窓を軽く揺らして「さわれる」と伝える（文字を使わずに） */
+function nudge(){
+  try{ if(localStorage.getItem('uraomote-nudged')) return;
+       localStorage.setItem('uraomote-nudged','1'); }catch(e){ return; }
+  const from = state.px, t0 = performance.now(), D = 950;
+  (function step(t){
+    if(drag) { state.px = from; preview(); return; }
+    const k = Math.min(1, (t-t0)/D);
+    state.px = Math.min(1, Math.max(0, from + Math.sin(k*Math.PI*2) * 0.18 * (1-k)));
+    preview();
+    if(k < 1) requestAnimationFrame(step);
+    else { state.px = from; preview(); }
+  })(t0);
+}
+
+/* ---------- 小窓：ドラッグで移動／タップで大小入れかえ ---------- */
 let drag = null;
-out.addEventListener('pointerdown', e => {
-  if(!shots) return;
+function geom(e){
   const r = out.getBoundingClientRect();
   const [aw, ah] = AR[state.aspect];
-  // canvas は object-fit:contain。実際に絵が出ている矩形を求める
-  const s = Math.min(r.width/aw, r.height/ah);
-  const dw = aw*s, dh = ah*s;
-  const ox = r.left + (r.width-dw)/2, oy = r.top + (r.height-dh)/2;
+  const s = Math.min(r.width/aw, r.height/ah), dw = aw*s, dh = ah*s;
   const W = 1000, H = Math.round(W*ah/aw);
-  const p = pipRect(W, H);
-  const x = (e.clientX - ox) / dw * W, y = (e.clientY - oy) / dh * H;
+  return {ox:r.left+(r.width-dw)/2, oy:r.top+(r.height-dh)/2, dw, dh, W, H};
+}
+out.addEventListener('pointerdown', e => {
+  if(!shots) return;
+  const g = geom(e), p = pipRect(g.W, g.H);
+  const x = (e.clientX-g.ox)/g.dw*g.W, y = (e.clientY-g.oy)/g.dh*g.H;
   if(x < p.x || x > p.x+p.w || y < p.y || y > p.y+p.h) return;
-  drag = {sx:e.clientX, sy:e.clientY, ox, oy, dw, dh, W, H, gx:x-p.x, gy:y-p.y, moved:false};
-  out.setPointerCapture(e.pointerId);
+  drag = Object.assign({sx:e.clientX, sy:e.clientY, gx:x-p.x, gy:y-p.y, moved:false}, g);
+  try{ out.setPointerCapture(e.pointerId); }catch(err){}
 });
 out.addEventListener('pointermove', e => {
   if(!drag) return;
-  if(Math.abs(e.clientX-drag.sx) + Math.abs(e.clientY-drag.sy) > 6) drag.moved = true;
+  if(Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy) > 6) drag.moved = true;
   if(!drag.moved) return;
-  const {ox, oy, dw, dh, W, H} = drag;
-  const p = pipRect(W, H);
-  const m = W*0.035;
-  const x = (e.clientX - ox)/dw*W - drag.gx;
-  const y = (e.clientY - oy)/dh*H - drag.gy;
-  const fx = Math.max(0, W - p.w - m*2), fy = Math.max(0, H - p.h - m*2);
+  const p = pipRect(drag.W, drag.H), m = drag.W*0.035;
+  const x = (e.clientX-drag.ox)/drag.dw*drag.W - drag.gx;
+  const y = (e.clientY-drag.oy)/drag.dh*drag.H - drag.gy;
+  const fx = Math.max(0, drag.W-p.w-m*2), fy = Math.max(0, drag.H-p.h-m*2);
   state.px = fx ? Math.min(1, Math.max(0, (x-m)/fx)) : 0;
   state.py = fy ? Math.min(1, Math.max(0, (y-m)/fy)) : 0;
   preview();
 });
-out.addEventListener('pointerup', e => {
+out.addEventListener('pointerup', () => {
   if(!drag) return;
   if(!drag.moved){ state.swap = !state.swap; preview(); }
   drag = null; persist();
@@ -527,21 +493,19 @@ function fileName(){
   const d = new Date(), p = n => String(n).padStart(2,'0');
   return `うらおもて_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
 }
-
-/* ⚠️ navigator.share は「タップから数秒以内」でないと開けない。
-   そのため await を挟まずに呼ぶ。書き出しは先に済ませておく。 */
+/* ⚠️ navigator.share は「タップから数秒以内」でないと開けない。await を挟まずに呼ぶ。 */
 function handOver(file){
-  const tries = (file.__tries || 0) + 1; file.__tries = tries;
+  const tries = (file.__tries||0)+1; file.__tries = tries;
   let can = false;
   try{ can = !!(navigator.canShare && navigator.canShare({files:[file]})); }catch(e){}
   if(can){
     const failed = err => {
-      if(err && err.name === 'AbortError'){ arm(file); return; }
+      if(err && err.name === 'AbortError'){ armed = file; return; }
       if(tries >= 2){ download(file); return; }
-      arm(file); toast('できました。もう一度おしてください');
+      armed = file; toast('もう一度おしてください');
     };
     try{
-      navigator.share({files:[file]}).then(() => { disarm(); toast('保存しました'); }).catch(failed);
+      navigator.share({files:[file]}).then(() => { armed=null; ok(); }).catch(failed);
       return;
     }catch(e){ failed(e); return; }
   }
@@ -552,58 +516,55 @@ function download(file){
   a.href = URL.createObjectURL(file); a.download = file.name;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
-  disarm(); toast('保存しました');
+  armed = null; ok();
 }
 let armed = null;
-function arm(file){ armed = file; $('#save').textContent = '写真に保存'; }
-function disarm(){ armed = null; $('#save').textContent = '写真に保存'; }
-
 $('#save').addEventListener('click', () => {
   if(armed){ handOver(armed); return; }
   const cv = document.createElement('canvas');
   render(cv, 1440);
   cv.toBlob(b => {
-    if(!b){ toast('画像を作れませんでした'); return; }
+    if(!b){ toast('保存できませんでした'); return; }
     const file = new File([b], fileName(), {type:'image/jpeg'});
-    arm(file);
-    handOver(file);
+    armed = file; handOver(file);
   }, 'image/jpeg', 0.94);
 });
 
-/* ---------- 操作まわり ---------- */
+/* ---------- 操作 ---------- */
 $('#chips').addEventListener('click', e => {
   const b = e.target.closest('.chip'); if(!b) return;
   state.aspect = b.dataset.ar;
-  [...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+  [...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c===b)));
   applyAspect(); persist();
   if(shots) preview();
 });
 function applyAspect(){
   const [aw, ah] = AR[state.aspect];
-  frame.style.setProperty('--ar', aw + '/' + ah);
+  frame.style.setProperty('--ar', aw+'/'+ah);
   fit();
 }
-
-/* 舞台（stage）の高さに枠がおさまる上限幅を出す。
-   CSS の max-height だけだと幅は100%のままなので、比率がくずれて
-   「見えている絵」と「保存される絵」の切り取り位置がずれてしまう。 */
+/* 舞台の高さに枠がおさまる上限幅。CSS の max-height だけだと幅は100%のままで
+   比率がくずれ、「見えている絵」と「保存される絵」の切り取り位置がずれる。 */
 function fit(){
   const stage = document.querySelector('.stage');
   const [aw, ah] = AR[state.aspect];
-  const h = stage.clientHeight - 12;            // 上下のすきま
-  frame.style.setProperty('--fitw', Math.max(80, Math.floor(h * aw / ah)) + 'px');
+  const h = stage.clientHeight - 8;
+  frame.style.setProperty('--fitw', Math.max(80, Math.floor(h*aw/ah))+'px');
 }
 
+function drawOrder(){
+  $('#oA').querySelector('use').setAttribute('href', state.first==='back' ? '#i-out' : '#i-in');
+  $('#oB').querySelector('use').setAttribute('href', state.first==='back' ? '#i-in'  : '#i-out');
+}
 $('#orderBtn').addEventListener('click', async () => {
-  state.first = state.first === 'back' ? 'front' : 'back';
-  $('#orderV').textContent = state.first === 'back' ? '外' : '内';
-  persist();
-  if(!shots && stream){ try{ await open(state.first); }catch(e){ fail(e); } }
+  state.first = state.first==='back' ? 'front' : 'back';
+  drawOrder(); persist();
+  if(!shots && stream && !busy){ try{ await open(state.first); }catch(e){ fail(e); } }
 });
 $('#mirrorBtn').addEventListener('click', () => {
   state.mirror = !state.mirror;
-  $('#mirrorV').textContent = state.mirror ? '鏡のまま' : '実物どおり';
-  video.classList.toggle('mir', facing === 'front' && state.mirror);
+  $('#mirrorBtn').setAttribute('aria-pressed', String(state.mirror));
+  video.classList.toggle('mir', facing==='front' && state.mirror);
   persist();
   if(shots) preview();
 });
@@ -611,59 +572,54 @@ $('#again').addEventListener('click', again);
 shotBtn.addEventListener('click', shoot);
 
 startBtn.addEventListener('click', async () => {
-  startBtn.disabled = true; startBtn.textContent = 'ひらいています…';
+  startBtn.disabled = true;
   try{
     await open(state.first);
-    veil.classList.add('hidden');
+    veil.classList.add('hidden'); veilMsg.textContent = '';
     shotBtn.disabled = false;
-    if(oneCamOnly) toast('カメラが1つの端末です。同じ絵が2枚になります');
-  }catch(e){
-    startBtn.disabled = false; startBtn.textContent = 'もう一度ためす';
-    fail(e);
-  }
+  }catch(e){ fail(e); }
 });
 
 function fail(e){
   const n = (e && e.name) || '';
   let msg;
-  if(!window.isSecureContext) msg = 'カメラは https のページでしか使えません。';
-  else if(n === 'NotAllowedError') msg = 'カメラの使用がことわられています。<br>設定 → Safari → カメラ、または画面左上の「ぁあ」→「Webサイトの設定」から許可してください。';
-  else if(n === 'NotFoundError' || n === 'OverconstrainedError') msg = 'この端末で使えるカメラが見つかりませんでした。';
-  else if(n === 'NotReadableError') msg = 'ほかのアプリがカメラを使っているようです。<br>ほかのカメラアプリを閉じてから、もう一度ためしてください。';
-  else msg = 'カメラを開けませんでした。<br>ページを読み込みなおしてください。<br><span style="font-size:11px">（' + (n || e) + '）</span>';
+  if(!window.isSecureContext) msg = 'カメラは https のページでしか使えません';
+  else if(n === 'NotAllowedError') msg = 'カメラの使用を許可してください<br>（画面左上の「ぁあ」→ Webサイトの設定）';
+  else if(n === 'NotFoundError' || n === 'OverconstrainedError') msg = 'カメラが見つかりませんでした';
+  else if(n === 'NotReadableError') msg = 'ほかのカメラアプリを閉じてください';
+  else msg = 'カメラを開けませんでした';
   veilMsg.innerHTML = msg;
   veil.classList.remove('hidden');
   startBtn.classList.remove('hidden');
   startBtn.disabled = false;
-  startBtn.textContent = 'もう一度ためす';
 }
 
-/* ---------- トースト ---------- */
+/* ---------- 短いおしらせ（ふだんは ✓ の絵だけ） ---------- */
 let tt = null;
-function toast(m){
-  const t = $('#toast'); t.textContent = m; t.classList.add('on');
-  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2200);
+function show(html){
+  const t = $('#toast'); t.innerHTML = html; t.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 1800);
 }
+function ok(){ show('<svg viewBox="0 0 24 24"><use href="#i-ok"></use></svg>'); }
+function toast(m){ show(m); }
 
 /* ---------- はじめの表示 ---------- */
 applyAspect();
-[...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c.dataset.ar === state.aspect)));
-$('#orderV').textContent = state.first === 'back' ? '外' : '内';
-$('#mirrorV').textContent = state.mirror ? '鏡のまま' : '実物どおり';
+[...$('#chips').children].forEach(c => c.setAttribute('aria-pressed', String(c.dataset.ar===state.aspect)));
+drawOrder();
+$('#mirrorBtn').setAttribute('aria-pressed', String(state.mirror));
 
 if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-  veilMsg.innerHTML = 'このブラウザではカメラを使えません。<br>Safari か Chrome でひらいてください。';
+  veilMsg.textContent = 'このブラウザではカメラを使えません';
   startBtn.classList.add('hidden');
 }
 
 window.addEventListener('resize', () => { fit(); if(shots) preview(); });
 if(window.ResizeObserver){
-  new ResizeObserver(() => { fit(); if(shots) preview(); })
-    .observe(document.querySelector('.stage'));
+  new ResizeObserver(() => { fit(); if(shots) preview(); }).observe(document.querySelector('.stage'));
 }
 document.addEventListener('visibilitychange', () => {
-  // 裏に回ったらカメラを離す（電池と発熱のため）。戻ってきたら開きなおす。
-  const running = veil.classList.contains('hidden');   // 覆いが消えている＝撮影中の画面
+  const running = veil.classList.contains('hidden');
   if(document.hidden){ if(!shots) stopStream(); }
   else if(running && !shots && !busy){ open(state.first).catch(() => {}); }
 });
