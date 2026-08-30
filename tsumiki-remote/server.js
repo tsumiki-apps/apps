@@ -576,7 +576,10 @@ const server = http.createServer(async (req, res) => {
       start_url: './?t=' + TOKEN,
       scope: './',
       display: 'standalone',
-      orientation: 'portrait',
+      // 向きは固定しない。portrait にすると、ホーム画面から起動した iPad が
+      // 横向きでも縦のまま表示され、画面の左右が黒く余る（2026-08-31）。
+      // 画面は幅で組み替わる（600/900）ので、どちらの向きでも成立する。
+      orientation: 'any',
       background_color: '#0e0f12',
       theme_color: '#0e0f12',
       icons: [

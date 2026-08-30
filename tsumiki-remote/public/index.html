@@ -41,7 +41,9 @@
   header .conn{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px;
     white-space:nowrap;flex:0 0 auto}
   /* 狭い画面では緑の点だけ残して文字は隠す（ボタンが折り返すのを防ぐ） */
-  @media (max-width:430px){ header .conn .txt{display:none} }
+  /* ブレイクポイントは 600/900 の2本に揃える（430 の3本目は廃止・2026-08-31）。
+     600px 未満では文字を隠し、それ以上では出す */
+  @media (max-width:599px){ header .conn .txt{display:none} }
   header .conn::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--idle)}
   header .conn.on::before{background:var(--accent)}
   header .conn.err::before{background:#ef4444}
@@ -460,6 +462,135 @@
        折り返される。max-content にして、上限だけ max-width で止める */
     width:max-content}
   .toast.show{opacity:1}
+
+  /* ==========================================================================
+     画面が広いとき（iPad・ノート・デスクトップ）
+     ここより上は iPhone の幅で組んだもの。下は「広い側だけ」の上書き。
+     ブレイクポイントは 600px と 900px の2本だけ（増やすほど検証箇所が増えて壊れる）。
+       〜599  iPhone（そのまま）
+       600〜  iPad 縦・小型ノート … 1列のまま、字と当たり判定を大きくする
+       900〜  iPad 横・ノート・デスクトップ … 札を左の列に立てて一覧にする
+     ========================================================================== */
+
+  /* --- 600px 以上（かつ縦が 600px 以上）--------------------------------------
+     幅が広くなっても、iPhone を手に持つ距離の寸法（端末の字 11px・キー行 31px）の
+     ままだと、iPad では小さすぎて読めず、押しにくい。持つ距離が遠いぶん字を上げ、
+     余白があるぶん当たり判定を Apple の最小値（44px）まで広げる。
+
+     ⚠️ 縦の条件（min-height:600px）が要る。iPhone を横にすると 844×390 のような
+     「幅は広いが縦が無い」形になり、ヘッダー・札・キー行を大きくしたぶんだけ
+     作業画面が潰れる（実測：main の高さが 12px まで縮んだ・2026-08-31）。
+     縦が足りない画面では、iPhone の詰まった寸法のままがいちばんよく見える。
+     ※ 幅のブレイクポイントは 600/900 の2本のまま。これは幅の3本目ではなく、
+        「縦が足りないときは大きくしない」という条件。 */
+  @media (min-width:600px) and (min-height:600px){
+    header{padding:12px 18px 10px}
+    header .title{font-size:16px}
+    nav{padding:0 18px 12px}
+    .tab{min-width:104px;padding:10px 12px;font-size:13px}
+    .tab .n{font-size:14px}
+    .tab.add{min-width:64px;font-size:19px}
+    #stale{margin:0 14px 8px;font-size:12px;padding:9px 12px}
+    main{margin:0 14px}
+    #out{font-size:13px;line-height:1.55;padding:16px}
+    #out .tbl{font-size:12px}
+    #out .draw{font-size:12px}
+    #out .ddesc,#out .dhint,#out .dsub{font-size:12px}
+    #out .dopt{min-height:44px;padding:10px 12px}
+    footer{padding:8px 14px max(8px, env(safe-area-inset-bottom))}
+    #dest{font-size:12px}
+    /* 指の当たり判定を Apple の最小値（44×44）まで広げる。数字の 1 は字が細いので、
+       高さだけでなく幅にも下限を置く（見た目は変えず、押せる面積だけ広げる） */
+    #keys button{min-height:44px;min-width:44px;padding:10px 16px;font-size:13px}
+    #pick,#send{width:46px;height:46px}
+    #menu,#reload{min-width:44px;min-height:44px;padding:10px 14px;font-size:14px}
+    #reload{font-size:17px}
+    /* 棒と電池は見た目を大きくしない（ヘッダーが騒がしくなる）。当たり判定だけ広げる */
+    #usage,#batt{min-width:44px;min-height:44px;justify-content:center}
+    /* 添えた画像の札。✕ は指1本ぶん確保する */
+    .att img,.att .ph{width:44px;height:44px;font-size:17px}
+    .att button{width:44px;height:44px;font-size:17px}
+    #cmd{padding:12px 16px;line-height:24px;max-height:144px}
+    /* 下から出る紙は、広い画面では横に伸びきると押す場所が遠くなる。幅だけ止める */
+    #sheet{justify-content:center}
+    .sheetbox{width:min(640px,100%);border-top-left-radius:20px;border-top-right-radius:20px}
+    .viewerbar button{padding:9px 14px;font-size:13px;min-height:44px}
+    #gate input{padding:13px 16px}
+    #gate button{min-height:44px}
+    #gate p{font-size:14px;max-width:360px}
+    /* 写す札は絵のまま（行がガタつくので大きくしない）。当たり判定だけ 44px に広げる */
+    #out .lcp::after{top:-14px;right:-12px;bottom:-14px;left:-12px}
+  }
+
+  /* --- 900px 以上 ------------------------------------------------------------
+     セッションの札を左の列に立てる。横に並べたままだと、画面が広いほど右側が
+     黒く空くだけで、札は相変わらず横スクロールの中に隠れたまま＝広さが何の役にも
+     立たない。縦に積めば全部が一度に見える＝広さがそのまま「一覧が見える」になる。
+
+     HTML の入れ子は変えない。並び（header→nav→#stale→main→footer）はそのままに、
+     grid の升目へ置き直すだけ＝JS からは今までと同じ画面に見える（DOM を触る
+     コードを1行も直さなくていい）。
+
+     ⚠️ この 900px には iPhone の横向き（Pro Max ＝ 932×430）も入る。縦が 430px
+     しかないが、そこでも札が縦の列に移るぶん、上下は今より広くなる（横並びの
+     nav が消えるため）。だから高さの条件は付けない。
+
+     もうひとつ、**縦が無い横向き（〜520px）は 600px から**この形にする。
+     844×390（iPhone 標準機の横向き）では、札が横に並んだままだと作業画面が
+     72px しか残らない。札を左に寄せるだけで 170px 前後まで戻る（実測・2026-08-31）。
+     カンマは「または」＝幅900以上、または「幅600以上かつ縦520以下」。 */
+  @media (min-width:900px), (min-width:600px) and (max-height:520px){
+    body{
+      display:grid;
+      grid-template-columns:clamp(200px,22vw,290px) minmax(0,1fr);
+      grid-template-rows:auto auto minmax(0,1fr) auto;
+      grid-template-areas:
+        "head head"
+        "nav  stale"
+        "nav  main"
+        "nav  foot";
+      column-gap:14px;
+      /* 右端の余白は grid の外側（body）で持つ。中の箱はどれも同じ幅で
+         中央に寄せるので、余白を箱ごとに持たせると数字が合わなくなる */
+      padding-right:max(14px, env(safe-area-inset-right));
+    }
+    header{grid-area:head}
+    /* 札の列。縦に積んで、入りきらないぶんはこの列の中だけでスクロールする
+       （画面ごと動かさない＝右の作業画面は止まったまま） */
+    nav{
+      grid-area:nav;flex-direction:column;align-content:flex-start;
+      overflow-x:hidden;overflow-y:auto;min-height:0;
+      padding:0 0 12px 18px;gap:7px;
+    }
+    .tab{width:100%;min-width:0}
+    /* 横並びのときは題名を 11.5em で止めていた（伸びると隣の札が画面外に出るため）。
+       縦に積んだ列では隣に押し出すものが無いので、列の幅いっぱいまで使う */
+    .tab .n{max-width:none}
+    .tab.add{flex-direction:row;justify-content:center;gap:8px;min-height:48px;font-size:17px}
+    /* 端末の字を画面の端から端まで流すと、目が戻る場所を見失う（1920px では
+       1行が 200 文字を超える）。読む幅で頭打ちにして中央に寄せる。
+       ⚠️ 中の字だけを細くするのではなく、**枠ごと**細くして中央に置く。
+       枠を端まで伸ばしたまま中の字だけ寄せると、広い画面では黒い額縁の中に
+       文が浮いて「読み込み中に見える」（1920px で実際にそう見えた） */
+    #stale{grid-area:stale;width:100%;max-width:1060px;margin:0 auto 8px}
+    main{grid-area:main;width:100%;max-width:1060px;margin:0 auto}
+    footer{grid-area:foot;padding:8px 0 max(10px, env(safe-area-inset-bottom))}
+    /* 入力まわりも本文と同じ幅・同じ中央。ここだけ端まで伸びると、
+       送信ボタンが本文のずっと右外に離れて「どこを押すのか」が分かりにくい */
+    footer > #dest,
+    footer > #keys,
+    footer > #atts,
+    footer > .row{width:100%;max-width:1060px;margin-left:auto;margin-right:auto}
+    /* 下から出る紙は、この幅では画面の真ん中に置く（下端まで指が届かないので、
+       スマホの「親指の近くに出す」形が逆に遠くなる） */
+    #sheet{align-items:center;padding:24px}
+    .sheetbox{
+      width:min(480px,100%);max-height:min(600px,80dvh);
+      border:1px solid var(--line);border-radius:20px;
+      padding:16px 14px 16px;
+    }
+    .toast{max-width:min(560px, calc(100% - 20px))}
+  }
 </style>
 </head>
 <body>
@@ -1922,7 +2053,11 @@
     if (colProbe.parentNode !== el.out) el.out.appendChild(colProbe);
     // .blk は左右に padding 8px・margin -4px を持つので、本文が使える幅はその内側
     var per = colProbe.getBoundingClientRect().width / 100;
-    var avail = el.out.clientWidth - 24 + 8 - 16;        // #out padding / .blk margin / .blk padding
+    // #out の余白は画面の広さで変わる（iPhone 12px / 600px以上 16px）。決め打ちにすると
+    // iPad で1桁ぶんずれる。実際の値を読む（2026-08-31）
+    var cs = getComputedStyle(el.out);
+    var pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    var avail = el.out.clientWidth - pad + 8 - 16;       // #out padding / .blk margin / .blk padding
     if (!(per > 0) || !(avail > 0)) return 0;
     return Math.max(40, Math.min(120, Math.floor(avail / per)));
   }
@@ -2057,6 +2192,17 @@
     renderAtts();
     sendText(text, true);
   };
+  // 外付けキーボード（iPad の Magic Keyboard・Mac）だけの近道＝⌘Enter / Ctrl+Enter で送る。
+  // Enter 単体は改行のまま（下のコメントのとおり、変換確定で飛んでいくため）。
+  // 変換中（isComposing / keyCode 229）は何もしない＝確定の Enter と重ならない。
+  // 指で使う画面の見た目は何も変わらない（キーボードが無ければ存在しないのと同じ）。
+  el.cmd.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+    if (!e.metaKey && !e.ctrlKey) return;
+    e.preventDefault();
+    if (!el.send.disabled) el.send.click();
+  });
+
   // Enter は改行。送信は右の↑だけ（2026-08-13）。
   // 送信を Enter に持たせると、日本語の変換確定でも送信が走る＝書きかけが
   // 飛んでいく。改行を入れたいという要望と、この誤送信の両方がこれで消える。
