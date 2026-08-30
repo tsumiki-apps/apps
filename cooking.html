@@ -76,21 +76,15 @@
   .search-box input:focus { outline:none; border-color: var(--accent); }
   .filter-row { display:flex; gap:8px; overflow-x:auto; padding: 12px 0 4px; -webkit-overflow-scrolling:touch; }
   .filter-row::-webkit-scrollbar{display:none;}
+  .list-head { font-size:12.5px; color:var(--sub); margin:2px 4px 6px; }
+  .list-head b { color:var(--accent); }
   .fchip {
-    white-space:nowrap; font-size:13.5px; padding:7px 14px; border-radius:999px;
+    white-space:nowrap; font-size:13.5px; min-height:44px; padding:0 15px; border-radius:999px;
+    display:inline-flex; align-items:center; flex:none;
     background:var(--chip); color:var(--sub); border:none; cursor:pointer; font-family:inherit;
   }
   .fchip.on { background: var(--text); color:#fff; }
   .fchip .cnt { font-size:11px; opacity:.65; margin-left:5px; }
-
-  /* ===== タグページ ===== */
-  .tagview { margin-top:14px; }
-  .tagview-head { margin:4px 0 6px; }
-  .tagview-title { font-size:14px; font-weight:700; color:var(--text); margin:6px 2px 12px; }
-  .tag-cloud { display:flex; flex-wrap:wrap; gap:8px; }
-  .tag-clear { margin-top:12px; font-size:12.5px; padding:6px 13px; border-radius:999px; background:#fff; border:1px solid var(--line); color:var(--sub); cursor:pointer; font-family:inherit; }
-  .tagview-result-head { font-size:12.5px; color:var(--sub); margin:18px 4px 2px; }
-  .tagview-result-head b { color:var(--accent); }
 
   /* ===== 日記フィード ===== */
   .feed { margin-top: 8px; }
@@ -524,7 +518,6 @@
     <div class="viewseg" id="viewSeg">
       <button data-view="feed" class="on" aria-label="フィード">📖</button>
       <button data-view="calendar" aria-label="カレンダー">📅</button>
-      <button data-view="tags" aria-label="タグ">🏷️</button>
     </div>
     <div id="feedTools">
       <div class="search-box" style="margin-top:12px">
@@ -533,12 +526,12 @@
       </div>
       <div class="filter-row" id="cookFilterRow"></div>
       <div class="filter-row sort-row" id="sortRow"></div>
+      <div class="filter-row" id="tagFilterRow"></div>
     </div>
   </div>
   <div id="feedPanels"></div>
   <div class="feed" id="feed"></div>
   <div class="cal" id="calendar" style="display:none"></div>
-  <div class="tagview" id="tagview" style="display:none"></div>
 </main>
 
 <button class="fab" id="fab" aria-label="ごはんを撮って記録する">📷</button>
@@ -1088,7 +1081,7 @@ async function migrateLocalIfNeeded(){
 /* ============ 状態 ============ */
 let allRecords=[];
 let allLikes=[], allComments=[], allReactions=[];
-let selTags=[];        // タグページで選択中のタグ（複数選択＝AND絞り込み）
+let selTags=[];        // 🔍 の中で選択中のタグ（複数選択＝AND絞り込み）
 let curCook='すべて';   // 作った人フィルター（投稿者ベース）。'こうだい'投稿=ゆず作 / 'ゆずは'投稿=こうだい作
 let viewMode='feed';
 let sortMode='date';   // 'date'=作った日順 / 'added'=あとから足された分も拾える「増えた順」
@@ -1131,14 +1124,23 @@ async function loadComments(){
 function likesFor(id){ return allLikes.filter(l=>l.record_id===id); }
 function iLiked(id){ return allLikes.some(l=>l.record_id===id && l.who===who); }
 function commentsFor(id){ return allComments.filter(c=>c.record_id===id); }
-async function toggleLike(id){
+/* いいね：先に手元を書き換えて、その記録のボタンだけ描き直す（フィード全体は触らない＝チラつかない）。
+   DBへの書き込みは裏で走らせる。 */
+function toggleLike(id){
   if(!who) return;
   const mine = allLikes.find(l=>l.record_id===id && l.who===who);
-  if(mine){ const {error}=await sb.from('likes').delete().eq('id',mine.id); if(error)console.error(error); }
-  else {
-    const {error}=await sb.from('likes').insert({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), record_id:id, who, created_at:Date.now() });
-    if(error)console.error(error);
-    else pushNotify('like', id);   // いいねを付けたときだけ相手に通知
+  if(mine){
+    allLikes = allLikes.filter(l=>l!==mine);
+    refreshRecordUI(id);
+    sb.from('likes').delete().eq('id',mine.id).then(({error})=>{ if(error) console.error(error); });
+  }else{
+    const row={ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), record_id:id, who, created_at:Date.now() };
+    allLikes.push(row);
+    refreshRecordUI(id);
+    sb.from('likes').insert(row).then(({error})=>{
+      if(error) console.error(error);
+      else pushNotify('like', id);   // いいねを付けたときだけ相手に通知
+    });
   }
 }
 async function addComment(id, body){
@@ -1176,18 +1178,21 @@ function wantList(){
     .sort((a,b)=> wantCount(b.id)-wantCount(a.id) || (b.date||'').localeCompare(a.date||''));
 }
 /* リアクションを付け外しする（楽観更新→DB→realtimeで相手にも反映） */
-async function toggleReaction(id, emoji){
+function toggleReaction(id, emoji){
   if(!who) return;
   const mine = allReactions.find(x=>x.record_id===id && x.who===who && x.emoji===emoji);
   if(mine){
     allReactions = allReactions.filter(x=>x!==mine);
-    const {error} = await sb.from('reactions').delete().eq('id',mine.id); if(error) console.error(error);
+    refreshRecordUI(id);
+    sb.from('reactions').delete().eq('id',mine.id).then(({error})=>{ if(error) console.error(error); });
   } else {
     const newR={ id:'x'+Date.now()+Math.random().toString(36).slice(2,6), record_id:id, who, emoji, created_at:Date.now() };
     allReactions.push(newR);
-    const {error} = await sb.from('reactions').insert(newR);
-    if(error) console.error(error);
-    else pushNotify('react', id, emoji);   // 2人の端末へ「○○さんが🤤しました」
+    refreshRecordUI(id);
+    sb.from('reactions').insert(newR).then(({error})=>{
+      if(error) console.error(error);
+      else pushNotify('react', id, emoji);   // 2人の端末へ「○○さんが🤤しました」
+    });
   }
 }
 
@@ -1209,7 +1214,6 @@ function fmtMonth(key){ const [y,m]=key.split('-'); return `${y}年${+m}月`; }
 function fmtWhen(ts){ if(!ts) return ''; const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${d.getMonth()+1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function renderCurrentView(){
   if(viewMode==='calendar'){ renderPanels(); renderCalendar(); }
-  else if(viewMode==='tags'){ renderPanels(); renderTagView(); }
   else renderFeed();
 }
 
@@ -1239,7 +1243,7 @@ function recordListHTML(list, {groupByMonth=true}={}){
         <div class="body">
           <div class="e-top">
             <span class="e-date">${fmtDateShort(r.date)}</span>
-            ${cc?`<span class="e-cmt">💬 ${cc}</span>`:''}
+            <span class="e-cmt">${cc?`💬 ${cc}`:''}</span>
           </div>
           <div class="e-name">${badge}${esc(r.name)}</div>
           ${r.note?`<div class="e-note">${esc(r.note)}</div>`:''}
@@ -1272,49 +1276,57 @@ function actRowDetailHTML(id){
 function bindReactions(container){
   container.querySelectorAll('[data-rx]').forEach(btn=>btn.onclick=ev=>{
     ev.stopPropagation();
-    ensureWho(async()=>{ haptic(true); await toggleReaction(btn.dataset.rx, btn.dataset.e); await loadRecords(); });
+    ensureWho(()=>{ haptic(true); toggleReaction(btn.dataset.rx, btn.dataset.e); });
+  });
+}
+function bindLikes(container){
+  container.querySelectorAll('[data-like]').forEach(el=>el.onclick=ev=>{
+    ev.stopPropagation();
+    ensureWho(()=>toggleLike(el.dataset.like));
   });
 }
 function bindEntries(container){
   container.querySelectorAll('.entry').forEach(e=>e.onclick=()=>openDetail(e.dataset.id));
-  container.querySelectorAll('[data-like]').forEach(el=>el.onclick=ev=>{
-    ev.stopPropagation();
-    ensureWho(async()=>{ await toggleLike(el.dataset.like); await loadRecords(); });
-  });
+  bindLikes(container);
   bindReactions(container);
 }
-/* ============ タグページ（タグで絞り込み） ============ */
-function renderTagView(){
-  const tv=$('#tagview');
-  const tags=allTags();
-  selTags=selTags.filter(t=>tags.includes(t));        // 消えたタグは選択から外す
-  if(!tags.length){
-    tv.innerHTML=`<div class="empty"><span class="big">🏷️</span>まだタグがありません</div>`;
-    return;
+/* カード1枚ぶんの反応まわりだけを差し替える。写真には触らないので白くならない。 */
+function refreshActRow(card){
+  const id=card.dataset.id; if(!id) return;
+  const row=card.querySelector('.act-row');
+  if(row){
+    const t=document.createElement('div'); t.innerHTML=actRowHTML(id);
+    row.replaceWith(t.firstElementChild);
   }
-  const count=t=>allRecords.filter(r=>(r.tags||[]).includes(t)).length;
-  const chips=tags.map(t=>`<button class="fchip ${selTags.includes(t)?'on':''}" data-t="${esc(t)}">${esc(t)}<span class="cnt">${count(t)}</span></button>`).join('');
-  // 選択タグをすべて含む記録（AND絞り込み）
-  let list=allRecords.slice();
-  if(selTags.length) list=list.filter(r=>selTags.every(t=>(r.tags||[]).includes(t)));
-  const head=selTags.length
-    ? `<div class="tagview-result-head">「${selTags.map(esc).join('」「')}」の記録 <b>${list.length}</b>件</div>`
-    : `<div class="tagview-result-head">タグを選んで絞りこむ（全${allRecords.length}件）</div>`;
-  const body=list.length? recordListHTML(list) : `<div class="empty"><span class="big">🔍</span>該当する記録がありません</div>`;
-  tv.innerHTML=`
-    <div class="tagview-head">
-      <div class="tag-cloud">${chips}</div>
-      ${selTags.length?`<button class="tag-clear" id="tagClear">✕ クリア</button>`:''}
-    </div>
-    ${head}
-    ${body}`;
-  tv.querySelectorAll('.tag-cloud .fchip').forEach(b=>b.onclick=()=>{
+  const cm=card.querySelector('.e-cmt');
+  if(cm){ const cc=commentsFor(id).length; cm.textContent = cc? `💬 ${cc}` : ''; }
+  bindLikes(card); bindReactions(card);
+}
+function refreshRecordUI(id){
+  document.querySelectorAll('.entry').forEach(card=>{ if(card.dataset.id===id) refreshActRow(card); });
+  if(openDetailId===id) refreshDetailUI(id);
+  updateStats();
+}
+/* ============ タグページ（タグで絞り込み） ============ */
+/* タグの絞りこみ（🔍 の中。よく使う順に並べる。複数選ぶとAND） */
+function tagCounts(){
+  const m=new Map();
+  allRecords.forEach(r=>(r.tags||[]).forEach(t=>m.set(t,(m.get(t)||0)+1)));
+  return [...m.entries()].sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0],'ja'));
+}
+function renderTagFilter(){
+  const rows=tagCounts();
+  selTags=selTags.filter(t=>rows.some(x=>x[0]===t));   // 消えたタグは選択から外す
+  const row=$('#tagFilterRow');
+  if(!rows.length){ row.innerHTML=''; return; }
+  row.innerHTML = rows.map(([t,n])=>
+    `<button class="fchip ${selTags.includes(t)?'on':''}" data-t="${esc(t)}">${esc(t)}<span class="cnt">${n}</span></button>`
+  ).join('');
+  row.querySelectorAll('.fchip').forEach(b=>b.onclick=()=>{
     const t=b.dataset.t;
     if(selTags.includes(t)) selTags=selTags.filter(x=>x!==t); else selTags.push(t);
-    renderTagView();
+    renderTagFilter(); renderFeed(); syncTools();
   });
-  const clr=$('#tagClear'); if(clr) clr.onclick=()=>{ selTags=[]; renderTagView(); };
-  bindEntries(tv);
 }
 /* 作った人フィルター。value は投稿者（こうだい/ゆずは）。表示は「作った人」 */
 const COOK_FILTERS=[
@@ -1396,6 +1408,8 @@ function renderPanels(){
       </div>
     </div>`;
   }
+  if(box.__html===html) return;   // 中身が同じなら作り直さない（写真のチラつき防止）
+  box.__html=html;
   box.innerHTML=html;
   box.querySelectorAll('[data-open]').forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); openDetail(el.dataset.open); });
   const ay=$('#askYes');
@@ -1407,22 +1421,37 @@ function renderPanels(){
   const an=$('#askNo');
   if(an) an.onclick=ev=>{ ev.stopPropagation(); localStorage.setItem('yuzuNotifyAsked','1'); renderPanels(); };
 }
+/* 記録1件の「見た目に効く中身」。ここが変わっていなければカードは作り直さない。
+   いいね・スタンプ・コメント数は入れない＝それだけならボタンの行だけ差し替える。 */
+function recordSig(r){
+  return [r.id, r.name, r.date, r.note||'', (r.tags||[]).join(','), (r.photos||[]).join('|')].join('¦');
+}
+let _feedSig='';
 function renderFeed(){
   renderPanels();
   const q=$('#search').value.trim().toLowerCase();
   let list=sortRecords(allRecords);
   if(curCook!=='すべて') list=list.filter(r=>r.who===curCook);   // 投稿者＝作った人で絞り込み（旧データは「すべて」のみ）
+  if(selTags.length) list=list.filter(r=>selTags.every(t=>(r.tags||[]).includes(t)));   // タグはAND
   if(q) list=list.filter(r=>{
     const hay=[r.name,r.note,...(r.tags||[])].join(' ').toLowerCase();
     return hay.includes(q);
   });
   const feed=$('#feed');
   if(!list.length){
+    _feedSig='';
     feed.innerHTML = allRecords.length
       ? `<div class="empty"><span class="big">🔍</span>見つかりませんでした</div>`
       : `<div class="empty"><span class="big">🍳</span>右下の 📷 から、はじめの1品を。</div>`;
     return;
   }
+  const sig = list.map(recordSig).join('§') + '#' + (sortMode!=='added');
+  if(sig===_feedSig && feed.querySelector('.entry')){
+    // 並びも中身も同じ＝作り直さず、反応の行だけ最新にする（写真を読み直さないので白くならない）
+    feed.querySelectorAll('.entry').forEach(refreshActRow);
+    return;
+  }
+  _feedSig=sig;
   feed.innerHTML=recordListHTML(list, {groupByMonth: sortMode!=='added'});
   bindEntries(feed);
 }
@@ -1447,7 +1476,7 @@ async function loadRecords(){
     if(!lastSeen) lastSeen = Date.now();   // 初回起動は全部を既読扱いにする（バッジだらけを防ぐ）
     localStorage.setItem('yuzuLastSeen', String(Date.now()));
   }
-  updateStats(); renderCookFilter(); renderSortRow();
+  updateStats(); renderCookFilter(); renderSortRow(); renderTagFilter();
   renderCurrentView();
   if(openDetailId) renderDetail(openDetailId);
   if($('#requestModal').classList.contains('show')) renderRequests();
@@ -1697,18 +1726,20 @@ function openDetail(id){
   renderDetail(id);
   showModal('detailModal');
 }
-function renderDetail(id){
-  const r=allRecords.find(x=>x.id===id);
-  if(!r){ hideModal('detailModal'); return; }
-  const photos=r.photos||[];
-  const photoHtml = photos.length
-    ? `<div class="detail-photos">${photos.map((p,i)=>`<img src="${p}" data-lb="${i}" decoding="async">`).join('')}</div>`
-    : '';
-  const tags=(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+/* 詳細の「いいね＋スタンプ」まとまり */
+function detailReactHTML(id){
   const likes=likesFor(id), liked=iLiked(id);
   const likeNames=likes.map(l=>l.who).join('・');
+  return `<div class="like-row">
+      <button class="like-btn ${liked?'on':''}" id="likeBtn"><span class="hi">${liked?'❤️':'🤍'}</span>いいね${likes.length?` ${likes.length}`:''}</button>
+      ${likes.length?`<span class="like-who">${esc(likeNames)} がいいね</span>`:''}
+    </div>
+    ${actRowDetailHTML(id)}`;
+}
+/* 詳細のコメント一覧 */
+function detailCmtHTML(id){
   const comments=commentsFor(id);
-  const cmtHtml = comments.length
+  return comments.length
     ? comments.map(c=>`
         <div class="cmt">
           <div class="av">${esc((c.who||'?').slice(0,1))}</div>
@@ -1719,20 +1750,47 @@ function renderDetail(id){
           </div>
         </div>`).join('')
     : `<div class="cmt-empty">まだコメントはありません。最初のひとことを 🍋</div>`;
+}
+function bindDetailReact(id){
+  const lb=$('#likeBtn'); if(lb) lb.onclick=()=>ensureWho(()=>toggleLike(id));
+  const z=$('#dReact'); if(z) bindReactions(z);
+}
+function bindDetailCmt(){
+  $('#cmtList').querySelectorAll('[data-delc]').forEach(el=>el.onclick=async()=>{
+    if(confirm('コメントを削除しますか？')){ await deleteComment(el.dataset.delc); await loadRecords(); }
+  });
+}
+/* 写真や本文はそのままに、反応とコメントだけ最新にする */
+function refreshDetailUI(id){
+  const z=$('#dReact'); if(!z) return;
+  z.innerHTML = detailReactHTML(id); bindDetailReact(id);
+  const n=commentsFor(id).length;
+  const lab=$('#dCmtLab'); if(lab) lab.textContent = 'コメント ' + (n||'');
+  const cl=$('#cmtList'); if(cl){ cl.innerHTML = detailCmtHTML(id); bindDetailCmt(); }
+}
+let _detailSig='';
+function renderDetail(id){
+  const r=allRecords.find(x=>x.id===id);
+  if(!r){ hideModal('detailModal'); return; }
+  const sig=recordSig(r);
+  if(sig===_detailSig && $('#dReact')){ refreshDetailUI(id); return; }   // 写真を読み直さない
+  _detailSig=sig;
+  const photos=r.photos||[];
+  const photoHtml = photos.length
+    ? `<div class="detail-photos">${photos.map((p,i)=>`<img src="${p}" data-lb="${i}" decoding="async">`).join('')}</div>`
+    : '';
+  const tags=(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+  const n=commentsFor(id).length;
   $('#detailBody').innerHTML = `
     ${photoHtml}
     <div class="d-date">${fmtDate(r.date)}</div>
     <div class="d-name">${esc(r.name)}</div>
     ${tags?`<div class="tags" style="margin-top:8px">${tags}</div>`:''}
     ${r.note?`<div class="note-card"><div class="lab">ひとこと</div><div class="d-note" style="margin-top:0">${esc(r.note)}</div></div>`:''}
-    <div class="like-row">
-      <button class="like-btn ${liked?'on':''}" id="likeBtn"><span class="hi">${liked?'❤️':'🤍'}</span>いいね${likes.length?` ${likes.length}`:''}</button>
-      ${likes.length?`<span class="like-who">${esc(likeNames)} がいいね</span>`:''}
-    </div>
-    ${actRowDetailHTML(id)}
+    <div id="dReact">${detailReactHTML(id)}</div>
     <div class="cmt-sec">
-      <div class="lab">コメント ${comments.length||''}</div>
-      <div id="cmtList">${cmtHtml}</div>
+      <div class="lab" id="dCmtLab">コメント ${n||''}</div>
+      <div id="cmtList">${detailCmtHTML(id)}</div>
       <div class="cmt-input">
         <input type="text" id="cmtInput" placeholder="コメントを書く…" autocomplete="off">
         <button class="btn" id="cmtSend">送信</button>
@@ -1741,13 +1799,10 @@ function renderDetail(id){
     <div style="height:22px"></div>
     <button class="btn sec" id="editRecBtn">編集する</button>`;
   $('#editRecBtn').onclick=()=>{ hideModal('detailModal'); openRecord(r); };
-  $('#likeBtn').onclick=()=>ensureWho(async()=>{ await toggleLike(id); await loadRecords(); });
-  bindReactions($('#detailBody'));
+  bindDetailReact(id);
+  bindDetailCmt();
   $('#cmtSend').onclick=()=>sendComment(id);
   $('#cmtInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); sendComment(id); } });
-  $('#cmtList').querySelectorAll('[data-delc]').forEach(el=>el.onclick=async()=>{
-    if(confirm('コメントを削除しますか？')){ await deleteComment(el.dataset.delc); await loadRecords(); }
-  });
   $('#detailBody').querySelectorAll('[data-lb]').forEach(el=>el.onclick=()=>openLightbox(photos, +el.dataset.lb));
 }
 function sendComment(id){
@@ -1772,7 +1827,7 @@ function renderRequests(){
     body.innerHTML=`<div class="empty"><span class="big">🙏</span>まだリクエストはありません。<br>ごはんのカードにある<br>「🙏 またこれ」を押すと、ここに溜まります。</div>`;
     return;
   }
-  body.innerHTML = `<div class="tagview-result-head">押された数が多い順（全<b>${list.length}</b>品）</div>` +
+  body.innerHTML = `<div class="list-head">押された数が多い順（全<b>${list.length}</b>品）</div>` +
     list.map(r=>{
       const pic=(r.photos||[])[0];
       const names=[...new Set(allReactions.filter(x=>x.record_id===r.id && x.emoji===WANT_EMOJI).map(x=>x.who))].join('・');
@@ -1887,7 +1942,7 @@ function renderCalendar(){
       cells+=`<div class="cal-cell ${today}">${d}</div>`;
     }
   }
-  cal.innerHTML = `
+  const html = `
     <div class="cal-head">
       <button id="calPrev" aria-label="前の月">‹</button>
       <div class="mon">${calYear}年${calMonth+1}月</div>
@@ -1897,6 +1952,9 @@ function renderCalendar(){
       ${WD.map(w=>`<div class="wd">${w}</div>`).join('')}
       ${cells}
     </div>`;
+  if(cal.__html===html) return;   // 中身が同じなら作り直さない（写真のチラつき防止）
+  cal.__html=html;
+  cal.innerHTML=html;
   $('#calPrev').onclick=()=>{ calMonth--; if(calMonth<0){calMonth=11;calYear--;} renderCalendar(); };
   $('#calNext').onclick=()=>{ calMonth++; if(calMonth>11){calMonth=0;calYear++;} renderCalendar(); };
   cal.querySelectorAll('[data-day]').forEach(el=>el.onclick=()=>openDay(el.dataset.day));
@@ -2076,7 +2134,7 @@ $('#menuModal').addEventListener('click', ev=>{
 /* ===== 🔍 検索・絞りこみ・並び替えは、押したときだけ出す ===== */
 let toolsOpen=false;
 function filterActive(){
-  return !!$('#search').value.trim() || curCook!=='すべて' || sortMode!=='date';
+  return !!$('#search').value.trim() || curCook!=='すべて' || sortMode!=='date' || selTags.length>0;
 }
 function syncTools(){
   const feed = viewMode==='feed';
@@ -2098,9 +2156,8 @@ $('#viewSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   syncTools();
   $('#feed').style.display = viewMode==='feed'?'':'none';
   $('#calendar').style.display = viewMode==='calendar'?'':'none';
-  $('#tagview').style.display = viewMode==='tags'?'':'none';
   renderCurrentView();
-  fadeView(viewMode==='calendar'?$('#calendar'):viewMode==='tags'?$('#tagview'):$('#feed'));
+  fadeView(viewMode==='calendar'?$('#calendar'):$('#feed'));
 });
 
 /* ============ 検索 ============ */
