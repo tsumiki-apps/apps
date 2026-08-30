@@ -95,6 +95,7 @@ let usageCache = { at: 0, value: null };
 let usageFetching = null;
 let usageRetryAt = 0;               // この時刻までは取りにいかない（相手に言われた待ち時間）
 let usageFails = 0;                 // 連続して失敗した回数（倍々で待つのに使う）
+let usageLastStatus = 0;            // 直前の失敗の中身（429＝叩きすぎ／401＝期限切れ／0＝通信）
 
 // 失敗したときの待ち時間を決めて記録する。ms を返す（ログ用）
 function usageBackoff(status, retryAfter) {
@@ -155,6 +156,7 @@ async function fetchUsage() {
       signal: ctl.signal,
     });
     if (!r.ok) {
+      usageLastStatus = r.status;
       const wait = usageBackoff(r.status, r.headers.get('retry-after'));
       console.log(`usage ${r.status} → ${Math.round(wait / 1000)}秒待つ`);
       return null;
@@ -165,8 +167,10 @@ async function fetchUsage() {
     if (!session && !week) return null;
     usageFails = 0;
     usageRetryAt = 0;
+    usageLastStatus = 0;
     return { session, week };
   } catch (e) {
+    usageLastStatus = 0;
     const wait = usageBackoff(0, null);
     console.log('usage ' + String(e && e.message).slice(0, 80)
       + ` → ${Math.round(wait / 1000)}秒待つ`);
@@ -193,6 +197,17 @@ function usageSnapshot() {
       .finally(() => { usageFetching = null; });
   }
   return usageCache.value;
+}
+
+// 残量が「取れていない」ときだけ、なぜ・いつ戻るかを添える。
+// これが無いと、棒が消えていること自体に気づけない（2026-08-31：37時間気づけなかった）。
+// 画面はこれを受け取って、薄い棒を出す＝押すと理由が読める。
+function usageWaitInfo() {
+  if (usageCache.value) return null;
+  return {
+    status: usageLastStatus,
+    retryInSec: Math.max(0, Math.round((usageRetryAt - Date.now()) / 1000)),
+  };
 }
 
 // ---------------------------------------------------------- MacBook の電池
@@ -691,7 +706,8 @@ const server = http.createServer(async (req, res) => {
         });
       }
       return json(res, 200, {
-        sessions: out, usage: usageSnapshot(), battery: batterySnapshot(),
+        sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
+        battery: batterySnapshot(),
         version: currentVersion(), now: Date.now(),
       });
     }

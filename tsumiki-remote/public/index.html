@@ -65,6 +65,13 @@
   #usage .bar i.warn{background:var(--wait)}
   #usage .bar i.crit{background:#ef4444}
   #usage .bar.off{opacity:.35}
+  /* 残量が取れていないとき。消してしまうと「壊れている」ことに気づけないので、
+     空の棒を薄く出して押せるようにする（押すと理由と再取得までの時間が出る）。
+     2026-08-31：60秒おきに叩きすぎて止められ、37時間ぶん棒が消えていたのに
+     誰も気づけなかった。静かなままでいいが、無かったことにはしない */
+  #usage.none{opacity:.4}
+  /* 届いていないあいだは出さない。今の話ではないので（電池と同じ扱い） */
+  body.offline #usage.none{display:none}
   #usage .num{font-size:10px;color:var(--wait);font-variant-numeric:tabular-nums}
   #usage .num.crit{color:#ef4444}
   #usage .num[hidden]{display:none}
@@ -786,10 +793,21 @@
     fill.className = rem === null ? '' : (rem <= 10 ? 'crit' : (rem <= 30 ? 'warn' : ''));
   }
 
-  function renderUsage(u) {
+  // wait ＝ 取れていないときだけサーバーが添えてくる {status, retryInSec}
+  var usageWait = null;
+
+  function renderUsage(u, wait) {
     usage = (u && (u.session || u.week)) ? u : null;
-    el.usage.hidden = !usage;
-    if (!usage) return;
+    usageWait = usage ? null : (wait || null);
+    // 取れていなくても札は残す（空の棒を薄く出す）。押せば理由が読める
+    el.usage.hidden = false;
+    el.usage.classList.toggle('none', !usage);
+    if (!usage) {
+      paintBar(el.bar5, null);
+      paintBar(el.bar7, null);
+      el.unum.hidden = true;
+      return;
+    }
     paintBar(el.bar5, usage.session);
     paintBar(el.bar7, usage.week);
     // 少ない方＝先に詰まる方の数字だけ出す。両方あるときは小さい方。
@@ -823,8 +841,20 @@
     return label + ' 残' + remOf(b) + '%' + (r ? '（' + r + '）' : '');
   }
 
+  // 取れていないときの言い分け。数字ではなく「なぜ・いつ戻るか」を言う
+  function usageWhy(w) {
+    var why = w && w.status === 429 ? '問い合わせが多すぎて、しばらく止められています'
+      : w && w.status === 401 ? 'Claude のログイン情報の期限が切れています'
+      : 'Anthropic につながりませんでした';
+    var sec = w ? w.retryInSec : 0;
+    var when = !sec ? 'まもなく取り直します'
+      : sec < 60 ? 'あと' + sec + '秒で取り直します'
+      : 'あと' + Math.ceil(sec / 60) + '分で取り直します';
+    return 'Claude の残量が取れていません\n（' + why + '）\n' + when;
+  }
+
   el.usage.addEventListener('click', function () {
-    if (!usage) return;
+    if (!usage) return toast(usageWhy(usageWait), 3600);
     toast(usageLine('5時間', usage.session) + '\n' + usageLine('週', usage.week), 2800);
   });
 
@@ -959,7 +989,8 @@
       current = d.current || sessions[0].name;
     }
     el.send.disabled = false;
-    renderUsage(d.usage);
+    // 預けてある写しには「待ち時間」は入っていない（保存した時点の話なので）
+    renderUsage(d.usage, null);
     renderTabs();
     showCachedPane();
     // まだ「つながらない」と決まったわけではないので、帯はここでは出さない。
@@ -1157,7 +1188,7 @@
   function refreshState() {
     return api('/api/state').then(function (d) {
       checkVersion(d.version);
-      renderUsage(d.usage);
+      renderUsage(d.usage, d.usageWait);
       renderBatt(d.battery);
       sessions = d.sessions;
       if (!sessions.length) {
