@@ -82,10 +82,36 @@ function currentVersion() {
 // スマホは1.5秒ごとに状態を聞きに来る。それをそのまま外へ投げると叩きすぎで
 // 弾かれるので、ここで60秒ためておき、/api/state にはその写しを乗せる。
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
-const USAGE_TTL = 60 * 1000;        // これより新しければ取り直さない
-const USAGE_KEEP = 10 * 60 * 1000;  // 取れなくなっても、これだけは前の値を出す
+// ⚠️ 60秒ごとに取りにいって**叩きすぎで止められた**（2026-08-31）。
+// 経緯：キーチェーンのトークンが切れて 401 が数回 → そのまま1分ごとに叩き続けたら
+// 429（rate_limit_error）に変わり、以後 2243回連続で429＝**37時間バーが消えたまま**。
+// 相手は `retry-after` で「何秒待て」と言ってくるのに、それを無視して叩き直すので
+// 待ち時間が延び続け、自力では二度と戻らない状態になっていた。
+// 直しかた＝①ふだんの間隔を5分に伸ばす ②429 のときは retry-after を必ず守る
+// ③それ以外の失敗も倍々で待つ ④待っているあいだは前の値を長めに出しておく。
+const USAGE_TTL = 5 * 60 * 1000;    // これより新しければ取り直さない
+const USAGE_KEEP = 60 * 60 * 1000;  // 取れなくなっても、これだけは前の値を出す
 let usageCache = { at: 0, value: null };
 let usageFetching = null;
+let usageRetryAt = 0;               // この時刻までは取りにいかない（相手に言われた待ち時間）
+let usageFails = 0;                 // 連続して失敗した回数（倍々で待つのに使う）
+
+// 失敗したときの待ち時間を決めて記録する。ms を返す（ログ用）
+function usageBackoff(status, retryAfter) {
+  let wait;
+  if (status === 429) {
+    // 相手が秒数をくれたらそれに従う（+5秒の余裕）。くれなければ15分
+    const ra = parseInt(retryAfter || '', 10);
+    wait = ((Number.isFinite(ra) && ra > 0 ? Math.min(ra, 6 * 3600) : 900) + 5) * 1000;
+  } else {
+    // 401（トークン切れ）や通信の失敗。5分 → 10 → 20 …最大60分。
+    // ここを1分で叩き続けたのが、そもそも429を招いた原因
+    usageFails++;
+    wait = Math.min(60 * 60 * 1000, USAGE_TTL * Math.pow(2, Math.min(4, usageFails - 1)));
+  }
+  usageRetryAt = Date.now() + wait;
+  return wait;
+}
 
 // キーチェーンからアクセストークンを読むだけ。書き戻しはしない
 // （自前で更新すると Claude Code 側のログインを壊しかねない）。
@@ -128,14 +154,22 @@ async function fetchUsage() {
       },
       signal: ctl.signal,
     });
-    if (!r.ok) { console.log(`usage ${r.status}`); return null; }
+    if (!r.ok) {
+      const wait = usageBackoff(r.status, r.headers.get('retry-after'));
+      console.log(`usage ${r.status} → ${Math.round(wait / 1000)}秒待つ`);
+      return null;
+    }
     const d = await r.json();
     const session = usageBucket(d.five_hour);
     const week = usageBucket(d.seven_day);
     if (!session && !week) return null;
+    usageFails = 0;
+    usageRetryAt = 0;
     return { session, week };
   } catch (e) {
-    console.log('usage ' + String(e && e.message).slice(0, 80));
+    const wait = usageBackoff(0, null);
+    console.log('usage ' + String(e && e.message).slice(0, 80)
+      + ` → ${Math.round(wait / 1000)}秒待つ`);
     return null;
   } finally {
     clearTimeout(to);
@@ -146,7 +180,9 @@ async function fetchUsage() {
 // （状態の一覧が残量の取得を待って遅くなると、画面全体がもたつく）。
 function usageSnapshot() {
   const age = Date.now() - usageCache.at;
-  if (age > USAGE_TTL && !usageFetching) {
+  // usageRetryAt ＝ 相手に「まだ来るな」と言われている時刻。ここを見ないと、
+  // 止められているあいだも1分ごとに叩き続けて、待ち時間が延び続ける
+  if (age > USAGE_TTL && !usageFetching && Date.now() >= usageRetryAt) {
     usageFetching = fetchUsage()
       .then((v) => {
         // 取れなかったときは、少しの間だけ前の値を出し続ける（一瞬の失敗で
