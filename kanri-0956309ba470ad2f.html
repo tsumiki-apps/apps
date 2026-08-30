@@ -28,6 +28,11 @@
          background:var(--paper); padding:24px; z-index:10; }
   #lock .card{ width:100%; max-width:340px; text-align:center; }
   .kicker{ font-size:11px; letter-spacing:.18em; color:var(--muted); margin:0 0 6px; }
+  /* キーカードのURLを確かめた結果 */
+  .urlchk{ font-size:12px; line-height:1.65; margin:6px 0 0; color:var(--muted); min-height:1.2em; }
+  .urlchk.ok{ color:var(--ok); font-weight:700; }
+  .urlchk.ng{ color:var(--shu); font-weight:700; }
+  .urlchk.warn{ color:var(--shu); }
   #lock h1{ font-size:20px; margin:0 0 18px; }
   input, select{ font-size:16px; font-family:inherit; color:var(--ink);
     background:var(--control); border:1px solid var(--hair); border-radius:12px;
@@ -226,6 +231,7 @@
     <div class="field">
       <label>アプリURL（QRコードになります・空欄可）</label>
       <input id="imgUrl" placeholder="https://tools.tsumiki-apps.com/xxx.html" inputmode="url">
+      <p id="imgUrlCheck" class="urlchk">—</p>
     </div>
     <div class="field">
       <label>アイコン画像（任意・正方形PNG推奨）</label>
@@ -519,6 +525,7 @@
   var C_PAPER='#F4F2EE', C_PANEL='#FBFAF7', C_INK='#242321', C_SUB='#77736B', C_LINE='#D8D4CC';
   var G_HI='#D8BE7E', G_MID='#B08A3E', G_LO='#8A6A2A';
   var imgState = { app:'', customer:'', key:'', url:'', date:'', iconImg:null };
+  var imgUrlKnown = false;
   var fontsReady = false;
 
   function ensureFonts(cb){
@@ -577,7 +584,54 @@
   }
   function iDate(v){ if(!v) return ''; var p=v.split('-'); return p.length===3?p[0]+'.'+p[1]+'.'+p[2]:v; }
   function iToday(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
-  function iAppUrl(name){ if(!name || name==='*') return ''; return 'https://tools.tsumiki-apps.com/'+name+'.html'; }
+  /* ⚠️ 2026-08-31 のやらかしを二度とやらないための仕掛け。
+     もとは 'https://tools.tsumiki-apps.com/'+アプリ名+'.html' と**推測**していた。
+     ライセンスのアプリ名は `tsumiki-senya` だが、鍵がかかっている本体は
+     `tsumiki-senya-kanri.html`（店長用）。推測は `tsumiki-senya.html`（スタッフ用・鍵なし）を
+     指してしまい、**鍵の証明書のQRが、鍵のかかっていない別のアプリに飛ぶ**状態でキーカードを発行した。
+     → ①分かっているものは下の表から引く ②表に無ければ推測するが「推測です」と出す
+       ③どちらの場合も**実際にそのURLを取りに行って、鍵（tsumiki-license-gate）があるか確かめる**。
+     新しいアプリで名前とファイル名がちがうときは、APP_URL に1行足すこと。 */
+  var APP_URL = {
+    'tsumiki-senya': 'https://tools.tsumiki-apps.com/tsumiki-senya-kanri.html'
+  };
+  function iAppUrlGuess(name){ if(!name || name==='*') return ''; return 'https://tools.tsumiki-apps.com/'+name+'.html'; }
+  function iAppUrl(name){ if(!name || name==='*') return ''; return APP_URL[name] || iAppUrlGuess(name); }
+  function iAppUrlIsKnown(name){ return !!(name && APP_URL[name]); }
+
+  /* URLを実際に取りに行って、配布用の本体（鍵つき）かどうかを見る。
+     tools 側は access-control-allow-origin:* なので、ブラウザから読める（2026-08-31 実測）。 */
+  var urlChkToken = 0, urlChkTimer = 0;
+  function setUrlChk(cls, msg){
+    var el = document.getElementById('imgUrlCheck');
+    if(!el) return;
+    el.className = 'urlchk ' + (cls||'');
+    el.textContent = msg;
+  }
+  function checkUrl(url, known){
+    clearTimeout(urlChkTimer);
+    var my = ++urlChkToken;
+    if(!url){ setUrlChk('', 'URLを入れると、QRコードになります（空欄でも発行できます）'); return; }
+    if(!/^https:\/\//.test(url)){ setUrlChk('ng', '⚠ https:// から始まるURLを入れてください'); return; }
+    setUrlChk('', '確かめています…');
+    urlChkTimer = setTimeout(function(){
+      fetch(url, {cache:'no-store'}).then(function(r){
+        if(!r.ok) throw new Error('http '+r.status);
+        return r.text();
+      }).then(function(t){
+        if(my !== urlChkToken) return;
+        if(t.indexOf('tsumiki-license-gate') >= 0){
+          setUrlChk('ok', '✓ このURLは鍵つきの本体です' + (known ? '' : '（推測したURLですが、鍵は確認できました）'));
+        }else{
+          setUrlChk('ng', '⚠ このURLには鍵がありません。プロダクトキーを入れる画面が出ないので、'
+            + '受け取った方は入れません。鍵のかかっている本体のURLをお確かめください');
+        }
+      }).catch(function(e){
+        if(my !== urlChkToken) return;
+        setUrlChk('warn', '⚠ 開けませんでした（' + e.message + '）。URLをお確かめください');
+      });
+    }, 450);
+  }
 
   // アプリ名からアイコンURLの候補を作る（-pro等を外した名前・第1トークンもフォールバック）
   function iconCandidates(name){
@@ -675,9 +729,11 @@
     imgState.app = appMap[d.appName] || (d.appName && d.appName!=='*' ? d.appName : '');
     imgState.key = d.key || '';
     imgState.url = iAppUrl(d.appName);
+    imgUrlKnown = iAppUrlIsKnown(d.appName);
     imgState.date = iToday();
     imgState.iconImg = null;
     document.getElementById('imgUrl').value = imgState.url;
+    checkUrl(imgState.url, imgUrlKnown);
     document.getElementById('imgIconPrev').textContent = 'なし';
     document.getElementById('imgIconClear').style.display = 'none';
     document.getElementById('imgIconFile').value = '';
@@ -688,7 +744,12 @@
   function closeImageModal(){ imgModal.hidden = true; imgState.iconImg = null; }
   document.getElementById('imgClose').addEventListener('click', closeImageModal);
   imgModal.addEventListener('click', function(e){ if(e.target === imgModal) closeImageModal(); });
-  document.getElementById('imgUrl').addEventListener('input', function(){ imgState.url = this.value.trim(); iRender(); });
+  document.getElementById('imgUrl').addEventListener('input', function(){
+    imgState.url = this.value.trim();
+    imgUrlKnown = false;                 // 手で打ち替えたら「分かっているURL」ではない
+    checkUrl(imgState.url, false);
+    iRender();
+  });
   document.getElementById('imgIconBtn').addEventListener('click', function(){ document.getElementById('imgIconFile').click(); });
   document.getElementById('imgIconFile').addEventListener('change', function(){
     var f = this.files && this.files[0]; if(!f) return;
