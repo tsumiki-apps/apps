@@ -176,6 +176,19 @@
   .secbtn .em{font-size:18px;}
   .secbtn small{display:block; font-weight:500; font-size:11.5px; color:var(--sub);}
   .hint{font-size:11px; color:var(--sub); text-align:center; margin-top:10px; line-height:1.7;}
+  .rtnote{font-size:11.5px; color:var(--sub); text-align:left; margin-top:7px; line-height:1.7; white-space:pre-line;}
+  .rtnote:empty{display:none;}
+  .rtnote.warn{color:var(--danger); font-weight:700;}
+
+  /* 月が混ざっているときの注意カード */
+  .mixbox{background:rgba(255,59,48,.06); border:1px solid rgba(255,59,48,.25); border-radius:16px;
+    padding:14px 15px; margin-bottom:12px;}
+  .mixbox .mt{font-size:13.5px; font-weight:800; color:var(--danger); line-height:1.6;}
+  .mixbox .ms{font-size:11.5px; color:var(--sub); margin-top:5px; line-height:1.7;}
+  .mixbox button{width:100%; margin-top:11px; min-height:44px; padding:12px; border-radius:13px;
+    background:var(--danger); color:#fff; font-weight:800; font-size:14px;}
+  .mixbox button:active{transform:scale(.98);}
+  .mixbox button.ghost{background:transparent; color:var(--sub); font-weight:700; font-size:12.5px; margin-top:4px;}
 
   /* 期間ピッカー行 */
   .prow{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line);
@@ -252,7 +265,7 @@ function defaultDB(){
   return { names:{kodai:'こうだい', yuzu:'ゆずは'}, defaultRatio:50, bank:BANK_DEFAULT.slice(),
     periods:[p], current:p.id, updatedAt:0 };
 }
-function newPeriod(name){ return {id:uid(), name, items:[], ratio:null, createdAt:nowMs()}; }
+function newPeriod(name,ym){ const p={id:uid(), name, items:[], ratio:null, createdAt:nowMs()}; if(/^\d{4}-\d{2}$/.test(ym||'')) p.ym=ym; return p; }
 let db=load();
 function load(){
   try{const r=JSON.parse(localStorage.getItem(LS_KEY)); if(r&&r.periods&&r.periods.length) return migrate(r);}catch(e){}
@@ -264,6 +277,12 @@ function migrate(r){
   if(r.names.yuzu==='ゆず')r.names.yuzu='ゆずは'; // 旧デフォルト名を正式名に自動更新
   if(!Array.isArray(r.bank))r.bank=BANK_DEFAULT.slice();
   if(!r.current||!r.periods.find(p=>p.id===r.current))r.current=r.periods[0].id;
+  // 対象の月(ym)がまだ無い期間は、中の明細がぜんぶ同じ月なら自動で覚える
+  r.periods.forEach(p=>{
+    if(/^\d{4}-\d{2}$/.test(p.ym||'')) return;
+    const set=new Set((p.items||[]).map(it=>String(it.date||'').slice(0,7)).filter(x=>/^\d{4}-\d{2}$/.test(x)));
+    if(set.size===1) p.ym=[...set][0];
+  });
   return r;
 }
 let saveTimer=null;
@@ -408,11 +427,24 @@ function renderEmpty(){
     '<div class="ib" id="emptyImport">📄 CSVを読み込む</div></div>';
 }
 let curFilter='all';
+// この期間に月のちがう明細が混ざっていたら、その場で気づけるように出す
+function mixWarnHtml(p){
+  const ys=periodYms(p);
+  if(ys.length<2) return '';
+  if(p.mixOk===ys.join(',')) return '';   // 「このままでいい」と言われた組み合わせなら出さない
+  const main=periodExplicitYm(p)||periodMainYm(p);
+  const others=ys.filter(y=>y!==main);
+  const cnt=p.items.filter(it=>{const y=ymOf(it.date); return y&&y!==main;}).length;
+  return '<div class="mixbox"><div class="mt">⚠️ この期間に月のちがう明細が'+cnt+'件あります</div>'+
+    '<div class="ms">'+esc(p.name)+'（'+esc(ymJa(main))+'）の中に '+others.map(y=>esc(ymJa(y))).join('・')+' の明細が入っています。</div>'+
+    '<button id="mixFix">月ごとに分ける</button>'+
+    '<button id="mixOk" class="ghost">このままでいい</button></div>';
+}
 function renderPeriod(p){
   const c=calc(p);
   const r=c.r;
   // 結果（PCでは左カラム：集計＋比率＋内訳を固定表示）
-  let html='<div class="pgrid"><div class="col-summary"><div class="result">'+
+  let html='<div class="pgrid"><div class="col-summary">'+mixWarnHtml(p)+'<div class="result">'+
     '<div class="lab">'+(hasManual(p)?'合計（カード＋手動ぶん）':'カード合計（対象外をのぞく）')+'</div>'+
     '<div class="totalrow"><span class="total"><small>¥</small>'+Math.round(c.cardTotal).toLocaleString('ja-JP')+'</span></div>'+
     '<div class="totalsub">共同 '+yen(c.share)+(c.excl?'／対象外 '+yen(c.excl):'')+'</div>'+
@@ -473,6 +505,9 @@ function renderPeriod(p){
 }
 function bindBody(p){
   const ei=document.getElementById('emptyImport'); if(ei) ei.onclick=()=>document.getElementById('csvInput').click();
+  const mf=document.getElementById('mixFix'); if(mf) mf.onclick=()=>openSplitSheet(p);
+  const mo=document.getElementById('mixOk');
+  if(mo) mo.onclick=()=>{ curPeriod().mixOk=periodYms(curPeriod()).join(','); save(); toast('この期間はこのままにします'); };
   const ratio=document.getElementById('ratio');
   if(ratio){
     ratio.oninput=e=>{ const v=+e.target.value; e.target.parentElement.style.setProperty('--p',v+'%');
@@ -565,12 +600,30 @@ function openItem(p, existing){
       '</div>'+
     '</div>'+
     '<div class="field"><label>日付</label><input type="date" id="iDate" value="'+(normDate(it.date)||today())+'"></div>'+
-    ((existing&&db.periods.length>1)?'<div class="field"><label>どの期間に入れる？</label><select id="iMove">'+
+    ((db.periods.length>1)?'<div class="field"><label>どの期間に入れる？</label><select id="iMove">'+
       db.periods.map(x=>'<option value="'+x.id+'"'+(x.id===p.id?' selected':'')+'>'+esc(x.name)+'</option>').join('')+
-    '</select><div class="hint" style="text-align:left;margin-top:6px">えらび直して保存すると、その期間へ移せます。</div></div>':'')+
+    '</select><div class="rtnote" id="iMoveNote"></div></div>':'')+
     '<div class="sheetbtns"><button class="save" id="iSave">'+(existing?'保存':'追加する')+'</button></div>'+
     (existing?'<button class="delbtn" id="iDel">この明細を削除</button>':'')
   );
+  // 日付の月と、入れ先の期間の月がズレていたら注意する
+  function syncMoveNote(){
+    const note=ov.querySelector('#iMoveNote'); if(!note) return;
+    const sel=ov.querySelector('#iMove');
+    const ym=ymOf(ov.querySelector('#iDate').value||'');
+    const to=db.periods.find(x=>x.id===sel.value);
+    if(!ym||!to){ note.className='rtnote'; note.textContent=''; return; }
+    const toYm=periodExplicitYm(to)||periodMainYm(to);
+    if(toYm&&toYm!==ym){
+      const better=findPeriodForYm(ym);
+      note.className='rtnote warn';
+      note.textContent='⚠️ 日付は '+ymJa(ym)+' ですが、「'+to.name+'」は '+ymJa(toYm)+' の期間です。'+
+        (better&&better.id!==to.id?'\n「'+better.name+'」のほうが合っているかもしれません。':'');
+    } else {
+      note.className='rtnote';
+      note.textContent=(existing?'えらび直して保存すると、その期間へ移せます。':'この期間に追加されます。');
+    }
+  }
   ov.querySelectorAll('#iQuick button').forEach(b=>b.onclick=()=>{
     const d=ov.querySelector('#iDesc'); d.value=b.dataset.n;
     const a=ov.querySelector('#iAmt'); if(!a.value) a.focus();
@@ -616,6 +669,8 @@ function openItem(p, existing){
       (ratio==null?'':nm('kodai')+' '+ratio+'％ ／ '+nm('yuzu')+' '+(100-ratio)+'％');
   };
   syncRatioUI();
+  const iMoveSel=ov.querySelector('#iMove');
+  if(iMoveSel){ iMoveSel.onchange=syncMoveNote; ov.querySelector('#iDate').onchange=syncMoveNote; syncMoveNote(); }
   ov.querySelector('#iSave').onclick=()=>{
     const amount=Math.round(+ov.querySelector('#iAmt').value||0);
     if(amount===0){toast('金額を入力してね'); return;}
@@ -632,7 +687,10 @@ function openItem(p, existing){
     } else {
       const nit={id:uid(),src:'manual',date,desc:nameVal,amount,tag};
       if(rt!=null) nit.ratio=rt;
-      curPeriod().items.push(nit);
+      const sel=ov.querySelector('#iMove');
+      const into=(sel&&db.periods.find(x=>x.id===sel.value))||curPeriod();
+      into.items.push(nit);
+      if(into.id!==db.current){ save(); closeSheet(); toast('「'+into.name+'」に追加しました ✓'); return; }
     }
     let moved=null;
     const mv=ov.querySelector('#iMove');
@@ -673,14 +731,21 @@ function openPeriods(){
   ov.querySelector('#newPeriod').onclick=()=>{ closeSheet(); setTimeout(openNewPeriod,260); };
 }
 function openNewPeriod(){
+  const d=new Date(), thisYm=d.getFullYear()+'-'+pad(d.getMonth()+1);
   openSheet(
     '<h2>あたらしい期間</h2>'+
-    '<div class="field"><label>期間の名前</label><input type="text" id="npName" placeholder="例：1月分 / 2026年1月" value="'+esc(monthLabel(new Date()))+'"></div>'+
+    '<div class="field"><label>期間の名前</label><input type="text" id="npName" placeholder="例：1月分 / 2026年1月" value="'+esc(monthLabel(d))+'"></div>'+
+    '<div class="field"><label>対象の月（CSVのふりわけ先になります）</label><input type="month" id="npYm" value="'+thisYm+'"></div>'+
     '<div class="sheetbtns"><button class="save" id="npSave">つくる</button></div>'
   );
+  ov.querySelector('#npYm').onchange=e=>{
+    const m=String(e.target.value||'').match(/^(\d{4})-(\d{2})$/); if(!m) return;
+    const ni=ov.querySelector('#npName');
+    if(!ni.value.trim()||/^\d{1,2}月分$/.test(ni.value.trim())) ni.value=(+m[2])+'月分';
+  };
   ov.querySelector('#npSave').onclick=()=>{
     const name=ov.querySelector('#npName').value.trim()||'名称未設定';
-    const p=newPeriod(name); db.periods.unshift(p); db.current=p.id; curFilter='all';
+    const p=newPeriod(name, ov.querySelector('#npYm').value); db.periods.unshift(p); db.current=p.id; curFilter='all';
     save(); closeSheet(); toast('「'+name+'」を作成しました ✓');
   };
   setTimeout(()=>{const i=ov.querySelector('#npName'); if(i)i.focus();},300);
@@ -760,11 +825,20 @@ function openShare(){
 function openRename(){
   const p=curPeriod();
   openSheet(
-    '<h2>期間の名前</h2>'+
+    '<h2>期間の名前と対象の月</h2>'+
     '<div class="field"><label>名前</label><input type="text" id="rnName" value="'+esc(p.name)+'"></div>'+
+    '<div class="field"><label>対象の月（CSVはこの月の明細がここに入ります）</label>'+
+      '<input type="month" id="rnYm" value="'+esc(periodExplicitYm(p)||periodMainYm(p))+'">'+
+      '<div class="hint" style="text-align:left;margin-top:6px">空にすると、名前から月を推測します。</div></div>'+
     '<div class="sheetbtns"><button class="save" id="rnSave">保存</button></div>'
   );
-  ov.querySelector('#rnSave').onclick=()=>{ curPeriod().name=ov.querySelector('#rnName').value.trim()||p.name; save(); closeSheet(); toast('保存しました'); };
+  ov.querySelector('#rnSave').onclick=()=>{
+    const cp=curPeriod();
+    cp.name=ov.querySelector('#rnName').value.trim()||p.name;
+    const y=ov.querySelector('#rnYm').value;
+    if(/^\d{4}-\d{2}$/.test(y)) cp.ym=y; else delete cp.ym;
+    save(); closeSheet(); toast('保存しました');
+  };
 }
 
 /* ============ 請求書（画像）============
@@ -1066,6 +1140,23 @@ function parseHeaderless(lines){
 function ymOf(dateStr){ const m=String(dateStr||'').match(/^(\d{4})-(\d{2})/); return m?m[1]+'-'+m[2]:''; }
 function ymLabel(ym){ return ym?(+ym.slice(5,7))+'月分':'日付不明ぶん'; }
 function ymJa(ym){ return ym?ym.slice(0,4)+'年'+(+ym.slice(5,7))+'月':'日付が読めなかったぶん'; }
+// 期間が覚えている「対象の月」（設定済みのときだけ）
+function periodExplicitYm(p){ return /^\d{4}-\d{2}$/.test(p.ym||'')?p.ym:''; }
+// 中の明細から推定した「いちばん多い月」
+function periodMainYm(p){
+  const c={}; (p.items||[]).forEach(it=>{ const k=ymOf(it.date); if(k)c[k]=(c[k]||0)+1; });
+  const e=Object.entries(c).sort((a,b)=>b[1]-a[1]); return e.length?e[0][0]:'';
+}
+// その期間に入っている月の一覧（古い順）
+function periodYms(p){ return [...new Set((p.items||[]).map(it=>ymOf(it.date)).filter(Boolean))].sort(); }
+// この月の明細を入れるべき期間（①覚えている月 ②名前 ③中身から推定 の順にさがす）
+function findPeriodForYm(ym){
+  if(!ym) return null;
+  return db.periods.find(p=>periodExplicitYm(p)===ym)
+      || db.periods.find(p=>!periodExplicitYm(p)&&periodMatchesYm(p,ym))
+      || db.periods.find(p=>!periodExplicitYm(p)&&!/[0-9]月/.test(zenNum(p.name))&&periodMainYm(p)===ym)
+      || null;
+}
 // 期間の名前がその年月を指しているか（「8月分」「2026年8月」「2026-08」などを許容）
 function periodMatchesYm(p,ym){
   if(!ym) return false;
@@ -1079,84 +1170,150 @@ function periodMatchesYm(p,ym){
 }
 
 /* ===== CSV 取り込み（月ごとにふりわけ→確認してから反映） ===== */
-let pendingImport=null;
+// 取り込み／仕分け 共通の「月ごとの入れ先えらび」
+// mode:'import' … CSVの新しい明細を入れる ／ mode:'split' … いまある期間の中身を月ごとに分ける
+let pendingRoute=null;
 async function handleCSV(file){
   const parsed=await parseCreditCSV(file);
   if(!parsed) return;
   if(!parsed.length){ toast('取り込める明細がありませんでした'); return; }
-  // 年月ごとにまとめる（古い月が上）
-  const map=new Map();
-  parsed.forEach(t=>{ const k=ymOf(t.date); if(!map.has(k))map.set(k,[]); map.get(k).push(t); });
-  const groups=[...map.entries()].sort((x,y)=>x[0]<y[0]?-1:1).map(([ym,items])=>{
-    const hit=db.periods.find(p=>periodMatchesYm(p,ym));
+  const groups=groupByYm(parsed).map(g=>{
+    const hit=findPeriodForYm(g.ym);
     // 日付が読めなかったぶんは、いま開いている期間を既定にする
-    return {ym, items, dest: hit?hit.id:(ym?'__new__':db.current)};
+    return {ym:g.ym, items:g.items, dest: hit?hit.id:(g.ym?'__new__':db.current)};
   });
-  pendingImport={groups};
-  openImportSheet();
+  pendingRoute={mode:'import', groups};
+  openRouteSheet();
 }
-function importDupCount(g){
+function groupByYm(items){
+  const map=new Map();
+  items.forEach(t=>{ const k=ymOf(t.date); if(!map.has(k))map.set(k,[]); map.get(k).push(t); });
+  return [...map.entries()].sort((x,y)=>x[0]<y[0]?-1:1).map(([ym,items])=>({ym,items}));
+}
+// いまある期間の中身を月ごとに分けなおす
+function openSplitSheet(p){
+  const groups=groupByYm(p.items).map(g=>{
+    const hit=findPeriodForYm(g.ym);
+    return {ym:g.ym, items:g.items, dest:(hit?hit.id:(g.ym?'__new__':p.id))};
+  });
+  pendingRoute={mode:'split', srcId:p.id, groups};
+  openRouteSheet();
+}
+function routeDupCount(g){
   if(g.dest==='__new__'||g.dest==='__skip__') return 0;
   const p=db.periods.find(x=>x.id===g.dest); if(!p) return 0;
   const idset=new Set(p.items.map(x=>x.id));
-  return g.items.filter(t=>idset.has(t.id)).length;
+  return g.items.filter(t=>idset.has(t.id)&&!(pendingRoute.mode==='split'&&p.id===pendingRoute.srcId)).length;
 }
-function openImportSheet(){
-  const gs=pendingImport.groups;
+function sampleNames(items){
+  const ns=[...new Set(items.map(it=>dispName(it)).filter(Boolean))].slice(0,3);
+  return ns.join('・')+(items.length>ns.length?' ほか':'');
+}
+function openRouteSheet(){
+  const R=pendingRoute, gs=R.groups, split=(R.mode==='split');
+  const src=split?db.periods.find(x=>x.id===R.srcId):null;
   const rows=gs.map((g,i)=>{
     const sum=g.items.reduce((a,b)=>a+b.amount,0);
-    const opts=db.periods.map(p=>'<option value="'+p.id+'"'+(g.dest===p.id?' selected':'')+'>「'+esc(p.name)+'」に入れる</option>').join('')
-      +'<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(ymLabel(g.ym))+'」を新しくつくって入れる</option>'
-      +'<option value="__skip__">取り込まない</option>';
+    const opts=db.periods.map(x=>'<option value="'+x.id+'"'+(g.dest===x.id?' selected':'')+'>'+
+        (split&&x.id===R.srcId?'そのまま「'+esc(x.name)+'」に残す':'「'+esc(x.name)+'」に入れる')+'</option>').join('')+
+      '<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(ymLabel(g.ym))+'」を新しくつくって入れる</option>'+
+      (split?'':'<option value="__skip__">取り込まない</option>');
     return '<div class="field"><label>'+esc(ymJa(g.ym))+'　'+g.items.length+'件・'+yen(sum)+'</label>'+
-      '<select class="impdest" data-i="'+i+'">'+opts+'</select>'+
-      '<div class="hint" style="text-align:left;margin-top:6px" id="impNote'+i+'"></div></div>';
+      '<div class="hint" style="text-align:left;margin:-2px 0 8px">'+esc(sampleNames(g.items))+'</div>'+
+      '<select class="rtdest" data-i="'+i+'">'+opts+'</select>'+
+      '<div class="rtnote" id="rtNote'+i+'"></div></div>';
   }).join('');
   openSheet(
-    '<h2>どこに取り込む？</h2>'+
-    '<div class="sd">明細の日付を見て、月ごとに自動でふりわけました。入れ先はここで変えられます。</div>'+
+    '<h2>'+(split?'月ごとに分ける':'どこに取り込む？')+'</h2>'+
+    '<div class="sd">'+(split
+      ? '「'+esc(src?src.name:'')+'」には月のちがう明細が混ざっています。行き先をえらんでください。'
+      : '明細の日付を見て、月ごとに自動でふりわけました。入れ先はここで変えられます。')+'</div>'+
     rows+
-    '<div class="sheetbtns"><button class="save" id="impGo">この内容で取り込む</button></div>'+
-    '<button class="delbtn" id="impCancel" style="color:var(--sub)">やめる</button>'
+    '<div class="sheetbtns"><button class="save" id="rtGo">'+(split?'この内容で分ける':'この内容で取り込む')+'</button></div>'+
+    '<button class="delbtn" id="rtCancel" style="color:var(--sub)">やめる</button>'
   );
   const syncNotes=()=>{
     gs.forEach((g,i)=>{
-      const el=ov.querySelector('#impNote'+i); if(!el) return;
-      if(g.dest==='__skip__'){ el.textContent='この月は取り込みません'; return; }
-      const d=importDupCount(g);
-      el.textContent = d?('同じ明細が'+d+'件すでにあります（重複はスキップします）'):'';
+      const el=ov.querySelector('#rtNote'+i); if(!el) return;
+      const msgs=[];
+      if(g.dest==='__skip__'){ el.className='rtnote'; el.textContent='この月は取り込みません'; return; }
+      const to=db.periods.find(x=>x.id===g.dest);
+      let warn=false;
+      if(to){
+        const others=periodYms(to).filter(y=>y!==g.ym);
+        const otherCnt=to.items.filter(it=>ymOf(it.date)&&ymOf(it.date)!==g.ym).length;
+        if(g.ym&&otherCnt&&!(split&&to.id===R.srcId)){
+          warn=true;
+          msgs.push('⚠️「'+to.name+'」には '+others.map(ymJa).join('・')+' の明細が'+otherCnt+'件あります（月が混ざります）');
+        }
+        const d=routeDupCount(g);
+        if(d) msgs.push('同じ明細が'+d+'件すでにあります（重複はスキップします）');
+      }
+      el.className='rtnote'+(warn?' warn':'');
+      el.textContent=msgs.join('\n');
     });
   };
-  ov.querySelectorAll('.impdest').forEach(sel=>{
-    sel.onchange=()=>{ gs[+sel.dataset.i].dest=sel.value; syncNotes(); };
-  });
+  ov.querySelectorAll('.rtdest').forEach(sel=>{ sel.onchange=()=>{ gs[+sel.dataset.i].dest=sel.value; syncNotes(); }; });
   syncNotes();
-  ov.querySelector('#impCancel').onclick=()=>{ pendingImport=null; closeSheet(); };
-  ov.querySelector('#impGo').onclick=runImport;
+  ov.querySelector('#rtCancel').onclick=()=>{ pendingRoute=null; closeSheet(); };
+  ov.querySelector('#rtGo').onclick=()=>{ R.mode==='split'?runSplit():runImport(); };
+}
+// 入れ先の期間を用意する（__new__ なら作る）。作ったかどうかも返す
+function destPeriod(g){
+  if(g.dest==='__new__'){ const np=newPeriod(ymLabel(g.ym), g.ym); db.periods.unshift(np); return {p:np, created:true}; }
+  return {p:db.periods.find(x=>x.id===g.dest)||null, created:false};
+}
+// 期間が「対象の月」をまだ覚えていなくて、中身がぜんぶその月なら覚えさせる
+function rememberYm(p){
+  if(periodExplicitYm(p)) return;
+  const ys=periodYms(p);
+  if(ys.length===1) p.ym=ys[0];
 }
 function runImport(){
-  if(!pendingImport) return;
+  if(!pendingRoute||pendingRoute.mode!=='import') return;
   const log={at:nowMs(), entries:[]};
   let added=0, dup=0; const parts=[]; let lastPid=null;
-  pendingImport.groups.forEach(g=>{
+  pendingRoute.groups.forEach(g=>{
     if(g.dest==='__skip__') return;
-    let p, created=false;
-    if(g.dest==='__new__'){ p=newPeriod(ymLabel(g.ym)); db.periods.unshift(p); created=true; }
-    else p=db.periods.find(x=>x.id===g.dest);
-    if(!p) return;
+    const {p,created}=destPeriod(g); if(!p) return;
     const idset=new Set(p.items.map(x=>x.id));
     const ids=[];
     g.items.forEach(t=>{ if(idset.has(t.id)){dup++;return;} p.items.push(t); idset.add(t.id); ids.push(t.id); added++; });
+    rememberYm(p);
     log.entries.push({periodId:p.id, itemIds:ids, createdPeriod:created, name:p.name});
     if(ids.length||created){ parts.push(p.name+' '+ids.length+'件'); lastPid=p.id; }
   });
-  pendingImport=null;
+  pendingRoute=null;
   if(!added && !log.entries.some(e=>e.createdPeriod)){ closeSheet(); toast(dup?'すべて取り込み済みでした':'取り込むものがありませんでした'); return; }
   db.lastImport=log;
   if(lastPid){ db.current=lastPid; curFilter='all'; }
   save(); closeSheet(); window.scrollTo(0,0);
   toast(parts.join('・')+'に追加'+(dup?'（重複'+dup+'件はスキップ）':'')+' ✓');
 }
+function runSplit(){
+  if(!pendingRoute||pendingRoute.mode!=='split') return;
+  const R=pendingRoute, src=db.periods.find(x=>x.id===R.srcId);
+  if(!src){ pendingRoute=null; closeSheet(); return; }
+  let moved=0; const parts=[];
+  R.groups.forEach(g=>{
+    if(g.dest===R.srcId) return;
+    const {p}=destPeriod(g); if(!p||p.id===src.id) return;
+    const ids=new Set(g.items.map(x=>x.id));
+    const move=src.items.filter(it=>ids.has(it.id));
+    src.items=src.items.filter(it=>!ids.has(it.id));
+    const have=new Set(p.items.map(x=>x.id));
+    move.forEach(it=>{ if(!have.has(it.id)){ p.items.push(it); moved++; } });
+    rememberYm(p);
+    parts.push(p.name+' '+move.length+'件');
+  });
+  delete src.mixOk; rememberYm(src);
+  pendingRoute=null;
+  if(!moved){ closeSheet(); toast('移すものがありませんでした'); return; }
+  if(!db.periods.find(x=>x.id===db.current)) db.current=db.periods[0].id;
+  save(); closeSheet(); window.scrollTo(0,0);
+  toast(parts.join('・')+'へ移しました ✓');
+}
+
 function undoLastImport(){
   const log=db.lastImport; if(!log) return;
   log.entries.slice().reverse().forEach(e=>{
