@@ -451,6 +451,29 @@
     border-radius:999px; min-width:20px; height:20px; display:flex; align-items:center;
     justify-content:center; padding:0 6px; }
 
+  /* ===== 通知シート ===== */
+  .menu-item .st { margin-left:auto; font-size:12.5px; font-weight:700; color:var(--sub); }
+  .menu-item .st.on { color:var(--green); }
+  .nt-lead { font-size:14.5px; color:var(--sub); line-height:1.75; margin:2px 0 18px; }
+  .nt-state { display:flex; align-items:center; gap:9px; background:var(--accent-soft);
+    border-radius:14px; padding:13px 15px; font-size:14.5px; font-weight:700; color:#9a6a3c; margin-bottom:16px; }
+  .nt-state.on { background:#eaf5eb; color:#3f7a4a; }
+  .nt-state.ng { background:#fdecea; color:#a8433a; }
+  .nt-steps { counter-reset:st; margin:0 0 18px; padding:0; list-style:none; }
+  .nt-steps li { position:relative; padding:11px 0 11px 38px; border-top:1px solid var(--line);
+    font-size:14.5px; line-height:1.7; }
+  .nt-steps li:before { counter-increment:st; content:counter(st); position:absolute; left:0; top:12px;
+    width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff;
+    font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .nt-note { font-size:12.5px; color:var(--sub); line-height:1.7; margin-top:14px; }
+  .panel.ask { background:#fff; border:1px solid rgba(232,145,91,.35); box-shadow:none; }
+  .panel.ask .ask-txt { font-size:14px; line-height:1.65; }
+  .panel.ask .ask-btns { display:flex; gap:8px; margin-top:11px; }
+  .panel.ask .ask-btns button { flex:1; min-height:44px; border:none; border-radius:12px;
+    font-family:inherit; font-size:14.5px; font-weight:700; cursor:pointer; }
+  .panel.ask .ask-yes { background:var(--accent); color:#fff; }
+  .panel.ask .ask-no { background:var(--chip); color:var(--sub); }
+
   /* ===== リクエスト箱 / 月報 ===== */
   .req-item { display:flex; gap:12px; align-items:center; padding:11px 0;
     border-bottom:1px solid var(--line); cursor:pointer; }
@@ -615,6 +638,19 @@
     <button class="menu-item" id="memoryBtn"><span class="ic">🎞️</span>思い出をめくる</button>
     <button class="menu-item" id="reqBtn"><span class="ic">🙏</span>またこれ食べたい<span class="n" id="reqCount">0</span></button>
     <button class="menu-item" id="reportBtn"><span class="ic">📮</span>ゆずごはん通信</button>
+    <button class="menu-item" id="notifyBtn"><span class="ic">🔔</span>お知らせ<span class="st" id="notifyState"></span></button>
+  </div>
+</div>
+
+<!-- ===== お知らせ（通知）の設定 ===== -->
+<div class="modal-bg" id="notifyModal">
+  <div class="modal">
+    <div class="grip"></div>
+    <div class="modal-head">
+      <h3>🔔 お知らせ</h3>
+      <span class="close" data-close="notifyModal">✕</span>
+    </div>
+    <div id="notifyBody"></div>
   </div>
 </div>
 
@@ -786,6 +822,98 @@ async function pushNotify(kind, recId, body){
       })
     });
   }catch(e){ /* 送信失敗は無視 */ }
+}
+
+/* ===== お知らせ（通知）の状態と設定画面 =====
+   ・iPhone/iPad は「ホーム画面に追加したアイコンから開いたとき」だけ通知が使える（Safariのタブでは不可）
+   ・Android(Chrome) はブラウザのままで使える
+   ・家族に届くのは「新しい投稿」だけ（送り分けは Edge Function 側 notify-reaction） */
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+function isStandalone(){
+  try{
+    return window.navigator.standalone===true
+      || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  }catch(e){ return false; }
+}
+function notifyStatus(){
+  if(IS_IOS && !isStandalone()) return 'ios-tab';                       // ホーム画面に追加すれば使える
+  if(!('serviceWorker' in navigator) || !('PushManager' in window) || !notifPerm()) return 'unsupported';
+  const perm = notifPerm();
+  if(perm==='granted') return 'on';
+  if(perm==='denied')  return 'blocked';
+  return 'off';
+}
+const NOTIFY_LABEL = { on:'オン', off:'オフ', 'ios-tab':'あと少し', blocked:'とまっています', unsupported:'—' };
+function syncNotifyUI(){
+  const st=notifyStatus(), el=$('#notifyState');
+  if(!el) return;
+  el.textContent = NOTIFY_LABEL[st]||'';
+  el.classList.toggle('on', st==='on');
+}
+/* 通知をオンにする（必ずユーザーのタップの中から呼ぶこと） */
+function turnNotifyOn(done){
+  ensureWho(async()=>{
+    const ok = await ensureNotifyPermission();
+    if(ok){
+      await ensurePushSubscription();
+      localStorage.setItem('yuzuNotifyAsked','1');
+      toast('お知らせをオンにしました 🔔');
+      showOSNotification('この端末にお知らせが届きます 🍋');
+    }else{
+      toast('お知らせをオンにできませんでした');
+    }
+    syncNotifyUI(); renderCurrentView();
+    if(done) done(ok);
+  });
+}
+function openNotify(){ renderNotify(); showModal('notifyModal'); }
+function renderNotify(){
+  const st=notifyStatus(); let html='';
+  if(st==='on'){
+    html = `<div class="nt-state on">✅ お知らせはオンです</div>
+      <div class="nt-lead">新しいごはんが増えたときに、この端末にそっと届きます。<br>
+      いいね・スタンプでは鳴りません。</div>
+      <button class="btn sec" id="ntTest">ためしに1つ出してみる</button>`;
+  }else if(st==='ios-tab'){
+    html = `<div class="nt-state">📱 あと少しで受け取れます</div>
+      <div class="nt-lead">iPhone・iPad は、<b>ホーム画面に追加したアイコンから開いたとき</b>だけ
+      お知らせが使えます（Safariのタブのままだと届きません）。</div>
+      <ol class="nt-steps">
+        <li>画面の下にある <b>共有ボタン</b>（四角から↑が出ているマーク）を押す</li>
+        <li>メニューを下にたどって「<b>ホーム画面に追加</b>」を選ぶ</li>
+        <li>右上の「追加」を押す</li>
+        <li>ホーム画面にできた <b>🍋 ゆずごはん</b> のアイコンから開きなおす</li>
+        <li>もう一度 ⋯ →「お知らせ」を開いて、<b>お知らせをうける</b> を押す</li>
+      </ol>
+      <div class="nt-note">Android のスマホは、この作業はいりません。そのまま「お知らせをうける」で受け取れます。</div>`;
+  }else if(st==='blocked'){
+    html = `<div class="nt-state ng">🔕 端末の設定で止まっています</div>
+      <div class="nt-lead">この端末の設定で、通知が「許可しない」になっています。<br><br>
+      <b>iPhone</b>：設定 → 通知 →「ゆずごはん」→ 通知を許可<br>
+      <b>Android</b>：設定 → アプリ → Chrome → 通知<br><br>
+      許可に変えてから、もう一度この画面をひらいてください。</div>`;
+  }else if(st==='unsupported'){
+    html = `<div class="nt-state ng">この端末では、お知らせが使えません</div>
+      <div class="nt-lead">LINEやInstagramの中でひらいたページでは、お知らせが使えません。<br>
+      画面のどこかにある「Safariで開く」「Chromeで開く」から開きなおしてみてください。</div>`;
+  }else{
+    html = `<div class="nt-state">🔔 いまはオフです</div>
+      <div class="nt-lead">新しいごはんが増えたときだけ、そっとお知らせします。<br>
+      いいね・スタンプでは鳴りません。</div>
+      <button class="btn" id="ntOn">お知らせをうける</button>`;
+  }
+  $('#notifyBody').innerHTML = html;
+  const on=$('#ntOn');
+  if(on) on.onclick=()=>{ on.disabled=true; on.textContent='準備しています…'; turnNotifyOn(()=>renderNotify()); };
+  const t=$('#ntTest');
+  if(t) t.onclick=()=>{ showOSNotification('テストです。これが見えていればOK 🍋'); toast('お知らせを出しました'); };
+}
+/* フィードの先頭で1回だけ「お知らせ、いる？」と聞く（あとでを押したら二度と出さない） */
+function shouldAskNotify(){
+  if(localStorage.getItem('yuzuNotifyAsked')) return false;
+  const st=notifyStatus();
+  return st==='off' || st==='ios-tab';
 }
 
 /* 保存メッセージのパターン（{name}に料理名が入る。保存のたびにランダムで1つ選ぶ） */
@@ -985,8 +1113,9 @@ function ensureWho(cb){ if(who){ cb && cb(); } else { pendingWhoCb=cb; showModal
 function setWho(name){
   who=name; localStorage.setItem('yuzuWho', who);
   hideModal('whoModal');
-  // 名前を選んだ流れで通知の許可を聞く（家族も対象。家族には新しい投稿だけが届く）
-  ensureNotifyPermission();
+  // 通知は「いきなり許可ダイアログ」を出さない。フィード先頭のお願いパネル（shouldAskNotify）と
+  // ⋯ →「お知らせ」からだけ聞く。ここは、既に許可済みの端末の購読を名前つきで登録しなおすだけ。
+  ensurePushSubscription(); syncNotifyUI();
   const cb=pendingWhoCb; pendingWhoCb=null;
   if(cb) cb(); else renderCurrentView();
   if(openDetailId) renderDetail(openDetailId);
@@ -1316,6 +1445,17 @@ function renderPanels(){
   const box=$('#feedPanels');
   if(viewMode!=='feed'){ box.innerHTML=''; return; }
   let html='';
+  if(shouldAskNotify()){
+    const iosTab = notifyStatus()==='ios-tab';
+    html += `<div class="panel ask">
+      <div class="ask-txt">🔔 新しいごはんが増えたら、お知らせしましょうか？<br>
+        <span style="color:var(--sub);font-size:13px">${iosTab?'iPhoneは、ホーム画面に追加すると受け取れます':'いいね・スタンプでは鳴りません'}</span></div>
+      <div class="ask-btns">
+        <button class="ask-yes" id="askYes">${iosTab?'やり方を見る':'うけとる'}</button>
+        <button class="ask-no" id="askNo">あとで</button>
+      </div>
+    </div>`;
+  }
   const pend = FAMILY? [] : pendingNotes();
   if(pend.length){
     html += `<div class="panel hint">
@@ -1348,6 +1488,14 @@ function renderPanels(){
   }
   box.innerHTML=html;
   box.querySelectorAll('[data-open]').forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); openDetail(el.dataset.open); });
+  const ay=$('#askYes');
+  if(ay) ay.onclick=ev=>{
+    ev.stopPropagation();
+    if(notifyStatus()==='ios-tab') openNotify();   // iPhoneはまず「ホーム画面に追加」の案内
+    else turnNotifyOn();                            // Android等はその場で許可ダイアログ
+  };
+  const an=$('#askNo');
+  if(an) an.onclick=ev=>{ ev.stopPropagation(); localStorage.setItem('yuzuNotifyAsked','1'); renderPanels(); };
   bindQuickNotes(box);
 }
 function renderFeed(){
@@ -1586,7 +1734,7 @@ $('#rName').addEventListener('input', renderTagSuggest);
 $('#saveRecordBtn').onclick=async()=>{
   const name=$('#rName').value.trim();
   if(!name){ toast('料理名を入れてね'); return; }
-  ensureNotifyPermission(); // 通知許可（ユーザー操作中に。初回のみダイアログ表示）
+  ensurePushSubscription(); // 許可済みならこの端末の購読を最新化（許可ダイアログはここでは出さない）
   const btn=$('#saveRecordBtn'); btn.disabled=true; const label=btn.textContent; btn.textContent='保存中…';
   try{
     const photos=await uploadPhotos(formPhotos);
@@ -2011,7 +2159,8 @@ $('#memoryBtn').onclick=openStory;
 /* 表示中のビューをふわっとクロスフェードさせる（切替時に呼ぶ） */
 function fadeView(el){ if(!el) return; el.classList.remove('view-fade'); void el.offsetWidth; el.classList.add('view-fade'); }
 /* ===== ☰ メニュー：思い出・リクエスト・通信・数字はここにしまってある ===== */
-$('#menuBtn').onclick=()=>showModal('menuModal');
+$('#menuBtn').onclick=()=>{ syncNotifyUI(); showModal('menuModal'); };
+$('#notifyBtn').onclick=openNotify;
 // メニューの項目を押したら、開いた先のシートを残したままメニューだけ閉じる
 $('#menuModal').addEventListener('click', ev=>{
   if(ev.target.closest('.menu-item')) hideModal('menuModal');
@@ -2084,6 +2233,7 @@ $('#feed').innerHTML = `<div class="empty"><span class="big">🍳</span>読み�
   await loadRecords();
   subscribeRealtime();
   ensurePushSubscription();   // 既に許可済みの端末は、起動時に購読を最新化
+  syncNotifyUI();
   if(!who) showModal('whoModal');
 })();
 </script>
