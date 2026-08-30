@@ -565,6 +565,9 @@ function openItem(p, existing){
       '</div>'+
     '</div>'+
     '<div class="field"><label>日付</label><input type="date" id="iDate" value="'+(normDate(it.date)||today())+'"></div>'+
+    ((existing&&db.periods.length>1)?'<div class="field"><label>どの期間に入れる？</label><select id="iMove">'+
+      db.periods.map(x=>'<option value="'+x.id+'"'+(x.id===p.id?' selected':'')+'>'+esc(x.name)+'</option>').join('')+
+    '</select><div class="hint" style="text-align:left;margin-top:6px">えらび直して保存すると、その期間へ移せます。</div></div>':'')+
     '<div class="sheetbtns"><button class="save" id="iSave">'+(existing?'保存':'追加する')+'</button></div>'+
     (existing?'<button class="delbtn" id="iDel">この明細を削除</button>':'')
   );
@@ -631,7 +634,17 @@ function openItem(p, existing){
       if(rt!=null) nit.ratio=rt;
       curPeriod().items.push(nit);
     }
-    save(); closeSheet(); toast(existing?'保存しました':'追加しました ✓');
+    let moved=null;
+    const mv=ov.querySelector('#iMove');
+    if(existing&&mv&&mv.value!==p.id){
+      const to=db.periods.find(x=>x.id===mv.value);
+      if(to&&!to.items.some(x=>x.id===existing.id)){
+        p.items=p.items.filter(x=>x.id!==existing.id);
+        to.items.push(existing);
+        moved=to.name;
+      }
+    }
+    save(); closeSheet(); toast(moved?('「'+moved+'」へ移しました ✓'):(existing?'保存しました':'追加しました ✓'));
   };
   if(existing){
     ov.querySelector('#iDel').onclick=()=>{
@@ -652,7 +665,7 @@ function openPeriods(){
   }).join('');
   openSheet(
     '<h2>期間をえらぶ</h2>'+
-    '<div class="sd">月ごとに明細をまとめられます。CSVは選んでいる期間に読み込まれます。</div>'+
+    '<div class="sd">月ごとに明細をまとめられます。CSVは<b>明細の日付を見て、月ごとの期間へ自動でふりわけ</b>ます（取り込む前に入れ先を確認できます）。</div>'+
     rows+
     '<button class="secbtn" id="newPeriod"><span class="em">＋</span><div>あたらしい期間をつくる<small>いまの期間はそのまま残ります</small></div></button>'
   );
@@ -689,6 +702,7 @@ function openSettings(){
     '<button class="secbtn" id="shareBtn"><span class="em">🔗</span><div>'+esc(nm('yuzu'))+'ちゃんと共有（別の端末）<small>同じ明細・仕分け・比率を2台でリアルタイム同期</small></div></button>'+
     '<button class="secbtn" id="renameP"><span class="em">✏️</span><div>この期間の名前を変える<small>いま：'+esc(p.name)+'</small></div></button>'+
     '<button class="secbtn" id="setShareAll"><span class="em">↩️</span><div>この期間を全部「共同」に戻す<small>個人・対象外の仕分けをリセット</small></div></button>'+
+    (db.lastImport?'<button class="secbtn" id="undoImp"><span class="em">↺</span><div>前回のCSV取り込みを取り消す<small>'+esc(lastImportSummary())+'</small></div></button>':'')+
     '<button class="secbtn" id="exportBtn"><span class="em">⬇️</span><div>バックアップを書き出す<small>全期間をJSONファイルで保存</small></div></button>'+
     '<button class="secbtn" id="restoreBtn"><span class="em">⬆️</span><div>バックアップから復元<small>書き出したJSONを読み込む</small></div></button>'+
     (db.periods.length>1?'<button class="delbtn" id="delP">この期間を削除</button>':'')+
@@ -707,6 +721,8 @@ function openSettings(){
   ov.querySelector('#setShareAll').onclick=()=>{
     if(confirm('この期間の明細をすべて「共同」に戻しますか？')){ curPeriod().items.forEach(it=>it.tag='share'); commitNames(); save(); closeSheet(); toast('共同に戻しました'); }
   };
+  const ui=ov.querySelector('#undoImp');
+  if(ui) ui.onclick=()=>{ if(confirm('前回のCSV取り込みを取り消しますか？\n'+lastImportSummary()+'\n\n※取り込みで新しくできた期間は、その期間ごと消えます。')) undoLastImport(); };
   ov.querySelector('#exportBtn').onclick=exportBackup;
   ov.querySelector('#restoreBtn').onclick=()=>document.getElementById('restoreInput').click();
   const dp=ov.querySelector('#delP');
@@ -1045,16 +1061,119 @@ function parseHeaderless(lines){
   }
   return items;
 }
+/* ===== 取り込み先の自動ふりわけ ===== */
+// 明細の日付から「年月」を取り出す（"2026-08-13" → "2026-08"）
+function ymOf(dateStr){ const m=String(dateStr||'').match(/^(\d{4})-(\d{2})/); return m?m[1]+'-'+m[2]:''; }
+function ymLabel(ym){ return ym?(+ym.slice(5,7))+'月分':'日付不明ぶん'; }
+function ymJa(ym){ return ym?ym.slice(0,4)+'年'+(+ym.slice(5,7))+'月':'日付が読めなかったぶん'; }
+// 期間の名前がその年月を指しているか（「8月分」「2026年8月」「2026-08」などを許容）
+function periodMatchesYm(p,ym){
+  if(!ym) return false;
+  const y=ym.slice(0,4), mm=ym.slice(5,7), m=String(+mm);
+  const n=zenNum(p.name).replace(/\s|　/g,'');
+  if(n.includes(y+'-'+mm)||n.includes(y+'/'+mm)||n.includes(y+'.'+mm)) return true;
+  if(n.includes(y+'年'+m+'月')) return true;
+  const other=n.match(/(\d{4})年/);                       // 別の年が書いてあるなら不一致
+  if(other&&other[1]!==y) return false;
+  return new RegExp('(^|[^0-9])'+m+'月').test(n);
+}
+
+/* ===== CSV 取り込み（月ごとにふりわけ→確認してから反映） ===== */
+let pendingImport=null;
 async function handleCSV(file){
   const parsed=await parseCreditCSV(file);
   if(!parsed) return;
   if(!parsed.length){ toast('取り込める明細がありませんでした'); return; }
-  const p=curPeriod();
+  // 年月ごとにまとめる（古い月が上）
+  const map=new Map();
+  parsed.forEach(t=>{ const k=ymOf(t.date); if(!map.has(k))map.set(k,[]); map.get(k).push(t); });
+  const groups=[...map.entries()].sort((x,y)=>x[0]<y[0]?-1:1).map(([ym,items])=>{
+    const hit=db.periods.find(p=>periodMatchesYm(p,ym));
+    // 日付が読めなかったぶんは、いま開いている期間を既定にする
+    return {ym, items, dest: hit?hit.id:(ym?'__new__':db.current)};
+  });
+  pendingImport={groups};
+  openImportSheet();
+}
+function importDupCount(g){
+  if(g.dest==='__new__'||g.dest==='__skip__') return 0;
+  const p=db.periods.find(x=>x.id===g.dest); if(!p) return 0;
   const idset=new Set(p.items.map(x=>x.id));
-  let added=0,dup=0;
-  parsed.forEach(t=>{ if(idset.has(t.id)){dup++;return;} p.items.push(t); idset.add(t.id); added++; });
-  save();
-  toast(added+'件を「'+p.name+'」に追加'+(dup?'（重複'+dup+'件はスキップ）':'')+' ✓');
+  return g.items.filter(t=>idset.has(t.id)).length;
+}
+function openImportSheet(){
+  const gs=pendingImport.groups;
+  const rows=gs.map((g,i)=>{
+    const sum=g.items.reduce((a,b)=>a+b.amount,0);
+    const opts=db.periods.map(p=>'<option value="'+p.id+'"'+(g.dest===p.id?' selected':'')+'>「'+esc(p.name)+'」に入れる</option>').join('')
+      +'<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(ymLabel(g.ym))+'」を新しくつくって入れる</option>'
+      +'<option value="__skip__">取り込まない</option>';
+    return '<div class="field"><label>'+esc(ymJa(g.ym))+'　'+g.items.length+'件・'+yen(sum)+'</label>'+
+      '<select class="impdest" data-i="'+i+'">'+opts+'</select>'+
+      '<div class="hint" style="text-align:left;margin-top:6px" id="impNote'+i+'"></div></div>';
+  }).join('');
+  openSheet(
+    '<h2>どこに取り込む？</h2>'+
+    '<div class="sd">明細の日付を見て、月ごとに自動でふりわけました。入れ先はここで変えられます。</div>'+
+    rows+
+    '<div class="sheetbtns"><button class="save" id="impGo">この内容で取り込む</button></div>'+
+    '<button class="delbtn" id="impCancel" style="color:var(--sub)">やめる</button>'
+  );
+  const syncNotes=()=>{
+    gs.forEach((g,i)=>{
+      const el=ov.querySelector('#impNote'+i); if(!el) return;
+      if(g.dest==='__skip__'){ el.textContent='この月は取り込みません'; return; }
+      const d=importDupCount(g);
+      el.textContent = d?('同じ明細が'+d+'件すでにあります（重複はスキップします）'):'';
+    });
+  };
+  ov.querySelectorAll('.impdest').forEach(sel=>{
+    sel.onchange=()=>{ gs[+sel.dataset.i].dest=sel.value; syncNotes(); };
+  });
+  syncNotes();
+  ov.querySelector('#impCancel').onclick=()=>{ pendingImport=null; closeSheet(); };
+  ov.querySelector('#impGo').onclick=runImport;
+}
+function runImport(){
+  if(!pendingImport) return;
+  const log={at:nowMs(), entries:[]};
+  let added=0, dup=0; const parts=[]; let lastPid=null;
+  pendingImport.groups.forEach(g=>{
+    if(g.dest==='__skip__') return;
+    let p, created=false;
+    if(g.dest==='__new__'){ p=newPeriod(ymLabel(g.ym)); db.periods.unshift(p); created=true; }
+    else p=db.periods.find(x=>x.id===g.dest);
+    if(!p) return;
+    const idset=new Set(p.items.map(x=>x.id));
+    const ids=[];
+    g.items.forEach(t=>{ if(idset.has(t.id)){dup++;return;} p.items.push(t); idset.add(t.id); ids.push(t.id); added++; });
+    log.entries.push({periodId:p.id, itemIds:ids, createdPeriod:created, name:p.name});
+    if(ids.length||created){ parts.push(p.name+' '+ids.length+'件'); lastPid=p.id; }
+  });
+  pendingImport=null;
+  if(!added && !log.entries.some(e=>e.createdPeriod)){ closeSheet(); toast(dup?'すべて取り込み済みでした':'取り込むものがありませんでした'); return; }
+  db.lastImport=log;
+  if(lastPid){ db.current=lastPid; curFilter='all'; }
+  save(); closeSheet(); window.scrollTo(0,0);
+  toast(parts.join('・')+'に追加'+(dup?'（重複'+dup+'件はスキップ）':'')+' ✓');
+}
+function undoLastImport(){
+  const log=db.lastImport; if(!log) return;
+  log.entries.slice().reverse().forEach(e=>{
+    if(e.createdPeriod){ db.periods=db.periods.filter(p=>p.id!==e.periodId); return; }
+    const p=db.periods.find(x=>x.id===e.periodId);
+    if(p){ const s=new Set(e.itemIds); p.items=p.items.filter(it=>!s.has(it.id)); }
+  });
+  if(!db.periods.length) db.periods=[newPeriod(monthLabel(new Date()))];
+  if(!db.periods.find(p=>p.id===db.current)){ db.current=db.periods[0].id; curFilter='all'; }
+  delete db.lastImport;
+  save(); closeSheet(); toast('前回の取り込みを取り消しました');
+}
+function lastImportSummary(){
+  const log=db.lastImport; if(!log) return '';
+  const n=log.entries.reduce((a,e)=>a+e.itemIds.length,0);
+  const d=new Date(log.at);
+  return (d.getMonth()+1)+'月'+d.getDate()+'日 '+pad(d.getHours())+':'+pad(d.getMinutes())+'・'+n+'件（'+log.entries.map(e=>e.name).join('・')+'）';
 }
 
 /* ============ トースト ============ */
