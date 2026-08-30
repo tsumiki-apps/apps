@@ -38,9 +38,8 @@
   /* ===== ヘッダー（写真ファースト：常に1行だけ・上に貼りつく） ===== */
   header.app {
     position: sticky; top: 0; z-index: 45;
-    background: rgba(251,247,240,.86);
-    -webkit-backdrop-filter: saturate(180%) blur(14px); backdrop-filter: saturate(180%) blur(14px);
-    border-bottom: 1px solid rgba(236,229,218,.9);
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
     padding-top: env(safe-area-inset-top);
   }
   .hbar { max-width: 680px; margin: 0 auto; padding: 4px 12px 4px 16px;
@@ -106,7 +105,7 @@
   .entry .multi { position:relative; }
   .entry .multi .count {
     position:absolute; right:10px; bottom:10px; background:rgba(0,0,0,.55); color:#fff;
-    font-size:12px; padding:3px 9px; border-radius:999px; backdrop-filter:blur(4px);
+    font-size:12px; padding:3px 9px; border-radius:999px;
   }
   .entry .body { padding: 11px 14px 12px; }
   .entry .e-top { display:flex; align-items:center; gap:8px; }
@@ -406,10 +405,12 @@
   .act { flex:none; min-width:44px; height:44px; padding:0 6px; border:none; background:transparent;
     border-radius:14px; font-size:19px; line-height:1; cursor:pointer; font-family:inherit;
     display:inline-flex; align-items:center; justify-content:center; gap:3px; color:var(--sub); }
-  .act .em { display:inline-block; filter:grayscale(1); opacity:.4; transition:filter .15s, opacity .15s, transform .15s; }
-  .act.has .em, .act.on .em { filter:none; opacity:1; }
+  /* ⚠️ ここに filter:grayscale を使わないこと。カード×ボタンで数百個になり、
+     iPhoneがメモリ不足でページごと落ちる（2026-08-31 実発生）。濃さは opacity だけで表す。 */
+  .act .em { display:inline-block; opacity:.38; transition:opacity .15s, transform .15s; }
+  .act.has .em, .act.on .em { opacity:1; }
   .act .cnt { font-size:12px; font-weight:700; }
-  .act.on { color:var(--accent); }
+  .act.on { color:var(--accent); background:var(--accent-soft); }
   .act:active .em { transform:scale(.86); }
   .act.want { margin-left:auto; }
   .react-who { font-size:11.5px; color:var(--sub); margin-top:4px; }
@@ -1215,7 +1216,7 @@ function recordListHTML(list, {groupByMonth=true}={}){
     if(groupByMonth && mk!==lastMonth){ html+=`<div class="month-head">${fmtMonth(mk)}</div>`; lastMonth=mk; }
     const photos=r.photos||[];
     const cover = photos.length
-      ? `<div class="multi"><img class="cover" src="${photos[0]}">${photos.length>1?`<span class="count">📷 ${photos.length}</span>`:''}</div>`
+      ? `<div class="multi"><img class="cover" src="${photos[0]}" loading="lazy" decoding="async">${photos.length>1?`<span class="count">📷 ${photos.length}</span>`:''}</div>`
       : `<div class="cover placeholder">🍽️</div>`;
     const tags=(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
     const cc=commentsFor(r.id).length;
@@ -1379,7 +1380,7 @@ function renderPanels(){
     html += `<div class="panel">
       <div class="p-title">🎞️ ${mem.label}</div>
       <div class="memo-row" data-open="${mem.rec.id}">
-        ${pic? `<img src="${pic}">` : `<div class="ph">🍽️</div>`}
+        ${pic? `<img src="${pic}" loading="lazy" decoding="async">` : `<div class="ph">🍽️</div>`}
         <div><div class="nm">${esc(mem.rec.name)}</div><div class="dt">${fmtDate(mem.rec.date)}</div></div>
       </div>
     </div>`;
@@ -1690,7 +1691,7 @@ function renderDetail(id){
   if(!r){ hideModal('detailModal'); return; }
   const photos=r.photos||[];
   const photoHtml = photos.length
-    ? `<div class="detail-photos">${photos.map((p,i)=>`<img src="${p}" data-lb="${i}">`).join('')}</div>`
+    ? `<div class="detail-photos">${photos.map((p,i)=>`<img src="${p}" data-lb="${i}" decoding="async">`).join('')}</div>`
     : '';
   const tags=(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
   const likes=likesFor(id), liked=iLiked(id);
@@ -1835,7 +1836,7 @@ function renderReport(){
         <div><div class="nm">${esc(loved.name)}</div>
         <div class="sub">❤️ ${likesFor(loved.id).length}　💬 ${commentsFor(loved.id).length}　${CARD_REACT.join('')} ${reactionsFor(loved.id).length}</div></div>
       </div>`:''}
-    ${photos.length?`<div class="rep-sec">この月の食卓</div><div class="rep-photos">${photos.map(p=>`<img src="${p}">`).join('')}</div>`:''}
+    ${photos.length?`<div class="rep-sec">この月の食卓</div><div class="rep-photos">${photos.map(p=>`<img src="${p}" loading="lazy" decoding="async">`).join('')}</div>`:''}
     <div style="height:20px"></div>`;
   bindReportNav();
   body.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>{
@@ -1867,7 +1868,7 @@ function renderCalendar(){
     if(recs.length){
       const pic=recs.map(r=>(r.photos||[])[0]).find(Boolean);
       if(pic){
-        cells+=`<div class="cal-cell has ${today}" data-day="${ds}"><img class="thumb" src="${pic}"><div class="shade"></div><span class="dnum">${d}</span>${recs.length>1?`<span class="cnt">${recs.length}</span>`:''}</div>`;
+        cells+=`<div class="cal-cell has ${today}" data-day="${ds}"><img class="thumb" src="${pic}" loading="lazy" decoding="async"><div class="shade"></div><span class="dnum">${d}</span>${recs.length>1?`<span class="cnt">${recs.length}</span>`:''}</div>`;
       } else {
         cells+=`<div class="cal-cell has nopic ${today}" data-day="${ds}"><span class="dnum">${d}</span><span class="dot"></span></div>`;
       }
@@ -1899,7 +1900,7 @@ function openDay(ds){
     recs.map(r=>{
       const pic=(r.photos||[])[0];
       const cov = pic
-        ? `<img src="${pic}" style="width:64px;height:64px;border-radius:12px;object-fit:cover;flex:none">`
+        ? `<img src="${pic}" loading="lazy" decoding="async" style="width:64px;height:64px;border-radius:12px;object-fit:cover;flex:none">`
         : `<div style="width:64px;height:64px;border-radius:12px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;flex:none;font-size:26px">🍽️</div>`;
       return `<div class="day-item" data-id="${r.id}" style="display:flex;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer">${cov}<div><div style="font-weight:700">${esc(r.name)}</div><div style="font-size:12px;color:var(--sub);margin-top:2px">❤️ ${likesFor(r.id).length}　💬 ${commentsFor(r.id).length}</div></div></div>`;
     }).join('');
@@ -1911,7 +1912,7 @@ function openDay(ds){
 function openLightbox(photos, start){
   if(!photos||!photos.length) return;
   const track=$('#lbTrack'), dots=$('#lbDots');
-  track.innerHTML = photos.map(p=>`<div class="lb-slide"><img src="${p}"></div>`).join('');
+  track.innerHTML = photos.map(p=>`<div class="lb-slide"><img src="${p}" decoding="async"></div>`).join('');
   dots.innerHTML = photos.map((_,i)=>`<span class="d ${i===start?'on':''}"></span>`).join('');
   $('#lbIdx').textContent = `${start+1} / ${photos.length}`;
   $('#lightbox').classList.add('show');
@@ -1959,7 +1960,7 @@ function reactionRowHTML(id){
 function storySlideHTML(r){
   const photos=r.photos||[];
   const photo = photos.length
-    ? `<div class="st-photo-wrap"><img class="st-photo" src="${photos[0]}"></div>`
+    ? `<div class="st-photo-wrap"><img class="st-photo" src="${photos[0]}" loading="lazy" decoding="async"></div>`
     : `<div class="st-photo-wrap">🍽️</div>`;
   const sub=[makerLabel(r), fmtDate(r.date)].filter(Boolean).join('　•　');
   return `<div class="st-slide" data-id="${r.id}">
@@ -2080,6 +2081,7 @@ $('#searchBtn').onclick=()=>{
 syncTools();
 
 $('#viewSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  if(viewMode===b.dataset.view) return;   // 同じところを2回押しても作り直さない（97件ぶんの再描画は重い）
   viewMode=b.dataset.view;
   $('#viewSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on', x===b));
   syncTools();
