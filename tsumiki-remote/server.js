@@ -311,6 +311,10 @@ function clampCols(v) {
 // 変わったときだけ動かす（同じ幅で resize しても実害はないが、無駄に SIGWINCH が飛ぶ）
 const sized = new Map();
 
+// いつリサイズしたか。judge() が「折り返しが変わっただけの画面」を
+// 「動いた」と数えないために要る（→ RESIZE_GRACE_MS のところに理由）
+const resizedAt = new Map();
+
 async function resizeWindow(name, cols) {
   if (!NAME_RE.test(name)) return;
   const want = clampCols(cols);
@@ -322,6 +326,7 @@ async function resizeWindow(name, cols) {
   // MacBook のターミナルから繋いだときも 60桁のままになってしまうので、
   // 「最後に繋いだ相手に合わせる」既定に戻す（いまの寸法はそのまま残る）
   await tmux(['set-window-option', '-t', '=' + name + ':', 'window-size', 'latest']);
+  resizedAt.set(name, Date.now());   // 折り返しが直るまでの猶予は、ここから数える
 }
 
 // tmux は書式出力中のタブを "_" に潰すので、区切りには使えない
@@ -429,11 +434,27 @@ const BUSY_RE = /esc to interrupt|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/;
 
 const prev = new Map(); // name -> { tail, changedAt }
 
+// リサイズした直後は、枠線も折り返しも引き直されて画面の文字が丸ごと変わる。
+// これを「動いた」と数えると、幅が変わるたびに「作業中」に戻ってしまう。
+// 画面を見ている席にだけ桁数を送る作りなので、**選んでいる席だけ**が巻き添えになる：
+//   ・iPhone(51桁) と iPad(101桁) で同じ席を開くと、1.5秒ごとに幅が往復し、
+//     その席は永久に「作業中」＝札も戻らず「作業中以外を終わらせる」でも片付かない
+//   ・1台でも、絵つきの質問で 120桁に広げて戻すたびに数秒つかまる
+// （2026-09-01 実測：幅を1回変えるだけで idle → busy / quietMs 0 になった）
+// だからリサイズから RESIZE_GRACE_MS のあいだの変化は、静かさの計算に入れない。
+// 本当に動いているものはスピナー（BUSY_RE）が拾うので、見落としにはならない。
+const RESIZE_GRACE_MS = 2000;
+
 function judge(name, text) {
   const now = Date.now();
   const tail = text.slice(-4000);
   const before = prev.get(name);
-  if (!before || before.tail !== tail) prev.set(name, { tail, changedAt: now });
+  const afterResize = now - (resizedAt.get(name) || 0) < RESIZE_GRACE_MS;
+  if (!before) prev.set(name, { tail, changedAt: now });
+  // 中身は新しいものに入れ替えるが、「いつ動いたか」は据え置く＝時計を戻さない
+  else if (before.tail !== tail) {
+    prev.set(name, { tail, changedAt: afterResize ? before.changedAt : now });
+  }
   const changedAt = (prev.get(name) || { changedAt: now }).changedAt;
   const quietMs = now - changedAt;
 
@@ -858,6 +879,8 @@ const server = http.createServer(async (req, res) => {
       const r = await tmux(['kill-session', '-t', '=' + name + ':']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       sized.delete(name);   // 同じ名前で作り直したとき、寸法を指定し直せるように
+      resizedAt.delete(name);
+      prev.delete(name);    // 前の住人の画面を、新しい席の「動いた／動いていない」に持ち越さない
       console.log(`kill ${name}`);
       return json(res, 200, { ok: true });
     }
@@ -878,7 +901,10 @@ const server = http.createServer(async (req, res) => {
         if (text === null) { skipped.push({ name, why: 'ありません' }); continue; }
         if (judge(name, text).status === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         const r = await tmux(['kill-session', '-t', '=' + name + ':']);
-        if (r.ok) { killed.push(name); sized.delete(name); console.log(`kill ${name} (まとめて)`); }
+        if (r.ok) {
+          killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name);
+          console.log(`kill ${name} (まとめて)`);
+        }
         else skipped.push({ name, why: '失敗' });
       }
       return json(res, 200, { ok: true, killed, skipped });
