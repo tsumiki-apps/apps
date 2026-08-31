@@ -12,6 +12,7 @@ for(const j of JOBS){
   await send('Emulation.setDeviceMetricsOverride',{width:W,height:H,deviceScaleFactor:2,mobile:W<600});
   if(j.ua==='ios') await send('Network.setUserAgentOverride',{userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'});
   else if(j.ua==='android') await send('Network.setUserAgentOverride',{userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36'});
+  await send('Emulation.setEmulatedMedia',{media:j.media||''});
   const url=HOST+FILE[j.app]+'?'+(j.q||'');
   await send('Page.navigate',{url}); await wait(j.wait||1900);
   const guard=await ev("location.href.includes('_%E3%83%86%E3%82%B9%E3%83%88%E7%94%A8_')");

@@ -8,7 +8,7 @@ TOOLS = pathlib.Path.home()/ "tsumiki-tools"
 OUT   = pathlib.Path(sys.argv[1])
 
 Y, M = 2026, 10
-SHOP = "せんや高崎インター店"
+SHOP = "みなみ食堂"   # 架空のお店（実在のお客様の店名は絶対に使わない。説明書は公開ページ）
 NAMES = ["やまだ はな","さとう けんた","すずき あおい","たなか みなと",
          "いとう さくら","わたなべ りく","こばやし ゆい","なかむら そう","よしだ めい"]
 CODES = ["SAMPLE","SAMPL2","SAMPL3","SAMPL4","SAMPL5","SAMPL6","SAMPL7","SAMPL8","SAMPL9"]
