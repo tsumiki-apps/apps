@@ -34,13 +34,18 @@
 - 墨の流体シミュ（`~/tsumiki-portfolio/ink-fluid.js`・`.ink-fluid`）に触らない → A層の核にある。
 - つみきロゴの公式SVG座標の在り処＝`~/制作物/index.html` ヘッダーの `<svg class="mark" viewBox="0 0 100 100">`（使い方は A層の核）。
 
-## 4. やり取りの出力の置き場
+## 4. お客様への「お返事カード」（1枚画像）
+- ご質問・改善のご相談への返信に添える1枚画像は `python3 ~/制作物/make_reply_card.py <カード.json>`。
+  型・数値・禁止事項の正本 → `~/ObsidianVault/Playbooks/reply-card-format.md`
+- 画面は**架空データの複製**から撮る（せんや＝`senya-shots-src/`）。本番の画面を撮らない。
+
+## 5. やり取りの出力の置き場
 - 出力したもの（レポート・図・調査結果・単発HTML）は `~/つみき出力/` に**日本語ファイル名**で置く。
   実体は iCloud Drive の `Kodai/00_Tsumiki/11_やりとり出力`。つみきリモートの「⋯ → 制作物を見る」がここを映すので、
   外出先のスマホからその場でプレビューできる。
   （**同期的に読むと固まる**件は A層の核にある）
 
-## 5. Codex連携 — 現場ガード
+## 6. Codex連携 — 現場ガード
 - **Codex は `~/制作物` 専用**で使う（別dirから使うと team config に登録が増殖するバグ）。
 - agmsg は**必ず scripts 経由**：受信 `~/.agents/skills/agmsg/scripts/inbox.sh`、送信 `.../send.sh`。db/ や teams/ を直接読み書きしない。
 - **`/codex:review` 等のCLIを回すときだけ Codexデスクトップアプリを閉じる**（トークン共有で認証衝突）。agmsg会話だけなら開いたままでOK。
