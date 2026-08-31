@@ -449,6 +449,21 @@
   #viewerback{flex:0 0 44px;padding:0;display:flex;align-items:center;justify-content:center}
   /* 名前が画面のまんなかに来るように、右側に同じ幅を空けておく */
   .viewerbar .spacer{flex:0 0 44px}
+  /* 本文をぜんぶ写す札。戻ると同じ 44px で、名前を挟んで左右つり合う。
+     写せない相手（画像・PDF）のときは消すが、場所は空けたままにする＝
+     ファイル名が中央から動かない（消したり出したりで字が跳ねない） */
+  #viewercopy{flex:0 0 44px;padding:0;display:flex;align-items:center;justify-content:center}
+  #viewercopy svg{width:20px;height:20px}
+  #viewercopy.off{visibility:hidden;pointer-events:none}
+  #viewercopy.done{color:#22c55e;border-color:#3b4250}
+  /* 知らせはこの画面の中に置く。footer の .toast は #viewer(z-index:40) の
+     下に隠れて見えない */
+  .vtoast{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 16px);
+    transform:translateX(-50%);width:max-content;max-width:calc(100% - 24px);z-index:2;
+    background:#1c2029;border:1px solid var(--line);color:var(--fg);
+    padding:9px 14px;border-radius:10px;font-size:13px;line-height:1.5;
+    text-align:center;pointer-events:none}
+  .vtoast[hidden]{display:none}
 
   #sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);
     display:flex;align-items:flex-end}
@@ -689,10 +704,12 @@
       </svg>
     </button>
     <span id="viewername"></span>
-    <span class="spacer"></span>
+    <button id="viewercopy" class="off" aria-label="本文をぜんぶコピー"
+            title="本文をぜんぶコピー"></button>
   </div>
   <div id="viewerwrap"><img id="viewerimg" alt="制作物"></div>
   <iframe id="viewerframe" title="制作物のプレビュー"></iframe>
+  <div id="viewertoast" class="vtoast" hidden></div>
 </div>
 
 <div id="sheet" hidden>
@@ -2769,8 +2786,13 @@
   var viewerWrap = document.getElementById('viewerwrap');
   var viewerImg = document.getElementById('viewerimg');
   var viewerName = document.getElementById('viewername');
+  var viewerCopy = document.getElementById('viewercopy');
+  var viewerToast = document.getElementById('viewertoast');
   var viewerUrl = '';
+  var viewerRel = '';
   var IMG_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
+  var HTML_RE = /\.html?$/i;
+  var TXT_RE = /\.(md|txt|csv|json|js|css)$/i;
 
   function previewUrl(rel) {
     return '/preview/' + rel.split('/').map(encodeURIComponent).join('/') +
@@ -2779,8 +2801,11 @@
 
   function openPreview(rel) {
     viewerUrl = previewUrl(rel);
+    viewerRel = rel;
     viewerName.textContent = rel;
     viewerWrap.classList.remove('zoom');
+    resetCopyBtn();
+    hideVToast();
     if (!viewerPushed) {
       try { history.pushState({ tsumikiViewer: 1 }, ''); viewerPushed = true; } catch (e) {}
     }
@@ -2803,6 +2828,109 @@
   // タップで「全体表示 ⇄ 原寸」。原寸のときは指でずらして見られる
   viewerImg.onclick = function () { viewerWrap.classList.toggle('zoom'); };
 
+  // ------------------------------------------- 本文をぜんぶ写す（右上の札）
+  //
+  // 出先で見ている制作物は、読むだけでなく「そのまま貼りたい」ことが多い。
+  // iPhone の長押しは1段落ずつしか掴めず、長い文章では指がもたない。
+  // 絵だけの札を1つ置いて、押したら中身を全部クリップボードに入れる。
+  // 文字は書かない＝名前の場所を食わないし、戻ると左右でつり合う。
+  //
+  // ⚠️ この画面では footer の toast が下に隠れて見えないので、知らせは
+  //    #viewertoast（この画面の中）に出す。
+
+  var vtoastTimer = null;
+
+  function vtoast(msg, ms) {
+    viewerToast.textContent = msg;
+    viewerToast.hidden = false;
+    clearTimeout(vtoastTimer);
+    vtoastTimer = setTimeout(hideVToast, ms || 1800);
+  }
+
+  function hideVToast() {
+    clearTimeout(vtoastTimer);
+    viewerToast.hidden = true;
+  }
+
+  var copyBackTimer = null;
+
+  // 写せる相手（文字もの）のときだけ札を出す。画像とPDFには出しても押せるものが無い
+  function resetCopyBtn() {
+    clearTimeout(copyBackTimer);
+    viewerCopy.classList.remove('done');
+    viewerCopy.innerHTML = ICON_COPY;
+    var canCopy = HTML_RE.test(viewerRel) || TXT_RE.test(viewerRel);
+    viewerCopy.classList.toggle('off', !canCopy);
+  }
+
+  // 中身の取りかたは相手で変える。
+  // HTML は「出来上がった見た目の字」が欲しい（タグを貼りたい人はいない）ので
+  // iframe の中から読む。それ以外は元のファイルをそのまま読む＝改行や空白が崩れない。
+  function frameText() {
+    try {
+      var d = viewerFrame.contentDocument;
+      var t = d && d.body ? (d.body.innerText || d.body.textContent || '') : '';
+      return t.trim() ? t : '';
+    } catch (e) { return ''; }   // 別もとになっていて覗けない
+  }
+
+  function fetchText(rel) {
+    return fetch(previewUrl(rel), { credentials: 'same-origin' })
+      .catch(function () { throw new Error('MacBook に届きません'); })
+      .then(function (r) {
+        if (!r.ok) throw new Error('読み込めません');
+        return r.text();
+      });
+  }
+
+  function viewerText(rel) {
+    if (HTML_RE.test(rel)) {
+      var t = frameText();
+      return t ? Promise.resolve(t) : fetchText(rel);
+    }
+    return fetchText(rel).catch(function (e) {
+      var t = frameText();
+      if (t) return t;
+      throw e;
+    });
+  }
+
+  // どうしても写せなかったとき用。iframe の中を全部選んだ状態にしておけば、
+  // 長押しから iOS の「コピー」で取れる（本体側の selectNode と同じ考え）
+  function selectAllInFrame() {
+    try {
+      var d = viewerFrame.contentDocument, w = viewerFrame.contentWindow;
+      if (!d || !d.body || !w) return false;
+      var range = d.createRange();
+      range.selectNodeContents(d.body);
+      var sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  viewerCopy.onclick = function () {
+    if (!viewerRel || viewerCopy.classList.contains('off')) return;
+    viewerText(viewerRel).then(function (text) {
+      if (!text) throw new Error('中身がありません');
+      return copyText(text).then(function () {
+        viewerCopy.classList.add('done');
+        viewerCopy.innerHTML = ICON_DONE;
+        vtoast('本文をぜんぶコピーしました');
+        copyBackTimer = setTimeout(function () {
+          viewerCopy.classList.remove('done');
+          viewerCopy.innerHTML = ICON_COPY;
+        }, 2000);
+      }, function () {
+        if (selectAllInFrame()) vtoast('選んであります。長押しして「コピー」を選んでください', 3600);
+        else vtoast('コピーできませんでした', 2600);
+      });
+    }).catch(function (e) {
+      vtoast(e.message || 'コピーできませんでした', 2600);
+    });
+  };
+
   // 保存は iOS の長押し（「写真に追加」）に任せる。ボタンからの共有シートは
   // https でつないだときしか使えず、<a download> に落とすとページごと
   // 「ファイルの受け取り画面」に移って戻れなくなる（2026-08-31 実発生）。
@@ -2819,6 +2947,8 @@
     viewerImg.removeAttribute('src');
     viewerWrap.classList.remove('on', 'zoom');
     viewerUrl = '';
+    viewerRel = '';
+    hideVToast();
   }
 
   document.getElementById('viewerback').onclick = function () {
