@@ -8,6 +8,7 @@
 型は2つ:
     "type": "zoom"  … 画面ひとつを大きく見せ、右に①〜④の説明（1つの機能をしっかり説明する）
     "type": "steps" … 画面3つを横に並べて流れを見せる（やり方・手順の説明）
+    "type": "compare" … 「いまできること／まだできないこと」を左右で対比（ご質問へのお答え）
 
 しくみ:
     JSON → HTML を組む → ヘッドレスChromeで撮る → 下の余白を切る（＝はみ出して切れない）
@@ -25,12 +26,13 @@ except ImportError:
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 W = 1080                     # 幅は必ず1080（LINEでいちばんきれいに出る）
-MIN_H = {"zoom": 1350, "steps": 1080}
+MIN_H = {"zoom": 1350, "steps": 1080, "compare": 1080}
 MAX_H = 1620                 # これを超えたら「2枚に分けて」と言う
 PAPER = "#F7F5F1"
 
 # 文字数のめやす（超えたら注意を出すだけ・止めない）
-LIMIT = {"title": 24, "quote": 62, "note_t": 18, "note_s": 34, "step_t": 14, "step_s": 26, "foot": 30}
+LIMIT = {"title": 24, "quote": 62, "note_t": 18, "note_s": 34, "step_t": 14, "step_s": 26, "foot": 30,
+         "item_t": 20, "item_s": 36, "ask": 34}
 
 LOGO = """<svg viewBox="0 0 100 100" aria-label="つみき"><rect width="100" height="100" rx="24" fill="#242321"/>
 <g fill="#242321" stroke="#F4F2EE" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round">
@@ -92,6 +94,28 @@ em{font-style:normal;background:var(--ink);color:#F4F2EE;border-radius:8px;paddi
   padding:10px;box-shadow:0 5px 18px rgba(36,35,33,.07);overflow:hidden}
 .frame img{width:100%;height:100%;object-fit:__FIT__;object-position:top center;display:block;border-radius:8px}
 .sub{margin-top:11px;font-size:20px;color:var(--sub);line-height:1.5}
+
+/* ── compare型 ── */
+.two{margin-top:26px;display:grid;grid-template-columns:1fr 1fr;gap:26px;padding-bottom:26px}
+.box{border-radius:18px;padding:24px;border:2px solid;display:flex;flex-direction:column}
+.box.ok{background:#fff;border-color:#E7C9BF;box-shadow:0 5px 18px rgba(36,35,33,.06)}
+.box.ng{background:#F1EEE9;border-color:var(--line)}
+.box h2{font-size:27px;font-weight:700;display:flex;align-items:center;gap:11px;margin-bottom:18px}
+.box.ok h2{color:var(--accent)}
+.box.ng h2{color:#6B6660}
+.mk{flex:0 0 auto;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:21px;font-weight:700;color:#fff}
+.ok .mk{background:var(--accent)}
+.ng .mk{background:#A8A29A}
+.it{margin-bottom:16px}
+.it b{font-size:24px;font-weight:700;line-height:1.45;display:block}
+.ng .it b{color:#5C574F}
+.it small{font-size:20px;color:var(--sub);line-height:1.5;display:block;margin-top:4px}
+.ask{margin-top:auto;padding-top:16px}
+.ask span{display:block;background:var(--accent);color:#fff;border-radius:12px;padding:13px 18px;
+  font-size:22px;font-weight:700;line-height:1.45}
+.shot-s{margin-top:14px;border:2px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.shot-s img{width:100%;display:block}
 """
 
 
@@ -129,6 +153,17 @@ def check_text(card):
             warn(f'コマ{i}の見出しが長い（{n(x["t"])}字／めやす{LIMIT["step_t"]}字）。')
         if n(x.get("s", "")) > LIMIT["step_s"]:
             warn(f'コマ{i}の一行が長い（{n(x["s"])}字／めやす{LIMIT["step_s"]}字）。')
+    for side in ("can", "cannot"):
+        box = card.get(side) or {}
+        for i, x in enumerate(box.get("items", []), 1):
+            if n(x.get("t", "")) > LIMIT["item_t"]:
+                warn(f'{side} の{i}つめが長い（{n(x["t"])}字／めやす{LIMIT["item_t"]}字）。')
+            if n(x.get("s", "")) > LIMIT["item_s"]:
+                warn(f'{side} の{i}つめの補足が長い（{n(x["s"])}字／めやす{LIMIT["item_s"]}字）。')
+        if len(box.get("items", [])) > 3:
+            warn(f"{side} が4つ以上ある。3つまでに削る。")
+    if card.get("type") == "compare" and not (card.get("cannot") or {}).get("ask"):
+        warn("「まだできません」を断りで終わらせない。cannot.ask に「お作りできます」の一言を入れる。")
     if len(card.get("notes", [])) > 4:
         warn("説明が5つ以上ある。4つまでに削るか、カードを2枚に分ける。")
 
@@ -163,6 +198,9 @@ def prep_images(card, jdir, workdir):
 
     if card["type"] == "zoom":
         card["_shots"] = [one(s, i) for i, s in enumerate(card["shots"], 1)]
+    elif card["type"] == "compare":
+        if card.get("shot"):
+            card["_shot"] = one(card["shot"], 1)
     else:
         for i, st in enumerate(card["steps"], 1):
             st["_img"] = one(st["img"], i)
@@ -195,6 +233,22 @@ def build_html(card, ratios):
             + "</div></div>"
             for i, x in enumerate(card["notes"], 1))
         body = f'<div class="main"><div class="shot">{"".join(pieces)}</div><div class="notes">{notes}</div></div>'
+        ncol, frh, fit = 3, 430, "cover"
+    elif card["type"] == "compare":
+        def box(side, cls, mark, deftitle):
+            d = card.get(side) or {}
+            items = "".join(
+                f'<div class="it"><b>{esc(x["t"])}</b>'
+                + (f'<small>{esc(x["s"])}</small>' if x.get("s") else "") + "</div>"
+                for x in d.get("items", []))
+            shot = (f'<div class="shot-s"><img src="{card["_shot"]}" alt=""></div>'
+                    if cls == "ok" and card.get("_shot") else "")
+            ask = f'<div class="ask"><span>{esc(d["ask"])}</span></div>' if d.get("ask") else ""
+            return (f'<div class="box {cls}"><h2><span class="mk">{mark}</span>'
+                    f'{esc(d.get("title", deftitle))}</h2>{items}{shot}{ask}</div>')
+        body = ('<div class="two">'
+                + box("can", "ok", "○", "いま、できます")
+                + box("cannot", "ng", "△", "まだ、できません") + "</div>")
         ncol, frh, fit = 3, 430, "cover"
     else:
         cols = "".join(
@@ -260,8 +314,8 @@ def main():
         sys.exit(__doc__)
     jpath = Path(sys.argv[1]).expanduser().resolve()
     card = json.loads(jpath.read_text(encoding="utf-8"))
-    if card.get("type") not in ("zoom", "steps"):
-        sys.exit('"type" は "zoom" か "steps"')
+    if card.get("type") not in ("zoom", "steps", "compare"):
+        sys.exit('"type" は "zoom" / "steps" / "compare" のどれか')
 
     check_text(card)
 
