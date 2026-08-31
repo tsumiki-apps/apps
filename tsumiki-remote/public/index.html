@@ -431,6 +431,10 @@
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
   #viewerframe{flex:1 1 auto;width:100%;border:0;background:#fff;min-height:0}
   #viewerframe.off{display:none}
+  /* 下地が白いのは、背景色を書いていない HTML を黒地で開くと字が読めなくなるから。
+     ただし「中身がまだ無い」あいだの白は、閉じ際にまぶしく光って見える。
+     中身が届くまではアプリと同じ色にしておく（2026-09-01） */
+  #viewerframe.blank{background:var(--bg)}
   /* 画像は iframe に任せない。iOS は画像を原寸で開くので、写真のような大きい絵は
      左上のひとかけらだけが見えて全体が分からない（2026-08-31）。ここでは
      「まず全体が画面に入る」を既定にして、タップしたときだけ原寸にする */
@@ -2799,6 +2803,25 @@
            '?t=' + encodeURIComponent(token);
   }
 
+  // ⚠️ 枠（iframe）に src= で入れると、その移動が「戻る」の履歴に積まれる。
+  //    2つめ3つめと開いていくと、戻るを押したときにアプリの画面ではなく
+  //    枠のほうが1つ戻り、中身だけ空になって白い画面が残る（2026-09-01 実発生）。
+  //    location.replace は履歴に積まないので、戻るは必ずこの画面に効く。
+  function frameGo(url) {
+    try {
+      var w = viewerFrame.contentWindow;
+      if (w && w.location && w.location.replace) { w.location.replace(url); return; }
+    } catch (e) {}
+    viewerFrame.src = url;   // 覗けないときの保険
+  }
+
+  // 中身が届いたら白い下地に戻す。about:blank のあいだは暗いまま
+  viewerFrame.addEventListener('load', function () {
+    var href = '';
+    try { href = viewerFrame.contentWindow.location.href; } catch (e) { href = 'x'; }
+    if (href && href !== 'about:blank') viewerFrame.classList.remove('blank');
+  });
+
   function openPreview(rel) {
     viewerUrl = previewUrl(rel);
     viewerRel = rel;
@@ -2812,15 +2835,16 @@
 
     if (IMG_RE.test(rel)) {
       // 画像はこの画面の中に「全体が入る大きさ」で出す（iframe に渡すと原寸で開く）
-      viewerFrame.src = 'about:blank';
-      viewerFrame.classList.add('off');
+      viewerFrame.classList.add('blank', 'off');
+      frameGo('about:blank');
       viewerImg.src = viewerUrl;
       viewerWrap.classList.add('on');
     } else {
       viewerWrap.classList.remove('on');
       viewerImg.removeAttribute('src');
       viewerFrame.classList.remove('off');
-      viewerFrame.src = viewerUrl;
+      viewerFrame.classList.add('blank');
+      frameGo(viewerUrl);
     }
     viewer.hidden = false;
   }
@@ -2943,7 +2967,8 @@
 
   function closeViewer() {
     viewer.hidden = true;
-    viewerFrame.src = 'about:blank';   // 中で動いているものを止める
+    viewerFrame.classList.add('blank');
+    frameGo('about:blank');            // 中で動いているものを止める
     viewerImg.removeAttribute('src');
     viewerWrap.classList.remove('on', 'zoom');
     viewerUrl = '';
@@ -2952,8 +2977,17 @@
   }
 
   document.getElementById('viewerback').onclick = function () {
-    if (viewerPushed) return history.back();   // popstate 側で閉じる
-    closeViewer();
+    if (!viewerPushed) return closeViewer();
+    // 中で開いた先へリンクを辿ったときなど、戻るが枠のほうに吸われることがある。
+    // 少し待って閉じていなければ、こちらで閉じる＝白いまま残らない
+    var fired = false;
+    var once = function () { fired = true; };
+    window.addEventListener('popstate', once);
+    history.back();                            // 普通は popstate 側で閉じる
+    setTimeout(function () {
+      window.removeEventListener('popstate', once);
+      if (!fired && !viewer.hidden) closeViewer();
+    }, 400);
   };
 
   window.addEventListener('popstate', function () {
