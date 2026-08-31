@@ -444,18 +444,9 @@
   #viewerwrap.zoom #viewerimg{max-width:none;max-height:none;width:auto;height:auto}
   /* 保存のしかたの案内。.toast は footer の中にあって #viewer(z-index:40) の下に
      隠れるので、この画面の中に置く（2026-08-31） */
-  #viewerhint{position:absolute;left:50%;transform:translateX(-50%);
-    width:min(520px, calc(100% - 20px));
-    bottom:calc(10px + env(safe-area-inset-bottom));z-index:2;
-    background:#242932;border:1px solid var(--line);border-radius:12px;
-    padding:12px 14px;font-size:13px;line-height:1.7}
-  #viewerhint[hidden]{display:none}
-  #viewerhint p{margin:0}
-  #viewerhint .sub{margin-top:4px;color:var(--dim);font-size:11px}
-  #viewerhint .sub[hidden]{display:none}
-  #viewerhint button{margin-top:10px;width:100%;min-height:44px;border-radius:10px;
-    background:var(--panel);border:1px solid var(--line);color:var(--fg);
-    font:inherit;font-size:13px}
+  /* 保存のしかたの一言。押す場所ではないのでボタンにしない（2026-08-31） */
+  #viewertip{flex:0 0 auto;font-size:11px;color:var(--dim);white-space:nowrap}
+  #viewertip[hidden]{display:none}
 
   #sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);
     display:flex;align-items:flex-end}
@@ -691,16 +682,10 @@
   <div class="viewerbar">
     <button id="viewerback">‹ もどる</button>
     <span id="viewername"></span>
-    <button id="viewersave" hidden>写真に保存</button>
-    <button id="viewersafari">Safariで開く</button>
+    <span id="viewertip" hidden>長押しで写真に追加</span>
   </div>
   <div id="viewerwrap"><img id="viewerimg" alt="制作物"></div>
   <iframe id="viewerframe" title="制作物のプレビュー"></iframe>
-  <div id="viewerhint" hidden>
-    <p id="viewerhintmain"></p>
-    <p class="sub" id="viewerhintsub" hidden></p>
-    <button id="viewerhintok">とじる</button>
-  </div>
 </div>
 
 <div id="sheet" hidden>
@@ -2776,11 +2761,9 @@
   var viewerFrame = document.getElementById('viewerframe');
   var viewerWrap = document.getElementById('viewerwrap');
   var viewerImg = document.getElementById('viewerimg');
-  var viewerSave = document.getElementById('viewersave');
+  var viewerTip = document.getElementById('viewertip');
   var viewerName = document.getElementById('viewername');
   var viewerUrl = '';
-  var viewerFile = null;        // 「写真に保存」で渡す実体（先に落としておく）
-  var viewerFetching = false;
   var IMG_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
   var PHOTO_RE = /\.(png|jpe?g|gif|webp)$/i;   // 写真フォルダに入れられるもの
 
@@ -2792,10 +2775,7 @@
   function openPreview(rel) {
     viewerUrl = previewUrl(rel);
     viewerName.textContent = rel;
-    viewerFile = null;
-    viewerFetching = false;
     viewerWrap.classList.remove('zoom');
-    document.getElementById('viewerhint').hidden = true;
     if (!viewerPushed) {
       try { history.pushState({ tsumikiViewer: 1 }, ''); viewerPushed = true; } catch (e) {}
     }
@@ -2806,14 +2786,13 @@
       viewerFrame.classList.add('off');
       viewerImg.src = viewerUrl;
       viewerWrap.classList.add('on');
-      viewerSave.hidden = !PHOTO_RE.test(rel);
-      if (!viewerSave.hidden) prefetchForSave(rel.split('/').pop());
+      viewerTip.hidden = !PHOTO_RE.test(rel);
     } else {
       viewerWrap.classList.remove('on');
       viewerImg.removeAttribute('src');
       viewerFrame.classList.remove('off');
       viewerFrame.src = viewerUrl;
-      viewerSave.hidden = true;
+      viewerTip.hidden = true;
     }
     viewer.hidden = false;
   }
@@ -2821,77 +2800,10 @@
   // タップで「全体表示 ⇄ 原寸」。原寸のときは指でずらして見られる
   viewerImg.onclick = function () { viewerWrap.classList.toggle('zoom'); };
 
-  // 保存の共有シートは「指で押した流れ」の中でしか開けない。押してから画像を
-  // 取りに行くとその流れが切れて iOS に断られるので、開いた時点で落としておき、
-  // 押した瞬間には渡すだけにする
-  function prefetchForSave(name) {
-    var want = viewerUrl;
-    viewerFetching = true;
-    fetch(viewerUrl, { credentials: 'same-origin' })
-      .then(function (r) { return r.ok ? r.blob() : null; })
-      .then(function (b) {
-        if (viewerUrl !== want) return;              // 別のものに移っていた
-        viewerFetching = false;
-        if (!b) return;
-        try { viewerFile = new File([b], name, { type: b.type || 'image/jpeg' }); }
-        catch (e) { viewerFile = null; }             // File を作れない端末
-      })
-      .catch(function () { if (viewerUrl === want) viewerFetching = false; });
-  }
-
-  function canSharePhoto() {
-    return !!(viewerFile && navigator.canShare && navigator.share &&
-              navigator.canShare({ files: [viewerFile] }));
-  }
-
-  // 共有シート（「画像を保存」が出る画面）は https でつないだときしか使えない。
-  // つみきリモートは tailscale serve の http なので、iPhone ではここが false になる。
-  var SHARE_OK = !!(navigator.canShare && navigator.share);
-  var IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
-            (/Mac/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  if (!SHARE_OK) viewerSave.textContent = '保存のしかた';
-
-  var viewerHint = document.getElementById('viewerhint');
-  var viewerHintMain = document.getElementById('viewerhintmain');
-  var viewerHintSub = document.getElementById('viewerhintsub');
-  document.getElementById('viewerhintok').onclick = function () { viewerHint.hidden = true; };
-
-  // 中身はこの中の決め打ちの文だけ（外から来た文字は入れない）
-  function showHint(main, sub) {
-    viewerHintMain.innerHTML = main;
-    viewerHintSub.textContent = sub || '';
-    viewerHintSub.hidden = !sub;
-    viewerHint.hidden = false;
-  }
-
-  viewerSave.onclick = function () {
-    if (canSharePhoto()) {
-      // 出てくる共有シートの「画像を保存」で写真フォルダに入る
-      navigator.share({ files: [viewerFile] }).catch(function (e) {
-        if (e && e.name === 'AbortError') return;    // 自分でやめただけ
-        showHint('画像を<b>長押し</b>して「写真に追加」を選ぶと、写真フォルダに入ります。',
-                 '保存の画面を開けませんでした');
-      });
-      return;
-    }
-    if (SHARE_OK && viewerFetching) {
-      return showHint('画像を読み込んでいます。少しあとでもう一度押してください。');
-    }
-    // ⚠️ ここで <a download> を使わない。iPhone はページごと「ファイルの受け取り
-    // 画面」に移ってしまい、ホーム画面から起動していると戻る場所が無くなる
-    // （2026-08-31 実発生）。長押しの「写真に追加」なら http のままでも入る。
-    if (IOS || !SHARE_OK) {
-      return showHint('画像を<b>長押し</b>して「写真に追加」を選ぶと、写真フォルダに入ります。',
-                      'ボタン1つで保存するには https でつなぐ必要があります（いまは http）');
-    }
-    // パソコンのブラウザは素直に落とす
-    var a = document.createElement('a');
-    a.href = viewerUrl;
-    a.download = viewerName.textContent.split('/').pop();
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
+  // 保存は iOS の長押し（「写真に追加」）に任せる。ボタンからの共有シートは
+  // https でつないだときしか使えず、<a download> に落とすとページごと
+  // 「ファイルの受け取り画面」に移って戻れなくなる（2026-08-31 実発生）。
+  // 画面には一言だけ出し、押す場所は「もどる」だけにする。
 
   // 「もどる」は指でも押せるが、端から引く動きでも戻したい。開いたときに履歴を
   // 1つ積んでおき、それが外れたら閉じる。押したときも history.back() を通すので、
@@ -2903,10 +2815,8 @@
     viewerFrame.src = 'about:blank';   // 中で動いているものを止める
     viewerImg.removeAttribute('src');
     viewerWrap.classList.remove('on', 'zoom');
-    viewerHint.hidden = true;
+    viewerTip.hidden = true;
     viewerUrl = '';
-    viewerFile = null;
-    viewerFetching = false;
   }
 
   document.getElementById('viewerback').onclick = function () {
@@ -2919,12 +2829,6 @@
     viewerPushed = false;
     closeViewer();
   });
-
-  // iCloud に入れたい・人に渡したいときだけ Safari へ。
-  // Safari の共有ボタンから「ファイルに保存」で iCloud Drive に入る。
-  document.getElementById('viewersafari').onclick = function () {
-    if (viewerUrl) window.open(viewerUrl, '_blank');
-  };
 
   function fmtSize(n) {
     if (n < 1024) return n + 'B';
