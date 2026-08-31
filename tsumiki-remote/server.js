@@ -470,6 +470,11 @@ function judge(name, text) {
   const tail = text.slice(-4000);
   const before = prev.get(name);
   const afterResize = now - (resizedAt.get(name) || 0) < RESIZE_GRACE_MS;
+  // サーバを入れ替えた直後は、どの席も「初めて見る」＝動いているか止まっているかの
+  // 手がかりが無い。そこは**わざと作業中に倒す**（changedAt を now にする）。
+  // 引き換えに起動から5秒は全席が作業中に見えて片付けが効かないが、逆に倒すと
+  // 「動いている席が待機に見え、まとめて片付けで消える」になる。
+  // 消せないほうが、消えるより軽い（2026-09-01 両方試して、こちらを採った）
   if (!before) prev.set(name, { tail, changedAt: now });
   // 中身は新しいものに入れ替えるが、「いつ動いたか」は据え置く＝時計を戻さない
   else if (before.tail !== tail) {
@@ -622,13 +627,24 @@ function json(res, code, obj) {
 function cookieToken(req) {
   const raw = req.headers.cookie || '';
   const m = /(?:^|;\s*)tsumiki_t=([^;]+)/.exec(raw);
-  return m ? decodeURIComponent(m[1]) : null;
+  if (!m) return null;
+  // ⚠️ 壊れた値（`%` だけ 等）で decodeURIComponent は例外を投げる。ここは
+  // 認証の手前＝この関数が投げるとサーバがプロセスごと落ちる（2026-09-01 実証）
+  try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
 }
 
 function authed(req, url) {
-  const t = url.searchParams.get('t') || req.headers['x-token'] || cookieToken(req);
-  if (typeof t !== 'string' || t.length !== TOKEN.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(t), Buffer.from(TOKEN));
+  let t;
+  try { t = url.searchParams.get('t') || req.headers['x-token'] || cookieToken(req); }
+  catch (e) { return false; }
+  if (typeof t !== 'string' || !t) return false;
+  // ⚠️ 長さは「文字数」ではなく「バイト数」で見る。timingSafeEqual はバイト長が
+  // 違うと例外を投げるので、48文字ぶんの日本語を ?t= に付けられるだけで
+  // サーバが落ちていた（2026-09-01 実証：合言葉を知らなくても落とせた）
+  const a = Buffer.from(t, 'utf8');
+  const b = Buffer.from(TOKEN, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 function readBody(req, limit = 64 * 1024) {
@@ -938,6 +954,16 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     return json(res, 500, { error: String(e && e.message || e) });
   }
+});
+
+// 出先では Mac に手が届かない＝落ちたら復旧できない（LaunchAgent が起こし直しても、
+// 起動ごとの通し番号が変わるので、開いている端末は全部「新しい版」で読み込み直す）。
+// 想定していない失敗は、落とさずにログへ残して動き続ける
+process.on('uncaughtException', (e) => {
+  console.log('!! 例外: ' + String((e && e.stack) || e).slice(0, 500));
+});
+process.on('unhandledRejection', (e) => {
+  console.log('!! 未処理の失敗: ' + String((e && e.stack) || e).slice(0, 500));
 });
 
 server.listen(PORT, HOST, () => {
