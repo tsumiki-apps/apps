@@ -452,14 +452,18 @@ function lastMeaningfulLine(text) {
   return '';
 }
 
-// ------------------------------------------------------------ 画像の置き場
+// ------------------------------------------ 添えるファイル（画像・PDF）の置き場
 
 const UPLOAD_DIR = path.join(CONF_DIR, 'uploads');
 const KEEP_DAYS = 7;
+// 1件あたりの上限。PDF は写真より重くなりがちなので 20MB まで見る
+// （画面側 index.html の MAX_ATT と揃えること）
+const MAX_UPLOAD = 20 * 1024 * 1024;
 
 // 拡張子はファイル名ではなく中身で判定する
-function sniffImage(b) {
+function sniffUpload(b) {
   if (b.length < 12) return null;
+  if (b.slice(0, 5).toString('ascii') === '%PDF-') return 'pdf';
   if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
   if (b.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
   if (b.slice(0, 6).toString('ascii') === 'GIF87a' || b.slice(0, 6).toString('ascii') === 'GIF89a') return 'gif';
@@ -813,18 +817,19 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { root: PREVIEW_ROOT, files: files.slice(0, 120) });
     }
 
-    // 画像を Mac に置く。Claude Code は画像そのものを受け取れないが、
+    // 画像やPDFを Mac に置く。Claude Code はファイルそのものを受け取れないが、
     // 「ファイルの場所」を渡せば読める。置いた場所を返して、入力欄に差し込む。
+    // ⚠️ 中身は base64（元の約1.34倍）で届く。読み取りの上限はそのぶん多く要る
     if (p === '/api/upload' && req.method === 'POST') {
-      const body = await readBody(req, 16 * 1024 * 1024);
+      const body = await readBody(req, 32 * 1024 * 1024);
       const data = String(body.data || '');
       const buf = Buffer.from(data, 'base64');
       if (!buf.length) return json(res, 400, { error: 'empty' });
-      if (buf.length > 10 * 1024 * 1024) return json(res, 413, { error: '10MBまでです' });
+      if (buf.length > MAX_UPLOAD) return json(res, 413, { error: '20MBまでです' });
 
       // 拡張子は中身（マジックバイト）で決める。名前は信用しない
-      const ext = sniffImage(buf);
-      if (!ext) return json(res, 415, { error: '画像として読めません' });
+      const ext = sniffUpload(buf);
+      if (!ext) return json(res, 415, { error: '画像かPDFとして読めません' });
 
       fs.mkdirSync(UPLOAD_DIR, { recursive: true, mode: 0o700 });
       pruneUploads();
