@@ -432,6 +432,26 @@ const WAITING_RE = new RegExp(
 // 「作業中」= 実行中スピナー等の特徴
 const BUSY_RE = /esc to interrupt|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/;
 
+// 「番号で答える質問」＝ 本文に選択肢を書いて、数字だけ返してもらう聞きかた。
+// 共通ルール（~/.claude/CLAUDE.md）で、選択パネル（AskUserQuestion）は使わずに
+// こう聞くと決めてあるので、返答待ちのほとんどはこの形になる。ところがこれは
+// Claude Code 自身が出す選択肢の枠ではないため、上の WAITING_RE には
+// ひとつも引っかからず、札も通知も出ていなかった（2026-09-01 実機で確認）。
+// 手がかりは2つとも、そのルールで必ず書くと決まっている言い回し。
+const ASK_NUM_RE = /ほかの案（自由に書いてください）|(数字|番号)(だけ|のみ)?[をでは]?(返|送)し/;
+
+// ⚠️ 画面の下のほうに出ているときだけ数える。答えたあとも字はしばらく画面に
+// 残るので、画面ぜんぶを見ると「答えたのに返答待ちのまま」になる。新しい
+// やり取りが積まれて上へ押し出されたら、もう待っていないと見なす。
+// 16行なのは実測から：51桁の画面だと、選択肢4つが折り返された質問でも
+// 「ほかの案（…）」から画面の末尾まで10行ほどに収まる（2026-09-01）
+const ASK_NUM_TAIL = 16;
+
+function tailLines(text, n) {
+  const lines = text.split('\n');
+  return lines.slice(-n).join('\n');
+}
+
 const prev = new Map(); // name -> { tail, changedAt }
 
 // リサイズした直後は、枠線も折り返しも引き直されて画面の文字が丸ごと変わる。
@@ -460,7 +480,11 @@ function judge(name, text) {
 
   const screen = text.slice(-3000);
   if (WAITING_RE.test(screen)) return { status: 'waiting', quietMs };
-  if (BUSY_RE.test(screen) || quietMs < 5000) return { status: 'busy', quietMs };
+  // 番号で答える質問より、スピナーのほうが強い。答えた直後は Claude が動き出す
+  // のに、質問の字はまだ画面に残っている＝そこは「作業中」と出したい
+  if (BUSY_RE.test(screen)) return { status: 'busy', quietMs };
+  if (ASK_NUM_RE.test(tailLines(text, ASK_NUM_TAIL))) return { status: 'waiting', quietMs };
+  if (quietMs < 5000) return { status: 'busy', quietMs };
   return { status: 'idle', quietMs };
 }
 
