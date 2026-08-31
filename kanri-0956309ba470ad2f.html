@@ -1092,7 +1092,9 @@
           document.getElementById('imgUrl').value = u;
           imgUrlState = 'ok';
           setUrlChk('ok', '✓ ' + u.split('/').pop() + ' に鍵がありました（こちらに直しました）');
-          setSaveable(); iRender(); return;
+          setSaveable();
+          if(!iconManual) autoLoadIcon(imgState.appName);   // 絵も本当の行き先に合わせ直す
+          iRender(); return;
         }
         next();
       }, next);
@@ -1136,13 +1138,17 @@
     if(!name || name==='*') return [];
     var base = name.replace(/-(pro|lite|plus|kanri|std)$/,'');
     var first = name.split('-')[0];
-    var stems = []; [name, base, first].forEach(function(n){ if(n && stems.indexOf(n)<0) stems.push(n); });
+    /* まず「QRが実際に開くファイル名」から探す。名前とファイル名がちがうアプリ
+       （tsumiki-senya → tsumiki-senya-kanri）で、別アプリの絵が載るのを防ぐ。 */
+    var fromUrl = (imgState.url || '').split('/').pop().replace(/\.html$/, '');
+    var stems = []; [fromUrl, name, base, first].forEach(function(n){ if(n && stems.indexOf(n)<0) stems.push(n); });
     var urls = [];
     stems.forEach(function(n){ urls.push('https://tools.tsumiki-apps.com/icon-'+n+'.png'); });
     stems.forEach(function(n){ urls.push('icons/icon-'+n+'.png'); });
     return urls;
   }
   var iconToken = 0;
+  var iconManual = false;   // 手で選んだアイコンは自動取得で上書きしない
   function autoLoadIcon(appName){
     var urls = iconCandidates(appName), i = 0, gen = ++iconToken;
     (function next(){
@@ -1229,7 +1235,7 @@
     imgState.url = iAppUrl(d.appName);
     imgUrlKnown = iAppUrlIsKnown(d.appName);
     imgState.date = iToday();
-    imgState.iconImg = null;
+    imgState.iconImg = null; iconManual = false;
     document.getElementById('imgUrl').value = imgState.url;
     checkUrl(imgState.url, imgUrlKnown, true);
     iconPrevEl.innerHTML = ICON_PH;
@@ -1250,6 +1256,7 @@
   document.getElementById('imgIconFile').addEventListener('change', function(){
     var f = this.files && this.files[0]; if(!f) return;
     iconToken++;   // 手動アップロードを優先（自動取得の途中結果を無効化）
+    iconManual = true;
     var rd = new FileReader();
     rd.onload = function(e){
       var im = new Image();
@@ -1264,7 +1271,7 @@
     rd.readAsDataURL(f);
   });
   document.getElementById('imgIconClear').addEventListener('click', function(){
-    iconToken++;
+    iconToken++; iconManual = false;
     imgState.iconImg = null; document.getElementById('imgIconFile').value='';
     iconPrevEl.innerHTML = ICON_PH; this.style.display='none'; iRender();
   });
