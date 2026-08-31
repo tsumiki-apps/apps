@@ -26,8 +26,8 @@ except ImportError:
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 W = 1080                     # 幅は必ず1080（LINEでいちばんきれいに出る）
-MIN_H = {"zoom": 1350, "steps": 1080, "compare": 1080}
-MAX_H = 1620                 # これを超えたら「2枚に分けて」と言う
+TARGET_H = 1440              # 縦3:4。3つの型すべてこの大きさで出す（毎回そろえる）
+MIN_H = {"zoom": TARGET_H, "steps": TARGET_H, "compare": TARGET_H}
 PAPER = "#F7F5F1"
 
 # 文字数のめやす（超えたら注意を出すだけ・止めない）
@@ -69,7 +69,7 @@ em{font-style:normal;background:var(--ink);color:#F4F2EE;border-radius:8px;paddi
 
 /* ── zoom型 ── */
 .main{margin-top:28px;display:flex;gap:38px;padding-bottom:28px}
-.shot{width:452px;flex:0 0 auto;align-self:flex-start;background:#fff;border:2px solid var(--line);
+.shot{width:500px;flex:0 0 auto;align-self:flex-start;background:#fff;border:2px solid var(--line);
   border-radius:22px;padding:16px;box-shadow:0 6px 22px rgba(36,35,33,.08);
   display:flex;flex-direction:column;overflow:hidden}
 .shot img{width:100%;display:block;border-radius:8px}
@@ -84,7 +84,8 @@ em{font-style:normal;background:var(--ink);color:#F4F2EE;border-radius:8px;paddi
 .n .tx small{display:block;font-size:21px;color:var(--sub);margin-top:4px;line-height:1.5}
 
 /* ── steps型 ── */
-.cols{margin-top:24px;display:grid;grid-template-columns:repeat(__NCOL__,1fr);gap:26px;padding-bottom:26px}
+.cols{margin-top:24px;display:grid;grid-template-columns:repeat(__NCOL__,1fr);gap:26px;
+  padding-bottom:26px}
 .col{display:flex;flex-direction:column}
 .cap{display:flex;gap:11px;align-items:flex-start;margin-bottom:12px}
 .cap .num{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;
@@ -96,7 +97,8 @@ em{font-style:normal;background:var(--ink);color:#F4F2EE;border-radius:8px;paddi
 .sub{margin-top:11px;font-size:20px;color:var(--sub);line-height:1.5}
 
 /* ── compare型 ── */
-.two{margin-top:26px;display:grid;grid-template-columns:1fr 1fr;gap:26px;padding-bottom:26px}
+.two{margin-top:26px;display:grid;grid-template-columns:1fr 1fr;gap:26px;
+  padding-bottom:26px;flex:1 1 auto}
 .box{border-radius:18px;padding:24px;border:2px solid;display:flex;flex-direction:column}
 .box.ok{background:#fff;border-color:#E7C9BF;box-shadow:0 5px 18px rgba(36,35,33,.06)}
 .box.ng{background:#F1EEE9;border-color:var(--line)}
@@ -262,7 +264,7 @@ def build_html(card, ratios):
         ncol = len(card["steps"])
         # 枠の高さ＝いちばん縦長の画像を幅合わせしたときの高さ（上限480）
         colw = (1080 - 52 * 2 - 26 * (ncol - 1)) / ncol - 24
-        frh = min(480, int(max(ratios.values()) * colw) + 20)
+        frh = min(700, int(max(ratios.values()) * colw) + 20)   # 3:4のぶん枠を大きく取れる
         fit = card.get("fit", "cover")
         rs = list(ratios.values())
         if rs and (max(rs) - min(rs)) / max(rs) > 0.15:
@@ -306,7 +308,22 @@ def shoot(html_path, out_png):
             break
     im = im.crop((0, 0, im.width, bottom))
     im.save(out_png)
-    return im.size
+    return im.size, measure_gap(im)
+
+
+def measure_gap(im):
+    """足元の帯のすぐ上に、何も無い余白が何px残っているかを測る。
+    中身が薄いと3:4の紙が余ってスカスカに見えるので、機械に数えさせる。"""
+    px = im.load()
+    paper = tuple(int(PAPER[i:i + 2], 16) for i in (1, 3, 5))
+    y = im.height - 1
+    while y > 0 and px[5, y] != paper:      # 足元の帯を通り過ぎる
+        y -= 1
+    gap = 0
+    while y > 0 and all(px[x, y] == paper for x in range(0, im.width, 7)):
+        gap += 1
+        y -= 1
+    return gap
 
 
 def main():
@@ -331,14 +348,20 @@ def main():
     shutil.copy(jpath, work / "card.json")
 
     png = outdir / f"{slug}.png"
-    w, h = shoot(work / "card.html", png)
+    (w, h), gap = shoot(work / "card.html", png)
 
     print(f"✓ {png}")
     print(f"  {w}×{h}px（型: {card['type']}）")
-    if h > MAX_H:
-        warn(f"縦が長い（{h}px／上限 {MAX_H}px）。LINEで細く潰れます。中身を削るか2枚に分ける。")
-    if h < MIN_H[card["type"]] + 4:
-        print("  中身がちょうど収まっています。")
+    if h > TARGET_H:
+        warn(f"縦3:4（{W}×{TARGET_H}）に収まっていない（{h}px＝{h - TARGET_H}px はみ出し）。"
+             "中身を削るか、カードを2枚に分けてください。")
+    else:
+        print("  縦3:4 ちょうどです。")
+    gap_limit = 260 if card["type"] == "steps" else 130
+    if gap > gap_limit:
+        warn(f"足元の上に余白が {gap}px 残っている（スカスカに見える）。"
+             "撮影の高さ（jall の h）を上げて画面を縦長に撮る／説明を1行足す／"
+             "3コマを2コマにして1つを大きくする、のどれかで埋める。")
 
 
 if __name__ == "__main__":
