@@ -444,9 +444,11 @@
   #viewerwrap.zoom #viewerimg{max-width:none;max-height:none;width:auto;height:auto}
   /* 保存のしかたの案内。.toast は footer の中にあって #viewer(z-index:40) の下に
      隠れるので、この画面の中に置く（2026-08-31） */
-  /* 保存のしかたの一言。押す場所ではないのでボタンにしない（2026-08-31） */
-  #viewertip{flex:0 0 auto;font-size:11px;color:var(--dim);white-space:nowrap}
-  #viewertip[hidden]{display:none}
+  /* 戻るは記号だけ。文字を置くと、長いファイル名の場所をそのぶん食う。
+     押せる大きさ（44px）は文字を消しても変えない（2026-08-31） */
+  #viewerback{flex:0 0 44px;padding:0;display:flex;align-items:center;justify-content:center}
+  /* 名前が画面のまんなかに来るように、右側に同じ幅を空けておく */
+  .viewerbar .spacer{flex:0 0 44px}
 
   #sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);
     display:flex;align-items:flex-end}
@@ -680,9 +682,14 @@
 
 <div id="viewer" hidden>
   <div class="viewerbar">
-    <button id="viewerback">‹ もどる</button>
+    <button id="viewerback" aria-label="もどる" title="もどる">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+        <path d="M15 4.5 7.5 12 15 19.5" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    </button>
     <span id="viewername"></span>
-    <span id="viewertip" hidden>長押しで写真に追加</span>
+    <span class="spacer"></span>
   </div>
   <div id="viewerwrap"><img id="viewerimg" alt="制作物"></div>
   <iframe id="viewerframe" title="制作物のプレビュー"></iframe>
@@ -2761,11 +2768,9 @@
   var viewerFrame = document.getElementById('viewerframe');
   var viewerWrap = document.getElementById('viewerwrap');
   var viewerImg = document.getElementById('viewerimg');
-  var viewerTip = document.getElementById('viewertip');
   var viewerName = document.getElementById('viewername');
   var viewerUrl = '';
   var IMG_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
-  var PHOTO_RE = /\.(png|jpe?g|gif|webp)$/i;   // 写真フォルダに入れられるもの
 
   function previewUrl(rel) {
     return '/preview/' + rel.split('/').map(encodeURIComponent).join('/') +
@@ -2786,13 +2791,11 @@
       viewerFrame.classList.add('off');
       viewerImg.src = viewerUrl;
       viewerWrap.classList.add('on');
-      viewerTip.hidden = !PHOTO_RE.test(rel);
     } else {
       viewerWrap.classList.remove('on');
       viewerImg.removeAttribute('src');
       viewerFrame.classList.remove('off');
       viewerFrame.src = viewerUrl;
-      viewerTip.hidden = true;
     }
     viewer.hidden = false;
   }
@@ -2815,7 +2818,6 @@
     viewerFrame.src = 'about:blank';   // 中で動いているものを止める
     viewerImg.removeAttribute('src');
     viewerWrap.classList.remove('on', 'zoom');
-    viewerTip.hidden = true;
     viewerUrl = '';
   }
 
