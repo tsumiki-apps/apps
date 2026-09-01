@@ -737,10 +737,22 @@ const server = http.createServer(async (req, res) => {
       'content-type': type,
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
+      // ⚠️ ここで配るものは**アプリと同じ出どころ（オリジン）**で開く。つまり
+      // 制作物の中の JavaScript から、このサーバの /api/send がそのまま叩ける＝
+      // 開いただけで、どれかの席に好きな文字を打てる（2026-09-01 点検で判明）。
+      // 自分で作ったものだけを置いているうちは無害だが、外からもらった HTML を
+      // つみき出力に置いて開くと成立してしまう。
+      // 通信の口を閉じて塞ぐ：connect-src が fetch/XHR/sendBeacon/WebSocket を、
+      // form-action がフォーム送信を止める。POST を送る道はこれで全部ふさがる
+      // （<img> は GET しか出せず、返事の中身も読めない）。
+      // 見た目には触らない＝絵も字も枠も今までどおり出る
+      'content-security-policy': "connect-src 'none'; form-action 'none'",
     };
     if (url.searchParams.get('t')) {
+      // クッキーの届く先も /preview/ の中だけにする。Path=/ だと、制作物からの
+      // 問い合わせにも合言葉が付いていた（上を塞いだうえでの、もう一枚）
       headers['set-cookie'] =
-        `tsumiki_t=${encodeURIComponent(TOKEN)}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`;
+        `tsumiki_t=${encodeURIComponent(TOKEN)}; Path=/preview/; Max-Age=2592000; HttpOnly; SameSite=Lax`;
     }
     res.writeHead(200, headers);
     fs.createReadStream(real).pipe(res);
