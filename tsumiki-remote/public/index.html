@@ -1127,6 +1127,8 @@
     current = name;
     lastText = null;   // 別のセッションに切り替えたら描き直す
     wantWide = false;  // 幅の借りっぱなしを持ち越さない（切り替えた先はまず実測の幅で）
+    sentWide = false;
+    wideAt = 0;        // 切り替えた先では、粘らずすぐ合わせにいく
     localStorage.setItem('tsumiki-remote-session', name);
     el.send.disabled = false;
     renderTabs();
@@ -2045,7 +2047,8 @@
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
     var dlgs = [];
-    var wide = false;
+    var wide = false;      // 広げたい＝答えを待っている2段組が画面の下にある
+    var anySbs = false;    // 2段組が画面のどこかにある（戻すかどうかはこちらで見る）
     for (var i = 0; i < lines.length; i++) {
       // 質問パネル（AskUserQuestion）が先。タブの行で始まるので取り違えは起きない
       var ask = takeAskPanel(lines, i);
@@ -2070,6 +2073,7 @@
       }
       var sbs = takeSideBySide(lines, i);
       if (sbs) {
+        anySbs = true;
         // いま画面に出ている（＝答えを待っている）2段組なら、端末を広げてもらう。
         // 下に付く案内（「Enter to select…」など）ぶんの余裕を見て終わり際かを判断する
         if (sbs.end >= lines.length - 14) wide = true;
@@ -2118,7 +2122,10 @@
     el.out.textContent = '';
     el.out.appendChild(frag);
     syncKeys();
-    wantWide = wide;
+    // 広げるのは「答えを待っている2段組が画面の下にある」とき。
+    // 戻すのは「2段組が画面から消えた」とき＝左右で条件を変える。
+    // 同じ条件で戻すと、広げたせいで行数が変わって条件が外れ、往復になる
+    wantWide = sentWide ? anySbs : wide;
   }
 
   // ------------------------------------------------ この画面に入る「桁数」を測る
@@ -2160,6 +2167,25 @@
   // 折り返されて少し不格好になる。答えた瞬間に元の幅へ戻るので、その間だけの辛抱。
   var WIDE_COLS = 120;
   var wantWide = false;
+  // ⚠️ 広げると行数そのものが変わる。だから「広げる条件」と同じ条件で戻すと、
+  // 広げた結果その条件が外れて戻り、戻るとまた条件が立って広がる…の往復になる
+  // （2026-09-01 点検で判明）。札の乱れは判定側で直したが、tmux は1.5秒ごとに
+  // 引き直されたまま＝画面がちらつき続ける。
+  // 直しかたは2枚：
+  //   ① 広げる条件と戻す条件を変える（下の wantWide の決め方）＝これが本筋
+  //   ② それでも動くときのために、切り替えた直後は少し粘る＝下の HOLD
+  var WIDE_HOLD_MS = 3000;
+  var sentWide = false;    // いま端末を広げてもらっているか（実際に送った側）
+  var wideAt = 0;          // 最後に切り替えた時刻
+
+  // この巡回で送る桁数を決める。切り替えたばかりなら据え置く
+  function wantedCols() {
+    if (wantWide !== sentWide && Date.now() - wideAt >= WIDE_HOLD_MS) {
+      sentWide = wantWide;
+      wideAt = Date.now();
+    }
+    return sentWide ? WIDE_COLS : measureCols();
+  }
   // いま出ている画面が「何桁で」描かれたものか。URL の折り返しを見分けるのに要る
   var paneCols = 0;
 
@@ -2184,7 +2210,7 @@
 
   function refreshPane(force) {
     if (!current) return Promise.resolve();
-    var cols = wantWide ? WIDE_COLS : measureCols();
+    var cols = wantedCols();
     if (cols) paneCols = cols;
     return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400'
       + (cols ? '&cols=' + cols : '')).then(function (d) {
@@ -2377,6 +2403,17 @@
   // ⚠️ opacity:0 や 1px 四方に潰すと iOS は「見えていない」と見なして選択してくれない。
   //    画面の外へ出すだけにする（潰していたのが、写らなかった原因のひとつ）
   function legacyCopy(s) {
+    // ⚠️ 下で画面外の入力欄に focus する＝書きかけの入力欄から焦点が外れ、
+    // iOS はキーボードを畳んでしまう（書いている途中でコピー札を押しただけで
+    // 打てなくなる。2026-09-01 点検で判明）。どこにいたかを覚えて、あとで戻す
+    var back = document.activeElement;
+    var backStart = null, backEnd = null;
+    try {
+      if (back && typeof back.selectionStart === 'number') {
+        backStart = back.selectionStart; backEnd = back.selectionEnd;
+      }
+    } catch (e) { back = null; }
+
     var ta = document.createElement('textarea');
     ta.value = s;
     ta.setAttribute('readonly', '');    // キーボードを出さない
@@ -2398,6 +2435,13 @@
       sel.removeAllRanges();
     } catch (e) { ok = false; }
     document.body.removeChild(ta);
+    // 元いた場所に指を戻す。カーソルの位置（書きかけのどこにいたか）も戻す
+    if (back && back !== document.body && typeof back.focus === 'function') {
+      try { back.focus({ preventScroll: true }); } catch (e) { try { back.focus(); } catch (e2) {} }
+      if (backStart !== null) {
+        try { back.setSelectionRange(backStart, backEnd); } catch (e) {}
+      }
+    }
     return ok;
   }
 

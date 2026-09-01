@@ -315,11 +315,23 @@ const sized = new Map();
 // 「動いた」と数えないために要る（→ RESIZE_GRACE_MS のところに理由）
 const resizedAt = new Map();
 
+// いま何桁で開いているかを tmux に聞く。取れなければ 0
+async function windowWidth(name) {
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', '#{window_width}']);
+  const n = parseInt((r.out || '').trim(), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
 async function resizeWindow(name, cols) {
   if (!NAME_RE.test(name)) return;
   const want = clampCols(cols);
   if (!want) return;
-  if (sized.get(name) === want) return;
+  // ⚠️ 覚えている値（sized）だけで「もう合っている」と判断しない。resize のあと
+  // window-size latest に戻しているので、MacBook のターミナルから繋ぐなど、
+  // 別のクライアントが来ると幅はそちらに合わせて変わってしまう。そのとき
+  // 覚えている値のせいで直しにいかず、スマホでは崩れたまま残っていた
+  // （2026-09-01 点検で判明）。実際の幅を見て決める
+  if (await windowWidth(name) === want) { sized.set(name, want); return; }
   sized.set(name, want);
   await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(want), '-y', String(ROWS)]);
   // resize-window はその窓を window-size manual に切り替える。そのままだと
@@ -808,10 +820,12 @@ const server = http.createServer(async (req, res) => {
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const text = String(body.text || '').replace(/\r\n?/g, '\n');
       const lines = text ? text.split('\n').length : 0;
-      // 「押したのに効かない」を後から追えるようにする。指示の本文まで丸ごと
-      // 残すと server.log が日誌になってしまうので、短いものだけ中身を出し、
-      // 長いものは字数だけにする（数字ボタンの調査にはこれで足りる）
-      console.log(`send ${name} ${text.length <= 8 ? JSON.stringify(text) : text.length + '文字'}${lines > 1 ? '/' + lines + '行' : ''}${body.enter ? ' +Enter' : ''}`);
+      // 「押したのに効かない」を後から追えるようにする。ただし本文は残さない。
+      // ⚠️ 以前は8文字以下なら中身を丸ごと出していた（数字ボタンの調査のため）。
+      // それだと短い合言葉のようなものまでログに残る（2026-09-01 点検で判明）。
+      // 中身を出すのは、調べたい対象そのものである「番号」だけにする
+      const shown = /^[0-9]{1,2}$/.test(text) ? JSON.stringify(text) : text.length + '文字';
+      console.log(`send ${name} ${shown}${lines > 1 ? '/' + lines + '行' : ''}${body.enter ? ' +Enter' : ''}`);
       if (lines > 1) {
         // 複数行は「角括弧ペースト」で入れる（-p）。素直に送ると、改行のたびに
         // Enter を押したのと同じ＝1行ごとに実行されてしまう（2026-08-13 実測）。
