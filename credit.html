@@ -126,6 +126,14 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .amz-tag{padding:1px 6px;border-radius:6px;background:var(--soft-orange);color:#a85f28;font-size:10px}
 .tx .amount{font-size:15px;font-weight:700;text-align:right;white-space:nowrap}
 .tx .amount.struck{text-decoration:line-through;color:var(--sub);font-weight:500}
+.offset-note{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;margin-bottom:9px;padding:9px 11px;border:1px dashed var(--line);border-radius:10px;background:var(--surf);color:var(--sub);font-size:12px;font-family:inherit;text-align:left;cursor:pointer;transition:background var(--dur-state) var(--ease-standard)}
+.offset-note:active{background:#f0ece2}
+.offset-note.open{border-style:solid;background:#fff}
+.offset-note .on-txt{flex:1;min-width:0}
+.offset-note .on-act{flex:none;padding:2px 9px;border-radius:999px;background:#fff;border:1px solid var(--line);color:var(--text);font-size:11px}
+.offset-note.open .on-act{background:var(--soft-blue);border-color:#d7d5f0;color:var(--blue)}
+.tx.offset{opacity:.62;background:var(--surf)}
+.offset-tag{padding:1px 6px;border-radius:4px;background:var(--soft-blue);border:1px solid #d7d5f0;color:var(--blue);font-size:10px}
 /* 金額は等幅数字で桁揺れを止める（tabular-nums） */
 .tx .amount,.cd-amt,.person-balance,.loan-amt,.stat .value,.hero-amount,.hero-metrics strong,.trend-bars .tb-amt,.donut-total,.month-tab .mt-amt{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 .tx-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
@@ -362,6 +370,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
         <button class="filter-btn" data-sort="amount-desc">高い順</button>
         <button class="filter-btn" data-sort="amount-asc">低い順</button>
       </div>
+      <div id="offsetNote" style="display:none"></div>
       <div class="tx-list" id="txList"></div>
     </div>
   </div>
@@ -599,7 +608,7 @@ const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
 let data={months:{},amazonOrders:[],loans:[],payments:[],installments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{},deletedInstallmentIds:{}};
-let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanFromAmzTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,instEditingId:null,instTargetTxId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set()};
+let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanFromAmzTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,instEditingId:null,instTargetTxId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set(),showOffset:false};
 
 function load(){
   try{
@@ -623,6 +632,14 @@ function load(){
     migrateToCycles();
     purgeInstallmentLedgerTx();
     markCardInstBills();
+    // これまでに取り込み済みの「買って取り消した組」も一度だけ掃除する。
+    // 一度きりフラグ付き＝毎回の起動で走らせない（起動時の書き込みは最小限に留める）。
+    if(!data.offsetPurgedAt){
+      const r=purgeOffsetPairs();
+      data.offsetPurgedAt=Date.now();
+      if(r.pairs)setTimeout(()=>showSyncToast(`🔁 相殺ずみ ${r.pairs}組を明細から取り除きました`),900);
+      save();
+    }
   }catch(e){console.error(e);}
 }
 // 旧「カレンダー月（YYYY-MM）」キーの明細を、Amex締め日サイクル（YYYY-MM-07）へ再振り分け
@@ -704,6 +721,7 @@ function mergeState(a,b){
   out.categoryRules={...(non.categoryRules||{}),...(pref.categoryRules||{})};
   out.customCategories=[...new Set([...(non.customCategories||[]),...(pref.customCategories||[])])];
   out.updatedAt=Math.max(a.updatedAt||0,b.updatedAt||0);
+  out.offsetPurgedAt=Math.max(a.offsetPurgedAt||0,b.offsetPurgedAt||0)||undefined; // 相殺ペアの掃除ずみフラグは端末間で引き継ぐ
   return out;
 }
 // 収束判定用：保存内容の指紋（updatedAtは無視）。同一なら再保存しない＝同期のping-pong防止
@@ -1017,6 +1035,7 @@ async function handleCreditCSV(file){
   data.pendingInst=newSignals;
   markCardInstBills();                                 // カードの分割請求行に印＋「分割払い」カテゴリへ
   normalizeBuckets();                                  // 確定日で請求期間を正規化（手動移動=cycleOverrideは尊重）
+  const off=purgeOffsetPairs();                        // 同じ期に「同じ店名で +X と −X」＝買って取り消した組は取り込まない（履歴が濁るため）
   autoLinkAmazon(newIds);save();flushSave();           // 自動リンクは“新規だけ”／取込は即クラウド反映（350ms待ちの欠落窓を無くす）
   if(touched.size)state.currentMonth=[...touched].sort().pop();
   if(!state.currentMonth||!data.months[state.currentMonth]){const ks=Object.keys(data.months).sort();state.currentMonth=ks.length?ks[ks.length-1]:null;}
@@ -1028,8 +1047,9 @@ async function handleCreditCSV(file){
   const instLine=newSignals.length?`\n\n📆 分割払いへの切り替えが ${newSignals.length}件 見つかりました（${newSignals.map(s=>'¥'+s.amount.toLocaleString()).join(' / ')}）。\n振替の行は明細に入れていません（二重計上を防ぐため）。\n上の「分割の設定待ち」から回数と手数料を登録してください。`:'';
   const suspectLine=suspects.length?`\n\n⚠️ 分割/リボらしき見慣れない明細が ${suspects.length}件 あります。二重計上していないか確認してください:\n`+suspects.slice(0,5).map(s=>`・${s.date} ${s.desc} ¥${s.amount.toLocaleString()}`).join('\n'):'';
   const billSum=(bills||[]).reduce((s,b)=>s+b.amount,0);
+  const offLine=off.pairs?`\n\n🔁 請求と同額の取消がある組を ${off.pairs}組（計 ¥${off.amount.toLocaleString()}）見つけたので、明細に入れていません（差し引き0のため合計は変わりません）:\n`+off.removed.slice(0,5).map(r=>`・${r.date} ${displayMerchantName(r.desc)} ¥${r.amount.toLocaleString()}`).join('\n')+(off.removed.length>5?`\n・ほか${off.removed.length-5}組`:''):'';
   const billLine=(bills&&bills.length)?`\n\n📆 カードが出した分割の請求が ${bills.length}件（計 ¥${billSum.toLocaleString()}）ありました。\nこれを本物の請求として数え、アプリ側の予定行はその期のぶんを取り下げています（二重計上を防ぐため）。`:'';
-  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${fixedLine}${range}${billLine}${instLine}${suspectLine}\n\n※明細・立替・Amazon紐付け・手動移動は保持され、消えません。`),50);
+  setTimeout(()=>alert(`クレカ明細を取り込みました（追記マージ）\n新規追加: ${added}件 / 既存(変更なし): ${dup}件${fixedLine}${range}${offLine}${billLine}${instLine}${suspectLine}\n\n※明細・立替・Amazon紐付け・手動移動は保持され、消えません。`),50);
 }
 
 // Amazon注文の取り込みはブックマークレット(amazon-import-bookmarklet.js)経由でSupabaseへ直接追記。
@@ -1215,6 +1235,67 @@ function cycleTxs(key){
 }
 // その明細がそのサイクルで実際に請求される額。分割に変換済みなら0（請求は各回の合成行が持つ）
 function billedAmt(t){return instForTx(t.id)?0:t.amount;}
+// 同じ請求期間に「+X の請求」と「−X の取消/返金」が両方あるとき、その2件は差し引き0。
+// 一覧に並ぶと「買ったのか、返ってきたのか」が読み取れず履歴が濁るので、組にして扱う。
+// 店名も一致する組は買って取り消しただけなので実データから消す（purgeOffsetPairs）。
+// 店名が違う組（例:「ご利用代金調整」）は取り違えの危険があるので消さず、一覧で畳むだけにする。
+// 立て替え・分割が付いた明細は台帳が壊れるので、どちらの対象にもしない。
+function offsetNameKey(t){return (t.description||'').replace(/\s+/g,'').toLowerCase();}
+function offsetPairs(key){
+  if(!key)return [];
+  const txs=(((data.months[key]||{}).transactions)||[])
+    .filter(t=>!instForTx(t.id)&&getLoanTotalForTx(t.id)===0);
+  const plus=txs.filter(t=>t.amount>0);
+  const minus=txs.filter(t=>t.amount<0);
+  if(!plus.length||!minus.length)return [];
+  const pairs=[],used=new Set();
+  const take=(m,sameName)=>{
+    const cands=plus.filter(x=>!used.has(x.id)&&x.amount===-m.amount
+      &&(!sameName||offsetNameKey(x)===offsetNameKey(m)));
+    if(!cands.length)return;
+    cands.sort((a,b)=>Math.abs(daysBetween(a.date,m.date))-Math.abs(daysBetween(b.date,m.date)));
+    used.add(cands[0].id);used.add(m.id);
+    pairs.push({plus:cands[0],minus:m,sameName});
+  };
+  minus.forEach(m=>take(m,true));                        // ①店名も金額も一致する組
+  minus.filter(m=>!used.has(m.id)).forEach(m=>take(m,false)); // ②金額だけ一致する組
+  return pairs;
+}
+// 「同じ店名で +X と −X」＝買って取り消した組。履歴に両方並ぶと何が起きたのか読めないので、
+// 実データから取り除く（tombstoneで他端末にも伝える）。
+// 店名が違う組（例:「ご利用代金調整」）は取り違えの危険があるので消さず、一覧で畳むだけにする。
+// メモを書いた明細・Amazon注文と紐付けた明細は、手で足した情報が消えるので残す（畳むだけ）。
+function offsetDeletable(t){return !(t.note||'').trim()&&!t.linkedAmazonId;}
+function purgeOffsetPairs(keys){
+  const target=(keys&&keys.length)?keys:Object.keys(data.months);
+  let pairs=0,amount=0;const now=Date.now();const removed=[];
+  target.forEach(k=>{
+    if(!data.months[k])return;
+    const ids=new Set();
+    offsetPairs(k).forEach(p=>{
+      if(!p.sameName)return;                                   // 店名が違う組は消さない
+      if(!offsetDeletable(p.plus)||!offsetDeletable(p.minus))return;
+      ids.add(p.plus.id);ids.add(p.minus.id);
+      pairs++;amount+=p.plus.amount;
+      removed.push({cycle:k,desc:p.plus.description,amount:p.plus.amount,date:p.plus.date});
+    });
+    if(!ids.size)return;
+    const arr=data.months[k].transactions||[];
+    const keep=arr.filter(t=>{
+      if(!ids.has(t.id))return true;
+      data.deletedTxIds[t.id]=now;
+      return false;
+    });
+    if(keep.length)data.months[k].transactions=keep; else delete data.months[k];
+  });
+  return {pairs,amount,removed};
+}
+// そのサイクルで畳む明細のid（プラス側・マイナス側の両方）
+function offsetHiddenIds(key){
+  const s=new Set();
+  offsetPairs(key).forEach(p=>{s.add(p.plus.id);s.add(p.minus.id);});
+  return s;
+}
 // 期間タブに出すサイクル：実明細のある期間＋分割の請求が乗る期間（未来の予定も出す）
 function allCycleKeys(){
   const s=new Set(Object.keys(data.months));
@@ -1462,7 +1543,8 @@ function renderSummary(){
   heroEl.classList.toggle('xlong',self>=100000000);
   document.getElementById('selfAmount').textContent=self.toLocaleString();
   document.getElementById('totalAmount').textContent='¥'+total.toLocaleString();
-  document.getElementById('totalCount').textContent=txs.length+'件';
+  const offHidden=offsetHiddenIds(state.currentMonth);
+  document.getElementById('totalCount').textContent=(txs.length-offHidden.size)+'件';   // 相殺ずみの組は件数に数えない（金額は差し引き0なので総額は変わらない）
   document.getElementById('loanedAmount').textContent='¥'+loaned.toLocaleString();
   document.getElementById('loanedCount').textContent=loanedCount+'件';
   renderSelfTrend(self);
@@ -1497,7 +1579,8 @@ function renderSelfTrend(self){
 
 function selfAmt(t){return billedAmt(t)-getLoanTotalForTx(t.id);}
 function renderCategories(){
-  const txs=cycleTxs(state.currentMonth);
+  const offHidden=offsetHiddenIds(state.currentMonth);
+  const txs=cycleTxs(state.currentMonth).filter(t=>!offHidden.has(t.id)); // 相殺ずみの組はカテゴリ集計に入れない
   const byCat={};
   txs.forEach(t=>{const s=selfAmt(t);if(s!==0)byCat[t.category]=(byCat[t.category]||0)+s;}); // 返金(マイナス)も同カテゴリで相殺
   const sorted=Object.entries(byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]); // 相殺後にプラスのカテゴリだけ表示
@@ -1590,8 +1673,10 @@ function toggleCatTxExpand(id){
 function getVisibleTxs(){
   if(!state.currentMonth)return [];
   const txs=cycleTxs(state.currentMonth);
+  const hidden=offsetHiddenIds(state.currentMonth);
   const f=txs.filter(t=>{
     if(t._virtual&&state.selectMode)return false;   // 分割の回は合成行なので選択・期間移動の対象にしない
+    if(!state.showOffset&&hidden.has(t.id))return false; // 相殺ずみ（請求＋同額の取消）は既定で畳む
     const lt=getLoanTotalForTx(t.id);
     if(state.currentFilter==='self')return lt<t.amount;
     if(state.currentFilter==='has-loan')return lt>0;
@@ -1606,10 +1691,27 @@ function getVisibleTxs(){
 function renderTransactions(){
   const f=getVisibleTxs();
   const list=document.getElementById('txList');
+  renderOffsetNote();
   if(f.length===0){list.innerHTML='<div class="empty">該当する明細がありません</div>';updateSelectBar();return;}
   list.innerHTML=f.map(t=>renderTxRow(t)).join('');
   updateSelectBar();
 }
+// 「請求と同額の取消がある組を隠しています」の案内。押すと出し入れできる（消えたのではなく畳んだ、と分かるように）
+let _offsetIds=new Set();   // いま畳んでいる（＝相殺ずみの）明細id。行の見た目を変えるのに使う
+function renderOffsetNote(){
+  const el=document.getElementById('offsetNote');if(!el)return;
+  const pairs=offsetPairs(state.currentMonth);
+  _offsetIds=new Set();pairs.forEach(p=>{_offsetIds.add(p.plus.id);_offsetIds.add(p.minus.id);});
+  if(pairs.length===0){el.innerHTML='';el.style.display='none';state.showOffset=false;return;}
+  const sum=pairs.reduce((s,p)=>s+p.plus.amount,0);
+  el.style.display='';
+  el.innerHTML=`<button class="offset-note ${state.showOffset?'open':''}" onclick="toggleOffset()">
+    <span class="on-ic">🔁</span>
+    <span class="on-txt">相殺ずみ ${pairs.length}組（¥${sum.toLocaleString()}）を${state.showOffset?'表示中':'隠しています'}</span>
+    <span class="on-act">${state.showOffset?'隠す':'見る'}</span>
+  </button>`;
+}
+function toggleOffset(){state.showOffset=!state.showOffset;renderTransactions();}
 
 // 分割の各回（合成行）。実明細ではないので立替・カテゴリ・削除は出さず、分割の編集だけ持たせる
 function renderInstTxRow(t){
@@ -1649,6 +1751,8 @@ function renderTxRow(t){
   const classes=['tx'];
   if(lt>0&&!fullyLoaned)classes.push('has-loan');
   if(fullyLoaned)classes.push('fully-loaned');
+  const isOffset=_offsetIds.has(t.id);
+  if(isOffset)classes.push('offset');   // 相殺ずみを開いて見ているとき、ふつうの買い物と見分ける
 
   const chips=loans.map(l=>{
     const paid=getRemaining(l)<=0;
@@ -1674,6 +1778,7 @@ function renderTxRow(t){
 
   const amzTag=amz&&!linked?'<span class="amz-tag">未紐付け</span>':'';
   const movedTag=t.cycleOverride?'<span class="cat-tag">📅移動済</span>':'';
+  const offsetTag=isOffset?`<span class="offset-tag">🔁 相殺ずみ${t.amount<0?'・取消ぶん':''}</span>`:'';
   // カードが出した分割の請求行。買い物ではなく「分割の毎月ぶん」だと分かるようにする
   const billTag=isCardInstBill(t)?'<span class="inst-tag">📆 カードの分割請求</span>':'';
   const sel=state.selectMode;
@@ -1683,7 +1788,7 @@ function renderTxRow(t){
     return `<div class="${classes.join(' ')}" data-id="${t.id}">
       <div onclick="toggleTxSelect('${t.id}')">
         <div class="desc"><span class="tx-check">${checked?'☑️':'⬜'}</span>${escapeHtml(displayMerchantName(t.description))}</div>
-        <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${amzTag}${movedTag}</div>
+        <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${amzTag}${movedTag}${offsetTag}</div>
       </div>
       <div class="tx-side"><div class="amount ${fullyLoaned?'struck':''}">¥${t.amount.toLocaleString()}</div></div>
     </div>`;
@@ -1726,7 +1831,7 @@ function renderTxRow(t){
     </div>`;
   }
   const instTag=inst?`<span class="inst-tag">📆 ${instSchedule(inst).length}回払いに変換</span>`:'';
-  const struck=(fullyLoaned||!!inst)?'struck':'';
+  const struck=(fullyLoaned||!!inst||isOffset)?'struck':'';
   const note=(t.note||'').trim();
   const noteTag=note?`<span class="note-mini">📝 ${escapeHtml(note)}</span>`:'';
   const noteEdit=`<div class="tx-note-edit"><label>メモ（何に使った？）</label><textarea rows="1" placeholder="例: 友人との夕食代、仕事用の参考書" onclick="event.stopPropagation()" onchange="saveTxNote('${t.id}',this.value)">${escapeHtml(t.note||'')}</textarea></div>`;
@@ -1734,7 +1839,7 @@ function renderTxRow(t){
   return `<div class="${classes.join(' ')}" data-id="${t.id}">
     <div onclick="toggleTxExpand('${t.id}')">
       <div class="desc">${escapeHtml(displayMerchantName(t.description))}</div>
-      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${instTag}${billTag}${amzTag}${movedTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}${noteTag}</div>
+      <div class="meta"><span>${t.date}</span><span class="cat-tag">${t.category}</span>${instTag}${billTag}${amzTag}${movedTag}${offsetTag}${(lt>0&&!fullyLoaned)?`<span class="self-mini">自分 ¥${self.toLocaleString()}</span>`:''}${noteTag}</div>
       ${expanded?billHtml+instHtml+strip+amzHtml+noteEdit+actions:''}
     </div>
     <div class="tx-side"><div class="amount ${struck}">¥${t.amount.toLocaleString()}</div><div class="tx-chev ${expanded?'open':''}">›</div></div>
@@ -2616,7 +2721,7 @@ async function importData(file){
     if(!data.installments)data.installments=[];
     if(!data.pendingInst)data.pendingInst=[];
     if(!data.deletedInstallmentIds)data.deletedInstallmentIds={};
-    migrateToCycles();purgeInstallmentLedgerTx();markCardInstBills();save();
+    migrateToCycles();purgeInstallmentLedgerTx();markCardInstBills();purgeOffsetPairs();save();
     const ms=Object.keys(data.months).sort();
     state.currentMonth=ms.length>0?ms[ms.length-1]:null;
     render();
