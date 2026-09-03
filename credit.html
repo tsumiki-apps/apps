@@ -632,14 +632,7 @@ function load(){
     migrateToCycles();
     purgeInstallmentLedgerTx();
     markCardInstBills();
-    // これまでに取り込み済みの「買って取り消した組」も一度だけ掃除する。
-    // 一度きりフラグ付き＝毎回の起動で走らせない（起動時の書き込みは最小限に留める）。
-    if(!data.offsetPurgedAt){
-      const r=purgeOffsetPairs();
-      data.offsetPurgedAt=Date.now();
-      if(r.pairs)setTimeout(()=>showSyncToast(`🔁 相殺ずみ ${r.pairs}組を明細から取り除きました`),900);
-      save();
-    }
+    purgeOffsetPairsAndSave();   // 取り込み済みの「買って取り消した組」も取り除く（無ければ何も書かない）
   }catch(e){console.error(e);}
 }
 // 旧「カレンダー月（YYYY-MM）」キーの明細を、Amex締め日サイクル（YYYY-MM-07）へ再振り分け
@@ -721,7 +714,6 @@ function mergeState(a,b){
   out.categoryRules={...(non.categoryRules||{}),...(pref.categoryRules||{})};
   out.customCategories=[...new Set([...(non.customCategories||[]),...(pref.customCategories||[])])];
   out.updatedAt=Math.max(a.updatedAt||0,b.updatedAt||0);
-  out.offsetPurgedAt=Math.max(a.offsetPurgedAt||0,b.offsetPurgedAt||0)||undefined; // 相殺ペアの掃除ずみフラグは端末間で引き継ぐ
   return out;
 }
 // 収束判定用：保存内容の指紋（updatedAtは無視）。同一なら再保存しない＝同期のping-pong防止
@@ -801,6 +793,7 @@ function subscribeRealtime(){
 }
 // 同期で data が差し替わった後、現在の選択期間を保ちつつ再描画
 function refreshAfterSync(){
+  purgeOffsetPairsAndSave();   // クラウド側から来た明細にも「買って取り消した組」が混ざるので、ここでも通す
   const keys=Object.keys(data.months).sort();
   if(!keys.includes(state.currentMonth)) state.currentMonth=keys.length?keys[keys.length-1]:null;
   markCardInstBills();     // 旧バージョンの端末から来た明細にも印を付け直す（何度呼んでも安全）
@@ -1289,6 +1282,13 @@ function purgeOffsetPairs(keys){
     if(keep.length)data.months[k].transactions=keep; else delete data.months[k];
   });
   return {pairs,amount,removed};
+}
+// 掃除の共通入口。組が見つかった時だけ保存＆お知らせ（何も無ければ書き込みも通知もしない）。
+// 起動時とクラウド受信後の両方から呼ぶ：どちらのタイミングで明細が増えても取りこぼさないため。
+function purgeOffsetPairsAndSave(){
+  const r=purgeOffsetPairs();
+  if(r.pairs){save();setTimeout(()=>showSyncToast(`🔁 相殺ずみ ${r.pairs}組を明細から取り除きました`),600);}
+  return r;
 }
 // そのサイクルで畳む明細のid（プラス側・マイナス側の両方）
 function offsetHiddenIds(key){
