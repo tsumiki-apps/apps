@@ -4,11 +4,12 @@
 make_icons_mono.py の outline 版とは別に、index だけこの立体版で上書きする。
 画面(index.html)のインラインSVGと座標・色を完全に一致させること。
 """
-import os
-os.environ.setdefault("DYLD_LIBRARY_PATH", "/opt/homebrew/lib")
-import io
-import cairosvg
+import io, pathlib, shutil, subprocess, tempfile
 from PIL import Image
+
+# cairosvg は libcairo が入っておらず動かないため、Chrome ヘッドレスで描く
+# （_icon_kit.py と同じやり方）
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 SIZE = 180          # iPhone @3x
 RENDER = 540        # 3倍でレンダ→縮小
@@ -39,8 +40,17 @@ svg = (
     f'stroke-linejoin="round" stroke-linecap="round">{BLOCKS}</g></svg>'
 )
 
-png = cairosvg.svg2png(bytestring=svg.encode("utf-8"),
-                       output_width=RENDER, output_height=RENDER)
-img = Image.open(io.BytesIO(png)).convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
+d = pathlib.Path(tempfile.mkdtemp())
+html = d / "i.html"
+html.write_text(
+    f'<!doctype html><meta charset="utf-8">'
+    f'<style>html,body{{margin:0;background:{BG}}}svg{{display:block}}</style>{svg}',
+    encoding="utf-8")
+shot = d / "s.png"
+subprocess.run([CHROME, "--headless", "--disable-gpu", "--hide-scrollbars",
+                f"--screenshot={shot}", f"--window-size={RENDER},{RENDER}",
+                f"file://{html}"], capture_output=True)
+img = Image.open(shot).convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
 img.save(OUT, "PNG")
+shutil.rmtree(d, ignore_errors=True)
 print("✓", OUT)
