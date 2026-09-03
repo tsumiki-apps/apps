@@ -1009,7 +1009,16 @@ const server = http.createServer(async (req, res) => {
         `tsumiki_t=${encodeURIComponent(TOKEN)}; Path=/preview/; Max-Age=2592000; HttpOnly; SameSite=Lax`;
     }
     res.writeHead(200, headers);
-    fs.createReadStream(real).pipe(res);
+    // ⚠️ 読み出しの失敗をここで受ける（2026-09-02）。iCloud にまだ落ちてきていない
+    // ファイルを読むと EDEADLK（`Unknown system error -11`）で失敗することがあり、
+    // 受け手が無いと uncaughtException まで飛んでログが汚れる（実際に出た）。
+    // 見出しはもう送ってしまっているので、あとは黙って切るしかない
+    const rs = fs.createReadStream(real);
+    rs.on('error', (e) => {
+      console.log('preview 読めません: ' + String(e && e.message).slice(0, 80));
+      try { res.destroy(); } catch (e2) {}
+    });
+    rs.pipe(res);
     return;
   }
 
