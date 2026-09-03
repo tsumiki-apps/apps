@@ -293,7 +293,7 @@
     <button class="ico" id="menuBtn" type="button" aria-label="メニュー" aria-expanded="false" aria-controls="drawer">
       <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
     </button>
-    <h1>ライセンス</h1>
+    <h1 id="pageTitle">ライセンス</h1>
     <span class="sp"></span>
     <button class="ico" id="reloadBtn" type="button" aria-label="読みこみ直す">
       <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
@@ -309,6 +309,7 @@
   </div>
 
   <div id="list"></div>
+  <div id="srList" hidden></div>
 </div>
 
 <button class="fab" id="fab" type="button" aria-label="新しいキーを発行" hidden>
@@ -363,9 +364,13 @@
       <polygon points="65,31.5 50,39 50,54 65,46.5"/>
     </g>
   </svg>
-  <a class="dr-item current" href="#" aria-current="page">
+  <a class="dr-item current" href="#" id="drLicense" aria-current="page">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="10.5" width="17" height="10" rx="2.5"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3"/></svg>
     ライセンス
+  </a>
+  <a class="dr-item" href="#" id="drStars">
+    <svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.8.85-4.2 4.1 1 5.8-5.2-2.75-5.2 2.75 1-5.8-4.2-4.1 5.8-.85z"/></svg>
+    STARSコード
   </a>
   <a class="dr-item" href="seisakubutsu-url.html">
     <svg viewBox="0 0 24 24"><path d="M10 13.5a4 4 0 0 0 5.7.3l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.5 1.5"/><path d="M14 10.5a4 4 0 0 0-5.7-.3l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.5-1.5"/></svg>
@@ -648,7 +653,7 @@
 
   function openApp(){ lock.style.display='none'; app.hidden=false; fab.hidden=false; loadApps(); }
   function lockScreen(){
-    localStorage.removeItem(K_PASS); secret=''; passInput.value=''; ROWS=[];
+    localStorage.removeItem(K_PASS); secret=''; passInput.value=''; ROWS=[]; SR=[]; setView('license');
     app.hidden=true; fab.hidden=true; lock.style.display='flex';
   }
 
@@ -675,6 +680,14 @@
 
   /* ---------- ヘッダの2つ ---------- */
   document.getElementById('reloadBtn').addEventListener('click', function(){
+    if(VIEW==='stars'){
+      srLoad().then(function(r){
+        if(r.ok) toast('最新です');
+        else if(r.auth){ toast('パスワードが無効になりました'); lockScreen(); }
+        else toast('つながりませんでした');
+      });
+      return;
+    }
     load().then(function(r){
       if(r.ok){ toast('最新です'); loadApps(); }
       else if(r.auth){ toast('パスワードが無効になりました'); lockScreen(); }
@@ -682,7 +695,7 @@
     });
   });
   document.getElementById('lockNow').addEventListener('click', lockScreen);
-  qInput.addEventListener('input', paint);
+  qInput.addEventListener('input', function(){ if(VIEW==='stars') srPaint(); else paint(); });
 
   /* ---------- カードの操作 ---------- */
   listEl.addEventListener('click', function(e){
@@ -945,7 +958,7 @@
         }, function(){ document.getElementById('aGo').disabled=false; toast('つながりませんでした'); });
     });
   }
-  fab.addEventListener('click', sheetIssue);
+  fab.addEventListener('click', function(){ if(VIEW==='stars') srSheetIssue(); else sheetIssue(); });
 
   /* ===== キーカード画像（かぎふだ描画エンジンを内蔵。端末内で完結・キーは送信しない） ===== */
   var imgCanvas = document.getElementById('imgCanvas');
@@ -1329,6 +1342,180 @@
     if(it.classList.contains('current')) e.preventDefault();
     setDrawer(false);
   });
+
+
+  /* =========================================================================
+     STARS 参加コード（stars-note に渡すコードの台帳）
+     - コードは「定義を取りに行くための鍵」。書いた振り返りは各自の端末の中だけ。
+     - 止めると、その先の人は取りに行けなくなる（すでに開いた人の手元は消えない）。
+     ========================================================================= */
+  var VIEW = 'license';
+  var SR = [];
+  var srListEl  = document.getElementById('srList');
+  var pageTitle = document.getElementById('pageTitle');
+  var SR_URL = 'https://teamkit-tools.github.io/stars-note/';
+
+  function srShareText(code){
+    return 'STARS 振り返り\n' + SR_URL + '\n参加コード：' + code
+      + '\n\n最初の1回だけコードを入れてください。書いた内容はこの端末の中だけに保存されます。';
+  }
+  function setView(v){
+    VIEW = v;
+    var isS = (v === 'stars');
+    pageTitle.textContent = isS ? 'STARSコード' : 'ライセンス';
+    listEl.hidden = isS;
+    srListEl.hidden = !isS;
+    qInput.value = '';
+    var dl = document.getElementById('drLicense'), ds = document.getElementById('drStars');
+    if(dl) dl.classList.toggle('current', !isS);
+    if(ds) ds.classList.toggle('current', isS);
+    if(isS){ srPaint(); srLoad(); } else { paint(); }
+  }
+  function srLoad(){
+    return rpc('admin_sr_list', { p_secret: secret }).then(function(res){
+      if(res.ok){ SR = res.data || []; srPaint(); return { ok:true }; }
+      return { ok:false, auth:true };
+    }, function(){ return { ok:false, auth:false }; });
+  }
+  function srByCode(c){ for(var i=0;i<SR.length;i++){ if(SR[i].code===c) return SR[i]; } return null; }
+  function srVisible(){
+    var q = (qInput.value||'').trim().toLowerCase();
+    var rows = SR.slice();
+    if(q) rows = rows.filter(function(r){
+      return ((r.label||'')+' '+r.code+' '+(r.note||'')).toLowerCase().indexOf(q) >= 0;
+    });
+    rows.sort(function(a,b){
+      if(!!a.active !== !!b.active) return a.active ? -1 : 1;
+      var A=a.last_used_at||'', B=b.last_used_at||'';
+      return A<B ? 1 : (A>B ? -1 : 0);
+    });
+    return rows;
+  }
+  function srPaint(){
+    if(VIEW !== 'stars') return;
+    var rows = srVisible();
+    searchWrap.hidden = SR.length <= 6;
+    if(!rows.length){
+      srListEl.innerHTML = '<div class="empty">'
+        + (SR.length ? '<p>見つかりません</p>' : S.key + '<p>＋ でコードを発行</p>')
+        + '</div>';
+      return;
+    }
+    srListEl.innerHTML = rows.map(function(r){
+      var used = r.last_used_at ? relDays(r.last_used_at) : '未使用';
+      return '<article class="c'+(r.active?'':' off')+'">'
+        + '<div class="c-top">'
+        +   '<span class="dot"></span>'
+        +   '<span class="nm">'+esc(r.label||'（名前なし）')+'</span>'
+        +   '<button class="ico sm" data-act="srmore" data-code="'+esc(r.code)+'" aria-label="そのほか">'+S.more+'</button>'
+        + '</div>'
+        + '<div class="c-meta">'
+        +   '<span class="mi">'+S.clock+esc(used)+'</span>'
+        +   '<span class="mi">'+(r.use_count||0)+'回</span>'
+        +   (r.active ? '' : '<span class="offpill">停止中</span>')
+        + '</div>'
+        + (r.note ? '<div class="memo">'+S.note+'<span>'+esc(r.note)+'</span></div>' : '')
+        + '<button class="keybtn" data-copy="'+esc(r.code)+'"><span>'+esc(r.code)+'</span>'+S.copy+'</button>'
+        + '</article>';
+    }).join('');
+  }
+  srListEl.addEventListener('click', function(e){
+    var cp = e.target.closest('[data-copy]');
+    if(cp){ copyText(cp.getAttribute('data-copy')); return; }
+    var b = e.target.closest('[data-act]');
+    if(b && b.getAttribute('data-act')==='srmore') srSheetMore(b.getAttribute('data-code'));
+  });
+
+  var srCode = '';
+  function srSheetMore(code){
+    var r = srByCode(code); if(!r) return;
+    srCode = code;
+    openSheet('<div class="grab"></div>'
+      + '<div class="sh-h"><span class="dot"'+(r.active?'':' style="background:var(--ghost)"')+'></span>'+esc(r.label||'（名前なし）')+'</div>'
+      + '<button class="sh-item" data-sm="share">'+S.copy+'渡す文をコピー</button>'
+      + '<button class="sh-item" data-sm="edit">'+S.edit+'名前とメモ</button>'
+      + '<button class="sh-item" data-sm="toggle">'+(r.active?S.pause+'止める':S.play+'使えるように')+'</button>'
+      + '<button class="sh-item danger" data-sm="delete">'+S.trash+'削除</button>');
+  }
+  sheetIn.addEventListener('click', function(e){
+    var m = e.target.closest('[data-sm]'); if(!m) return;
+    var r = srByCode(srCode); if(!r) return;
+    var w = m.getAttribute('data-sm');
+    if(w==='edit'){ srSheetEdit(r); return; }
+    if(w==='share'){ copyText(srShareText(r.code)); closeSheet(); return; }
+    if(w==='toggle'){
+      closeSheet();
+      rpc('admin_sr_set_active', { p_secret:secret, p_code:r.code, p_active:!r.active })
+        .then(function(res){
+          if(res.ok){ toast(r.active ? '止めました' : '使えるようにしました'); srLoad(); }
+          else toast('できませんでした');
+        }, function(){ toast('つながりませんでした'); });
+      return;
+    }
+    if(w==='delete'){
+      openSheet('<div class="grab"></div><div class="sh-h">削除しますか</div>'
+        + '<p class="sh-sub" style="text-align:center; margin:0 8px 14px">'
+        +   esc(r.label||r.code)+' のコードを消します。<br>この先このコードでは開けなくなります。<br>すでに開いた人の手元にある分は消えません。</p>'
+        + '<button class="pri danger" id="srDel">削除する</button>'
+        + '<button class="ghost" data-close>やめる</button>');
+      var db = document.getElementById('srDel');
+      db.addEventListener('click', function(){
+        closeSheet();
+        rpc('admin_sr_delete', { p_secret:secret, p_code:r.code })
+          .then(function(res){
+            if(res.ok){ toast('削除しました'); srLoad(); } else toast('できませんでした');
+          }, function(){ toast('つながりませんでした'); });
+      });
+    }
+  });
+  function srSheetEdit(r){
+    openSheet('<div class="grab"></div><div class="sh-h">名前とメモ</div>'
+      + '<input id="sE" placeholder="渡す相手">'
+      + '<div class="sh-field"><input id="sN" placeholder="メモ（自分用）"></div>'
+      + '<button class="pri" id="sS">保存</button>');
+    document.getElementById('sE').value = r.label || '';
+    document.getElementById('sN').value = r.note || '';
+    document.getElementById('sS').addEventListener('click', function(){
+      var nl = document.getElementById('sE').value.trim();
+      var nn = document.getElementById('sN').value.trim();
+      if(!nl){ toast('名前を入れてください'); return; }
+      this.disabled = true;
+      rpc('admin_sr_set_info', { p_secret:secret, p_code:r.code, p_label:nl, p_note:nn })
+        .then(function(res){ closeSheet(); if(res.ok){ toast('なおしました'); srLoad(); } else toast('できませんでした'); },
+              function(){ closeSheet(); toast('つながりませんでした'); });
+    });
+  }
+  function srSheetIssue(){
+    openSheet('<div class="grab"></div><div class="sh-h">新しいコード</div>'
+      + '<input id="sIL" placeholder="渡す相手" enterkeyhint="done">'
+      + '<div class="sh-field"><input id="sIN" placeholder="メモ（自分用）"></div>'
+      + '<button class="pri" id="sIGo">発行</button>');
+    document.getElementById('sIGo').addEventListener('click', function(){
+      var l = document.getElementById('sIL').value.trim();
+      var n = document.getElementById('sIN').value.trim();
+      if(!l){ toast('渡す相手を入れてください'); return; }
+      var btn = this; btn.disabled = true;
+      rpc('admin_sr_issue', { p_secret:secret, p_label:l, p_note:n })
+        .then(function(res){
+          btn.disabled = false;
+          if(!res.ok){ toast('発行できませんでした'); return; }
+          srSheetIssued(res.data);
+          srLoad();
+        }, function(){ btn.disabled = false; toast('つながりませんでした'); });
+    });
+  }
+  function srSheetIssued(code){
+    openSheet('<div class="grab"></div><div class="sh-h">できました</div>'
+      + '<button class="bigkey" data-copy="'+esc(code)+'"><span>'+esc(code)+'</span>'+S.copy+'</button>'
+      + '<button class="pri" id="srShare">渡す文をコピー</button>'
+      + '<button class="ghost" data-close>とじる</button>');
+    document.getElementById('srShare').addEventListener('click', function(){
+      copyText(srShareText(code)); closeSheet();
+    });
+  }
+  window.__srDemo = function(rows){ SR = rows || []; setView('stars'); srPaint(); };  // 複製での検証用の入口
+  document.getElementById('drStars').addEventListener('click', function(e){ e.preventDefault(); setView('stars'); });
+  document.getElementById('drLicense').addEventListener('click', function(e){ e.preventDefault(); setView('license'); });
 
   /* ---------- 保存済みパスワードがあれば自動で開く ---------- */
   if(secret){
