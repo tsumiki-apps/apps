@@ -2469,6 +2469,16 @@
       .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
 
+  // 中断の札を Mac 側に立てる／降ろす。画面の字だけに頼らないための口。
+  // ⚠️ 立てるのは「送れた」あと。`/api/send` は札を降ろす作りなので、
+  //    言葉で止めるときに先に立てると、そのすぐあとの送信で降ろされてしまう
+  function markPause(name, on) {
+    if (!name) return Promise.resolve();
+    return api('/api/pause', { method: 'POST', body: JSON.stringify({ name: name, on: !!on }) })
+      // 札が立たなくても、止める操作そのものは通っている。ここは黙って流す
+      .catch(function () {});
+  }
+
   function sendKey(key) {
     if (!current) return toast('送り先が選ばれていません');
     return api('/api/key', { method: 'POST', body: JSON.stringify({ name: current, key: key }) })
@@ -2670,16 +2680,24 @@
       var pst = pcur ? statusOf(pcur) : '';
       if (current) pauseWish = { name: current, at: Date.now() };
       renderTabs();                    // 縁を先に出す。Mac の返事は1〜2秒あとに来る
+      var pname = current;
       if (!pcur || pcur.kind !== 'claude' || pst === 'busy' || liveBox()) {
+        // キーの道。`/api/key` は札に触らないので、先に立ててよい。
+        // ⚠️ 素のシェルには札を立てない。esc はほぼ何も起こさないので、
+        //    「中断のまま」と出し続けるのは嘘になる
+        if (pcur && pcur.kind === 'claude') markPause(pname, true);
         sendKey('Escape');
         return toast('pause を送りました。いまの作業を止めます');
       }
-      sendText('pause', true).catch(function () {});
+      // 言葉の道。送信が札を降ろすので、送れてから立てる
+      sendText('pause', true).then(function () { markPause(pname, true); }, function () {});
       return toast('pause と伝えました。ここで止まります');
     }
     // 戻す札。止まっている席に「続けて」と一言送るだけ＝会話の続きから動き出す。
     // ⚠️ キーではなく**本文**を送る。esc で止めた席は素のプロンプトに戻っていて、
     //    キーを送っても何も起きない（Enter は空送信になる）
+    // 戻す札。文字を送ると Mac 側が中断の札を降ろす（`/api/send`）ので、
+    // ここでわざわざ降ろしに行かなくてよい
     if (b === el.kresume) {
       pauseWish = null;
       sendText(RESUME_WORD, true).then(function () { renderTabs(); }, function () {});

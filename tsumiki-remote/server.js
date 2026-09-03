@@ -532,6 +532,7 @@ function forgetScreen(name) {
 function forgetSeat(name) {
   forgetScreen(name);
   lastSeat.delete(name);
+  pausedSeat.delete(name);
 }
 
 async function captureHistory(name, lines) {
@@ -580,9 +581,27 @@ const BUSY_RE = /esc to interrupt|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/;
 // ⚠️ `\s` は改行も食うので、行末は `[ \t]*$` で見る（`\s*$` だと次の行まで越える）。
 const PAUSED_RE =
   /^[ \t]*(?:⎿[ \t]*)?Interrupted(?:[ \t]*·|[ \t]*$)|\[Request interrupted by user|^[ \t]*⏸/m;
-// 印は止めた直後の画面の下のほうに出る。新しいやり取りが積まれて上へ押し出されたら、
-// もう中断のままではない＝見るのは末尾だけにする（番号の質問と同じ考えかた）
+// 印を探すのは画面の末尾だけ（番号の質問と同じ考えかた）。
 const PAUSED_TAIL = 16;
+
+// 中断は**札**として持つ（2026-09-03・2回目）。
+//
+// 画面の字だけで決めていると、Claude が一言でも書き足したとたん印が上へ押し出されて、
+// 何もしていないのに中断が解ける＝`resume` を押す前に札が消えてしまう。
+// だから一度立てた札は**こちらから降ろすまで立ったまま**にする。
+//
+// 降ろすのは2つだけ：
+//   ① その席に**文字を送った**とき（`resume` の「続けて」も、手で打った指示も同じ）
+//   ② その席が**動き出した**とき（スピナー＝作業中／枠を出して聞いてきた）
+//
+// ⚠️ 降ろしたあとも印は画面に残っている。そのままだと次の巡回でまた立ってしまうので、
+//    降ろすときは「消音」にして、**印が画面から流れて消えるまで数えない**。
+//    消えたら札そのものを捨てて、次に出た印はまた数える。
+const pausedSeat = new Map();     // name -> 'on'（中断）| 'off'（消音）
+
+function markPaused(name) { pausedSeat.set(name, 'on'); }
+// 送った・動き出した＝もう中断ではない。ただし札を持っていた席だけ消音にする
+function clearPaused(name) { if (pausedSeat.has(name)) pausedSeat.set(name, 'off'); }
 
 // 「番号で答える質問」＝ 本文に選択肢を書いて、数字だけ返してもらう聞きかた。
 // 共通ルール（~/.claude/CLAUDE.md）で、選択パネル（AskUserQuestion）は使わずに
@@ -678,13 +697,19 @@ function judge(name, text) {
   const quietMs = now - changedAt;
 
   const screen = text.slice(-3000);
-  if (WAITING_RE.test(screen)) return { status: 'waiting', quietMs };
+  const marked = PAUSED_RE.test(tailLines(text, PAUSED_TAIL));
+  // 消音は、印が画面から流れて消えたところで解く（次に出た印はまた数える）
+  if (pausedSeat.get(name) === 'off' && !marked) pausedSeat.delete(name);
+
+  if (WAITING_RE.test(screen)) { clearPaused(name); return { status: 'waiting', quietMs }; }
   // 番号で答える質問より、スピナーのほうが強い。答えた直後は Claude が動き出す
   // のに、質問の字はまだ画面に残っている＝そこは「作業中」と出したい
-  if (BUSY_RE.test(screen)) return { status: 'busy', quietMs };
+  if (BUSY_RE.test(screen)) { clearPaused(name); return { status: 'busy', quietMs }; }
+  // 印を見つけたら札を立てる。消音のあいだは数えない
+  if (marked && pausedSeat.get(name) !== 'off') markPaused(name);
   // 中断は番号の質問より先に見る。質問を出したあとに pause で止めると、質問の字は
   // まだ末尾に残っている＝順番が逆だと「返答待ち」のまま中断の縁が出ない
-  if (PAUSED_RE.test(tailLines(text, PAUSED_TAIL))) return { status: 'paused', quietMs };
+  if (pausedSeat.get(name) === 'on') return { status: 'paused', quietMs };
   if (asksNumber(tailLines(text, ASK_NUM_TAIL))) return { status: 'waiting', quietMs };
   if (quietMs < 5000) return { status: 'busy', quietMs };
   return { status: 'idle', quietMs };
@@ -1150,6 +1175,9 @@ const server = http.createServer(async (req, res) => {
         if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       }
       if (body.enter) await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
+      // 文字を送った＝もう「止めたまま置いてある」ではない。中断の札を降ろす
+      // （`resume` の「続けて」も、手で打った指示も、ここを通る）
+      clearPaused(name);
       forgetScreen(name);   // 送った直後に見に行くので、撮り置きは捨てる
       return json(res, 200, { ok: true });
     }
@@ -1168,6 +1196,20 @@ const server = http.createServer(async (req, res) => {
       const r = await tmux(['send-keys', '-t', '=' + name + ':', '--', key]);
       forgetScreen(name);
       return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
+    }
+
+    // 中断の札を立てる／降ろす。画面の字だけに頼らず、**押した事実**で決める。
+    // esc で枠を閉じただけのときのように、画面に印が残らない止めかたもあるため。
+    // ⚠️ tmux には何も送らない。ここは札だけを動かす口
+    if (p === '/api/pause' && req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name || '');
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      const on = body.on !== false;
+      if (on) markPaused(name); else clearPaused(name);
+      console.log(`pause ${name} ${on ? 'on' : 'off'}`);
+      forgetScreen(name);   // すぐ見に行くので撮り置きは捨てる
+      return json(res, 200, { ok: true });
     }
 
     // セッションを作る。run:'claude' なら作った直後に Claude Code を起動する
