@@ -79,6 +79,10 @@
      （? があることで、ただの横線2本＝メニューの三本線にも見えない） */
   #usage.none{opacity:.8}
   #usage .num.none{color:var(--dim)}
+  /* 少し前の値。取れなくなるたびに「?」に落としていたら、棒が出ている時間より
+     出ていない時間のほうが長くなっていた（2026-09-03 本人）。値は出したまま、
+     塗りだけ薄くして「いまの値ではない」と伝える（押せば何分前か読める） */
+  #usage.stale .bar i{opacity:.45}
   /* 届いていないあいだは出さない。今の話ではないので（電池と同じ扱い） */
   body.offline #usage.none{display:none}
   #usage .num{font-size:10px;color:var(--wait);font-variant-numeric:tabular-nums}
@@ -931,15 +935,20 @@
     fill.className = rem === null ? '' : (rem <= 10 ? 'crit' : (rem <= 30 ? 'warn' : ''));
   }
 
-  // wait ＝ 取れていないときだけサーバーが添えてくる {status, retryInSec}
+  // wait ＝ いま取り直せないときにサーバーが添えてくる {status, retryInSec}。
+  // 値が出ていても添える＝「見えている数字が古いまま止まっている」を隠さないため
   var usageWait = null;
+  var usageAge = 0;          // その数字が何ミリ秒前のものか
+  var USAGE_STALE_MS = 15 * 60 * 1000;
 
   function renderUsage(u, wait) {
     usage = (u && (u.session || u.week)) ? u : null;
-    usageWait = usage ? null : (wait || null);
+    usageWait = wait || null;
+    usageAge = usage ? (u.ageMs || 0) : 0;
     // 取れていなくても札は残す（空の棒を薄く出す）。押せば理由が読める
     el.usage.hidden = false;
     el.usage.classList.toggle('none', !usage);
+    el.usage.classList.toggle('stale', !!usage && usageAge > USAGE_STALE_MS);
     if (!usage) {
       paintBar(el.bar5, null);
       paintBar(el.bar7, null);
@@ -983,20 +992,35 @@
   }
 
   // 取れていないときの言い分け。数字ではなく「なぜ・いつ戻るか」を言う
-  function usageWhy(w) {
-    var why = w && w.status === 429 ? '問い合わせが多すぎて、しばらく止められています'
+  function usageWhyText(w) {
+    return w && w.status === 429 ? '問い合わせが多すぎて、しばらく止められています'
       : w && w.status === 401 ? 'Claude のログイン情報の期限が切れています'
       : 'Anthropic につながりませんでした';
+  }
+  function usageWhenText(w) {
     var sec = w ? w.retryInSec : 0;
-    var when = !sec ? 'まもなく取り直します'
+    return !sec ? 'まもなく取り直します'
       : sec < 60 ? 'あと' + sec + '秒で取り直します'
       : 'あと' + Math.ceil(sec / 60) + '分で取り直します';
-    return 'Claude の残量が取れていません\n（' + why + '）\n' + when;
+  }
+  function usageWhy(w) {
+    return 'Claude の残量が取れていません\n（' + usageWhyText(w) + '）\n' + usageWhenText(w);
+  }
+  function ageText(ms) {
+    var m = Math.round(ms / 60000);
+    return m < 1 ? 'たった今' : m < 60 ? m + '分前' : Math.round(m / 60) + '時間前';
   }
 
   el.usage.addEventListener('click', function () {
     if (!usage) return toast(usageWhy(usageWait), 3600);
-    toast(usageLine('5時間', usage.session) + '\n' + usageLine('週', usage.week), 2800);
+    var t = usageLine('5時間', usage.session) + '\n' + usageLine('週', usage.week);
+    // 古い値を、新しい顔で出さない。何分前のもので、なぜ止まっているかまで言う
+    if (usageAge > USAGE_STALE_MS || usageWait) {
+      t += '\n（' + ageText(usageAge) + 'の値';
+      if (usageWait) t += '・' + usageWhyText(usageWait) + '／' + usageWhenText(usageWait);
+      t += '）';
+    }
+    toast(t, usageWait ? 3600 : 2800);
   });
 
   // ---- MacBook の電池
@@ -1139,8 +1163,11 @@
       current = d.current || sessions[0].name;
     }
     syncSendEnabled();
-    // 預けてある写しには「待ち時間」は入っていない（保存した時点の話なので）
-    renderUsage(d.usage, null);
+    // 預けてある写しには「待ち時間」は入っていない（保存した時点の話なので）。
+    // 古さだけは預けてからの分を足す＝一晩ぶりに開いて「たった今の値」の顔をされないように
+    var su = d.usage;
+    if (su && d.at) su = Object.assign({}, su, { ageMs: (su.ageMs || 0) + Math.max(0, Date.now() - d.at) });
+    renderUsage(su, null);
     renderTabs();
     showCachedPane();
     // まだ「つながらない」と決まったわけではないので、帯はここでは出さない。

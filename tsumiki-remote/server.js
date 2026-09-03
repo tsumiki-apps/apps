@@ -88,15 +88,53 @@ const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 // 429（rate_limit_error）に変わり、以後 2243回連続で429＝**37時間バーが消えたまま**。
 // 相手は `retry-after` で「何秒待て」と言ってくるのに、それを無視して叩き直すので
 // 待ち時間が延び続け、自力では二度と戻らない状態になっていた。
-// 直しかた＝①ふだんの間隔を5分に伸ばす ②429 のときは retry-after を必ず守る
-// ③それ以外の失敗も倍々で待つ ④待っているあいだは前の値を長めに出しておく。
-const USAGE_TTL = 5 * 60 * 1000;    // これより新しければ取り直さない
-const USAGE_KEEP = 60 * 60 * 1000;  // 取れなくなっても、これだけは前の値を出す
+//
+// ⚠️ それでも「?」が出っぱなしだった（2026-09-03）。ログを読むと、
+//   つみきリモート: http://…   ← サーバー再起動
+//   usage 429 → 2680秒待つ     ← その直後にいきなり429
+// が何度も並んでいた。**再起動で全部忘れる**のが本体：
+//   ①前の値を忘れる → 開いた瞬間から「?」
+//   ②「待て」と言われた時刻も忘れる → ペナルティ中なのに叩き直す → また1時間止まる
+//   ③5分おき＝1時間に12回。同じ枠を claude 本体も食うので、そもそも多い
+// 直しかた＝①覚え書きをディスクに置いて再起動をまたぐ ②ふだんの間隔を10分にして
+// 1時間6回で頭打ちにする ③取れない間も前の値を出し続け、古いときは「古い」と断る。
+const USAGE_TTL = 10 * 60 * 1000;    // これより新しければ取り直さない
+const USAGE_KEEP = 12 * 3600 * 1000; // 取れなくなっても、これだけは前の値を出す
+const USAGE_STALE = 15 * 60 * 1000;  // これを超えたら「少し前の値」と断って薄くする
+const USAGE_MAX_PER_HOUR = 6;        // 1時間にこれ以上は叩かない（429を招かないための蓋）
+const USAGE_FILE = path.join(CONF_DIR, 'usage.json');
+
 let usageCache = { at: 0, value: null };
 let usageFetching = null;
 let usageRetryAt = 0;               // この時刻までは取りにいかない（相手に言われた待ち時間）
 let usageFails = 0;                 // 連続して失敗した回数（倍々で待つのに使う）
 let usageLastStatus = 0;            // 直前の失敗の中身（429＝叩きすぎ／401＝期限切れ／0＝通信）
+let usageStamps = [];               // 直近1時間に叩いた時刻（叩きすぎの蓋に使う）
+
+// 覚え書き。**再起動をまたいで残すのがこのファイルの全部の目的**なので、
+// 値だけでなく「いつまで待てと言われているか」も一緒に残す。
+// 残さないと、再起動のたびにペナルティ中の相手を叩き直して自分で延長してしまう。
+function usageLoad() {
+  try {
+    const o = JSON.parse(fs.readFileSync(USAGE_FILE, 'utf8'));
+    if (o && typeof o.at === 'number' && o.value) usageCache = { at: o.at, value: o.value };
+    if (typeof o.retryAt === 'number') usageRetryAt = o.retryAt;
+    if (typeof o.fails === 'number') usageFails = o.fails;
+    if (typeof o.lastStatus === 'number') usageLastStatus = o.lastStatus;
+    if (Array.isArray(o.stamps)) usageStamps = o.stamps.filter((t) => typeof t === 'number');
+  } catch (e) { /* 無ければ無いでよい（初回・壊れていたときは白紙から） */ }
+}
+function usageSave() {
+  try {
+    const tmp = USAGE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({
+      at: usageCache.at, value: usageCache.value, retryAt: usageRetryAt,
+      fails: usageFails, lastStatus: usageLastStatus, stamps: usageStamps,
+    }), { mode: 0o600 });
+    fs.renameSync(tmp, USAGE_FILE);  // 書きかけを読ませない
+  } catch (e) { /* 残せなくても動きは変わらない（次回また取りにいくだけ） */ }
+}
+usageLoad();
 
 // 失敗したときの待ち時間を決めて記録する。ms を返す（ログ用）
 function usageBackoff(status, retryAfter) {
@@ -106,7 +144,7 @@ function usageBackoff(status, retryAfter) {
     const ra = parseInt(retryAfter || '', 10);
     wait = ((Number.isFinite(ra) && ra > 0 ? Math.min(ra, 6 * 3600) : 900) + 5) * 1000;
   } else {
-    // 401（トークン切れ）や通信の失敗。5分 → 10 → 20 …最大60分。
+    // 401（トークン切れ）や通信の失敗。10分 → 20 → 40 …最大60分。
     // ここを1分で叩き続けたのが、そもそも429を招いた原因
     usageFails++;
     wait = Math.min(60 * 60 * 1000, USAGE_TTL * Math.pow(2, Math.min(4, usageFails - 1)));
@@ -144,7 +182,15 @@ function usageBucket(b) {
 
 async function fetchUsage() {
   const token = await keychainToken();
-  if (!token) return null;
+  if (!token) {
+    // 鍵が読めない（ログインしていない・キーチェーンが閉じている）。
+    // ここで待たずに戻ると、1.5秒ごとの巡回のたびに security を起こし続けることになる
+    // ＝残量を見るためだけに電池を削る。失敗と同じ扱いで倍々に待つ。
+    usageLastStatus = 401;
+    const wait = usageBackoff(0, null);
+    console.log(`usage 鍵が読めない → ${Math.round(wait / 1000)}秒待つ`);
+    return null;
+  }
   const ctl = new AbortController();
   const to = setTimeout(() => ctl.abort(), 8000);
   try {
@@ -166,6 +212,9 @@ async function fetchUsage() {
     const session = usageBucket(d.five_hour);
     const week = usageBucket(d.seven_day);
     if (!session && !week) return null;
+    // 直っときだけ言う（毎回言うとログが1時間に6行たまる）。
+    // 「いつから見えるようになったか」がログで追えないと、次に消えたとき困る
+    if (usageFails || usageLastStatus) console.log('usage 取れた（元通り）');
     usageFails = 0;
     usageRetryAt = 0;
     usageLastStatus = 0;
@@ -181,34 +230,68 @@ async function fetchUsage() {
   }
 }
 
+// その枠のリセット時刻を過ぎたか。過ぎていれば、持っている数字はもう別の枠の話
+function usageExpired(b) {
+  const t = b && b.resetsAt ? Date.parse(b.resetsAt) : NaN;
+  return isFinite(t) && t <= Date.now();
+}
+
+// 取り直したいか（古い／枠が入れ替わった／まだ一度も取れていない）
+function usageDue() {
+  const v = usageCache.value;
+  if (!v) return true;
+  if (usageExpired(v.session) || usageExpired(v.week)) return true;
+  return Date.now() - usageCache.at > USAGE_TTL;
+}
+
+// 取りにいってよいか。**429を招かないための蓋**で、ここが今回の肝。
+function usageMayFetch() {
+  const now = Date.now();
+  if (now < usageRetryAt) return false;      // 相手に「まだ来るな」と言われている
+  usageStamps = usageStamps.filter((t) => now - t < 3600 * 1000);
+  // 枠が入れ替わった直後だけは、回数を使い切っていても1回通す
+  // （ここで取れないと「リセットされたのに古い数字のまま」がいちばん長く続く）
+  const v = usageCache.value;
+  const rolled = !!v && (usageExpired(v.session) || usageExpired(v.week));
+  return usageStamps.length < USAGE_MAX_PER_HOUR || rolled;
+}
+
 // 待たせない。古ければ裏で取り直しにいって、いま持っている写しを返す
 // （状態の一覧が残量の取得を待って遅くなると、画面全体がもたつく）。
 function usageSnapshot() {
-  const age = Date.now() - usageCache.at;
-  // usageRetryAt ＝ 相手に「まだ来るな」と言われている時刻。ここを見ないと、
-  // 止められているあいだも1分ごとに叩き続けて、待ち時間が延び続ける
-  if (age > USAGE_TTL && !usageFetching && Date.now() >= usageRetryAt) {
+  const now = Date.now();
+  if (usageDue() && !usageFetching && usageMayFetch()) {
+    usageStamps.push(now);
     usageFetching = fetchUsage()
       .then((v) => {
-        // 取れなかったときは、少しの間だけ前の値を出し続ける（一瞬の失敗で
-        // バーが消えたり出たりするのを防ぐ）。それも古くなったら消す。
+        // 取れなかったときは、前の値を出し続ける（一瞬の失敗でバーが消えないように）。
+        // 12時間もったら、さすがに今の話ではないので捨てる
         if (v) usageCache = { at: Date.now(), value: v };
-        else if (Date.now() - usageCache.at > USAGE_KEEP) usageCache = { at: Date.now(), value: null };
+        else if (now - usageCache.at > USAGE_KEEP) usageCache = { at: Date.now(), value: null };
+        usageSave();
       })
       .finally(() => { usageFetching = null; });
   }
-  return usageCache.value;
+  const v = usageCache.value;
+  // 12時間の頭打ちは**出すときにも効かせる**。捨てる側だけに置くと、429で止められて
+  // 一度も取りにいけていない間は判定そのものが走らず、何時間でも古い値が出続ける
+  if (!v || now - usageCache.at > USAGE_KEEP) return null;
+  const age = now - usageCache.at;
+  return {
+    // リセット時刻を過ぎた枠は、数字ごと落とす（残り0%と読み違えるより、無いほうがまし）
+    session: usageExpired(v.session) ? null : v.session,
+    week: usageExpired(v.week) ? null : v.week,
+    ageMs: age,
+    stale: age > USAGE_STALE,   // 画面はこれを見て棒を薄くする
+  };
 }
 
-// 残量が「取れていない」ときだけ、なぜ・いつ戻るかを添える。
-// これが無いと、棒が消えていること自体に気づけない（2026-08-31：37時間気づけなかった）。
-// 画面はこれを受け取って、薄い棒を出す＝押すと理由が読める。
+// 「いま取り直せない」ときの理由。前の値が出ていても、止められているなら添える
+// （2026-08-31：37時間バーが消えていたのに気づけなかった。黙って古いままも同じこと）。
 function usageWaitInfo() {
-  if (usageCache.value) return null;
-  return {
-    status: usageLastStatus,
-    retryInSec: Math.max(0, Math.round((usageRetryAt - Date.now()) / 1000)),
-  };
+  const retryInSec = Math.max(0, Math.round((usageRetryAt - Date.now()) / 1000));
+  if (usageCache.value && !retryInSec) return null;
+  return { status: usageLastStatus, retryInSec };
 }
 
 // ---------------------------------------------------------- MacBook の電池
