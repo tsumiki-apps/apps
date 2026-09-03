@@ -489,9 +489,49 @@ function captureScreenShared(name) {
   return p;
 }
 
+// 1席ぶんの状態を作る。席ごとに同時に走らせるので、この中は直列でよい
+// （画面を撮ってからでないと judge が回らない）。
+async function seatState(s, deadline) {
+  const text = (await captureScreenShared(s.name)) || '';
+  const { status, quietMs } = judge(s.name, text);
+  // すでに締め切りを過ぎているなら、ここで降りる。待つのをやめた席のために
+  // display-message をもう1本起こしても、その結果は誰も使わない
+  if (Date.now() > deadline) throw new Error('deadline');
+  const info = await paneInfo(s.name);
+  const row = {
+    name: s.name, window: s.window, status, quietMs,
+    kind: kindOf(info.cmd), command: info.cmd,
+    title: titleOf(info, s.name),
+    // 始めたときに選んだモデル。選ばずに作った席・アプリの外で作った席は空
+    model: s.model,
+    preview: lastMeaningfulLine(text),
+  };
+  lastSeat.set(s.name, row);
+  return row;
+}
+
+// 席1つを待つ上限。
+// ⚠️ 巡回（1.5秒）より短くすること。長くすると「1席のつまりで全部が遅くなる」が
+// 残り、詰まっていない席の札まで巡回に間に合わなくなる（2026-09-02 レビュー指摘）。
+const SEAT_MS = 1200;
+// 席の一覧そのものにも締め切りを置く。ここが無いと tmux の天井（5秒）＋席の締め切りで
+// 画面側の待ち（5秒）を追い越し、締め切りを置いた意味が消える
+const LIST_MS = 1200;
+// いま見ている画面の読み取りにも締め切り。ここだけ無制限だと、選んでいる席が
+// 詰まったときにいちばん見たいものが返ってこない
+const PANE_MS = 2500;
+const lastSeat = new Map();   // name -> 最後にうまく読めた1行
+const staleSeat = new Set();  // いま「前の値でしのいでいる」席（ログを毎周期出さないため）
+
 function forgetScreen(name) {
   screenCache.delete(name);
   screenGen.set(name, (screenGen.get(name) || 0) + 1);
+}
+
+// 席そのものが無くなったときの後始末（前の住人の姿を新しい席に持ち越さない）
+function forgetSeat(name) {
+  forgetScreen(name);
+  lastSeat.delete(name);
 }
 
 async function captureHistory(name, lines) {
@@ -925,22 +965,40 @@ const server = http.createServer(async (req, res) => {
   try {
     // 全セッションの状態一覧
     if (p === '/api/state' && req.method === 'GET') {
-      const listed = await listSessions();
-      const sessions = listed.sessions;
-      const out = [];
-      for (const s of sessions) {
-        const text = (await captureScreenShared(s.name)) || '';
-        const { status, quietMs } = judge(s.name, text);
-        const info = await paneInfo(s.name);
-        out.push({
-          name: s.name, window: s.window, status, quietMs,
-          kind: kindOf(info.cmd), command: info.cmd,
-          title: titleOf(info, s.name),
-          // 始めたときに選んだモデル。選ばずに作った席・アプリの外で作った席は空
-          model: s.model,
-          preview: lastMeaningfulLine(text),
-        });
-      }
+      // 一覧そのものが返らないときは、前に分かっていた席の名前でしのぐ。
+      // ここで空の配列を返すと、画面が「まだ作業場所がありません」に化けてしまう
+      const listed = await within(listSessions(), LIST_MS, 'tmux の一覧').catch(() => null);
+      const sessions = listed ? listed.sessions
+        : Array.from(lastSeat.values()).map((r) => ({ name: r.name, window: r.window, activity: 0, model: r.model }));
+      // ⚠️ 席ごとを**同時に**調べる（2026-09-02）。それまでは席の数だけ直列に
+      // tmux を起こしていて、1回に 1+2N 本（席5つで11本）。1本の天井は5秒で、
+      // 全体の締め切りは無かった。Mac が重いと /api/state だけで3〜20秒かかり、
+      // 画面は「つながっています」のまま数十秒止まって見える。
+      // 実測（席6つ）：直列 40ms → 同時実行 9ms。重いときの差はもっと開く。
+      // さらに席ごとに締め切りを置き、間に合わない席があっても
+      // **その席だけ**前回の値に落として、全体は返す（1席のつまりで全部を止めない）。
+      const deadline = Date.now() + SEAT_MS;
+      const out = await Promise.all(sessions.map((s) => within(seatState(s, deadline), SEAT_MS, '席の読み取り')
+        .then((row) => {
+          // 読めた＝札は本物。前に「しのいでいた」なら、そこも戻す
+          if (staleSeat.delete(s.name)) console.log(`state ${s.name} が読めるようになった`);
+          return row;
+        })
+        .catch(() => {
+          // 間に合わなかった席は、前に分かっていた姿を出す。ただし **stale の印を付ける**。
+          // 印が無いと、固まった席の札が「待機」のまま自信ありげに出続ける
+          // ＝この塊の目的（止まったら止まったと分かる）と逆になる（2026-09-02 レビュー指摘）
+          const last = lastSeat.get(s.name);
+          // ログは毎周期ではなく、状態が変わったときだけ（1.5秒ごとに1行たまるのを防ぐ）
+          if (!staleSeat.has(s.name)) {
+            staleSeat.add(s.name);
+            console.log(`state ${s.name} が ${SEAT_MS}ms で返らない → 前の値でしのぐ`);
+          }
+          // 初めて見る席は「作業中」に倒す＝消えるより消せないほうが軽い（README）
+          const base = last || { name: s.name, window: s.window, status: 'busy', quietMs: 0,
+            kind: 'shell', command: '', title: s.name, model: s.model, preview: '' };
+          return Object.assign({}, base, { stale: true });
+        })));
       return json(res, 200, {
         sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
         battery: batterySnapshot(),
@@ -952,12 +1010,22 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/pane' && req.method === 'GET') {
       const name = url.searchParams.get('name') || '';
       const lines = Number(url.searchParams.get('lines') || 400);
-      // 見ている端末に入る桁数。画面側が実測して送ってくる（送ってこなければ触らない）
-      if (url.searchParams.has('cols')) await resizeWindow(name, url.searchParams.get('cols'));
-      const text = await captureHistory(name, lines);
-      if (text === null) return json(res, 404, { error: 'no such session' });
-      const { status, quietMs } = judge(name, (await captureScreenShared(name)) || '');
-      return json(res, 200, { name, text, status, quietMs });
+      // ⚠️ ここにも締め切りを置く（2026-09-02）。resize + capture 2本で最悪15秒かかり、
+      // いちばん見たい画面だけが守られていなかった。間に合わなければ理由を返して、
+      // 画面側は残してある写しでしのぐ（黙って固まるより、理由が出るほうがよい）
+      const body = (async () => {
+        // 見ている端末に入る桁数。画面側が実測して送ってくる（送ってこなければ触らない）
+        if (url.searchParams.has('cols')) await resizeWindow(name, url.searchParams.get('cols'));
+        const text = await captureHistory(name, lines);
+        if (text === null) return null;
+        const { status, quietMs } = judge(name, (await captureScreenShared(name)) || '');
+        return { name, text, status, quietMs };
+      })();
+      let got;
+      try { got = await within(body, PANE_MS, '画面の読み取り'); }
+      catch (e) { return json(res, 503, { error: 'Mac が画面を返しません（' + Math.round(PANE_MS / 1000) + '秒待ちました）' }); }
+      if (got === null) return json(res, 404, { error: 'no such session' });
+      return json(res, 200, got);
     }
 
     // 文字を送る（末尾で Enter を打つかは enter フラグ）
@@ -1032,6 +1100,8 @@ const server = http.createServer(async (req, res) => {
       // 80桁で折り返された形のまま履歴に残ってしまうため（tmux は組み直さない）
       const cols = clampCols(body.cols) || COLS_DEFAULT;
       sized.set(name, cols);
+      forgetSeat(name);     // 同じ名前の前の住人の姿・画面を持ち越さない
+      prev.delete(name);
       const r = await tmux(['new-session', '-d', '-s', name, '-x', String(cols), '-y', String(ROWS),
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (!r.ok) { sized.delete(name); return json(res, 500, { error: r.err.slice(0, 200) }); }
@@ -1106,7 +1176,7 @@ const server = http.createServer(async (req, res) => {
       const r = await tmux(['kill-session', '-t', '=' + name + ':']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       sized.delete(name);   // 同じ名前で作り直したとき、寸法を指定し直せるように
-      forgetScreen(name);
+      forgetSeat(name);
       resizedAt.delete(name);
       prev.delete(name);    // 前の住人の画面を、新しい席の「動いた／動いていない」に持ち越さない
       console.log(`kill ${name}`);
@@ -1130,7 +1200,7 @@ const server = http.createServer(async (req, res) => {
         if (judge(name, text).status === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         const r = await tmux(['kill-session', '-t', '=' + name + ':']);
         if (r.ok) {
-          killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name); forgetScreen(name);
+          killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name); forgetSeat(name);
           console.log(`kill ${name} (まとめて)`);
         }
         else skipped.push({ name, why: '失敗' });
