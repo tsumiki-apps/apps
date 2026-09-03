@@ -29,10 +29,9 @@
 - **外部配布（tools）には注入しない。**
 
 ## 2.5 見た目（配色・角丸・影）を決めるとき
-- **新規アプリの配色を決める前に `refero-styles` スキルを起動する。**
-  手順・禁止事項の正本はスキル本文（`~/.claude/skills/refero-styles/SKILL.md`）。ここには書き写さない。
-- 写した見本は `~/制作物/design_refs/*.design.md` にたまる。**取りに行く前にまずここを見る。**
-- 道具は `~/制作物/refero_tokens.py`。MCPは入れていない（「持っている」と言わないこと）。
+- `refero-styles` スキルを起動する → 提案の義務は A層 §5 P2、手順の正本は
+  `~/.claude/skills/refero-styles/SKILL.md`。道具は `refero_tokens.py`、見本は `design_refs/`。
+- スキル本体は git 管理外なので、直したら `python3 sync_skills.py --write` で `skills/` に控えを取る。
 
 ## 3. このリポジトリ固有の禁止
 - `~/制作物` は PUBLIC。受託ソースは `.gitignore`（`Kouban/` `Teppari/`）、成果物HTMLだけ `~/tsumiki-tools` へ。サンプルは架空名。
