@@ -17,6 +17,9 @@
     /* 作業中タブの枠だけ薄い紫。ドット(--busy)はそのままの濃さ。
        返答待ち(オレンジ)より弱くして「返事を待って止まっている＝先に見るべき」を目立たせる */
     --busy-line:rgba(192,132,252,.4);
+    /* 中断（人が pause で止めた席）は青。作業中の紫・返答待ちのオレンジのどちらとも
+       離れた色にする＝縁の色だけで3つを見分けられる（2026-09-03） */
+    --pause:#60a5fa;
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -133,12 +136,17 @@
   .tab.busy .st::before{background:var(--busy);animation:pulse 1.2s ease-in-out infinite}
   .tab.waiting .st::before{background:var(--wait)}
   .tab.waiting .st{color:var(--wait)}
+  .tab.paused .st::before{background:var(--pause)}
+  .tab.paused .st{color:var(--pause)}
   .tab[aria-selected="true"]{background:#1f232b;border-color:#3b4250}
   /* 状態の枠。選択中(aria-selected)より後に置いて色で勝たせる＝いま開いている
      タブでも「作業中/返答待ち」が枠から消えない（選択中は背景の明るさで示す）。
      枠は点滅させない（タブが並ぶと目がちらつく）。動きはドットの点滅が担当 */
   .tab.busy{border-color:var(--busy-line)}
   .tab.waiting{border-color:var(--wait)}
+  /* 中断の縁。作業中より強く、返答待ちと同じくらいの濃さで出す＝
+     「あなたが止めたまま置いてある席」は、返事を待っている席と同じだけ目に入ってほしい */
+  .tab.paused{border-color:var(--pause)}
   @keyframes pulse{50%{opacity:.35}}
   .tab .kind{
     font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;flex:0 0 auto;
@@ -313,6 +321,9 @@
      どちらが正しい入口なのか分からなくなる。ここは読むためだけの札。
      pointer-events を切るのは、押せないのに :active で沈んで「押せた気がする」のを消すため */
   #out .askp .dopt{pointer-events:none}
+  /* 「いまは答えない」の行。番号の代わりに `pause` と書くので、札の幅だけ広げる。
+     色は付けない（色つきの枠は席の状態＝タブの縁のためにとってある） */
+  #out .dpause .dpk{min-width:0;padding:0 5px}
   #out .dhint{margin:7px 0 0;font-size:10.5px;color:var(--dim);line-height:1.5}
 
   /* 下端は iPhone のホームバー領域（触れない帯）。そこに 8px を足すと
@@ -325,7 +336,7 @@
      タブ行も画面の上へ消える＝打っている最中に「いま誰に送ろうとしているのか」
      が分からなくなる。入力欄の真上＝キーボードのすぐ上に置けば、押し上げられても
      必ず一緒についてくるので、打っている間ずっと見える（2026-08-11）。
-     点の色はタブと同じ意味：グレー=待機／紫の点滅=作業中／オレンジ=返答待ち */
+     点の色はタブと同じ意味：グレー=待機／紫の点滅=作業中／オレンジ=返答待ち／青=中断 */
   #dest{
     display:flex;align-items:center;gap:6px;padding:1px 4px 6px;
     font-size:11px;color:var(--dim);line-height:1.3;
@@ -336,6 +347,8 @@
   #dest.busy::before{background:var(--busy);animation:pulse 1.2s ease-in-out infinite}
   #dest.waiting{color:var(--wait)}
   #dest.waiting::before{background:var(--wait)}
+  #dest.paused{color:var(--pause)}
+  #dest.paused::before{background:var(--pause)}
   /* 長い題名は1行で切る。ここで折り返すと入力欄が下に押されて動くので、
      縦の高さは何があっても変えない */
   /* 幅は「文字のぶんだけ」（1 1 auto にすると行いっぱいに伸びて、隣のモデル名が
@@ -360,6 +373,11 @@
      押した先が「無い行」になる）。押せなくはしない＝地の文への 4 送信は残す */
   #keys button.off{opacity:.35}
   #keys #kgo{border-color:#f59e0b;background:rgba(245,158,11,.22);color:#fdf3e2;font-weight:700}
+  /* 止める札・戻す札は、色を持たせない（2026-09-03）。
+     色つきの枠は**席の状態を表す印**として、タブの縁だけに残す。キーに枠を付けると
+     「色がついている＝いまそういう状態」と読めてしまい、印の意味が2つになる。
+     `pause` は待機中の席では沈み（.off）、`resume` は中断の席にだけ出る（hidden） */
+  #keys #kresume{padding-left:14px;padding-right:14px}
   /* 添えた画像の札。以前は Mac 側の保存先パス（70文字ほど）を文字として入力欄に
      流し込んでいたが、1行の入力欄がそれだけで埋まり、本文を打ち直そうとタップすると
      カーソルがパスの中に落ちる → Backspace で末尾が欠け、送っても Claude 側では
@@ -684,6 +702,8 @@
   <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span></div>
   <div id="keys">
     <button data-key="Escape">esc</button>
+    <button id="kpause" data-key="Escape">pause</button>
+    <button id="kresume" hidden>resume</button>
     <button data-key="Enter">⏎</button>
     <button data-key="Up">↑</button>
     <button data-key="Down">↓</button>
@@ -768,6 +788,8 @@
     conn: document.getElementById('conn'),
     keys: document.getElementById('keys'),
     kgo: document.getElementById('kgo'),
+    kpause: document.getElementById('kpause'),
+    kresume: document.getElementById('kresume'),
     dest: document.getElementById('dest'),
     destName: document.querySelector('#dest .dn'),
     destModel: document.querySelector('#dest .dm'),
@@ -791,7 +813,26 @@
   var timer = null;
   var toastTimer = null;
 
-  var LABEL = { busy: '作業中', waiting: '返答待ち', idle: '待機' };
+  var LABEL = { busy: '作業中', waiting: '返答待ち', idle: '待機', paused: '中断' };
+
+  // `pause` を押してから Mac が「中断」と言ってくるまでには1〜2秒ある（巡回の間隔）。
+  // そのあいだ縁が出ないと「押したのに何も起きていない」に見えるので、押した席だけ
+  // 手元で中断として描く。Mac が同じことを言ったら手を引く＝以後は本物の状態で描く。
+  // ⚠️ 止まらなかったとき（もう止まっていて esc が空振り）は嘘になるので、
+  //    数秒で自分から諦める。長く持たせないこと
+  var pauseWish = null;               // { name: 席の名前, at: 押した時刻 }
+  var PAUSE_WISH_MS = 8000;
+  // 中断した席に送る一言。命令ではなく「続けて」にする＝止めた理由（やめたい・
+  // 別のことを頼みたい）が何であっても、まず様子が返ってくる言い方にしておく
+  var RESUME_WORD = '続けて';
+
+  function statusOf(s) {
+    if (pauseWish && pauseWish.name === s.name) {
+      if (s.status === 'paused' || Date.now() - pauseWish.at > PAUSE_WISH_MS) pauseWish = null;
+      else return 'paused';
+    }
+    return s.status;
+  }
   // 「AIに話しかけたつもりでシェルに打っていた」を防ぐための表示
   var KIND = { claude: 'Claude', agent: 'AI', shell: 'シェル', other: '実行中' };
 
@@ -1114,7 +1155,8 @@
     el.tabs.innerHTML = '';
     sessions.forEach(function (s, i) {
       var b = document.createElement('button');
-      b.className = 'tab ' + s.status + (s.stale ? ' stale' : '');
+      var st = statusOf(s);
+      b.className = 'tab ' + st + (s.stale ? ' stale' : '');
       b.setAttribute('aria-selected', String(s.name === current));
       // 種類の札は、モデルが分かっていればモデル名にして、色もそのモデルの色にする
       // （「Claude」と「Opus」を並べない＝札が狭いのと、Claude であることは
@@ -1122,7 +1164,7 @@
       var chip = modelChip(s);
       b.innerHTML = '<div class="n">' + (i + 1) + '・' + escapeHtml(s.title || s.name) + '</div>' +
                     '<div class="meta">' +
-                      '<span class="st">' + LABEL[s.status] + '</span>' +
+                      '<span class="st">' + LABEL[st] + '</span>' +
                       '<span class="kind ' + s.kind + (chip ? ' ' + chip.cls : '') + '">' +
                         (chip ? chip.label : KIND[s.kind]) +
                       '</span>' +
@@ -1158,7 +1200,7 @@
     // 入力欄の真上に「いまの送り先」を出す。番号はタブの番号と揃える
     el.dest.hidden = !cur;
     if (cur) {
-      el.dest.className = cur.status + (cur.stale ? ' stale' : '');
+      el.dest.className = statusOf(cur) + (cur.stale ? ' stale' : '');
       el.destName.textContent =
         (sessions.indexOf(cur) + 1) + '・' + (cur.title || cur.name);
       // 送り先のモデルも同じ行に出す（打っている間ずっと見えるのはこの行だけ）。
@@ -1168,6 +1210,9 @@
       el.destModel.className = 'dm' + (curChip ? ' ' + curChip.cls : '');
       el.destModel.hidden = !curChip;
     }
+    // 止める札の濃さは席の状態で決まる。状態は画面が動かなくても変わる
+    // （5秒だまると作業中→待機）ので、画面を描き直したときだけでは足りない
+    syncKeys();
   }
 
   function escapeHtml(s) {
@@ -2078,6 +2123,27 @@
       box.appendChild(b);
     });
 
+    // 「答えない」も選べることを、選択肢と同じ形で見せる（2026-09-03）。
+    // 番号の行と同じ見た目にしてあるが、番号ではなくキー行の `pause` で送る＝
+    // 札の左には番号の代わりに `pause` と入れて、押す場所が分かるようにする。
+    // ⚠️ 行そのものは押せない（`#out .askp .dopt{pointer-events:none}`）。
+    //    押す入口をキー行に一本化した決まりはここでも崩さない
+    var pz = document.createElement('div');
+    pz.className = 'dopt dpause';
+    var pk = document.createElement('span');
+    pk.className = 'dnum dpk';
+    pk.textContent = 'pause';
+    pz.appendChild(pk);
+    var pl = document.createElement('span');
+    pl.className = 'dlab';
+    pl.textContent = 'いまは答えない（この質問を閉じて止める）';
+    var pd = document.createElement('span');
+    pd.className = 'ddesc';
+    pd.textContent = '席は「中断」になります。あとで続きから話しかけられます';
+    pl.appendChild(pd);
+    pz.appendChild(pl);
+    box.appendChild(pz);
+
     // 全部答えたあとに出る確認画面（Review your answers）は、案内も別のことを言う
     var review = a.items.paras.some(function (t) { return t.indexOf('Review your answers') === 0; });
     var h = document.createElement('div');
@@ -2087,6 +2153,8 @@
       : multi
         ? 'いくつでも選べます。下の番号で入／切りして、最後に「決定」を押してください'
         : '下の番号を押すとその場で選ばれ、次の質問へ進みます';
+    // どの場面でも「答えずに止める」道はある。案内の最後にそろえて添える
+    h.textContent += '。答えずに止めるなら pause';
     box.appendChild(h);
     return box;
   }
@@ -2504,6 +2572,16 @@
     return p.classList.contains('done') ? null : p;
   }
 
+  // いま答えを待っている枠。質問パネル（.askp）と許可ダイアログ（角丸の箱）の
+  // どちらも `.dlg` を持っている。**枠が出ているあいだは言葉を送らない**ための目印で、
+  // 枠に文字を打ち込むと、選ぶどころか枠の中の入力欄に吸い込まれる
+  function liveBox() {
+    var ds = el.out.querySelectorAll('.dlg');
+    if (!ds.length) return null;
+    var d = ds[ds.length - 1];
+    return d.classList.contains('done') ? null : d;
+  }
+
   // 同じ選択肢の二度押しよけ（2026-09-02）。
   //
   // 押しても画面が新しくなるのは 0.6〜1.5秒あと。その間に**同じ番号**をもう一度押すと、
@@ -2561,6 +2639,14 @@
       var dead = !!p && !p.querySelector('.aopt[data-num="' + b.dataset.text + '"]');
       if (dead) b.classList.add('off'); else b.classList.remove('off');
     });
+    // 止める札は「動いている／聞かれている」ときだけ意味がある。待機の席では沈める
+    // （押せなくはしない＝入力欄の書きかけを消す使い道は残る）
+    var cur = sessions.filter(function (s) { return s.name === current; })[0];
+    var st = cur ? statusOf(cur) : '';
+    if (st && st !== 'idle') el.kpause.classList.remove('off'); else el.kpause.classList.add('off');
+    // 戻す札は**中断の席にだけ**出す（「決定」と同じ考えかた）。いつでも出ていると
+    // 「押したら何が起きるのか」が場面ごとに変わってしまい、札の意味が薄くなる
+    el.kresume.hidden = st !== 'paused';
   }
 
   el.keys.addEventListener('click', function (e) {
@@ -2571,6 +2657,33 @@
       var go = p && p.querySelector('[data-go]');
       if (!go) return toast('いまは「決定」を押す場面ではありません');
       return askMove(p, go);
+    }
+    // 止める札。やることは1つ＝「止めて」と伝えること。ただし伝わる道が2つある。
+    //  ・動いている最中／質問の枠が出ている／素のシェル → **キー**（esc）で止まる
+    //  ・番号で聞かれている最中 → esc では**何も起きない**。Claude はもう入力待ちで
+    //    止まっていて、押しても画面が変わらない＝「押したのに効かない」に見える。
+    //    ここは **言葉**（`pause`）で伝える。受け取った Claude は手を止めて
+    //    「⏸ 中断しました」と書く（共通ルール ~/.claude/CLAUDE.md で決めてある）
+    // ⚠️ 素のシェルに言葉を送らないこと。`pause` が**コマンドとして走る**
+    if (b === el.kpause) {
+      var pcur = sessions.filter(function (s) { return s.name === current; })[0];
+      var pst = pcur ? statusOf(pcur) : '';
+      if (current) pauseWish = { name: current, at: Date.now() };
+      renderTabs();                    // 縁を先に出す。Mac の返事は1〜2秒あとに来る
+      if (!pcur || pcur.kind !== 'claude' || pst === 'busy' || liveBox()) {
+        sendKey('Escape');
+        return toast('pause を送りました。いまの作業を止めます');
+      }
+      sendText('pause', true).catch(function () {});
+      return toast('pause と伝えました。ここで止まります');
+    }
+    // 戻す札。止まっている席に「続けて」と一言送るだけ＝会話の続きから動き出す。
+    // ⚠️ キーではなく**本文**を送る。esc で止めた席は素のプロンプトに戻っていて、
+    //    キーを送っても何も起きない（Enter は空送信になる）
+    if (b === el.kresume) {
+      pauseWish = null;
+      sendText(RESUME_WORD, true).then(function () { renderTabs(); }, function () {});
+      return toast('resume を送りました。続きから動き出します');
     }
     if (b.dataset.key) return sendKey(b.dataset.key);
     if (!b.dataset.text) return;
@@ -2909,19 +3022,21 @@
     if (!list.length) return toast('終わらせるものがありません');
     openSheet('作業中以外を終わらせますか？');
 
-    var waiting = list.filter(function (s) { return s.status === 'waiting'; }).length;
+    // 中断も「あなたが止めたまま置いてある席」＝消す前に数を見せる仲間に入れる
+    var held = function (s) { return s.status === 'waiting' || s.status === 'paused'; };
+    var waiting = list.filter(held).length;
     var head = document.createElement('div');
     head.className = 'sheethead';
     head.textContent = list.length + ' 件の Claude を終了します。会話の続きはできなくなります'
       + '（ファイルへの変更は残ります）。'
-      + (waiting ? '⚠️ うち ' + waiting + ' 件は返答待ち＝あなたの返事を待って止まっているものです。' : '');
+      + (waiting ? '⚠️ うち ' + waiting + ' 件は返答待ち／中断＝あなたの返事を待って止まっているものです。' : '');
     sheetBody.appendChild(head);
 
     var box = document.createElement('div');
     box.className = 'killlist';
     list.forEach(function (s) {
       var row = document.createElement('div');
-      row.className = 'killrow' + (s.status === 'waiting' ? ' warn' : '');
+      row.className = 'killrow' + (held(s) ? ' warn' : '');
       row.textContent = '・' + (s.title || s.name) + '（' + s.name + '・' + LABEL[s.status] + '）';
       box.appendChild(row);
     });

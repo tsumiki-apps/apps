@@ -564,6 +564,19 @@ const WAITING_RE = new RegExp(
 // 「作業中」= 実行中スピナー等の特徴
 const BUSY_RE = /esc to interrupt|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/;
 
+// 「中断」= 人が手で止めたところで待っている席（2026-09-03）。
+// 止めかたは2通りあり、画面に残る印もそれぞれ違う。
+//  ① キー行の `pause`（＝ esc）で止めた → Claude Code が自分で書く
+//     「⎿  Interrupted · What should Claude do instead?」「[Request interrupted by user]」
+//  ② 番号の質問で `pause` を選んだ → Claude が手を止めて「⏸ 中断しました」と書く
+//     （共通ルール ~/.claude/CLAUDE.md の質問のしかたで、そう書くと決めてある）
+// ⚠️ 印は**行の頭の形**で見る。`⎿` や行頭の `⏸` を条件にしないと、この仕組みの話を
+//    しているだけの地の文（「画面に Interrupted などが出ていたら…」）まで当たる。
+const PAUSED_RE = /⎿\s*Interrupted|\[Request interrupted by user|^\s*⏸/m;
+// 印は止めた直後の画面の下のほうに出る。新しいやり取りが積まれて上へ押し出されたら、
+// もう中断のままではない＝見るのは末尾だけにする（番号の質問と同じ考えかた）
+const PAUSED_TAIL = 16;
+
 // 「番号で答える質問」＝ 本文に選択肢を書いて、数字だけ返してもらう聞きかた。
 // 共通ルール（~/.claude/CLAUDE.md）で、選択パネル（AskUserQuestion）は使わずに
 // こう聞くと決めてあるので、返答待ちのほとんどはこの形になる。ところがこれは
@@ -662,6 +675,9 @@ function judge(name, text) {
   // 番号で答える質問より、スピナーのほうが強い。答えた直後は Claude が動き出す
   // のに、質問の字はまだ画面に残っている＝そこは「作業中」と出したい
   if (BUSY_RE.test(screen)) return { status: 'busy', quietMs };
+  // 中断は番号の質問より先に見る。質問を出したあとに pause で止めると、質問の字は
+  // まだ末尾に残っている＝順番が逆だと「返答待ち」のまま中断の縁が出ない
+  if (PAUSED_RE.test(tailLines(text, PAUSED_TAIL))) return { status: 'paused', quietMs };
   if (asksNumber(tailLines(text, ASK_NUM_TAIL))) return { status: 'waiting', quietMs };
   if (quietMs < 5000) return { status: 'busy', quietMs };
   return { status: 'idle', quietMs };
