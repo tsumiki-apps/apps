@@ -2026,6 +2026,8 @@
     });
 
     var multi = a.items.rows.some(function (r) { return r.k === 'go'; });
+    // 「決定（Submit）」の行があるものが複数選べる質問。連打よけの強さをここで変える
+    if (multi) box.dataset.multi = '1';
     a.items.rows.forEach(function (r, k) {
       // ⚠️ button ではなく div。押す入口は下のキー行だけ（2026-08-24 やり直し）
       var b = document.createElement('div');
@@ -2405,7 +2407,8 @@
       // 端末が描き直すのを待って何回か取りに行く。1回だけだと、押した結果が
       // 次の巡回（1.5秒後）まで画面に出ず「効かなかった」ように見える
       .then(lookAgain)
-      .catch(function (e) { toast('送信失敗: ' + e.message); });
+      // 失敗はトーストで出したうえで投げ直す（呼び出し元が連打よけを外せるように）
+      .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
 
   // 添えた画像（札）。送信の瞬間に「パス + 半角スペース + 本文」に組み立てる
@@ -2486,16 +2489,52 @@
     return p.classList.contains('done') ? null : p;
   }
 
+  // 同じ選択肢の二度押しよけ（2026-09-02）。
+  //
+  // 押しても画面が新しくなるのは 0.6〜1.5秒あと。その間に**同じ番号**をもう一度押すと、
+  // askMove は位置（dataset.cur）を更新済みなので移動キーは走らず、**Enter だけ**が
+  // もう1本飛ぶ。一本目で質問が閉じていれば、その Enter は**次の質問の既定の行を
+  // 勝手に決めてしまう**（取り消せない）。許可ダイアログの二度押しも、閉じたあとの
+  // 素のプロンプトに「2」という一言を送ってしまう。
+  //
+  // ⚠️ 強さは質問の種類で変える（2026-09-02 レビューで組み替えた）。
+  //
+  // ・**1つだけ選ぶ質問**＝1回押したら、その枠では**どの番号も**押せなくする。
+  //   一本目の Enter で質問が閉じたあと、違う番号を押すと ↑↓ と Enter が
+  //   **素のプロンプト**に飛ぶ。Claude Code の入力欄で ↑↓ は履歴めくりなので、
+  //   これは「2」という一言を送るより悪く、**前に打った指示をそのまま再送信**しうる。
+  // ・**複数選べる質問**（「決定」の行があるもの）＝止めない。1→2→3 と続けて押すのも、
+  //   同じ番号をもう一度押して**チェックを外す**のも正規の操作で、枠は閉じないため。
+  //
+  // 枠は画面を描き直すたびに作り直されるので、次の巡回で自然に解ける。
+  // 画面が動かないまま固まったときのために、時間でも解けるようにしてある。
+  var lastPick = null;                 // { panel: 枠, mv: 行, at: 時刻 }
+  var PICK_LOCK_MS = 4000;
+
+  function pickedTwice(panel, to) {
+    if (!lastPick || lastPick.panel !== panel) return false;
+    if (Date.now() - lastPick.at > PICK_LOCK_MS) return false;
+    // 複数選べる質問は、同じ行の押し直し（＝チェックを外す）も含めて通す
+    if (panel.dataset.multi === '1') return false;
+    return true;
+  }
+
   // その行まで ❯ を歩かせて Enter。位置で決めるので、入力欄に焦点があっても外さない
   function askMove(panel, row) {
     var from = parseInt(panel.dataset.cur, 10);
     var to = parseInt(row.dataset.mv, 10);
     if (isNaN(from) || from < 0) return toast('いまどこが選ばれているか読めません。Mac 側で操作してください', 3600);
+    if (pickedTwice(panel, to)) {
+      return toast('さっき選んだぶんを送っています。画面が変わるまでお待ちください', 2600);
+    }
     var keys = [];
     for (var n = Math.abs(to - from); n > 0; n--) keys.push(to > from ? 'Down' : 'Up');
     keys.push('Enter');
     panel.dataset.cur = to;            // 送った直後の位置。次に画面を取れば本物に直る
-    sendKeys(keys);
+    lastPick = { panel: panel, mv: to, at: Date.now() };
+    // ⚠️ 送れなかったなら錠を外す。外さないと、圏外で1回押しただけで4秒間
+    // 押し直せず、しかも「送っています」と嘘を言うことになる
+    sendKeys(keys).catch(function () { lastPick = null; });
     toast('「' + (row.dataset.label || '') + '」を押しました');
   }
 
@@ -2534,7 +2573,24 @@
   el.out.addEventListener('click', function (e) {
     var b = e.target.closest('.dopt');
     if (!b || b.disabled || b.classList.contains('aopt')) return;
-    sendText(b.dataset.opt, true).catch(function () {});
+    // 押したら**その枠ごと**押せなくする（2026-09-02）。画面が新しくなるのは
+    // 0.6〜1.5秒あとなので、それまでに二度押しすると、閉じたあとの素のプロンプトに
+    // 番号がもう1回飛ぶ＝Claude に「2」という一言を送ってしまう。
+    // ⚠️ 押したボタンだけ止めても足りない。許可ダイアログは**必ず1つだけ選ぶ**もので、
+    //    「1」の直後に「2」を押せば同じ事故が別のボタンで起きる。
+    // 見た目は「答え終わった枠」と同じ薄さになる（`.dopt[disabled]`）ので、
+    // 押せなくなったことが目で分かる。枠は次の描き直しで作り直される
+    var box = b.closest('.dlg') || b.parentElement;
+    var opts = Array.prototype.slice.call(box.querySelectorAll('.dopt'));
+    var lock = function (on) { opts.forEach(function (x) { x.disabled = on; }); };
+    lock(true);
+    // 画面がまったく動かないまま終わることもあるので、時間でも解けるようにする
+    // （キー行の 1〜5 や入力欄からは打てるが、ここだけ灰色のまま残るのは不親切）
+    var unlock = setTimeout(function () { lock(false); }, PICK_LOCK_MS);
+    sendText(b.dataset.opt, true).catch(function () {
+      clearTimeout(unlock);
+      lock(false);          // 送れなかったなら、もう一度押せるように戻す
+    });
     toast(b.dataset.opt + '「' + (b.dataset.label || '') + '」を選びました');
   });
 
