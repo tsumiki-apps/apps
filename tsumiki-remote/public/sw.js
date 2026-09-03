@@ -39,12 +39,25 @@ self.addEventListener('activate', function (e) {
   );
 });
 
-// 取りに行って、取れたら写しを更新する
+// 取りに行って、取れたら写しを更新する。
+//
+// ⚠️ サーバーが gzip（＝荷物を圧縮して送ること）で返すようになった（2026-09-02）。
+// fetch が受け取った時点で中身はもう展開されているのに、`content-encoding: gzip`
+// の札だけは残る。その札ごと写しに入れると、「展開ずみの中身に、まだ圧縮されている
+// という札が付いた写し」になり、端末によっては読めない。**札だけ外して**写す。
+// content-length も中身と合わなくなるので一緒に外す。
 function fresh(req, key) {
   return fetch(req).then(function (res) {
     if (res && res.ok) {
       var copy = res.clone();
-      caches.open(CACHE).then(function (c) { c.put(key, copy); }).catch(function () {});
+      copy.blob().then(function (body) {
+        var h = new Headers(copy.headers);
+        h.delete('content-encoding');
+        h.delete('content-length');
+        return caches.open(CACHE).then(function (c) {
+          return c.put(key, new Response(body, { status: 200, statusText: 'OK', headers: h }));
+        });
+      }).catch(function () {});
     }
     return res;
   });

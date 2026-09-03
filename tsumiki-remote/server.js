@@ -10,6 +10,7 @@ const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { execFile } = require('child_process');
 
 const PORT = Number(process.env.TSUMIKI_REMOTE_PORT || 8787);
@@ -371,6 +372,7 @@ async function resizeWindow(name, cols) {
   // 「最後に繋いだ相手に合わせる」既定に戻す（いまの寸法はそのまま残る）
   await tmux(['set-window-option', '-t', '=' + name + ':', 'window-size', 'latest']);
   resizedAt.set(name, Date.now());   // 折り返しが直るまでの猶予は、ここから数える
+  forgetScreen(name);                // 幅が変われば画面も変わる＝撮り置きは捨てる
 }
 
 // tmux は書式出力中のタブを "_" に潰すので、区切りには使えない
@@ -446,6 +448,52 @@ async function captureScreen(name) {
 }
 
 // 履歴込み（画面表示はこちら）
+// 同じ1周期のあいだ、同じ席の画面は1回だけ撮る（2026-09-02）。
+//
+// 画面側は1.5秒ごとに /api/state と /api/pane を投げる。いま見ている席は
+// **両方から** capture-pane されていて、1周期に2本ムダに起動していた（実測 1本 3.5ms）。
+// しかも2本は撮った時刻が違うので、judge() が同じ周期で違う画面を2回見ることになり、
+// 一覧の札と作業画面の状態が食い違う原因にもなっていた。
+//
+// ・撮っている最中に同じ席を頼まれたら、その結果を待ち合わせる（＝完全に同じ中身）
+// ・撮り終えた直後（SCREEN_TTL）も同じ結果を配る。並列に投げても取りこぼさないため
+// ⚠️ まとめて片付ける /api/killmany では**使わない**。あれは消す直前に本当に
+//    いまの画面を見て「作業中なら残す」と決める場所なので、写しでは意味がない。
+const SCREEN_TTL = 300;
+const screenCache = new Map();   // name -> { at, text }
+const screenFlight = new Map();  // name -> Promise
+// ⚠️ 「撮っている最中」に文字を送られたら、その撮影ぶんは捨てる（2026-09-02 レビュー指摘）。
+// forgetScreen が写しを消すだけだと、送信前に始まった撮影が**送信後の時刻の写し**として
+// 入り込み、120ms後に見に行った judge が送信前の画面で判定する
+// （文字は captureHistory で新しいのに、札だけ1回ぶん古い）。世代番号で見分ける。
+const screenGen = new Map();     // name -> 世代番号
+
+function captureScreenShared(name) {
+  const now = Date.now();
+  const hit = screenCache.get(name);
+  if (hit && now - hit.at < SCREEN_TTL) return Promise.resolve(hit.text);
+  const flying = screenFlight.get(name);
+  if (flying) return flying;
+  const gen = screenGen.get(name) || 0;
+  const p = captureScreen(name).then((text) => {
+    // 撮っているあいだに送信などが挟まっていたら、この撮影ぶんは写しにしない。
+    // 取れなかった（null）ときも写しにしない＝次は必ず撮り直す
+    if (text !== null && (screenGen.get(name) || 0) === gen) {
+      screenCache.set(name, { at: Date.now(), text });
+    }
+    return text;
+  }).finally(() => {
+    if (screenFlight.get(name) === p) screenFlight.delete(name);
+  });
+  screenFlight.set(name, p);
+  return p;
+}
+
+function forgetScreen(name) {
+  screenCache.delete(name);
+  screenGen.set(name, (screenGen.get(name) || 0) + 1);
+}
+
 async function captureHistory(name, lines) {
   if (!NAME_RE.test(name)) return null;
   const r = await tmux(['capture-pane', '-p', '-t', '=' + name + ':', '-S', '-' + Math.max(1, Math.min(2000, lines))]);
@@ -722,15 +770,68 @@ function readBody(req, limit = 64 * 1024) {
   });
 }
 
-async function serveStatic(res, pathname) {
+// ------------------------------------------------ 画面ファイルの配りかた
+//
+// ⚠️ ここだけ send() を通さない（2026-09-02）。send() は全部の返事に no-store
+// （＝毎回取り直せ）を付けるが、それは **/api/ のためのもの**。席の状態を古い写しで
+// 見せると嘘になるので /api/ は no-store のままにする。いっぽう画面のファイルまで
+// no-store だと、起動のたびに index.html（実測 161,976B）を丸ごと取りに行っていた。
+//
+//   ・no-cache ＋ ETag にする＝「毎回聞きには行くが、変わっていなければ本文は送らない」
+//     2回目からは 304 で本文 0B（実測）。版の仕組み（BOOT混じり）はそのまま効く
+//   ・変わっていたときは gzip で送る＝161,976B → 52,711B（実測 3.07倍）
+//
+// ETag は mtime とサイズから作る弱いもので足りる。版（currentVersion）は中身の SHA1
+// だが、**その計算をやり直す合図も mtime とサイズ**（verCache.key）なので、
+// 「版は変わったのに ETag は変わらない」＝読み直しが終わらない、にはならない。
+// 材料が同じなので、ふたつは必ず一緒に変わる。
+// gzip は同じ版のあいだ使い回す（毎回かけると 4.5ms/回）。
+const GZIP_TYPE = /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg)/;
+const GZIP_MIN = 1024;
+const gzCache = new Map();   // ファイル -> { key, buf }
+
+function gzipFor(file, buf, key) {
+  const hit = gzCache.get(file);
+  if (hit && hit.key === key) return hit.buf;
+  const out = zlib.gzipSync(buf, { level: 6 });
+  gzCache.set(file, { key, buf: out });
+  return out;
+}
+
+function serveStatic(req, res, pathname) {
   const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   const file = path.join(PUBLIC_DIR, rel);
   if (!file.startsWith(PUBLIC_DIR + path.sep) && file !== path.join(PUBLIC_DIR, 'index.html')) {
     return send(res, 403, 'forbidden', 'text/plain; charset=utf-8');
   }
-  fs.readFile(file, (err, buf) => {
-    if (err) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
-    send(res, 200, buf, MIME[path.extname(file)] || 'application/octet-stream');
+  fs.stat(file, (e1, st) => {
+    if (e1 || !st.isFile()) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
+    const key = st.mtimeMs + '-' + st.size;
+    const etag = 'W/"' + key + '"';
+    const type = MIME[path.extname(file)] || 'application/octet-stream';
+    const head = {
+      'content-type': type,
+      'cache-control': 'no-cache',
+      'x-content-type-options': 'nosniff',
+      etag,
+      'last-modified': new Date(st.mtimeMs).toUTCString(),
+      vary: 'accept-encoding',
+    };
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, head);
+      return res.end();
+    }
+    fs.readFile(file, (e2, buf) => {
+      if (e2) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
+      let body = buf;
+      if (/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))
+          && GZIP_TYPE.test(type) && buf.length >= GZIP_MIN) {
+        body = gzipFor(file, buf, key);
+        head['content-encoding'] = 'gzip';
+      }
+      res.writeHead(200, head);
+      res.end(req.method === 'HEAD' ? undefined : body);
+    });
   });
 }
 
@@ -817,7 +918,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (!p.startsWith('/api/')) return serveStatic(res, p);
+  if (!p.startsWith('/api/')) return serveStatic(req, res, p);
 
   if (!authed(req, url)) return json(res, 401, { error: 'unauthorized' });
 
@@ -828,7 +929,7 @@ const server = http.createServer(async (req, res) => {
       const sessions = listed.sessions;
       const out = [];
       for (const s of sessions) {
-        const text = (await captureScreen(s.name)) || '';
+        const text = (await captureScreenShared(s.name)) || '';
         const { status, quietMs } = judge(s.name, text);
         const info = await paneInfo(s.name);
         out.push({
@@ -855,7 +956,7 @@ const server = http.createServer(async (req, res) => {
       if (url.searchParams.has('cols')) await resizeWindow(name, url.searchParams.get('cols'));
       const text = await captureHistory(name, lines);
       if (text === null) return json(res, 404, { error: 'no such session' });
-      const { status, quietMs } = judge(name, (await captureScreen(name)) || '');
+      const { status, quietMs } = judge(name, (await captureScreenShared(name)) || '');
       return json(res, 200, { name, text, status, quietMs });
     }
 
@@ -894,6 +995,7 @@ const server = http.createServer(async (req, res) => {
         if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       }
       if (body.enter) await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
+      forgetScreen(name);   // 送った直後に見に行くので、撮り置きは捨てる
       return json(res, 200, { ok: true });
     }
 
@@ -909,6 +1011,7 @@ const server = http.createServer(async (req, res) => {
       // tmux が旗として読んで 500 になる（/api/send と同じ穴。2026-09-02）。
       // Up / C-u / Escape / Enter が `--` 付きでも効くことは実測ずみ
       const r = await tmux(['send-keys', '-t', '=' + name + ':', '--', key]);
+      forgetScreen(name);
       return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
     }
 
@@ -1003,6 +1106,7 @@ const server = http.createServer(async (req, res) => {
       const r = await tmux(['kill-session', '-t', '=' + name + ':']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       sized.delete(name);   // 同じ名前で作り直したとき、寸法を指定し直せるように
+      forgetScreen(name);
       resizedAt.delete(name);
       prev.delete(name);    // 前の住人の画面を、新しい席の「動いた／動いていない」に持ち越さない
       console.log(`kill ${name}`);
@@ -1026,7 +1130,7 @@ const server = http.createServer(async (req, res) => {
         if (judge(name, text).status === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         const r = await tmux(['kill-session', '-t', '=' + name + ':']);
         if (r.ok) {
-          killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name);
+          killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name); forgetScreen(name);
           console.log(`kill ${name} (まとめて)`);
         }
         else skipped.push({ name, why: '失敗' });

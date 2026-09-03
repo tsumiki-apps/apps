@@ -969,6 +969,7 @@
   var snapDirty = false;
   var snapSavedAt = 0;
   var offline = false;
+  var everSynced = false;   // 一度でも席の一覧を受け取ったか（初回だけ state→pane の順にする）
 
   function snapBody(only) {
     var keep = {};
@@ -2217,8 +2218,16 @@
     if (!current) return Promise.resolve();
     var cols = wantedCols();
     if (cols) paneCols = cols;
+    var asked = current;
     return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400'
       + (cols ? '&cols=' + cols : '')).then(function (d) {
+      // ⚠️ 頼んだ席と、返ってきた席が同じときだけ使う（2026-09-02）。
+      // サーバーは席名（d.name）を返しているのに照らし合わせていなかったので、
+      // 席を切り替えた直後に古い席あての返事が後から着くと、その中身が
+      // **新しい席の画面として**描かれ、写し（panes）にもその名前で入っていた。
+      // state と pane を同時に投げるようにした（往復を1回減らす）ぶん、
+      // 追い越しは起こりやすくなるので、ここは対で入れる。
+      if (!d || d.name !== asked || asked !== current) return;
       var stick = force || atBottom();
       var text = d.text || '(空)';
       // 指を置いているあいだは描き直さない。押そうとしていた札が描き直しで消えると
@@ -2237,18 +2246,71 @@
     // 画面の取得（/api/pane）だけが失敗する場面（席を終わらせた直後の 404 など）は
     // Mac には届いているので、帯を出して送信ボタンまで止めるのは言い過ぎになる
     // （帯が出ている間は押せない作りにしたため。2026-09-02）
-    var stateOk = false;
-    refreshState()
-      .then(function () { stateOk = true; return refreshPane(); })
+    var stateOk = false, paneOk = false;
+    var p;
+    if (!current || !everSynced) {
+      // 初回（と席が決まっていないとき）だけ順番に。どの席の画面を取ればよいかが
+      // state を受け取るまで決まらないため
+      p = refreshState().then(function () { stateOk = true; everSynced = true; return refreshPane(); })
+        .then(function () { paneOk = true; });
+    } else {
+      // 2回目からは**同時に投げる**（2026-09-02）。これまでは
+      // refreshState().then(refreshPane) と直列で、1.5秒の巡回ごとに
+      // 往復が1回ぶん余計に積まれていた。Tailscale+LTE の往復を60〜150msとすると、
+      // 毎周期それだけ縮む（往復を0にはできないので、消えるのは1回ぶん）。
+      // ⚠️ state が current を差し替えた周期は pane が1周ずれるので、
+      //    refreshPane 側で席名を照らし合わせて捨てている
+      var ps = refreshState().then(function () { stateOk = true; everSynced = true; });
+      // 先に失敗しても「拾われていない失敗」にしないため、その場で受けておく。
+      // Promise.resolve() を挟むのは、refreshPane の中の画面計測が同期で投げても
+      // tick ごと落ちないようにするため（そうなると ps が拾われない失敗になる）
+      var paneErr = null;
+      var pp = Promise.resolve().then(refreshPane)
+        .then(function () { paneOk = true; })
+        .catch(function (e) { paneErr = e; });
+      // ⚠️ 画面（pp）のほうを先に待ち切る。state が先に失敗したときに pp を待たずに
+      // 失敗の処理へ行くと、「画面は取れているか」が分からないまま帯を出してしまう
+      // （pp は必ず成功するように書いてあるので、ここで詰まることはない）
+      p = pp.then(function () { return ps; }).then(function () { if (paneErr) throw paneErr; });
+    }
+    p
       .catch(function (e) {
         if (e.message === 'unauthorized') return;
         if (stateOk) { showCachedPane(); return; }
         setConn('err', 'つながりません');
+        // ⚠️ 画面（/api/pane）は取れているのに帯を出すと嘘になる（2026-09-02）。
+        // 同時投げにしたので「一覧だけ落ちて画面は新しい」が起こりうる。そのときは
+        // 緑の点だけ赤にして、「◯時時点の内容です」は出さない（実際は今の内容なので）
+        if (paneOk) return;
         // 届かないあいだは、残してある最後の内容を出したままにする。
         // 消して真っ白にするより、「いつの内容か」を言い添えて見せる方がいい
         setOffline(true);
         showCachedPane();
       });
+  }
+
+  // 送ったあと、画面を取りに行くタイミング（2026-09-02 に実測して短くした）。
+  //
+  // 実測：/api/send が返ってから tmux が画面に出すまでは **約10ms**（送信の往復こみで
+  // 中央値29ms）。それを 250ms 待っていたので、240ms はまるまる余分だった。
+  // ただし Claude Code 側の描き直しはもっと遅いことがあるので、1回では取りこぼす。
+  // **早い1回＋保険の2回**にして、取りこぼしても次の巡回（1.5秒）を待たなくて済むようにする。
+  // ここは押した直後＝いちばん見ている時間なので、通信が3回になっても構わない
+  // （ふだんの巡回間隔は 1.5秒のまま。そちらを縮めると Mac 側の呼び出しが常時増える）。
+  // ⚠️ 早い2回は**画面だけ**取り直す（/api/state は取らない）。札の色や残量は
+  // 次の巡回で足りるのに、毎回いっしょに取ると席の数だけ tmux が余分に起きる
+  // （1周期あたり 2N+3 本のうち、2N 側がまるごとムダになる）。
+  // 最後の1回だけ、札と帯もそろえるために普通の巡回にする。
+  var LOOK_PANE = [120, 450];
+  var LOOK_FULL = 1000;
+  function lookAgain() {
+    LOOK_PANE.forEach(function (ms) {
+      setTimeout(function () {
+        if (document.hidden) return;
+        refreshPane().catch(function () { /* 次の巡回が拾う */ });
+      }, ms);
+    });
+    setTimeout(function () { tick(true); }, LOOK_FULL);
   }
 
   // 送り先が無いときに黙って何もしないと、「押しても画面が全く変わらない」に
@@ -2263,19 +2325,16 @@
     return api('/api/send', {
       method: 'POST',
       body: JSON.stringify({ name: current, text: text, enter: !!enter })
-    }).then(function () { setTimeout(function () { tick(true); }, 250); })
+    }).then(lookAgain)
       .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
 
   function sendKey(key) {
     if (!current) return toast('送り先が選ばれていません');
     return api('/api/key', { method: 'POST', body: JSON.stringify({ name: current, key: key }) })
-      .then(function () {
-        // 2回見に行く。1回だけだと、↑↓ で ❯ が動いた結果が次の巡回（1.5秒後）まで
-        // 画面に出ず「効かなかった」ように見える
-        setTimeout(function () { tick(true); }, 250);
-        setTimeout(function () { tick(true); }, 900);
-      })
+      // 何回か見に行く。1回だけだと、↑↓ で ❯ が動いた結果が次の巡回（1.5秒後）まで
+      // 画面に出ず「効かなかった」ように見える
+      .then(lookAgain)
       .catch(function (e) { toast('送信失敗: ' + e.message); });
   }
 
@@ -2287,12 +2346,11 @@
       return p.then(function () {
         return api('/api/key', { method: 'POST', body: JSON.stringify({ name: current, key: k }) });
       });
-    }, Promise.resolve()).then(function () {
-      // 端末が描き直すのを待って2回取りに行く。1回だけだと、押した結果が
+    }, Promise.resolve())
+      // 端末が描き直すのを待って何回か取りに行く。1回だけだと、押した結果が
       // 次の巡回（1.5秒後）まで画面に出ず「効かなかった」ように見える
-      setTimeout(function () { tick(true); }, 250);
-      setTimeout(function () { tick(true); }, 900);
-    }).catch(function (e) { toast('送信失敗: ' + e.message); });
+      .then(lookAgain)
+      .catch(function (e) { toast('送信失敗: ' + e.message); });
   }
 
   // 添えた画像（札）。送信の瞬間に「パス + 半角スペース + 本文」に組み立てる
