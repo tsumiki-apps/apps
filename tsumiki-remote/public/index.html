@@ -1005,10 +1005,18 @@
     return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
   }
 
+  // 送信ボタンを押せるかどうかは、ここ1か所で決める（2026-09-02）。
+  // 以前は3か所が別々に disabled を触っていて、「MacBook に届きません」の帯が
+  // 出ている最中でもボタンが押せた＝押した瞬間に長文が失われる入口になっていた。
+  function syncSendEnabled() {
+    el.send.disabled = offline || !current;
+  }
+
   function setOffline(yes) {
     offline = !!yes;
     el.stale.hidden = !offline;
     document.body.classList.toggle('offline', offline);
+    syncSendEnabled();
     if (!offline) return;
     // 375px で1行に収まる長さにする（折り返して1文字だけ次の行に残ると読みにくい）
     el.stale.textContent = snapAt
@@ -1044,7 +1052,7 @@
     if (!sessions.some(function (s) { return s.name === current; })) {
       current = d.current || sessions[0].name;
     }
-    el.send.disabled = false;
+    syncSendEnabled();
     // 預けてある写しには「待ち時間」は入っていない（保存した時点の話なので）
     renderUsage(d.usage, null);
     renderTabs();
@@ -1130,7 +1138,7 @@
     sentWide = false;
     wideAt = 0;        // 切り替えた先では、粘らずすぐ合わせにいく
     localStorage.setItem('tsumiki-remote-session', name);
-    el.send.disabled = false;
+    syncSendEnabled();
     renderTabs();
     // 届かないときは、その席の残してある画面に切り替える（切り替え自体は効く）
     refreshPane(true).catch(function () { showCachedPane(); });
@@ -1251,15 +1259,12 @@
       sessions = d.sessions;
       if (!sessions.length) {
         current = '';
-        el.send.disabled = true;
         lastText = null;
         el.out.textContent = 'まだ作業場所がありません。＋Claude で作ってください。';
       } else if (!sessions.some(function (s) { return s.name === current; })) {
         current = sessions[0].name;
-        el.send.disabled = false;
-      } else {
-        el.send.disabled = false;
       }
+      syncSendEnabled();
       renderTabs();
       setConn('on', 'つながっています');
       setOffline(false);
@@ -2228,10 +2233,16 @@
   // force = 初回・復帰・送信直後。定期ポーリングだけ「見えているとき」に絞る
   function tick(force) {
     if (document.hidden && force !== true) return;
+    // ⚠️ 「届きません」の帯を出すのは、状態の取得（/api/state）そのものが失敗したときだけ。
+    // 画面の取得（/api/pane）だけが失敗する場面（席を終わらせた直後の 404 など）は
+    // Mac には届いているので、帯を出して送信ボタンまで止めるのは言い過ぎになる
+    // （帯が出ている間は押せない作りにしたため。2026-09-02）
+    var stateOk = false;
     refreshState()
-      .then(refreshPane)
+      .then(function () { stateOk = true; return refreshPane(); })
       .catch(function (e) {
         if (e.message === 'unauthorized') return;
+        if (stateOk) { showCachedPane(); return; }
         setConn('err', 'つながりません');
         // 届かないあいだは、残してある最後の内容を出したままにする。
         // 消して真っ白にするより、「いつの内容か」を言い添えて見せる方がいい
@@ -2242,13 +2253,18 @@
 
   // 送り先が無いときに黙って何もしないと、「押しても画面が全く変わらない」に
   // なって原因が分からない。効かないなら効かないと言う（2026-08-12）
+  //
+  // ⚠️ 失敗を握りつぶさない（2026-09-02）。以前はここで catch してトーストを出すだけの
+  // 「成功した Promise」を返していたので、呼び出し元は送れたのか失敗したのかを知れず、
+  // 送信ボタンは書きかけを戻せなかった。トーストは今までどおり出したうえで投げ直す。
+  // 失敗を気にしない呼び出し元（キー行・ダイアログ）は .catch で受け流している。
   function sendText(text, enter) {
-    if (!current) return toast('送り先が選ばれていません');
+    if (!current) { toast('送り先が選ばれていません'); return Promise.reject(new Error('送り先なし')); }
     return api('/api/send', {
       method: 'POST',
       body: JSON.stringify({ name: current, text: text, enter: !!enter })
     }).then(function () { setTimeout(function () { tick(true); }, 250); })
-      .catch(function (e) { toast('送信失敗: ' + e.message); });
+      .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
 
   function sendKey(key) {
@@ -2293,17 +2309,33 @@
   }
   el.cmd.addEventListener('input', autoGrow);
 
+  // ⚠️ 入力欄は「送れたと分かる前」に空にする＝押した手応えはそのまま残す。
+  // そのかわり、失敗したら書きかけを**必ず戻す**（2026-09-02）。
+  // 以前は空にして投げっぱなしで、電波が切れかけ・500・合言葉切れのどれでも
+  // 1.6秒のトーストが出るだけ。長々書いた指示がどこにも残らず、書き直すしかなかった
+  // （打つたびの自動保存は無く、saveDraft は版の入れ替えと ↻ のときだけ走る）。
   el.send.onclick = function () {
     var v = el.cmd.value.trim();
     if (atts.some(function (a) { return !a.path; })) return toast('ファイルを置いている途中です');
     var paths = atts.map(function (a) { return a.path; }).join(' ');
     var text = paths ? (v ? paths + ' ' + v : paths) : v;
     if (!text) return;
+    var keepText = el.cmd.value, keepAtts = atts;
     el.cmd.value = '';
     autoGrow();                 // 1行に戻す
     atts = [];
     renderAtts();
-    sendText(text, true);
+    sendText(text, true).catch(function (e) {
+      // 書いている途中に戻ってきたときは、いま打っている字を消さない
+      var back = false;
+      if (!el.cmd.value) { el.cmd.value = keepText; autoGrow(); back = true; }
+      if (!atts.length) { atts = keepAtts; renderAtts(); }
+      // ⚠️ トーストは1枠しかない（後から出したものが前を塗り潰す）。理由を混ぜないと
+      // 「本文が大きすぎます」も「MacBook に届きません」も一度も読めなくなる
+      toast(back
+        ? '送信できませんでした（' + e.message + '）。書いた文は戻しました'
+        : '送信できませんでした（' + e.message + '）', 3600);
+    });
   };
   // 外付けキーボード（iPad の Magic Keyboard・Mac）だけの近道＝⌘Enter / Ctrl+Enter で送る。
   // Enter 単体は改行のまま（下のコメントのとおり、変換確定で飛んでいくため）。
@@ -2380,7 +2412,8 @@
       if (!row) return toast(b.dataset.text + ' の選択肢はありません');
       return askMove(p, row);
     }
-    sendText(b.dataset.text, b.dataset.enter === '1');
+    // 失敗はトーストで出るので、ここでは受け流す（送信ボタンと違い戻す本文が無い）
+    sendText(b.dataset.text, b.dataset.enter === '1').catch(function () {});
   });
 
   // 許可ダイアログ（╭─╮ の角丸の箱）の項目は、これまでどおり押せる。
@@ -2388,7 +2421,7 @@
   el.out.addEventListener('click', function (e) {
     var b = e.target.closest('.dopt');
     if (!b || b.disabled || b.classList.contains('aopt')) return;
-    sendText(b.dataset.opt, true);
+    sendText(b.dataset.opt, true).catch(function () {});
     toast(b.dataset.opt + '「' + (b.dataset.label || '') + '」を選びました');
   });
 

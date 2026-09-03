@@ -259,6 +259,38 @@ const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 // 複数行の指示を貼り付けるときに使う、名前つきの控え置き場
 const PASTE_BUF = 'tsumiki-remote';
 
+// 1行の本文を tmux の引数として渡すときの下ごしらえ（2026-09-02）。
+//
+// tmux は argv を「コマンドの並び」として読み直すので、本文をそのまま最後の引数に
+// 置くと2つ壊れる。どちらも実測で確認した（tmux 3.7b・display-message -p で検証）。
+//
+//   ① 末尾のセミコロンをコマンドの区切りとして剥がす。
+//      `color: red;` → 届くのは `color: red`。本文が `;` 1文字だけなら引数ごと消えて
+//      Enter しか飛ばない。**いままで100%欠けていた。**
+//      man tmux:「trailing semicolons ... should be escaped twice」のとおり、
+//      末尾だけ `\;` にすると `;` として届く（`abc;`→`abc\;`→`abc;`）。
+//      すでに `\;` で終わっている本文も、同じ足し方で `abc\\;`→`abc\;` と正しく届く。
+//   ② 先頭が `-` の本文を旗（オプション）と読む。「-y をつけて」は
+//      `unknown flag -y` で 500 になり、送信そのものが失敗していた。
+//      こちらは引数の終わり印 `--` を `-l` の直後に置いて塞ぐ（呼び出し側）。
+//
+// 途中のセミコロン（`color: red;x`）は無傷なので触らない。
+// 複数行は load-buffer（標準入力）経由なので、どちらも元から影響しない。
+function sendKeysArg(text) {
+  return text.endsWith(';') ? text.slice(0, -1) + '\\;' : text;
+}
+
+// 送れる本文の上限。以前は readBody の既定 64KB のままで、日本語なら約21,800字で
+// 黙って切れていた（プレビューの「本文をぜんぶコピー」で制作物HTMLを貼ると普通に超える）。
+// 上限そのものは残す（際限なく受けると tmux に丸ごと流し込むことになる）が、
+// 現実の貼り付けでは当たらない大きさにする。当たったときは 413 と日本語の理由が返る。
+const SEND_LIMIT = 8 * 1024 * 1024;
+
+// tmux の引数として1回に渡せる本文の実測上限（tmux 3.7b・2026-09-02）。
+// 16,000B は通り、16,400B から `command too long` で 500 になる。
+// これを超える1行は load-buffer（標準入力）へ回す。半分にして余裕を取っている。
+const SEND_ARGV_MAX = 8 * 1024;
+
 // LaunchAgent から起動すると LANG が空になり、tmux が UTF-8 モードにならない。
 // そのままだと日本語の指示を送ったときに1バイトずつ化ける。-u と合わせて明示する。
 const TMUX_ENV = Object.assign({}, process.env, {
@@ -659,13 +691,27 @@ function authed(req, url) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// 本文を読み取る。上限を超えたときは **返事を書けるように** 中断する。
+// ⚠️ 以前はここで req.destroy() していた（2026-09-02 点検で判明）。返事を書く前に
+// ソケットを壊すので、画面側には 413 ではなくネットワーク失敗として届き
+// 「MacBook に届きません」＝電波のせいに見える。長文を貼って送ると原因不明のまま
+// 本文が消えるので、いちばん当たりにくい壊れ方だった。
+// いまは読むのをやめて `tooLarge` の印を付けて返し、呼び出し側が理由を返す。
 function readBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let n = 0;
-    const chunks = [];
+    let chunks = [];
     req.on('data', (c) => {
       n += c.length;
-      if (n > limit) { reject(new Error('too large')); req.destroy(); return; }
+      if (n > limit) {
+        const err = new Error('too large');
+        err.tooLarge = true;
+        err.limit = limit;
+        chunks = [];          // もう使わない分は抱えない
+        req.pause();
+        reject(err);
+        return;
+      }
       chunks.push(c);
     });
     req.on('end', () => {
@@ -815,7 +861,7 @@ const server = http.createServer(async (req, res) => {
 
     // 文字を送る（末尾で Enter を打つかは enter フラグ）
     if (p === '/api/send' && req.method === 'POST') {
-      const body = await readBody(req);
+      const body = await readBody(req, SEND_LIMIT);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const text = String(body.text || '').replace(/\r\n?/g, '\n');
@@ -826,7 +872,14 @@ const server = http.createServer(async (req, res) => {
       // 中身を出すのは、調べたい対象そのものである「番号」だけにする
       const shown = /^[0-9]{1,2}$/.test(text) ? JSON.stringify(text) : text.length + '文字';
       console.log(`send ${name} ${shown}${lines > 1 ? '/' + lines + '行' : ''}${body.enter ? ' +Enter' : ''}`);
-      if (lines > 1) {
+      // 長い1行も控え経由にする（2026-09-02）。tmux は引数をサーバーへ渡すときの
+      // 電文に上限があり、**改行を含まない本文は約16.3KBで `command too long` になって
+      // 500 になる**（実測：16,000B は通る／16,400B から落ちる）。上限を 8MB に上げても
+      // ここは通らないので、大きい1行は標準入力で渡す load-buffer に寄せる。
+      // ⚠️ 短い1行は今までどおり send-keys のまま（貼り付け方式が変わると見え方が
+      // 変わりうるため。数字キーの「1」もここを通る）。境目は上限の半分で余裕を取る。
+      const bigLine = Buffer.byteLength(text, 'utf8') > SEND_ARGV_MAX;
+      if (lines > 1 || bigLine) {
         // 複数行は「角括弧ペースト」で入れる（-p）。素直に送ると、改行のたびに
         // Enter を押したのと同じ＝1行ごとに実行されてしまう（2026-08-13 実測）。
         // 名前つきの控えに置いて、貼ったら消す（-d）＝tmux の貼り付け履歴を汚さない
@@ -835,7 +888,9 @@ const server = http.createServer(async (req, res) => {
         const p = await tmux(['paste-buffer', '-b', PASTE_BUF, '-d', '-p', '-t', '=' + name + ':']);
         if (!p.ok) return json(res, 500, { error: p.err.slice(0, 200) });
       } else if (text) {
-        const r = await tmux(['send-keys', '-t', '=' + name + ':', '-l', text]);
+        // ⚠️ 引数の終わり印（--）と末尾セミコロンの二重エスケープが要る。
+        // 詳しくは sendKeysArg のコメント（2026-09-02 点検で判明した2件）
+        const r = await tmux(['send-keys', '-t', '=' + name + ':', '-l', '--', sendKeysArg(text)]);
         if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       }
       if (body.enter) await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
@@ -850,7 +905,10 @@ const server = http.createServer(async (req, res) => {
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       if (!/^[A-Za-z0-9_-]{1,12}$/.test(key)) return json(res, 400, { error: 'bad key' });
       console.log(`key ${name} ${key}`);
-      const r = await tmux(['send-keys', '-t', '=' + name + ':', key]);
+      // キー名にも引数の終わり印を入れる。`-` 始まりの12字は上の正規表現を通ってしまい、
+      // tmux が旗として読んで 500 になる（/api/send と同じ穴。2026-09-02）。
+      // Up / C-u / Escape / Enter が `--` 付きでも効くことは実測ずみ
+      const r = await tmux(['send-keys', '-t', '=' + name + ':', '--', key]);
       return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
     }
 
@@ -978,6 +1036,17 @@ const server = http.createServer(async (req, res) => {
 
     return json(res, 404, { error: 'not found' });
   } catch (e) {
+    // 大きすぎて読むのをやめたときは、日本語の理由を返す（電波のせいに見せない）。
+    // 返事を書き終えてから残りの受信を切る（先に切ると返事が届かない）
+    if (e && e.tooLarge) {
+      res.on('finish', () => { try { req.destroy(); } catch (e2) {} });
+      // 64KB の口で「上限 0.1MB」と出ると、実際より大きい数字を言うことになる。
+      // 1MB 未満は KB で言う
+      const lim = e.limit >= 1024 * 1024
+        ? Math.round((e.limit / (1024 * 1024)) * 10) / 10 + 'MB'
+        : Math.round(e.limit / 1024) + 'KB';
+      return json(res, 413, { error: `大きすぎます（上限 ${lim}）。分けて送ってください` });
+    }
     return json(res, 500, { error: String(e && e.message || e) });
   }
 });
