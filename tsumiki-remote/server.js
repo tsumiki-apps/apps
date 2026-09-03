@@ -567,12 +567,19 @@ const BUSY_RE = /esc to interrupt|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/;
 // 「中断」= 人が手で止めたところで待っている席（2026-09-03）。
 // 止めかたは2通りあり、画面に残る印もそれぞれ違う。
 //  ① キー行の `pause`（＝ esc）で止めた → Claude Code が自分で書く
-//     「⎿  Interrupted · What should Claude do instead?」「[Request interrupted by user]」
+//     「Interrupted · What should Claude do instead?」「[Request interrupted by user]」
+//     （2026-09-03 に Claude Code の中身を読んで確かめた文言＝
+//       {tone:"dim", text:"Interrupted", detail:"What should Claude do instead?"} と
+//       `[Request interrupted by user]` `[Request interrupted by user for tool use]`）
 //  ② 番号の質問で `pause` を選んだ → Claude が手を止めて「⏸ 中断しました」と書く
 //     （共通ルール ~/.claude/CLAUDE.md の質問のしかたで、そう書くと決めてある）
-// ⚠️ 印は**行の頭の形**で見る。`⎿` や行頭の `⏸` を条件にしないと、この仕組みの話を
-//    しているだけの地の文（「画面に Interrupted などが出ていたら…」）まで当たる。
-const PAUSED_RE = /⎿\s*Interrupted|\[Request interrupted by user|^\s*⏸/m;
+// ⚠️ 印は**行の頭**で見て、そのうしろも見る。「Interrupted」という字だけを探すと、
+//    この仕組みの話をしているだけの地の文（「画面に Interrupted などが出ていたら…」）
+//    まで当たる。行頭にあって、そのあとが「 ·」か行末のものだけを中断と見なす。
+//    行頭の `⎿` は付いていても付いていなくてもよい（囲みの記号は版で変わりうる）。
+// ⚠️ `\s` は改行も食うので、行末は `[ \t]*$` で見る（`\s*$` だと次の行まで越える）。
+const PAUSED_RE =
+  /^[ \t]*(?:⎿[ \t]*)?Interrupted(?:[ \t]*·|[ \t]*$)|\[Request interrupted by user|^[ \t]*⏸/m;
 // 印は止めた直後の画面の下のほうに出る。新しいやり取りが積まれて上へ押し出されたら、
 // もう中断のままではない＝見るのは末尾だけにする（番号の質問と同じ考えかた）
 const PAUSED_TAIL = 16;
