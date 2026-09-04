@@ -1002,6 +1002,46 @@ async function listPreviewables(limit = 200) {
   return out.slice(0, limit);
 }
 
+// iCloud が読めないとき、「許可が切れた」のか「ただ遅い」のかを見分ける。
+//
+// 見分けの根拠：TCC（プライバシー保護）で止められた呼び出しは、**断られるのではなく
+// 返ってこない**。2026-09-04 に実際に起きた＝brew が node を上げた（アドホック署名なので
+// 実体が変わると許可が無効になる）ら、この画面が「読み込めませんでした」としか
+// 言わなくなり、原因にたどり着くまで30分かかった。同じことが node を上げるたびに起きる。
+//
+//   ・守られていない場所（このアプリ自身の置き場）が読めない → Mac ごとおかしい
+//   ・フォルダの一覧（中身ではなく名前だけ）が返らない → 遅いのではなく止められている
+//     （名前の一覧は手元にある情報なので、電波が遅くても待たされることはない）
+const MOBILE_DOCS = path.join(os.homedir(), 'Library', 'Mobile Documents');
+let diagCache = { at: 0, why: '' };
+
+async function diagnosePreviewRoot() {
+  if (Date.now() - diagCache.at < 30000) return diagCache.why;   // 連打で何度も調べない
+  let why = 'slow';
+  try {
+    await within(fsp.readdir(PUBLIC_DIR), 1500, 'アプリの置き場');
+    try {
+      await within(fsp.readdir(MOBILE_DOCS), 1500, 'iCloud の名前一覧');
+    } catch (e) {
+      why = 'permission';
+    }
+  } catch (e) { /* Mac ごと重い。slow のまま */ }
+  diagCache = { at: Date.now(), why };
+  return why;
+}
+
+// 画面にそのまま出す文。ここで何をすればいいかまで書く＝出先でも、これを読めば自分で戻せる
+function previewTrouble(why) {
+  if (why !== 'permission') {
+    return 'iCloud の読み込みが時間内に返りません。\nMac が重いか、iCloud が止まっています。';
+  }
+  return 'Mac 側の許可が切れています。\n\n'
+    + '「システム設定 → プライバシーとセキュリティ → フルディスクアクセス」に\n'
+    + 'この node を入れて、スイッチをオンにしてください：\n'
+    + process.execPath + '\n\n'
+    + '（brew で node を上げるたびに外れます）';
+}
+
 // 置き場の中かどうかを確かめてから、本当の場所を返す。外に出るものは null。
 // ⚠️ 必ず制限時間つきで呼ぶこと（iCloud の realpath は返らないことがある）
 async function resolveInRoot(rel) {
@@ -1575,7 +1615,11 @@ const server = http.createServer(async (req, res) => {
         }));
         return json(res, 200, { root: PREVIEW_ROOT, mode: 'recent', files, entries });
       } catch (e) {
-        return json(res, 504, { error: String(e.message) });
+        // ⚠️ 「読み込めませんでした」で終わらせない。ここで見分けて、
+        //    何をすればいいかまで返す（2026-09-04 の30分をもう一度やらないため）
+        const why = await diagnosePreviewRoot().catch(() => 'slow');
+        console.log('制作物の一覧が返りません: ' + why + ' / ' + String(e.message).slice(0, 80));
+        return json(res, 504, { error: previewTrouble(why), why });
       }
     }
 
