@@ -17,8 +17,8 @@
     /* 作業中タブの枠だけ薄い紫。ドット(--busy)はそのままの濃さ。
        返答待ち(オレンジ)より弱くして「返事を待って止まっている＝先に見るべき」を目立たせる */
     --busy-line:rgba(192,132,252,.4);
-    /* 中断（人が pause で止めた席）は青。作業中の紫・返答待ちのオレンジのどちらとも
-       離れた色にする＝縁の色だけで3つを見分けられる（2026-09-03） */
+    /* 中断（あなたが hold で印を付けた席）は青。作業中の紫・返答待ちのオレンジの
+       どちらとも離れた色にする＝縁の色だけで3つを見分けられる（2026-09-03） */
     --pause:#60a5fa;
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
@@ -180,6 +180,20 @@
   /* 返答待ち・中断は、作業中より弱く・ゆっくり。色で見分けはつく */
   .tab.waiting{--glow:rgba(245,158,11,.30);--glow-blur:16px;--glow-spread:-5px;--breath:3.4s}
   .tab.paused{--glow:rgba(96,165,250,.30);--glow-blur:16px;--glow-spread:-5px;--breath:3.4s}
+
+  /* 札の左に置く「考えている球」。描いているのは thinking-orbs の engine
+     （</head> の下に焼いてある）。呼吸（案D）はそのまま残し、球はその上に足す。
+     ⚠️ display:flex は **球のある札にだけ** 掛ける。素の .tab に掛けると、
+        中の .n（題名・2〜3行に折り返す）と .meta が横一列になって崩れ、
+        ＋の札（.tab.add）が自前で持っている flex 指定ともぶつかる。
+        なので「球」と「.n/.meta を包んだ1枚(.tb)」の2つだけを並べる */
+  .tab.hasorb{display:flex;align-items:flex-start;gap:8px}
+  .tab.hasorb .tb{flex:1 1 auto;min-width:0}
+  .tab .orb{flex:0 0 auto;width:20px;height:20px;display:block;margin-top:1px}
+  /* 届いていないあいだ／動きを減らす設定のときは球も止める。
+     止め方は JS 側（orbStill）に書いてある＝canvas は CSS では止まらない。
+     ここで薄くするのは、呼吸を消したときと見え方を揃えるため */
+  body.offline .tab .orb{opacity:.6}
 
   /* 動きを減らす設定のときは呼吸を止め、いちばん濃いところで固定する＝
      動きが要らない人にも「いまどの状態か」は残す（消すと状態が読めなくなる） */
@@ -365,9 +379,6 @@
      どちらが正しい入口なのか分からなくなる。ここは読むためだけの札。
      pointer-events を切るのは、押せないのに :active で沈んで「押せた気がする」のを消すため */
   #out .askp .dopt{pointer-events:none}
-  /* 「いまは答えない」の行。番号の代わりに `pause` と書くので、札の幅だけ広げる。
-     色は付けない（色つきの枠は席の状態＝タブの縁のためにとってある） */
-  #out .dpause .dpk{min-width:0;padding:0 5px}
   #out .dhint{margin:7px 0 0;font-size:10.5px;color:var(--dim);line-height:1.5}
 
   /* 下端は iPhone のホームバー領域（触れない帯）。そこに 8px を足すと
@@ -417,11 +428,11 @@
      押した先が「無い行」になる）。押せなくはしない＝地の文への 4 送信は残す */
   #keys button.off{opacity:.35}
   #keys #kgo{border-color:#f59e0b;background:rgba(245,158,11,.22);color:#fdf3e2;font-weight:700}
-  /* 止める札・戻す札は、色を持たせない（2026-09-03）。
+  /* 中断の札（hold / unhold）は、色を持たせない（2026-09-03）。
      色つきの枠は**席の状態を表す印**として、タブの縁だけに残す。キーに枠を付けると
      「色がついている＝いまそういう状態」と読めてしまい、印の意味が2つになる。
-     `pause` は待機中の席では沈み（.off）、`resume` は中断の席にだけ出る（hidden） */
-  #keys #kresume{padding-left:14px;padding-right:14px}
+     2つは**同じ場所に交代で出す**＝いま出ているほうが「次にできること」 */
+  #keys #khold,#keys #kunhold{padding-left:14px;padding-right:14px}
   /* 添えた画像の札。以前は Mac 側の保存先パス（70文字ほど）を文字として入力欄に
      流し込んでいたが、1行の入力欄がそれだけで埋まり、本文を打ち直そうとタップすると
      カーソルがパスの中に落ちる → Backspace で末尾が欠け、送っても Claude 側では
@@ -687,12 +698,42 @@
      ぶつかるため。印なら両方いっぺんに見える＝色と札の対応も覚えられる */
   .sheetbody .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
     margin-right:8px;background:var(--mfg,var(--dim))}
+  /* 絵つきの項目。文字を読む前に「何をする所か」が分かるようにする。
+     絵は左の1列に固定して、文字（名前＋小さい説明）は右にまとめる。
+     ⚠️ .txt に min-width:0 が要る。無いと中の小さい説明が「…」で切れず、
+        長い席の名前で項目が横に伸びて画面からはみ出す */
+  .sheetbody button.hasicon{display:flex;align-items:center;gap:12px}
+  .sheetbody .sic{flex:0 0 auto;width:26px;height:26px;color:var(--dim);
+    display:flex;align-items:center;justify-content:center}
+  .sheetbody .sic svg{width:24px;height:24px;display:block}
+  .sheetbody .txt{flex:1 1 auto;min-width:0}
+  /* 絵のぶん（38px）だけ字幅が減る。1行のままだと 375px で
+     「取り消せ…」と切れて、いちばん大事な警告が消える。
+     ここだけ折り返しを許して、2行で止める */
+  .sheetbody .hasicon .sub{white-space:normal;line-height:1.4;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  /* 色は「何が起きるか」で決める。青＝直す・見る、赤＝もう戻せない、
+     灰＝画面まわり。赤はこのシートで**終わらせる系だけ**に使う */
+  .sic.edit{color:#5c9cf5}
+  .sic.stop{color:#f2685c}
+  .sic.dark{color:#98a2b3}
+  .sic.ok{color:var(--accent)}
+  .sheetbody button:disabled .sic{color:var(--dim)}
   /* まとめて終わらせる前に「何が消えるか」を1件ずつ見せる。
      数だけ出しても、押していいのか判断できない */
   .sheetbody .killlist{display:flex;flex-direction:column;gap:2px;padding:0 8px 4px}
   .sheetbody .killrow{font-size:12px;color:var(--dim);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sheetbody .killrow.warn{color:var(--wait)}
+  /* 名前を変える欄。文字は16px以上にする（それ未満だと iPhone が勝手に
+     拡大して、閉じたあとも画面がずれたままになる） */
+  .sheetbody .nameedit{padding:0 2px 2px}
+  .sheetbody .nameedit input{
+    width:100%;box-sizing:border-box;padding:12px 12px;border-radius:12px;
+    background:var(--panel);border:1px solid var(--line);color:var(--fg);
+    font:inherit;font-size:16px;
+  }
+  .sheetbody .nameedit input:focus{outline:none;border-color:var(--accent)}
   .sheetcancel{
     padding:13px;border-radius:12px;background:#20242c;border:1px solid var(--line);
     color:var(--fg);font:inherit;font-size:15px;font-weight:700;
@@ -866,8 +907,8 @@
   <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span></div>
   <div id="keys">
     <button data-key="Escape">esc</button>
-    <button id="kpause" data-key="Escape">pause</button>
-    <button id="kresume" hidden>resume</button>
+    <button id="khold">hold</button>
+    <button id="kunhold" hidden>unhold</button>
     <button data-key="Enter">⏎</button>
     <button data-key="Up">↑</button>
     <button data-key="Down">↓</button>
@@ -952,6 +993,563 @@
   </div>
 </div>
 
+<!-- 考えている球（thinking-orbs 0.3.1 の engine）。Jakub Antalik / MIT。
+     https://github.com/Jakubantalik/thinking-orbs
+     入れているのは描画だけの階（import 文ゼロ・React も npm も要らない）で、
+     配布物のうち React で包んだ層は使っていない。中身は canvas に点を打つだけ＝
+     通信・保存・動的実行はしない（取り込み前に配布物を展開して確認済み）。
+     ⚠️ 手で直さない。上げ直すときは npm の同じ版から焼き直す -->
+<script>
+(function(){"use strict";
+function U(n, s, t) {
+  return n + (s - n) * t;
+}
+function nt(n) {
+  return n - Math.floor(n);
+}
+function G(n, s) {
+  const t = Math.floor(n), r = Math.floor(s);
+  let a = n - t, o = s - r;
+  a = a * a * (3 - 2 * a), o = o * o * (3 - 2 * o);
+  const c = E(t, r), M = E(t + 1, r), h = E(t, r + 1), m = E(t + 1, r + 1);
+  return c + (M - c) * a + (h - c) * o + (c - M - h + m) * a * o;
+}
+function E(n, s) {
+  const t = Math.sin(n * 12.9898 + s * 78.233) * 43758.5453;
+  return t - Math.floor(t);
+}
+function J(n, s) {
+  const t = Math.PI * (3 - Math.sqrt(5)), r = 1 - 2 * (n + 0.5) / s, a = Math.sqrt(1 - r * r), o = n * t;
+  return [a * Math.cos(o), r, a * Math.sin(o)];
+}
+function et(n, s) {
+  return Math.atan2(Math.sin(n - s), Math.cos(n - s));
+}
+function _(n, s, t, r, a) {
+  const o = Math.sin(s), c = Math.cos(s), M = Math.sin(n), h = Math.cos(n);
+  return (m, D, p) => {
+    const e = m * h + p * M, l = -m * M + p * h, R = D * c - l * o, w = D * o + l * c;
+    return [t + e * a, r - R * a, w];
+  };
+}
+function rt(n, s, t, r = 0.3) {
+  for (const a of s) {
+    const o = a.a ?? 1, c = Math.min(1, Math.max(0, a.white)), M = Math.round((t ? 1 - c : c) * 255);
+    n.fillStyle = `rgba(${M},${M},${M},${o})`, n.beginPath(), n.arc(a.x, a.y, a.r, 0, Math.PI * 2), n.fill();
+  }
+}
+function it(n, s, t) {
+  for (const r of s) {
+    const a = r.a ?? 1, o = Math.min(1, Math.max(0, r.white)), c = Math.round((t ? 1 - o : o) * 255);
+    n.strokeStyle = `rgba(${c},${c},${c},${a})`, n.lineWidth = r.w, n.beginPath(), n.moveTo(r.x1, r.y1), n.lineTo(r.x2, r.y2), n.stroke();
+  }
+}
+function L(n, s, t = 0.3) {
+  const r = [];
+  for (const a of n)
+    (a.a ?? 1) < 0.02 || (a.r = Math.max(t, a.r), r.push(a));
+  return r.sort((a, o) => a.z - o.z), { dots: r, lines: s.filter((a) => (a.a ?? 1) >= 0.02) };
+}
+function ht(n, s, t) {
+  s.lines.length && it(n, s.lines, t), rt(n, s.dots, t);
+}
+function $(n, s) {
+  return (n / 300) ** s;
+}
+const Mt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.76, c = _(s * 0.4, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.ghostN ?? 150;
+  for (let e = 0; e < m; e++) {
+    const l = J(e, m), [R, w, i] = c(l[0] * o, l[1] * o, l[2] * o), u = (i / o + 1) / 2;
+    h.push({ x: R, y: w, z: i, r: 0.8 * M, white: 0.78, a: 0.1 + 0.22 * u });
+  }
+  const D = t.strandN ?? 52, p = t.turns ?? 3;
+  for (let e = 0; e < 3; e++) {
+    const l = e / 3 * 2 * Math.PI;
+    for (let R = 0; R < D; R++) {
+      const w = (nt(R / D + s * 0.045) * 2 - 1) * 0.96, i = Math.sqrt(Math.max(0, 1 - w * w)), u = Math.min(1, (1 - Math.abs(w)) / 0.1), y = w * Math.PI * p + l, b = 1 + 0.075 * Math.sin(w * Math.PI * p * 2 + l * 2 + s * 0.8), f = i * o * b, [P, x, g] = c(Math.cos(y) * f, w * o * b, Math.sin(y) * f), d = (g / o + 1) / 2;
+      h.push({
+        x: P,
+        y: x,
+        z: g,
+        r: ((t.rBase ?? 1.2) + (t.rDepth ?? 1.8) * d) * M,
+        white: 0.55 - 0.45 * d,
+        a: u * (0.45 + 0.55 * d)
+      });
+    }
+  }
+  return L(h, [], t.rMin);
+};
+function lt(n, s, t, r) {
+  const a = 2 * s * t + r, o = n % a, c = new Array(s).fill(0);
+  let M = -1;
+  if (o < 2 * s * t) {
+    const h = Math.floor(o / t), m = (o - h * t) / t, p = 1 - (1 - Math.min(1, m / 0.7)) ** 3;
+    if (h < s) {
+      for (let e = 0; e < h; e++) c[e] = 1;
+      c[h] = p, M = h;
+    } else {
+      const e = 2 * s - 1 - h;
+      for (let l = 0; l < e; l++) c[l] = 1;
+      c[e] = 1 - p, M = e;
+    }
+  }
+  return { amount: c, active: M };
+}
+function pt(n, s, t) {
+  let [r, a, o] = n, c = !1;
+  for (let M = 0; M < s.length; M++) {
+    if (t.amount[M] <= 0) continue;
+    const h = s[M], m = h.axis === 0 ? r : h.axis === 1 ? a : o;
+    if (m < h.lo || m >= h.hi) continue;
+    M === t.active && (c = !0);
+    const D = h.ang * t.amount[M], p = Math.cos(D), e = Math.sin(D);
+    if (h.axis === 0) {
+      const l = a * p - o * e;
+      o = a * e + o * p, a = l;
+    } else if (h.axis === 1) {
+      const l = r * p + o * e;
+      o = -r * e + o * p, r = l;
+    } else {
+      const l = r * p - a * e;
+      a = r * e + a * p, r = l;
+    }
+  }
+  return [r, a, o, c];
+}
+function ut(n) {
+  const s = [];
+  for (let t = 0; t < n; t++) {
+    const r = Math.min(2, Math.floor(E(t, 2.3) * 3)), a = -1 + 0.5 * Math.min(3, Math.floor(E(t, 5.9) * 4)), o = E(t, 7.7) < 0.5 ? 1 : -1;
+    s.push({ axis: r, lo: a, hi: a + 0.5, ang: o * Math.PI / 2 });
+  }
+  return s;
+}
+const ft = (n, s, t) => {
+  const a = n / 2, o = n / 2, c = n / 2 * 0.82, M = 0.4 + 0.06 * Math.sin(s * 0.35), h = _(s * 0.5, M, a, o, c), m = s * (0.5 + (1.7 - 0.5) * (t.scanMul ?? 1)), D = $(n, t.rsPow ?? 0.6), p = t.dimBase ?? 1, e = [], l = t.latRings ?? 17, R = t.lonDensity ?? 44;
+  for (let w = 0; w <= l; w++) {
+    const i = -Math.PI / 2 + w / l * Math.PI, u = Math.cos(i), y = Math.sin(i), b = Math.max(1, Math.round(Math.abs(u) * R));
+    for (let f = 0; f < b; f++) {
+      const P = f / b * 2 * Math.PI, [x, g, d] = h(u * Math.cos(P), y, u * Math.sin(P)), v = (d + 1) / 2, k = et(P + s * 0.5, m), N = Math.exp(-(k * k) / 0.18) * Math.max(0, d);
+      e.push({
+        x,
+        y: g,
+        z: d,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * v + (t.rBoost ?? 1) * N) * D,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * v,
+        // dimBase < 1 fades un-scanned dots so the meridian reads clearly
+        a: p + (1 - p) * Math.min(1, N)
+      });
+    }
+  }
+  return L(e, [], t.rMin);
+}, dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.55, 0.35 + 0.1 * Math.sin(s * 0.9), r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.moveCount ?? 14, m = ut(h), D = lt(s, h, 0.42, 1.2), p = [], e = t.latRings ?? 15, l = t.lonDensity ?? 40;
+  for (let R = 0; R <= e; R++) {
+    const w = -Math.PI / 2 + R / e * Math.PI, i = Math.cos(w), u = Math.sin(w), y = Math.max(1, Math.round(Math.abs(i) * l));
+    for (let b = 0; b < y; b++) {
+      const f = b / y * 2 * Math.PI, [P, x, g, d] = pt([i * Math.cos(f), u, i * Math.sin(f)], m, D), [v, k, N] = c(P, x, g), z = (N + 1) / 2;
+      p.push({
+        x: v,
+        y: k,
+        z: N,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * z + (d ? t.rActive ?? 0.3 : 0)) * M,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * z - (d ? 0.14 : 0)
+      });
+    }
+  }
+  return L(p, [], t.rMin);
+}, bt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.874, c = _(s * 0.18, 0.38, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.rings ?? 15, D = t.lonDensity ?? 40;
+  for (let p = 0; p <= m; p++) {
+    const e = -Math.PI / 2 + p / m * Math.PI, l = Math.cos(e), R = Math.sin(e), w = 0.62 * Math.sin(s * 2.1 - p * 0.52) + 0.38 * Math.sin(s * 1.27 + p * 0.83), i = o * (0.88 + 0.105 * w), u = Math.max(1, Math.round(Math.abs(l) * D));
+    for (let y = 0; y < u; y++) {
+      const b = y / u * 2 * Math.PI, [f, P, x] = c(l * Math.cos(b) * i, R * i, l * Math.sin(b) * i), g = (x / o + 1) / 2, d = Math.max(0, w);
+      h.push({
+        x: f,
+        y: P,
+        z: x,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * g) * (1 + 0.4 * d) * M,
+        white: 0.66 - 0.56 * g - 0.1 * d
+      });
+    }
+  }
+  return L(h, [], t.rMin);
+};
+function xt(n) {
+  return n * n * (3 - 2 * n);
+}
+function st(n) {
+  const s = n.length, t = [];
+  let r = 0;
+  for (let a = 0; a < s; a++) {
+    const o = n[a], c = n[(a + 1) % s], M = Math.hypot(c[0] - o[0], c[1] - o[1]);
+    t.push(M), r += M;
+  }
+  return (a) => {
+    let o = a * r, c = 0;
+    for (; o > t[c] && c < s - 1; )
+      o -= t[c], c++;
+    const M = n[c], h = n[(c + 1) % s], m = t[c] ? Math.min(1, o / t[c]) : 0;
+    return [M[0] + (h[0] - M[0]) * m, M[1] + (h[1] - M[1]) * m];
+  };
+}
+const yt = (n) => {
+  const s = -Math.PI / 2 + n * 2 * Math.PI;
+  return [Math.cos(s) * 0.24, Math.sin(s) * 0.24];
+}, gt = st([
+  [0, -0.26],
+  [0.24, 0.16],
+  [-0.24, 0.16]
+]), mt = st([
+  [0, -0.2],
+  [0.2, -0.2],
+  [0.2, 0.2],
+  [-0.2, 0.2],
+  [-0.2, -0.2]
+]), H = [yt, gt, mt];
+function wt(n) {
+  return Math.max(6, Math.round(34 * n));
+}
+const V = 1.4, ot = 0.9, Q = V + ot, Pt = (n, s, t) => {
+  const r = H.length, a = s % (Q * r), o = Math.floor(a / Q), c = a - o * Q, M = c > V ? xt((c - V) / ot) : 0, h = t.spread ?? 1, m = H[o], D = H[(o + 1) % r], p = 160, e = [];
+  for (let x = 0; x < p; x++) {
+    const g = x / p, d = m(g), v = D(g);
+    e.push([(d[0] + (v[0] - d[0]) * M) * h, (d[1] + (v[1] - d[1]) * M) * h]);
+  }
+  const l = [];
+  let R = 0;
+  for (let x = 0; x < p; x++) {
+    const g = e[x], d = e[(x + 1) % p], v = Math.hypot(d[0] - g[0], d[1] - g[1]);
+    l.push(v), R += v;
+  }
+  const w = wt(t.iconD ?? 1), i = (t.rDot ?? 0.021) * 1.35 * h, u = 1 + 0.02 * Math.sin(c * 3.1), y = [], b = n / 2;
+  let f = 0, P = 0;
+  for (let x = 0; x < w; x++) {
+    const g = x / w * R;
+    for (; P + l[f] < g && f < p - 1; )
+      P += l[f], f++;
+    const d = e[f], v = e[(f + 1) % p], k = l[f] ? Math.min(1, (g - P) / l[f]) : 0, N = (d[0] + (v[0] - d[0]) * k) * u, z = (d[1] + (v[1] - d[1]) * k) * u;
+    y.push({
+      x: b + N * n,
+      y: b + z * n,
+      z: 0,
+      r: Math.max(0.35, i * n),
+      white: 0.1
+    });
+  }
+  return L(y, [], t.rMin);
+}, Rt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.12, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.orbitN ?? 12, D = t.ghostN ?? 40, p = t.particles ?? 3;
+  for (let e = 0; e < m; e++) {
+    const l = E(e, 1.7), R = E(e, 5.2), w = E(e, 8.9), i = o * (0.45 + 0.52 * l), u = l * 2 * Math.PI, y = Math.acos(2 * R - 1), b = Math.sin(y) * Math.cos(u), f = Math.cos(y), P = Math.sin(y) * Math.sin(u);
+    let x = -f, g = b;
+    const d = 0, v = Math.max(1e-6, Math.sqrt(x * x + g * g));
+    x /= v, g /= v;
+    const k = f * d - P * g, N = P * x - b * d, z = b * g - f * x, O = (0.25 + 0.55 * w) * (w > 0.5 ? 1 : -1);
+    for (let B = 0; B < D; B++) {
+      const I = B / D * 2 * Math.PI, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: (t.ghostR ?? 0.9) * M,
+        white: 0.72,
+        a: (t.ghostA ?? 0.5) * (0.4 + 0.6 * C)
+      });
+    }
+    for (let B = 0; B < p; B++) {
+      const I = s * O + B / p * 2 * Math.PI + R * 6, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: ((t.partR ?? 1.2) + (t.partRDepth ?? 1.6) * C) * M,
+        white: 0.3 - 0.22 * C
+      });
+    }
+  }
+  return L(h, [], t.rMin);
+}, Z = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.78, c = t.spin ?? 1, M = 0.3, h = _(s * 0.1 * c, M, r, a, 1), m = $(n, t.rsPow ?? 0.6), D = [], p = t.ghostN ?? 150;
+  for (let z = 0; z < p; z++) {
+    const O = J(z, p), [B, I, S] = h(O[0] * o, O[1] * o, O[2] * o), A = (S / o + 1) / 2;
+    D.push({ x: B, y: I, z: S, r: 0.8 * m, white: 0.78, a: 0.1 + 0.22 * A });
+  }
+  const e = s * 0.24 * c, l = t.faceOn ? -M : 0.55 + 0.3 * Math.sin(s * 0.18) * c, R = Math.cos(e), w = 0, i = Math.sin(e), u = -i * Math.sin(l), y = Math.cos(l), b = R * Math.sin(l), f = w * b - i * y, P = i * u - R * b, x = R * y - w * u, g = 0.23 * (t.wobMul ?? 1), d = t.faceOn ? o / (1 + 0.85 * g) : o, v = t.lanes ?? 5, k = t.segs ?? 88, N = Math.max(1, Math.round(v * (t.bandMul ?? 1)));
+  for (let z = 0; z < N; z++) {
+    const O = (z - (N - 1) / 2) * 0.075, B = Math.abs(z - (N - 1) / 2) / Math.max(1, (N - 1) / 2);
+    for (let I = 0; I < k; I++) {
+      const S = I / k * 2 * Math.PI, A = (0.16 * Math.sin(S * 3 - s * 1.7 + z * 0.22) + 0.07 * Math.sin(S * 5 + s * 1.1)) * (t.wobMul ?? 1), T = t.faceOn ? 1 + A : 1, C = t.faceOn ? O : O + A, q = R * Math.cos(S) + u * Math.sin(S) + f * C, F = w * Math.cos(S) + y * Math.sin(S) + P * C, j = i * Math.cos(S) + b * Math.sin(S) + x * C, W = Math.sqrt(q * q + F * F + j * j), Y = d * T, [ct, at, X] = h(q / W * Y, F / W * Y, j / W * Y), K = (X / o + 1) / 2;
+      D.push({
+        x: ct,
+        y: at,
+        z: X,
+        r: ((t.rBase ?? 1.1) + (t.rDepth ?? 1.7) * K) * (1 - 0.25 * B) * m,
+        white: 0.52 - 0.44 * K + 0.18 * B,
+        a: 0.4 + 0.6 * K
+      });
+    }
+  }
+  return L(D, [], t.rMin);
+}, Dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.8 * (t.spread ?? 1), c = _(s * 0.12, 0.32, r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.nodeN ?? 30, m = t.thr ?? 0.72, D = t.nodeR ?? 1.4, p = t.nodeRDepth ?? 1.8, e = [];
+  for (let i = 0; i < h; i++) {
+    const u = J(i, h), y = u[0] + 0.3 * (G(i * 0.31 + 9, s * 0.24) - 0.5) * 2, b = u[1] + 0.3 * (G(i * 0.53 + 27, s * 0.21) - 0.5) * 2, f = u[2] + 0.3 * (G(i * 0.77 + 55, s * 0.27) - 0.5) * 2, P = Math.sqrt(y * y + b * b + f * f);
+    e.push([y / P, b / P, f / P]);
+  }
+  const l = [], R = [];
+  for (let i = 0; i < h; i++)
+    for (let u = i + 1; u < h; u++) {
+      const y = e[i][0] - e[u][0], b = e[i][1] - e[u][1], f = e[i][2] - e[u][2], P = Math.sqrt(y * y + b * b + f * f);
+      if (P >= m) continue;
+      const [x, g, d] = c(e[i][0], e[i][1], e[i][2]), [v, k, N] = c(e[u][0], e[u][1], e[u][2]), z = ((d + N) / 2 + 1) / 2;
+      l.push({
+        x1: x,
+        y1: g,
+        x2: v,
+        y2: k,
+        white: 0.42,
+        a: (1 - P / m) * (0.3 + 0.55 * z),
+        w: Math.max(0.6, (t.lineW ?? 0.8) * M)
+      });
+    }
+  for (let i = 0; i < h; i++) {
+    const [u, y, b] = c(e[i][0], e[i][1], e[i][2]), f = (b + 1) / 2, P = 1 + 0.25 * Math.sin(s * 1.4 + i * 2.7);
+    R.push({
+      x: u,
+      y,
+      z: b,
+      r: (D + p * f) * P * M,
+      white: 0.55 - 0.45 * f
+    });
+  }
+  const w = t.signals ?? 5;
+  for (let i = 0; i < w; i++) {
+    const u = Math.floor(s * 0.55 + i * 7.31), y = Math.floor(E(u, i * 3.1 + 1.7) * h), b = Math.floor(E(u, i * 5.7 + 4.2) * h);
+    if (y === b) continue;
+    const f = nt(s * 0.55 + i * 7.31), P = U(e[y][0], e[b][0], f), x = U(e[y][1], e[b][1], f), g = U(e[y][2], e[b][2], f), d = Math.max(1e-6, Math.sqrt(P * P + x * x + g * g)), [v, k, N] = c(P / d, x / d, g / d), z = (N + 1) / 2;
+    R.push({
+      x: v,
+      y: k,
+      z: N,
+      r: (D * 1.5 + p * z) * M,
+      white: 0.05,
+      a: 0.5 + 0.5 * z
+    });
+  }
+  return L(R, l, t.rMin);
+}, vt = {
+  orbits: Rt,
+  globe: ft,
+  rubik: dt,
+  wave: bt,
+  web: Dt,
+  braid: Mt,
+  ribbon: Z,
+  // ring shares ribbon's geometry — the `faceOn` profile flag switches it
+  ring: Z,
+  morph: Pt
+}, Ct = Object.fromEntries(
+  Object.entries(vt).map(([n, s]) => [
+    n,
+    (t, r, a, o, c) => ht(t, s(r, a, c), o)
+  ])
+), zt = [
+  ["latRings", "lonDensity"],
+  ["rings", "lonDensity"],
+  ["lanes", "segs"]
+], Nt = ["orbitN", "ghostN", "nodeN", "strandN", "signals"], It = ["iconD"], kt = [
+  "rBase",
+  "rDepth",
+  "rActive",
+  "rDot",
+  "ghostR",
+  "partR",
+  "partRDepth",
+  "nodeR",
+  "nodeRDepth"
+];
+function St(n, s) {
+  const t = { ...n }, r = /* @__PURE__ */ new Set(), a = Math.sqrt(s);
+  for (const [o, c] of zt) {
+    const M = t[o], h = t[c];
+    M != null && h != null && !r.has(o) && !r.has(c) && (t[o] = Math.max(2, Math.round(M * a)), t[c] = Math.max(2, Math.round(h * a)), r.add(o), r.add(c));
+  }
+  for (const o of Nt) {
+    const c = t[o];
+    c != null && c !== 0 && !r.has(o) && (t[o] = Math.max(1, Math.round(c * s)));
+  }
+  for (const o of It) {
+    const c = t[o];
+    c != null && (t[o] = Math.max(0.02, c * s));
+  }
+  return t;
+}
+function Bt(n, s) {
+  const t = { ...n };
+  for (const r of kt) {
+    const a = t[r];
+    a != null && (t[r] = a * s);
+  }
+  return t.rSizeMul = (t.rSizeMul ?? 1) * s, t;
+}
+const Et = {
+  globe: {
+    latRings: 17,
+    lonDensity: 44,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rBoost: 1,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  orbits: {
+    orbitN: 12,
+    ghostN: 40,
+    ghostR: 0.9,
+    ghostA: 0.5,
+    particles: 3,
+    partR: 1.2,
+    partRDepth: 1.6,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  rubik: {
+    latRings: 15,
+    lonDensity: 40,
+    moveCount: 14,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rActive: 0.3,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  wave: {
+    rings: 15,
+    lonDensity: 40,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  web: {
+    nodeN: 30,
+    thr: 0.72,
+    signals: 5,
+    nodeR: 1.4,
+    nodeRDepth: 1.8,
+    lineW: 0.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  braid: {
+    strandN: 52,
+    turns: 3,
+    ghostN: 150,
+    rBase: 1.2,
+    rDepth: 1.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  ribbon: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 150,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  // ring shares ribbon's painter; faceOn cancels the camera tilt and moves
+  // the undulation onto the radius, and there is no ghost sphere behind it
+  ring: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 0,
+    faceOn: 1,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  morph: {
+    rDot: 0.021,
+    iconD: 1,
+    rMin: 0.25
+  }
+}, Ot = {
+  working: "orbits",
+  searching: "globe",
+  solving: "rubik",
+  listening: "wave",
+  connecting: "web",
+  weaving: "braid",
+  composing: "ribbon",
+  breathing: "ring",
+  shaping: "morph"
+}, At = {
+  orbits: {
+    64: { speed: 1.885, count: 1, size: 1 },
+    20: { speed: 3.9, count: 0.238, size: 2.4 }
+  },
+  globe: {
+    64: { speed: 2.015, count: 0.42, size: 1.15, extra: { scanMul: 4.08, dimBase: 0.45 } },
+    20: { speed: 2.665, count: 0.105, size: 1.75, extra: { scanMul: 4.335, dimBase: 0.45 } }
+  },
+  rubik: {
+    64: { speed: 1.82, count: 0.35, size: 1.05 },
+    20: { speed: 1.95, count: 0.088, size: 1.9 }
+  },
+  wave: {
+    64: { speed: 4.388, count: 0.341, size: 1 },
+    20: { speed: 3.998, count: 0.105, size: 1.6 }
+  },
+  web: {
+    64: { speed: 3.315, count: 1.35, size: 0.95 },
+    20: { speed: 6.63, count: 0.25, size: 1.52 }
+  },
+  braid: {
+    64: { speed: 1.625, count: 0.5, size: 1 },
+    20: { speed: 2.75, count: 0.1125, size: 1.36 }
+  },
+  ribbon: {
+    64: { speed: 2.34, count: 0.25, size: 0.85, extra: { spin: 0, bandMul: 3.9, wobMul: 1 } },
+    20: { speed: 3.12, count: 0.051, size: 1.073, extra: { spin: 0, bandMul: 4.94, wobMul: 1 } }
+  },
+  ring: {
+    64: { speed: 3.24, count: 0.25, size: 0.956, extra: { spin: 0, bandMul: 3.627, wobMul: 0.368 } },
+    20: { speed: 3.78, count: 0.028, size: 1.622, extra: { spin: 0, bandMul: 3.968, wobMul: 0.565 } }
+  },
+  morph: {
+    64: { speed: 2.405, count: 0.702, size: 0.395, extra: { spread: 1.45 } },
+    20: { speed: 2.08, count: 0.53, size: 1.011, extra: { spread: 1.45 } }
+  }
+}, tt = /* @__PURE__ */ new Map();
+function Lt(n, s) {
+  const t = `${n}-${s}`, r = tt.get(t);
+  if (r) return r;
+  const a = Ot[n], o = At[a][s];
+  let c = { ...Et[a] };
+  o.count !== 1 && (c = St(c, o.count)), o.size !== 1 && (c = Bt(c, o.size)), o.extra && (c = { ...c, ...o.extra });
+  const M = { mode: a, speed: o.speed, opts: c };
+  return tt.set(t, M), M;
+}
+
+window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,makeProj:_,paint:rt,paintFrame:ht,paintLines:it,radiusScale:$,resolvePreset:Lt};
+})();
+</script>
 <script>
 (function () {
   'use strict';
@@ -977,8 +1575,8 @@
     conn: document.getElementById('conn'),
     keys: document.getElementById('keys'),
     kgo: document.getElementById('kgo'),
-    kpause: document.getElementById('kpause'),
-    kresume: document.getElementById('kresume'),
+    khold: document.getElementById('khold'),
+    kunhold: document.getElementById('kunhold'),
     dest: document.getElementById('dest'),
     destName: document.querySelector('#dest .dn'),
     destModel: document.querySelector('#dest .dm'),
@@ -1004,21 +1602,20 @@
 
   var LABEL = { busy: '作業中', waiting: '返答待ち', idle: '待機', paused: '中断' };
 
-  // `pause` を押してから Mac が「中断」と言ってくるまでには1〜2秒ある（巡回の間隔）。
-  // そのあいだ縁が出ないと「押したのに何も起きていない」に見えるので、押した席だけ
-  // 手元で中断として描く。Mac が同じことを言ったら手を引く＝以後は本物の状態で描く。
-  // ⚠️ 止まらなかったとき（もう止まっていて esc が空振り）は嘘になるので、
-  //    数秒で自分から諦める。長く持たせないこと
-  var pauseWish = null;               // { name: 席の名前, at: 押した時刻 }
-  var PAUSE_WISH_MS = 8000;
-  // 中断した席に送る一言。命令ではなく「続けて」にする＝止めた理由（やめたい・
-  // 別のことを頼みたい）が何であっても、まず様子が返ってくる言い方にしておく
-  var RESUME_WORD = '続けて';
+  // hold / unhold を押してから Mac が同じことを言ってくるまでには、巡回1回ぶん
+  // （1〜2秒）の間がある。そのあいだ見た目が変わらないと「押しても効かない」に
+  // 見えるので、押した席だけ手元で先に描く。Mac が同じことを言ったら手を引く。
+  // ⚠️ 返事が来なかったときに嘘の縁を出し続けないよう、数秒で自分から諦める
+  var holdWish = null;                // { name: 席の名前, on: 立てた/降ろした, at: 押した時刻 }
+  var HOLD_WISH_MS = 8000;
 
   function statusOf(s) {
-    if (pauseWish && pauseWish.name === s.name) {
-      if (s.status === 'paused' || Date.now() - pauseWish.at > PAUSE_WISH_MS) pauseWish = null;
-      else return 'paused';
+    if (holdWish && holdWish.name === s.name) {
+      var agreed = holdWish.on ? s.status === 'paused' : s.status !== 'paused';
+      if (agreed || Date.now() - holdWish.at > HOLD_WISH_MS) holdWish = null;
+      else if (holdWish.on) return 'paused';
+      // 降ろした直後。本当の状態はまだ届いていないので、色だけ先に抜く
+      else if (s.status === 'paused') return 'idle';
     }
     return s.status;
   }
@@ -1367,12 +1964,92 @@
   //    （ずれると、作り直しのたびに呼吸が飛ぶ）
   var BREATH_MS = { busy: 2400, waiting: 3400, paused: 3400 };
 
+  // ── 札の球 ───────────────────────────────────────────────
+  // 状態ごとに違う動きを当てる。待機には置かない（案Dでも光らない状態なので、
+  // 置くと「待機も何かしている」に見える）。色は付かない＝球は灰色一色しか描けない
+  // ので、紫/オレンジ/青の見分けはこれまでどおり縁と文字が担う
+  var ORB_STATE = { busy: 'working', waiting: 'listening', paused: 'breathing' };
+  var orbs = [];        // いま画面にある球。札は1.5秒ごとに作り直されるので張り直す
+  var orbRaf = 0;
+
+  // 動かさない場面は3つ。②③は案Dが呼吸を止めている条件とわざと揃えてある
+  //   ① 画面が見えていない（iPhone のホームに戻っているあいだ 60fps は回さない）
+  //   ② 届いていない（body.offline）＝Mac から今の姿を読めていない。ここで球だけ
+  //      動くと「古い姿」を動いて見せることになり、呼吸と影を消した配慮が無になる
+  //   ③ 動きを減らす設定
+  function orbStill() {
+    return document.visibilityState === 'hidden' ||
+           document.body.classList.contains('offline') ||
+           (window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches);
+  }
+
+  function orbPaint(t) {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (var i = 0; i < orbs.length; i++) {
+      var o = orbs[i];
+      o.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      o.ctx.clearRect(0, 0, 20, 20);
+      // 地はいつも暗い（このアプリに明るい地は無い）。第4引数がその指定
+      o.draw(o.ctx, 20, t * o.speed, true, o.opts);
+    }
+  }
+
+  function orbTick() {
+    orbRaf = 0;
+    if (!orbs.length) return;
+    // 止める場面でも1枚は描く＝球が消えず「いまどの状態か」は残る（呼吸と同じ考え）
+    if (orbStill()) { orbPaint(0.6); return; }
+    // 位相は performance.now() の絶対時刻から出す。だから札を1.5秒ごとに
+    // 作り直しても動きは続いて見える（呼吸が --breath-delay でやっているのと
+    // 同じことを、時計そのもので済ませている＝こちらに delay の計算は要らない）
+    orbPaint(performance.now() / 1000);
+    orbRaf = requestAnimationFrame(orbTick);
+  }
+
+  function orbRun() { if (!orbRaf && orbs.length) orbRaf = requestAnimationFrame(orbTick); }
+
+  // 札を作り直したあとに呼ぶ。canvas は作り直しで白紙に戻るので、集め直して敷き直す
+  function syncOrbs() {
+    orbs = [];
+    if (!window.__ORB) return;      // engine が無くても札は普通に出る（球が出ないだけ）
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    Array.prototype.forEach.call(el.tabs.querySelectorAll('canvas.orb'), function (c) {
+      var r = window.__ORB.resolvePreset(c.getAttribute('data-orb'), 20);
+      c.width = Math.round(20 * dpr);
+      c.height = Math.round(20 * dpr);
+      orbs.push({ ctx: c.getContext('2d'), draw: window.__ORB.MODE_DRAWS[r.mode],
+                  speed: r.speed, opts: r.opts });
+    });
+    if (orbStill()) orbPaint(0.6); else orbRun();
+  }
+
+  // 止める条件が外れたら回し直す。ここを renderTabs 頼みにしない。
+  // ⚠️ 定期巡回 tick() は document.hidden のとき即 return する＝隠れているあいだは
+  //    renderTabs が走らない。「1.5秒ごとに札を作り直すから、そのとき拾える」は
+  //    成り立たない場面がある。実測で球が止まったまま戻らなかった（2026-09-05）。
+  //    3つの条件それぞれに、外れたことを知る道を持たせる
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'hidden') orbRun();
+  });
+  if (window.matchMedia) {
+    var orbMQ = matchMedia('(prefers-reduced-motion:reduce)');
+    if (orbMQ.addEventListener) orbMQ.addEventListener('change', orbRun);
+  }
+  // 届く/届かないは body の class で表される。setOffline を書き換えずに済ませたいので
+  // （同じファイルで他の作業が動いている）、class の変化そのものを見る。
+  // orbRaf が立っていれば orbRun は何もしないので、余計に呼ばれても負担にならない
+  if (window.MutationObserver && document.body) {
+    new MutationObserver(orbRun).observe(document.body,
+      { attributes: true, attributeFilter: ['class'] });
+  }
+
   function renderTabs() {
     el.tabs.innerHTML = '';
     sessions.forEach(function (s, i) {
       var b = document.createElement('button');
       var st = statusOf(s);
-      b.className = 'tab ' + st + (s.stale ? ' stale' : '');
+      var orb = ORB_STATE[st];
+      b.className = 'tab ' + st + (s.stale ? ' stale' : '') + (orb ? ' hasorb' : '');
       // 呼吸の位相は時計から出す（経過ぶんの負の delay）。札は1.5秒ごとに
       // 作り直されるので、これが無いと呼吸が1.5秒ごとに頭へ戻る。
       // 周期は状態ごとに違う（CSS の --breath と必ず揃えること）
@@ -1383,13 +2060,18 @@
       // （「Claude」と「Opus」を並べない＝札が狭いのと、Claude であることは
       //   もう場所で分かっているため）
       var chip = modelChip(s);
-      b.innerHTML = '<div class="n">' + (i + 1) + '・' + escapeHtml(s.title || s.name) + '</div>' +
+      // 球と「題名＋状態を包んだ1枚」の2つを並べる。.n と .meta を直接
+      // 横に並べない（題名は2〜3行に折り返すので、並べると状態の行が動く）
+      b.innerHTML = (orb ? '<canvas class="orb" data-orb="' + orb + '"></canvas>' : '') +
+                    (orb ? '<div class="tb">' : '') +
+                    '<div class="n">' + (i + 1) + '・' + escapeHtml(s.title || s.name) + '</div>' +
                     '<div class="meta">' +
                       '<span class="st">' + LABEL[st] + '</span>' +
                       '<span class="kind ' + s.kind + (chip ? ' ' + chip.cls : '') + '">' +
                         (chip ? chip.label : KIND[s.kind]) +
                       '</span>' +
-                    '</div>';
+                    '</div>' +
+                    (orb ? '</div>' : '');
       // 1回目＝切り替え、選ばれている札をもう一度＝その席のメニュー。
       // 「◯秒以内に2回」にはしない。出る/出ないが目に見えず、指の速さで
       // 結果が変わる＝同じ操作なのに違うことが起きる、になるため（2026-08-12）
@@ -1431,6 +2113,8 @@
       el.destModel.className = 'dm' + (curChip ? ' ' + curChip.cls : '');
       el.destModel.hidden = !curChip;
     }
+    // 札を作り直したので球も敷き直す（canvas は作り直しで白紙に戻る）
+    syncOrbs();
     // 止める札の濃さは席の状態で決まる。状態は画面が動かなくても変わる
     // （5秒だまると作業中→待機）ので、画面を描き直したときだけでは足りない
     syncKeys();
@@ -2344,27 +3028,6 @@
       box.appendChild(b);
     });
 
-    // 「答えない」も選べることを、選択肢と同じ形で見せる（2026-09-03）。
-    // 番号の行と同じ見た目にしてあるが、番号ではなくキー行の `pause` で送る＝
-    // 札の左には番号の代わりに `pause` と入れて、押す場所が分かるようにする。
-    // ⚠️ 行そのものは押せない（`#out .askp .dopt{pointer-events:none}`）。
-    //    押す入口をキー行に一本化した決まりはここでも崩さない
-    var pz = document.createElement('div');
-    pz.className = 'dopt dpause';
-    var pk = document.createElement('span');
-    pk.className = 'dnum dpk';
-    pk.textContent = 'pause';
-    pz.appendChild(pk);
-    var pl = document.createElement('span');
-    pl.className = 'dlab';
-    pl.textContent = 'いまは答えない（この質問を閉じて止める）';
-    var pd = document.createElement('span');
-    pd.className = 'ddesc';
-    pd.textContent = '席は「中断」になります。あとで続きから話しかけられます';
-    pl.appendChild(pd);
-    pz.appendChild(pl);
-    box.appendChild(pz);
-
     // 全部答えたあとに出る確認画面（Review your answers）は、案内も別のことを言う
     var review = a.items.paras.some(function (t) { return t.indexOf('Review your answers') === 0; });
     var h = document.createElement('div');
@@ -2374,8 +3037,6 @@
       : multi
         ? 'いくつでも選べます。下の番号で入／切りして、最後に「決定」を押してください'
         : '下の番号を押すとその場で選ばれ、次の質問へ進みます';
-    // どの場面でも「答えずに止める」道はある。案内の最後にそろえて添える
-    h.textContent += '。答えずに止めるなら pause';
     box.appendChild(h);
     return box;
   }
@@ -2690,14 +3351,12 @@
       .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
 
-  // 中断の札を Mac 側に立てる／降ろす。画面の字だけに頼らないための口。
-  // ⚠️ 立てるのは「送れた」あと。`/api/send` は札を降ろす作りなので、
-  //    言葉で止めるときに先に立てると、そのすぐあとの送信で降ろされてしまう
-  function markPause(name, on) {
+  // 中断の札を Mac 側に立てる／降ろす。**tmux には何も送らない**＝見た目だけの付箋。
+  // 一度立てた札は unhold を押すまで立ったまま（文字を送っても、席が動き出しても降りない）
+  function setHold(name, on) {
     if (!name) return Promise.resolve();
     return api('/api/pause', { method: 'POST', body: JSON.stringify({ name: name, on: !!on }) })
-      // 札が立たなくても、止める操作そのものは通っている。ここは黙って流す
-      .catch(function () {});
+      .catch(function (e) { toast('中断の印を変えられませんでした: ' + e.message); });
   }
 
   function sendKey(key) {
@@ -2870,14 +3529,13 @@
       var dead = !!p && !p.querySelector('.aopt[data-num="' + b.dataset.text + '"]');
       if (dead) b.classList.add('off'); else b.classList.remove('off');
     });
-    // 止める札は「動いている／聞かれている」ときだけ意味がある。待機の席では沈める
-    // （押せなくはしない＝入力欄の書きかけを消す使い道は残る）
+    // 中断の札は**交代で出す**。いまの席に印が付いていなければ hold、付いていれば
+    // unhold。2つ並べると「どちらがいまの状態なのか」がボタンから読めなくなる。
+    // どの状態の席でも押せる＝これは席を止める道具ではなく、自分用の目印なので
     var cur = sessions.filter(function (s) { return s.name === current; })[0];
     var st = cur ? statusOf(cur) : '';
-    if (st && st !== 'idle') el.kpause.classList.remove('off'); else el.kpause.classList.add('off');
-    // 戻す札は**中断の席にだけ**出す（「決定」と同じ考えかた）。いつでも出ていると
-    // 「押したら何が起きるのか」が場面ごとに変わってしまい、札の意味が薄くなる
-    el.kresume.hidden = st !== 'paused';
+    el.khold.hidden = st === 'paused';
+    el.kunhold.hidden = st !== 'paused';
   }
 
   el.keys.addEventListener('click', function (e) {
@@ -2889,40 +3547,19 @@
       if (!go) return toast('いまは「決定」を押す場面ではありません');
       return askMove(p, go);
     }
-    // 止める札。やることは1つ＝「止めて」と伝えること。ただし伝わる道が2つある。
-    //  ・動いている最中／質問の枠が出ている／素のシェル → **キー**（esc）で止まる
-    //  ・番号で聞かれている最中 → esc では**何も起きない**。Claude はもう入力待ちで
-    //    止まっていて、押しても画面が変わらない＝「押したのに効かない」に見える。
-    //    ここは **言葉**（`pause`）で伝える。受け取った Claude は手を止めて
-    //    「⏸ 中断しました」と書く（共通ルール ~/.claude/CLAUDE.md で決めてある）
-    // ⚠️ 素のシェルに言葉を送らないこと。`pause` が**コマンドとして走る**
-    if (b === el.kpause) {
-      var pcur = sessions.filter(function (s) { return s.name === current; })[0];
-      var pst = pcur ? statusOf(pcur) : '';
-      if (current) pauseWish = { name: current, at: Date.now() };
+    // 中断の札（hold / unhold）。**tmux には何も送らない**。変わるのはタブの縁の色だけ。
+    // 止めるのも続けるのも自分でやる＝これは「この席は置いてある」と自分に見せる付箋。
+    // 一度 hold を押したら、unhold を押すまで印は消えない（文字を送っても、席が
+    // 動き出しても降りない）。前は esc や `pause` の言葉を送っていたが、
+    // 印が勝手に付いたり消えたりするのをやめて、2026-09-04 にここまで削った
+    if (b === el.khold || b === el.kunhold) {
+      if (!current) return toast('送り先が選ばれていません');
+      var on = b === el.khold;
+      holdWish = { name: current, on: on, at: Date.now() };
       renderTabs();                    // 縁を先に出す。Mac の返事は1〜2秒あとに来る
-      var pname = current;
-      if (!pcur || pcur.kind !== 'claude' || pst === 'busy' || liveBox()) {
-        // キーの道。`/api/key` は札に触らないので、先に立ててよい。
-        // ⚠️ 素のシェルには札を立てない。esc はほぼ何も起こさないので、
-        //    「中断のまま」と出し続けるのは嘘になる
-        if (pcur && pcur.kind === 'claude') markPause(pname, true);
-        sendKey('Escape');
-        return toast('pause を送りました。いまの作業を止めます');
-      }
-      // 言葉の道。送信が札を降ろすので、送れてから立てる
-      sendText('pause', true).then(function () { markPause(pname, true); }, function () {});
-      return toast('pause と伝えました。ここで止まります');
-    }
-    // 戻す札。止まっている席に「続けて」と一言送るだけ＝会話の続きから動き出す。
-    // ⚠️ キーではなく**本文**を送る。esc で止めた席は素のプロンプトに戻っていて、
-    //    キーを送っても何も起きない（Enter は空送信になる）
-    // 戻す札。文字を送ると Mac 側が中断の札を降ろす（`/api/send`）ので、
-    // ここでわざわざ降ろしに行かなくてよい
-    if (b === el.kresume) {
-      pauseWish = null;
-      sendText(RESUME_WORD, true).then(function () { renderTabs(); }, function () {});
-      return toast('resume を送りました。続きから動き出します');
+      syncKeys();
+      setHold(current, on).then(function () { tick(true); });
+      return toast(on ? '中断の印をつけました（unhold で外します）' : '中断の印を外しました');
     }
     if (b.dataset.key) return sendKey(b.dataset.key);
     if (!b.dataset.text) return;
@@ -3238,15 +3875,84 @@
     // ここは幅に余裕があるので、種類（Claude）とモデルの両方を出す
     var headChip = modelChip(s);
     head.textContent = s.name + ' ・ ' + LABEL[s.status] + ' ・ ' + KIND[s.kind]
-      + (headChip ? ' ・ ' + headChip.label : '');
+      + (headChip ? ' ・ ' + headChip.label : '')
+      // 名前を付けた席は、札から Claude の自動題名（いま何をしているか）が消える。
+      // 捨てたわけではないので、ここに残して読めるようにする
+      + (s.label && s.auto && s.auto !== s.label ? '\n' + s.auto : '');
+    head.style.whiteSpace = 'pre-line';
     sheetBody.appendChild(head);
+
+    sheetItem('名前を変える', s.label ? 'いま「' + s.label + '」' : '自動（Claude が書いた題名）',
+      function () { renameMenu(s.name); }, { icon: 'pencil', iconCls: 'edit' });
 
     // 押したらすぐ終わる。確認シートは挟まない（ここに来るまでに
     //「札をタップ→もう一度タップ」を踏んでいて、題名も目の前に出ている＝
     // 間違った席を畳む余地が小さい。毎回2枚目を出すほうが邪魔）
     sheetItem('片付ける（終わらせる）',
       (s.status === 'busy' ? '⚠️ いま作業中です・' : '') + '押すとすぐ終わります（取り消せません）',
-      function () { closeSheet(); doKill(s.name); });
+      function () { closeSheet(); doKill(s.name); }, { icon: 'power', iconCls: 'stop' });
+  }
+
+  // 席に自分の名前を付ける。
+  // ⚠️ 変えるのは**見た目の名札だけ**で、tmux の席の名前（work1）はそのまま。
+  //    席の名前は送る・見る・畳むの全部で席を指す合鍵で、開きっぱなしのスマホも
+  //    その字で覚えている。名前そのものを変えると、古い名前を呼び続けて
+  //    「押しても効かない」になる（2026-08-11 に /api/kill で踏んだのと同じ形）。
+  // 名札は席と一緒に消える。畳んだ席の名札が、次に同じ名前で作った席に付くことはない。
+  function renameMenu(name) {
+    var s = null;
+    sessions.forEach(function (x) { if (x.name === name) s = x; });
+    if (!s) return;
+    openSheet('名前を変える');
+
+    var head = document.createElement('div');
+    head.className = 'sheethead';
+    head.textContent = name + ' の札に出す名前。空にすると、Claude が書く題名（いま何をしているか）に戻ります。';
+    sheetBody.appendChild(head);
+
+    var box = document.createElement('div');
+    box.className = 'nameedit';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 40;
+    input.value = s.label || '';
+    input.placeholder = s.auto || name;
+    // スマホの変換候補で勝手に大文字にされたり、打った字を書き換えられると
+    // 名前が意図と違うものになるので、補助はすべて切る
+    input.autocapitalize = 'off';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    box.appendChild(input);
+    sheetBody.appendChild(box);
+
+    var save = function () {
+      var v = input.value.trim();
+      if (v === (s.label || '')) return closeSheet();   // 変わっていないなら何もしない
+      closeSheet();
+      doRename(name, v);
+    };
+    // 変換の途中で Enter を押したときに送ってしまわない（日本語入力の確定と
+    // 送信は同じキー。isComposing が立っているあいだは確定の Enter）
+    input.onkeydown = function (e) {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); save(); }
+    };
+
+    sheetItem('この名前にする', '', save, { on: true, icon: 'check', iconCls: 'ok' });
+    if (s.label) {
+      sheetItem('自動にもどす', s.auto ? '「' + s.auto + '」に戻ります' : 'Claude が書く題名に戻ります',
+        function () { closeSheet(); doRename(name, ''); }, { icon: 'undo', iconCls: 'dark' });
+    }
+    // シートを開いた指の動きの中で呼ぶ＝iPhone でもキーボードが出る
+    try { input.focus(); } catch (e) {}
+  }
+
+  function doRename(name, label) {
+    api('/api/rename', { method: 'POST', body: JSON.stringify({ name: name, label: label }) })
+      .then(function (d) {
+        toast(d.label ? '「' + d.label + '」にしました' : name + ' を自動の題名に戻しました');
+        tick(true);
+      })
+      .catch(function (e) { toast('名前を変えられません: ' + e.message); });
   }
 
   // 席が埋まったときの後始末。作業中のものだけ残して、あとはまとめて終わらせる。
@@ -3261,14 +3967,14 @@
     if (!list.length) return toast('終わらせるものがありません');
     openSheet('作業中以外を終わらせますか？');
 
-    // 中断も「あなたが止めたまま置いてある席」＝消す前に数を見せる仲間に入れる
+    // 中断（hold の印）も「あなたが置いてある席」＝消す前に数を見せる仲間に入れる
     var held = function (s) { return s.status === 'waiting' || s.status === 'paused'; };
     var waiting = list.filter(held).length;
     var head = document.createElement('div');
     head.className = 'sheethead';
     head.textContent = list.length + ' 件の Claude を終了します。会話の続きはできなくなります'
       + '（ファイルへの変更は残ります）。'
-      + (waiting ? '⚠️ うち ' + waiting + ' 件は返答待ち／中断＝あなたの返事を待って止まっているものです。' : '');
+      + (waiting ? '⚠️ うち ' + waiting + ' 件は返答待ち／中断＝あなたの返事を待っている、または hold の印を付けた席です。' : '');
     sheetBody.appendChild(head);
 
     var box = document.createElement('div');
@@ -3320,6 +4026,36 @@
   document.getElementById('sheetcancel').onclick = closeSheet;
   sheet.onclick = function (e) { if (e.target === sheet) closeSheet(); };
 
+  // シートの項目に置く絵。制作物の一覧（FIC）と同じ描き方にそろえる＝
+  // 24の枠・線は currentColor の 1.7・角は丸。色は CSS の .sic.◯◯ で付ける。
+  // ⚠️ 「終わらせる」にゴミ箱を使わない。あれは「消す」の絵で、
+  //    実際に消えるのは会話だけ（ファイルへの変更は残る）＝嘘の絵になる。
+  //    電源の絵なら「動いているものを止める」で、起きることと合う。
+  var SIC = {
+    // 鉛筆＝名前を書き直す
+    pencil: '<path d="M4 20h4L18.3 9.7a2 2 0 0 0 0-2.8l-1.2-1.2a2 2 0 0 0-2.8 0L4 16z"/>'
+      + '<path d="M14.1 6.1 17.9 9.9"/>',
+    // 電源＝動いているものを止める
+    power: '<path d="M12 3.4v8"/>'
+      + '<path d="M17.4 6.5a7.5 7.5 0 1 1-10.8 0"/>',
+    // 月＝画面を消す（眠らせる）
+    moon: '<path d="M20.4 14.8A8.5 8.5 0 0 1 9.2 3.6 8.5 8.5 0 1 0 20.4 14.8z"/>',
+    // ✓＝これで決まり
+    check: '<polyline points="4.8 12.6 9.8 17.6 19.2 6.8"/>',
+    // 左まわりの矢印＝元に戻す
+    undo: '<polyline points="2.6 5.2 2.6 11.2 8.6 11.2"/>'
+      + '<path d="M5.1 15.6a8.5 8.5 0 1 0 2-8.9l-4.5 4.5"/>',
+    // フォルダ＝制作物。ここだけ塗り（制作物の画面のフォルダと同じ絵）
+    folder: '<path d="M4.6 4.8h4.2c.6 0 1.1.2 1.5.7l1.1 1.3h8A2.6 2.6 0 0 1 22 9.4v8'
+      + 'A2.6 2.6 0 0 1 19.4 20H4.6A2.6 2.6 0 0 1 2 17.4V7.4a2.6 2.6 0 0 1 2.6-2.6z"'
+      + ' fill="currentColor" stroke="none"/>',
+  };
+  function sicSvg(name) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none"'
+      + ' stroke="currentColor" stroke-width="1.7" stroke-linecap="round"'
+      + ' stroke-linejoin="round">' + (SIC[name] || '') + '</svg>';
+  }
+
   function sheetItem(label, sub, onclick, opts) {
     var b = document.createElement('button');
     // 色の印（モデルを選ぶ画面だけ）。名前の前に置く
@@ -3328,15 +4064,27 @@
       d.className = 'dot ' + opts.dot;
       b.appendChild(d);
     }
+    // 絵を置くときだけ、文字を右の1かたまりにまとめ直す
+    var box = b;
+    if (opts && opts.icon) {
+      b.className = 'hasicon';
+      var ic = document.createElement('span');
+      ic.className = 'sic ' + (opts.iconCls || '');
+      ic.innerHTML = sicSvg(opts.icon);
+      b.appendChild(ic);
+      box = document.createElement('span');
+      box.className = 'txt';
+      b.appendChild(box);
+    }
     var t = document.createElement('span');
     t.textContent = label;
     if (opts && opts.on) t.className = 'on';
-    b.appendChild(t);
+    box.appendChild(t);
     if (sub) {
       var s2 = document.createElement('span');
       s2.className = 'sub';
       s2.textContent = sub;
-      b.appendChild(s2);
+      box.appendChild(s2);
     }
     if (opts && opts.disabled) b.disabled = true;
     b.onclick = function () { onclick(); };
@@ -3364,13 +4112,17 @@
   // どこが消えるか（席の名前）と危険の合図（⚠️）は文字数を使ってでも残す。
   document.getElementById('menu').onclick = function () {
     openSheet('版 ' + (seenVersion || '?'));
-    sheetItem('制作物を見る', '', function () { openFiles(); });
-    sheetItem('Mac の画面を消す', '', function () { closeSheet(); doDark(); });
+    sheetItem('制作物を見る', '', function () { openFiles(); },
+      { icon: 'folder', iconCls: 'edit' });
+    sheetItem('Mac の画面を消す', '', function () { closeSheet(); doDark(); },
+      { icon: 'moon', iconCls: 'dark' });
     sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
-      function () { closeSheet(); doKill(current); }, { disabled: !current });
+      function () { closeSheet(); doKill(current); },
+      { disabled: !current, icon: 'power', iconCls: 'stop' });
     var killable = killableList();
     sheetItem('作業中以外を終わらせる', killable.length ? killable.length + ' 件' : '',
-      function () { confirmKillIdle(); }, { disabled: !killable.length });
+      function () { confirmKillIdle(); },
+      { disabled: !killable.length, icon: 'power', iconCls: 'stop' });
   };
 
   // ---------------------------------------------------------- 制作物を見る

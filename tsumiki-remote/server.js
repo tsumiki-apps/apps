@@ -472,16 +472,40 @@ const NO_SERVER_RE = /no server running|error connecting to|no such file or dire
 //    打って変えた場合は追いかけられない（外から見る手がかりが無い）。
 const MODEL_OPT = '@tsumiki_model';
 
+// 手で付けた名前（つみきリモートの「名前を変える」）。同じく席そのものに書く。
+// ⚠️ tmux の席の名前（work1 等）とは別物。あちらは全部の口で席を指す合鍵なので、
+//    日本語も空白も入れられない。ここは**見せるためだけ**の名札にする。
+// Claude Code が書き続ける自動の題名（pane_title）は消さずに残す。名札がある席は
+// 名札を出し、自動題名は席のメニューの中に置く（「いま何をしているか」を捨てない）。
+const TITLE_OPT = '@tsumiki_title';
+const LABEL_MAX = 40;
+
+// 名札に使ってよい形にそろえる。ここを通さないと2つ壊れる：
+//  ・改行や制御文字が入ると tmux の1行1席の出力がずれる
+//  ・区切りの SEP がそのまま入ると、下の split で列がずれて別の席に見える
+function cleanLabel(v) {
+  return String(v == null ? '' : v)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .split(SEP).join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, LABEL_MAX);
+}
+
 async function listSessions() {
+  // 名札は**いちばん最後**に置く。中身は人が打つ自由な字なので、万一 SEP が
+  // 混じっても、後ろを全部つなぎ直せば前の列（名前・モデル）は無事でいられる
   const r = await tmux(['list-sessions', '-F',
-    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}`]);
+    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}${SEP}#{${TITLE_OPT}}`]);
   if (!r.ok) return { ok: NO_SERVER_RE.test(r.err), sessions: [] };
   const sessions = r.out
     .split('\n')
     .filter(Boolean)
     .map((line) => {
-      const [name, window, activity, model] = line.split(SEP);
-      return { name, window, activity: Number(activity) || 0, model: (model || '').trim() };
+      const cols = line.split(SEP);
+      const [name, window, activity, model] = cols;
+      return { name, window, activity: Number(activity) || 0, model: (model || '').trim(),
+               label: cleanLabel(cols.slice(4).join(SEP)) };
     });
   return { ok: true, sessions };
 }
@@ -581,10 +605,17 @@ async function seatState(s, deadline) {
   // display-message をもう1本起こしても、その結果は誰も使わない
   if (Date.now() > deadline) throw new Error('deadline');
   const info = await paneInfo(s.name);
+  const auto = titleOf(info, s.name);
+  const label = cleanLabel(s.label);
   const row = {
     name: s.name, window: s.window, status, quietMs,
     kind: kindOf(info.cmd), command: info.cmd,
-    title: titleOf(info, s.name),
+    // 札に出す名前。手で付けた名札があればそちらが勝つ
+    title: label || auto,
+    // 手で付けた名札（無ければ空）。画面側は「名前を変える」の初期値に使う
+    label,
+    // Claude Code が書いている自動の題名。名札で隠れても捨てない（席のメニューに出す）
+    auto,
     // 始めたときに選んだモデル。選ばずに作った席・アプリの外で作った席は空
     model: s.model,
     preview: lastMeaningfulLine(text),
@@ -648,43 +679,16 @@ const WAITING_RE = new RegExp(
 // 「作業中」= 実行中スピナー等の特徴
 const BUSY_RE = /esc to interrupt|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/;
 
-// 「中断」= 人が手で止めたところで待っている席（2026-09-03）。
-// 止めかたは2通りあり、画面に残る印もそれぞれ違う。
-//  ① キー行の `pause`（＝ esc）で止めた → Claude Code が自分で書く
-//     「Interrupted · What should Claude do instead?」「[Request interrupted by user]」
-//     （2026-09-03 に Claude Code の中身を読んで確かめた文言＝
-//       {tone:"dim", text:"Interrupted", detail:"What should Claude do instead?"} と
-//       `[Request interrupted by user]` `[Request interrupted by user for tool use]`）
-//  ② 番号の質問で `pause` を選んだ → Claude が手を止めて「⏸ 中断しました」と書く
-//     （共通ルール ~/.claude/CLAUDE.md の質問のしかたで、そう書くと決めてある）
-// ⚠️ 印は**行の頭**で見て、そのうしろも見る。「Interrupted」という字だけを探すと、
-//    この仕組みの話をしているだけの地の文（「画面に Interrupted などが出ていたら…」）
-//    まで当たる。行頭にあって、そのあとが「 ·」か行末のものだけを中断と見なす。
-//    行頭の `⎿` は付いていても付いていなくてもよい（囲みの記号は版で変わりうる）。
-// ⚠️ `\s` は改行も食うので、行末は `[ \t]*$` で見る（`\s*$` だと次の行まで越える）。
-const PAUSED_RE =
-  /^[ \t]*(?:⎿[ \t]*)?Interrupted(?:[ \t]*·|[ \t]*$)|\[Request interrupted by user|^[ \t]*⏸/m;
-// 印を探すのは画面の末尾だけ（番号の質問と同じ考えかた）。
-const PAUSED_TAIL = 16;
-
-// 中断は**札**として持つ（2026-09-03・2回目）。
+// 「中断」= **あなたが hold を押して、そのまま置いてある席**（2026-09-04 に作り直し）。
 //
-// 画面の字だけで決めていると、Claude が一言でも書き足したとたん印が上へ押し出されて、
-// 何もしていないのに中断が解ける＝`resume` を押す前に札が消えてしまう。
-// だから一度立てた札は**こちらから降ろすまで立ったまま**にする。
-//
-// 降ろすのは2つだけ：
-//   ① その席に**文字を送った**とき（`resume` の「続けて」も、手で打った指示も同じ）
-//   ② その席が**動き出した**とき（スピナー＝作業中／枠を出して聞いてきた）
-//
-// ⚠️ 降ろしたあとも印は画面に残っている。そのままだと次の巡回でまた立ってしまうので、
-//    降ろすときは「消音」にして、**印が画面から流れて消えるまで数えない**。
-//    消えたら札そのものを捨てて、次に出た印はまた数える。
-const pausedSeat = new Map();     // name -> 'on'（中断）| 'off'（消音）
-
-function markPaused(name) { pausedSeat.set(name, 'on'); }
-// 送った・動き出した＝もう中断ではない。ただし札を持っていた席だけ消音にする
-function clearPaused(name) { if (pausedSeat.has(name)) pausedSeat.set(name, 'off'); }
+// 前は画面の字（`Interrupted` / `⏸ 中断しました`）を読んで自動で立て、文字を送るか
+// 動き出したら自動で降ろしていた。やめた理由＝**印が勝手に増えたり消えたりする**。
+// 欲しかったのは「自分で立てて、自分で降ろす付箋」だけだったので、そこまで削った。
+//   ・画面の字は**もう見ない**（PAUSED_RE も消音のしくみも消した）
+//   ・文字を送っても、動き出しても、**降りない**
+//   ・降りるのは `POST /api/pause {on:false}`（画面の unhold）か、席が無くなったときだけ
+// ⚠️ tmux には何も送らない。この札は**見た目だけ**を変える。
+const pausedSeat = new Set();     // 中に名前がある＝中断の札が立っている席
 
 // 「番号で答える質問」＝ 本文に選択肢を書いて、数字だけ返してもらう聞きかた。
 // 共通ルール（~/.claude/CLAUDE.md）で、選択パネル（AskUserQuestion）は使わずに
@@ -780,19 +784,14 @@ function judge(name, text) {
   const quietMs = now - changedAt;
 
   const screen = text.slice(-3000);
-  const marked = PAUSED_RE.test(tailLines(text, PAUSED_TAIL));
-  // 消音は、印が画面から流れて消えたところで解く（次に出た印はまた数える）
-  if (pausedSeat.get(name) === 'off' && !marked) pausedSeat.delete(name);
+  // 中断の札は**いちばん強い**。unhold を押すまで、画面が何をしていても中断のまま出す
+  // （手で立てた付箋なので、こちらが降ろすまで剥がれないのが正しい）
+  if (pausedSeat.has(name)) return { status: 'paused', quietMs };
 
-  if (WAITING_RE.test(screen)) { clearPaused(name); return { status: 'waiting', quietMs }; }
+  if (WAITING_RE.test(screen)) return { status: 'waiting', quietMs };
   // 番号で答える質問より、スピナーのほうが強い。答えた直後は Claude が動き出す
   // のに、質問の字はまだ画面に残っている＝そこは「作業中」と出したい
-  if (BUSY_RE.test(screen)) { clearPaused(name); return { status: 'busy', quietMs }; }
-  // 印を見つけたら札を立てる。消音のあいだは数えない
-  if (marked && pausedSeat.get(name) !== 'off') markPaused(name);
-  // 中断は番号の質問より先に見る。質問を出したあとに pause で止めると、質問の字は
-  // まだ末尾に残っている＝順番が逆だと「返答待ち」のまま中断の縁が出ない
-  if (pausedSeat.get(name) === 'on') return { status: 'paused', quietMs };
+  if (BUSY_RE.test(screen)) return { status: 'busy', quietMs };
   if (asksNumber(tailLines(text, ASK_NUM_TAIL))) return { status: 'waiting', quietMs };
   if (quietMs < 5000) return { status: 'busy', quietMs };
   return { status: 'idle', quietMs };
@@ -1444,8 +1443,14 @@ const server = http.createServer(async (req, res) => {
           }
           // 初めて見る席は「作業中」に倒す＝消えるより消せないほうが軽い（README）
           const base = last || { name: s.name, window: s.window, status: 'busy', quietMs: 0,
-            kind: 'shell', command: '', title: s.name, model: s.model, preview: '' };
-          return Object.assign({}, base, { stale: true });
+            kind: 'shell', command: '', title: s.label || s.name, label: s.label || '',
+            auto: s.name, model: s.model, preview: '' };
+          // 名札だけは前の値に落とさない。一覧が読めた回は名札も一緒に読めていて、
+          // ここで古い名札に戻すと「名前を変えたのに変わらない」になる
+          // （席が詰まっている＝いちばん名前で見分けたいとき、に効く）
+          const fresh = s.label === undefined ? {}
+            : { label: s.label, title: s.label || base.auto || base.title };
+          return Object.assign({}, base, fresh, { stale: true });
         })));
       return json(res, 200, {
         sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
@@ -1511,9 +1516,8 @@ const server = http.createServer(async (req, res) => {
         if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       }
       if (body.enter) await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
-      // 文字を送った＝もう「止めたまま置いてある」ではない。中断の札を降ろす
-      // （`resume` の「続けて」も、手で打った指示も、ここを通る）
-      clearPaused(name);
+      // ⚠️ ここで中断の札に触らないこと。札は unhold を押すまで立てたままにする
+      //    （前は送ると自動で降ろしていた。勝手に剥がれるのをやめたのが 2026-09-04）
       forgetScreen(name);   // 送った直後に見に行くので、撮り置きは捨てる
       return json(res, 200, { ok: true });
     }
@@ -1534,18 +1538,50 @@ const server = http.createServer(async (req, res) => {
       return json(res, r.ok ? 200 : 500, r.ok ? { ok: true } : { error: r.err.slice(0, 200) });
     }
 
-    // 中断の札を立てる／降ろす。画面の字だけに頼らず、**押した事実**で決める。
-    // esc で枠を閉じただけのときのように、画面に印が残らない止めかたもあるため。
-    // ⚠️ tmux には何も送らない。ここは札だけを動かす口
+    // 中断の札を立てる／降ろす。**札を動かす唯一の口**（画面の hold / unhold）。
+    // ⚠️ tmux には何も送らない。止めるのも続けるのも、あなたが自分でやる。
+    //    ここが変えるのは「タブの縁が青いかどうか」だけ
     if (p === '/api/pause' && req.method === 'POST') {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const on = body.on !== false;
-      if (on) markPaused(name); else clearPaused(name);
+      if (on) pausedSeat.add(name); else pausedSeat.delete(name);
       console.log(`pause ${name} ${on ? 'on' : 'off'}`);
       forgetScreen(name);   // すぐ見に行くので撮り置きは捨てる
       return json(res, 200, { ok: true });
+    }
+
+    // 席に名札を付ける／外す。tmux の席の名前（work1）は変えない。
+    // ⚠️ 席の名前を変えないのは、あれが全部の口（送る・見る・畳む）で席を指す
+    //    合鍵で、画面側も localStorage もその字で覚えているため。名前そのものを
+    //    変えると、開きっぱなしのスマホが古い名前を呼び続けて「押しても効かない」になる。
+    //    見た目だけ変えたい、が本当にしたいことなので、別の場所（TITLE_OPT）に置く。
+    // 空文字を送ると名札を外す＝Claude Code の自動題名に戻る
+    if (p === '/api/rename' && req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name || '');
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      const label = cleanLabel(body.label);
+      // 中身はログに残さない（お客様の名前を打つ場所になりうる。/api/send と同じ考え）
+      console.log(`rename ${name} ${label ? label.length + '文字' : '自動題名に戻す'}`);
+      // 席そのものへの指定は素の名前で指す（`=名前:` は set-option では使えない）。
+      // 名札は自由な字なので `--` を必ず置く。`-x …` のような字が旗として読まれると
+      // 500 になる（/api/send・/api/key で同じ穴を踏んでいる。2026-09-02）
+      const r = label
+        ? await tmux(['set-option', '-t', name, '--', TITLE_OPT, label])
+        : await tmux(['set-option', '-t', name, '-u', TITLE_OPT]);
+      // 席が畳まれた直後にここへ来ることがある。tmux の英語をそのまま出しても
+      // 出先では読めないので、その一件だけ日本語にする（/api/new と同じ扱い）
+      if (!r.ok) {
+        const gone = /no such session/i.test(r.err);
+        return json(res, gone ? 404 : 500,
+          { error: gone ? name + ' はもうありません' : r.err.slice(0, 200) });
+      }
+      // 手元の写しも今すぐ直す。次の巡回を待たずに札が変わって見える
+      const last = lastSeat.get(name);
+      if (last) { last.label = label; last.title = label || last.auto || last.name; }
+      return json(res, 200, { ok: true, label });
     }
 
     // セッションを作る。run:'claude' なら作った直後に Claude Code を起動する
