@@ -137,7 +137,10 @@
   .tab .meta{display:flex;align-items:center;gap:6px;margin-top:4px}
   .tab .st{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px}
   .tab .st::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--idle);flex:0 0 auto}
-  .tab.busy .st::before{background:var(--busy);animation:pulse 1.2s ease-in-out infinite}
+  /* 点は色だけ。動きは札の呼吸（tabbreathe）が一手に引き受ける＝
+     ひとつの札で2つのものが動くと、目が散って読みづらい。
+     送り先バーの点（#dest.busy::before）は札ではないので、あちらは点滅のまま */
+  .tab.busy .st::before{background:var(--busy)}
   .tab.waiting .st::before{background:var(--wait)}
   .tab.waiting .st{color:var(--wait)}
   .tab.paused .st::before{background:var(--pause)}
@@ -148,10 +151,45 @@
      枠は点滅させない（タブが並ぶと目がちらつく）。動きはドットの点滅が担当 */
   .tab.busy{border-color:var(--busy-line)}
   .tab.waiting{border-color:var(--wait)}
-  /* 中断の縁。作業中より強く、返答待ちと同じくらいの濃さで出す＝
-     「あなたが止めたまま置いてある席」は、返事を待っている席と同じだけ目に入ってほしい */
   .tab.paused{border-color:var(--pause)}
   @keyframes pulse{50%{opacity:.35}}
+
+  /* ==========================================================================
+     札の「呼吸」— 内側の色がゆっくり濃くなって薄くなる（回さない）
+     一度は縁を光が一周する作りにしたが、動きが強すぎて落ち着かなかった。
+     回転をやめ、点の点滅の置き換えとして**内側だけ**を呼吸させる（2026-09-04）。
+     ⚠️ 濃さの順は **作業中 > 返答待ち・中断**（本人の指示）。
+        以前ここには「返答待ち > 作業中」と書いてあったが、回る光をやめて
+        全体が静かになったので、その順位付けは要らなくなった。
+     色は3つのまま：紫＝作業中／オレンジ＝返答待ち／青＝中断。
+     外へのにじみは付けない（内側だけ＝隣の札とにじみが重ならない）。
+     ========================================================================== */
+  .tab.busy,.tab.waiting,.tab.paused{
+    animation:tabbreathe var(--breath,2.4s) ease-in-out infinite;
+    /* ⚠️ 札は1.5秒ごとに作り直される（tick → renderTabs）。素直に入れると
+       呼吸が1.5秒ごとに頭へ戻る。renderTabs が時計から出した負の delay を
+       渡して位相を続かせる＝作り直しても呼吸は続いて見える */
+    animation-delay:var(--breath-delay,0s);
+  }
+  @keyframes tabbreathe{
+    0%,100%{box-shadow:inset 0 0 0 0 rgba(0,0,0,0)}
+    50%{box-shadow:inset 0 0 var(--glow-blur,16px) var(--glow-spread,-4px) var(--glow)}
+  }
+  /* 作業中がいちばん濃く、いちばん速い */
+  .tab.busy{--glow:rgba(192,132,252,.55);--glow-blur:19px;--glow-spread:-3px;--breath:2.4s}
+  /* 返答待ち・中断は、作業中より弱く・ゆっくり。色で見分けはつく */
+  .tab.waiting{--glow:rgba(245,158,11,.30);--glow-blur:16px;--glow-spread:-5px;--breath:3.4s}
+  .tab.paused{--glow:rgba(96,165,250,.30);--glow-blur:16px;--glow-spread:-5px;--breath:3.4s}
+
+  /* 動きを減らす設定のときは呼吸を止め、いちばん濃いところで固定する＝
+     動きが要らない人にも「いまどの状態か」は残す（消すと状態が読めなくなる） */
+  @media (prefers-reduced-motion:reduce){
+    .tab.busy,.tab.waiting,.tab.paused{
+      animation:none;
+      box-shadow:inset 0 0 var(--glow-blur,16px) var(--glow-spread,-4px) var(--glow);
+    }
+  }
+
   .tab .kind{
     font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;flex:0 0 auto;
     display:inline-block;background:#20242c;color:var(--dim);
@@ -198,8 +236,10 @@
   /* 届いていないあいだ、札の「作業中」は今の話ではない（点滅は動いている合図に
      見えてしまう）。止めて、薄くして、古い情報だと分かるようにする */
   body.offline nav{opacity:.5}
-  body.offline .tab.busy .st::before,
-  body.offline #dest.busy::before{animation:none}
+  body.offline .tab.busy,
+  body.offline .tab.waiting,
+  body.offline .tab.paused,
+  body.offline #dest.busy::before{animation:none;box-shadow:none}
 
   main{flex:1 1 auto;min-height:0;margin:0 10px;border:1px solid var(--line);border-radius:14px;background:#0b0c0f;overflow:hidden}
   #out{
@@ -1323,12 +1363,21 @@
     return el.out.scrollHeight - el.out.scrollTop - el.out.clientHeight < 40;
   }
 
+  // 札の呼吸の周期。⚠️ CSS の .tab.busy/.waiting/.paused の --breath と同じ数にする
+  //    （ずれると、作り直しのたびに呼吸が飛ぶ）
+  var BREATH_MS = { busy: 2400, waiting: 3400, paused: 3400 };
+
   function renderTabs() {
     el.tabs.innerHTML = '';
     sessions.forEach(function (s, i) {
       var b = document.createElement('button');
       var st = statusOf(s);
       b.className = 'tab ' + st + (s.stale ? ' stale' : '');
+      // 呼吸の位相は時計から出す（経過ぶんの負の delay）。札は1.5秒ごとに
+      // 作り直されるので、これが無いと呼吸が1.5秒ごとに頭へ戻る。
+      // 周期は状態ごとに違う（CSS の --breath と必ず揃えること）
+      var ms = BREATH_MS[st];
+      if (ms) b.style.setProperty('--breath-delay', (-(Date.now() % ms) / 1000) + 's');
       b.setAttribute('aria-selected', String(s.name === current));
       // 種類の札は、モデルが分かっていればモデル名にして、色もそのモデルの色にする
       // （「Claude」と「Opus」を並べない＝札が狭いのと、Claude であることは
