@@ -725,6 +725,10 @@
   .sheetbody .killrow{font-size:12px;color:var(--dim);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sheetbody .killrow.warn{color:var(--wait)}
+  /* 残るほうも同じ形で並べる。消える一覧だけだと、中断にした席が
+     そこに載っていない理由（守られている）が読み取れない */
+  .sheetbody .killlist.keep{padding-top:2px}
+  .sheetbody .killrow.keephead{color:var(--accent);font-weight:700;padding-top:4px}
   /* 名前を変える欄。文字は16px以上にする（それ未満だと iPhone が勝手に
      拡大して、閉じたあとも画面がずれたままになる） */
   .sheetbody .nameedit{padding:0 2px 2px}
@@ -3955,26 +3959,37 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .catch(function (e) { toast('名前を変えられません: ' + e.message); });
   }
 
-  // 席が埋まったときの後始末。作業中のものだけ残して、あとはまとめて終わらせる。
+  // 席が埋まったときの後始末。**残すのは2つ＝作業中と中断（hold の印）**。
+  // 中断は自分で貼って自分で剥がす付箋なので、まとめて片付けでも剥がさない。
+  // 「あとで戻る席」の印として使っているのに、片付けで消えるなら印の意味が無い
+  // （2026-09-05 まで中断も畳んでいた。守りたい席を守れる側に作り直した）。
   // ⚠️ 「作業中」の判定は画面が動いたかどうかなので、何も出力しない長い処理
   //    （静かなビルド等）は待機に見える。だから消す前に必ず一覧を見せる。
+  //    ⇒ 静かな席を確実に残したいときは、先に hold を押して中断にしておけばよい。
+  var KEEP_STATUS = { busy: 1, paused: 1 };
+
   function killableList() {
-    return sessions.filter(function (s) { return s.status !== 'busy'; });
+    return sessions.filter(function (s) { return !KEEP_STATUS[s.status]; });
+  }
+
+  function keptList() {
+    return sessions.filter(function (s) { return !!KEEP_STATUS[s.status]; });
   }
 
   function confirmKillIdle() {
     var list = killableList();
     if (!list.length) return toast('終わらせるものがありません');
-    openSheet('作業中以外を終わらせますか？');
+    openSheet('作業中と中断を残して終わらせますか？');
 
-    // 中断（hold の印）も「あなたが置いてある席」＝消す前に数を見せる仲間に入れる
-    var held = function (s) { return s.status === 'waiting' || s.status === 'paused'; };
+    // 返答待ち＝あなたの返事を待って止まっている席。消すと質問ごと消えるので
+    // オレンジで出して件数も書く。中断はもう消えない側なので、ここには数えない
+    var held = function (s) { return s.status === 'waiting'; };
     var waiting = list.filter(held).length;
     var head = document.createElement('div');
     head.className = 'sheethead';
     head.textContent = list.length + ' 件の Claude を終了します。会話の続きはできなくなります'
       + '（ファイルへの変更は残ります）。'
-      + (waiting ? '⚠️ うち ' + waiting + ' 件は返答待ち／中断＝あなたの返事を待っている、または hold の印を付けた席です。' : '');
+      + (waiting ? '⚠️ うち ' + waiting + ' 件は返答待ち＝あなたの返事を待っている席です。' : '');
     sheetBody.appendChild(head);
 
     var box = document.createElement('div');
@@ -3986,6 +4001,24 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       box.appendChild(row);
     });
     sheetBody.appendChild(box);
+
+    // 残る側も同じ形で見せる（0件なら出さない）
+    var kept = keptList();
+    if (kept.length) {
+      var keepBox = document.createElement('div');
+      keepBox.className = 'killlist keep';
+      var kh = document.createElement('div');
+      kh.className = 'killrow keephead';
+      kh.textContent = '残す ' + kept.length + ' 件（作業中・中断）';
+      keepBox.appendChild(kh);
+      kept.forEach(function (s) {
+        var row = document.createElement('div');
+        row.className = 'killrow';
+        row.textContent = '・' + (s.title || s.name) + '（' + s.name + '・' + LABEL[s.status] + '）';
+        keepBox.appendChild(row);
+      });
+      sheetBody.appendChild(keepBox);
+    }
 
     sheetItem('やめる', '何もしません', function () { closeSheet(); });
     sheetItem('終わらせる', list.length + ' 件・取り消せません', function () {
@@ -4120,7 +4153,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       function () { closeSheet(); doKill(current); },
       { disabled: !current, icon: 'power', iconCls: 'stop' });
     var killable = killableList();
-    sheetItem('作業中以外を終わらせる', killable.length ? killable.length + ' 件' : '',
+    sheetItem('作業中と中断を残して終わらせる', killable.length ? killable.length + ' 件' : '',
       function () { confirmKillIdle(); },
       { disabled: !killable.length, icon: 'power', iconCls: 'stop' });
   };

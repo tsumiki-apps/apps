@@ -480,6 +480,15 @@ const MODEL_OPT = '@tsumiki_model';
 const TITLE_OPT = '@tsumiki_title';
 const LABEL_MAX = 40;
 
+// 中断（hold）の札の置き場。**席そのもの**に書く（上の2つと同じ棚）。
+// 2026-09-05 まではサーバーのメモリ（pausedSeat）だけに持っていた。それでも
+// 「縁が青いか」を変えるだけなら痛くなかったが、この日から札は
+// **「まとめて終わらせるで残す」という意味**を持った。メモリだけだと
+// サーバーを入れ替えた瞬間に札が全部降りて、守られていたはずの席が
+// 消せる側に戻る（しかも画面上は何も起きていないように見える）。
+// 席と一緒に生き死にする場所へ移して、入れ替えでも残るようにする。
+const HOLD_OPT = '@tsumiki_hold';
+
 // 名札に使ってよい形にそろえる。ここを通さないと2つ壊れる：
 //  ・改行や制御文字が入ると tmux の1行1席の出力がずれる
 //  ・区切りの SEP がそのまま入ると、下の split で列がずれて別の席に見える
@@ -496,17 +505,23 @@ async function listSessions() {
   // 名札は**いちばん最後**に置く。中身は人が打つ自由な字なので、万一 SEP が
   // 混じっても、後ろを全部つなぎ直せば前の列（名前・モデル）は無事でいられる
   const r = await tmux(['list-sessions', '-F',
-    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}${SEP}#{${TITLE_OPT}}`]);
+    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}${SEP}#{${HOLD_OPT}}${SEP}#{${TITLE_OPT}}`]);
   if (!r.ok) return { ok: NO_SERVER_RE.test(r.err), sessions: [] };
   const sessions = r.out
     .split('\n')
     .filter(Boolean)
     .map((line) => {
       const cols = line.split(SEP);
-      const [name, window, activity, model] = cols;
+      const [name, window, activity, model, hold] = cols;
       return { name, window, activity: Number(activity) || 0, model: (model || '').trim(),
-               label: cleanLabel(cols.slice(4).join(SEP)) };
+               hold: String(hold || '').trim() === '1',
+               label: cleanLabel(cols.slice(5).join(SEP)) };
     });
+  // 席に書いてあるほうが正本。メモリの札はその写しなので、一覧を取るたびに
+  // 合わせ直す＝サーバーを入れ替えた直後の1回目で、札がひとりでに戻ってくる
+  for (const s of sessions) {
+    if (s.hold) pausedSeat.add(s.name); else pausedSeat.delete(s.name);
+  }
   return { ok: true, sessions };
 }
 
@@ -687,7 +702,9 @@ const BUSY_RE = /esc to interrupt|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/;
 //   ・画面の字は**もう見ない**（PAUSED_RE も消音のしくみも消した）
 //   ・文字を送っても、動き出しても、**降りない**
 //   ・降りるのは `POST /api/pause {on:false}`（画面の unhold）か、席が無くなったときだけ
-// ⚠️ tmux には何も送らない。この札は**見た目だけ**を変える。
+// ⚠️ tmux の**中**には何も送らない。止めるのも続けるのも自分でやる。
+//    札が変えるのは「縁が青いか」と「まとめて終わらせるで残るか」の2つだけ。
+// 正本は席に書いた HOLD_OPT で、この Set はその写し（一覧を取るたびに合わせ直す）。
 const pausedSeat = new Set();     // 中に名前がある＝中断の札が立っている席
 
 // 「番号で答える質問」＝ 本文に選択肢を書いて、数字だけ返してもらう聞きかた。
@@ -758,12 +775,24 @@ const prev = new Map(); // name -> { tail, changedAt }
 // これを「動いた」と数えると、幅が変わるたびに「作業中」に戻ってしまう。
 // 画面を見ている席にだけ桁数を送る作りなので、**選んでいる席だけ**が巻き添えになる：
 //   ・iPhone(51桁) と iPad(101桁) で同じ席を開くと、1.5秒ごとに幅が往復し、
-//     その席は永久に「作業中」＝札も戻らず「作業中以外を終わらせる」でも片付かない
+//     その席は永久に「作業中」＝札も戻らず「作業中と中断を残して終わらせる」でも片付かない
 //   ・1台でも、絵つきの質問で 120桁に広げて戻すたびに数秒つかまる
 // （2026-09-01 実測：幅を1回変えるだけで idle → busy / quietMs 0 になった）
 // だからリサイズから RESIZE_GRACE_MS のあいだの変化は、静かさの計算に入れない。
 // 本当に動いているものはスピナー（BUSY_RE）が拾うので、見落としにはならない。
 const RESIZE_GRACE_MS = 2000;
+
+// 1席ぶんの札を、席そのものから読む（写しも合わせ直す）。
+// 読めなかったとき＝席がもう無いか tmux が答えないときは、写しを信じて
+// **残す側に倒す**。消えるより、消えないほうが軽い
+async function isHeld(name) {
+  if (!NAME_RE.test(name)) return false;
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', `#{${HOLD_OPT}}`]);
+  if (!r.ok) return pausedSeat.has(name);
+  const on = r.out.trim() === '1';
+  if (on) pausedSeat.add(name); else pausedSeat.delete(name);
+  return on;
+}
 
 function judge(name, text) {
   const now = Date.now();
@@ -1546,8 +1575,13 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const on = body.on !== false;
+      // 席に書いてから写しを直す。書けなくても写しは直す（縁の色はすぐ変わって
+      // ほしい）が、その席はサーバーの入れ替えで札が落ちる。素の名前で指す
+      // ＝ `=名前:` は set-option では使えない
+      const w = on ? await tmux(['set-option', '-t', name, HOLD_OPT, '1'])
+                   : await tmux(['set-option', '-t', name, '-u', HOLD_OPT]);
       if (on) pausedSeat.add(name); else pausedSeat.delete(name);
-      console.log(`pause ${name} ${on ? 'on' : 'off'}`);
+      console.log(`pause ${name} ${on ? 'on' : 'off'}${w.ok ? '' : ' (席に書けず・写しだけ)'}`);
       forgetScreen(name);   // すぐ見に行くので撮り置きは捨てる
       return json(res, 200, { ok: true });
     }
@@ -1707,9 +1741,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
-    // 作業中以外をまとめて終わらせる。名前は画面から受け取るが、消す直前に
-    // もう一度いまの状態を見て、作業中になっていたものは残す（押してから
-    // ここに届くまでの数秒で動き出すことがある）。何を残したかは返す。
+    // まとめて終わらせる。**残すのは2つ＝作業中と中断（hold の印）**。
+    // 名前は画面から受け取るが、消す直前にもう一度いまの状態を見て、作業中に
+    // なっていたもの・中断の印が付いたものは残す（押してからここに届くまでの
+    // 数秒で動き出すことも、別の端末で hold されることもある）。何を残したかは返す。
+    // ⚠️ 名前だけを信じて消さない。画面は「消していい」と思って送っているので、
+    //    最後の関門はここにしか無い。
     if (p === '/api/killmany' && req.method === 'POST') {
       const body = await readBody(req);
       const names = (Array.isArray(body.names) ? body.names : [])
@@ -1721,7 +1758,13 @@ const server = http.createServer(async (req, res) => {
       for (const name of names) {
         const text = await captureScreen(name);
         if (text === null) { skipped.push({ name, why: 'ありません' }); continue; }
-        if (judge(name, text).status === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
+        // 札は写し（pausedSeat）ではなく**席そのもの**に聞く。写しは最大1.5秒
+        // 古く、別の端末で今しがた hold された席を取りこぼす。戻せない道なので、
+        // ここだけは1席1回の tmux を余分に払う
+        if (await isHeld(name)) { skipped.push({ name, why: '中断' }); continue; }
+        const st = judge(name, text).status;
+        if (st === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
+        if (st === 'paused') { skipped.push({ name, why: '中断' }); continue; }
         const r = await tmux(['kill-session', '-t', '=' + name + ':']);
         if (r.ok) {
           killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name); forgetSeat(name);
