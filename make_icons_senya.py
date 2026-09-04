@@ -1,37 +1,41 @@
 # -*- coding: utf-8 -*-
-"""つみき&せんや アプリアイコン（作り直し版）
-   ・部品を「かたまり」として組み、正方形にして 100×100 の中央に据える
-   ・つみき公式ロゴは正本の座標そのまま／線は「絵の幅 × 0.075」
+"""せんや アプリアイコン（2026-08-27 版）
+   ・ユーザー指示により **つみき公式ロゴは入れない**（せんやのみの例外）
+   ・シンボル1個を「かたまり」として 100×100 の中央に据える
+   ・線の太さは「仕上がりの幅（100座標）」でそろえる＝2つ並べたとき重さが揃う
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from _icon_kit import Sym, Logo, compose, render
+from _icon_kit import Sym, compose, render, measure
 
-# ---- 決めた値 --------------------------------------------------------
-GROUP = 66.0     # かたまりの一辺（100 のうち）＝ 真ん中にぎゅっと
-LOGO  = 0.32     # つみきロゴの倍率（絵の幅 19.2・線 1.44）
-GAP_Y = 3.0      # 本体の下端 → ロゴの上端
-# 本体の倍率は「かたまりを GROUP にする」ところから逆算する
-MAIN  = (GROUP - 56.5*LOGO - GAP_Y) / 68.0
+GROUP = 62.0   # かたまりの一辺（100 のうち）
+LINE  = 4.05   # 仕上がりの線幅（100座標）。2026-08-27「少し細く」で 4.65 → 4.05
 
-CAL=('<rect x="20" y="26" width="60" height="54" rx="8"/><line x1="20" y1="42" x2="80" y2="42"/>'
-     '<line x1="34" y1="18" x2="34" y2="30"/><line x1="66" y1="18" x2="66" y2="30"/>')
 SYM = {
-  'tsumiki-senya':       CAL+'<path d="M35,60 L46,70 L67,52"/>',
-  'tsumiki-senya-kanri': CAL+('<circle cx="41" cy="55" r="5.5"/><path d="M32.5,71 a8.5,9 0 0 1 17,0"/>'
-                              '<circle cx="61" cy="55" r="5.5"/><path d="M52.5,71 a8.5,9 0 0 1 17,0"/>'),
+  # スタッフ用＝働ける日に○を出す人（人＋チェック）
+  'tsumiki-senya': (
+      '<circle cx="40" cy="43" r="13"/><path d="M14,88 a26,24 0 0 1 52,0"/>'
+      '<path d="M60,27 L70,37 L88,15"/>', (14,15,88,88)),
+  # 店長用＝スタッフの名簿を見る（クリップボード＋ふたり）
+  'tsumiki-senya-kanri': (
+      '<rect x="19" y="22" width="62" height="62" rx="9"/>'
+      '<path d="M40,22 v-4 a4,4 0 0 1 4,-4 h12 a4,4 0 0 1 4,4 v4"/>'
+      '<circle cx="41" cy="49" r="5.5"/><path d="M32.5,66 a8.5,9 0 0 1 17,0"/>'
+      '<circle cx="60" cy="49" r="5.5"/><path d="M51.5,66 a8.5,9 0 0 1 17,0"/>', (19,14,81,84)),
 }
-L = Logo()
 OUT = pathlib.Path.home()/'tsumiki-tools'
 
-def build(inner):
-    s = Sym(inner, 20,18,80,80)
-    mw,mh = s.size(MAIN); lw,lh = L.size(LOGO)
-    gx = (mh-mw) + (lh-lw) + GAP_Y          # かたまりが正方形になる よこの空き
-    return compose([(s,MAIN,0,0), (L,LOGO,mw+gx,mh+GAP_Y)]), (gx, mw, 60*LOGO*0.075)
+def build(body, box):
+    m0 = max(box[2]-box[0], box[3]-box[1])
+    sw = LINE*m0/(GROUP-LINE)               # 仕上がりを LINE にそろえる逆算
+    s  = Sym(body, *box, sw=sw)
+    w,h = s.size(1.0); sc = GROUP/max(w,h)
+    svg, info = compose([(s,sc,0,0)])
+    return svg, info, sw, sc
 
 if __name__ == '__main__':
-    for name, inner in SYM.items():
-        (svg, info), (gx, mw, sw) = build(inner)
-        render(svg, OUT/f'icon-{name}.png')
-        print(f"icon-{name}.png  かたまり {info['W']:.1f}×{info['H']:.1f}  余白 {info['margin'][0]:.1f}"
-              f"  本体幅 {mw:.1f}  ロゴ線 {sw:.2f}  すきま よこ{gx:.1f} たて{GAP_Y}")
+    for name,(body,box) in SYM.items():
+        svg, info, sw, sc = build(body, box)
+        p = OUT/f'icon-{name}.png'; render(svg, p); m = measure(p)
+        print(f"icon-{name}.png  かたまり {info['W']:.1f}×{info['H']:.1f}"
+              f"  仕上がり線 {sw*sc:.2f}  余白 " + "/".join(f"{v:.1f}" for v in m['margin'])
+              + f"  塊 {m['blobs']}")
