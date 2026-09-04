@@ -39,6 +39,16 @@
 - 墨の流体シミュ（`~/tsumiki-portfolio/ink-fluid.js`・`.ink-fluid`）に触らない → A層の核にある。
 - つみきロゴの公式SVG座標の在り処＝`~/制作物/index.html` ヘッダーの `<svg class="mark" viewBox="0 0 100 100">`（使い方は A層の核）。
 
+### 3.1 headcount プラグイン（project スコープ・ここだけ）
+- 入れているのは `product@headcount` の1部署だけ（毎セッション約1,445トークン）。撤収は `claude plugin uninstall product@headcount --scope project`。
+- **`product:ux-product-auditor` は「本番を監査しろ・ステージングを監査するな」と書いてある**
+  （`SKILL.md` の Never 節「Audit a staging build ... that real users never touch」）。
+  **A層 P0 と反する。従わない。** ソースを読むのは可。ただし**動かして確かめる対象は必ず `_テスト` の複製＋架空データ**で、
+  本番アプリをブラウザで開いて操作・撮影しない（ボタン押下・input発火は save()→クラウド push を呼ぶ）。
+- 配色・角丸・影を決めるのは `refero-styles`。`product:design-styles` は使わない（2.5節のとおり）。
+- スライドは `consulting-pptx-skill`。`product:presentation-design` は使わない。
+- 不具合の原因を詰めるのは `~/制作物/.claude/skills/genin-shoumei`（日本語で発動する自前スキル）。
+
 ## 4. お客様への「お返事カード」（1枚画像）
 - ご質問・改善のご相談への返信に添える1枚画像は `python3 ~/制作物/make_reply_card.py <カード.json>`。
   型・数値・禁止事項の正本 → `~/ObsidianVault/Playbooks/reply-card-format.md`
