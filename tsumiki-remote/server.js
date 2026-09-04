@@ -841,6 +841,113 @@ function pruneUploads() {
   } catch (e) { /* 無ければ何もしない */ }
 }
 
+// ------------------------------------------------------------ サムネイル
+//
+// 一覧に並ぶ絵を、名前だけでなく**中身で**選べるようにするための小さな写し。
+// ⚠️ 元の絵をそのまま <img> に渡してはいけない。置き場には200KB超のスクショが
+//    320枚あり、一覧を開いただけで数十MBを電波で引くことになる（出先で開けない）。
+//    ここで 160px に落としたものを作り置きし、それを配る。
+//
+// 作るのは macOS の sips（画像を変換する標準の道具）。Node に画像の道具は無い。
+// 失敗したら黙って元の絵を返す＝サムネイルが出ないだけで、一覧は必ず動く。
+const THUMB_DIR = path.join(CONF_DIR, 'thumbs');
+const THUMB_PX = 160;
+const THUMB_KEEP = 800;          // これを超えたら古いものから捨てる
+const SIPS = '/usr/bin/sips';
+// sips が読める絵だけ。svg は sips が扱えないが、そもそも軽いので元のまま配る
+const THUMBABLE_RE = /\.(png|jpe?g|gif|webp|heic)$/i;
+
+let thumbRunning = 0;            // 同時に走らせる sips の数（Mac を占有させない）
+const THUMB_MAX_PARALLEL = 3;
+const thumbWaiting = [];
+
+function thumbSlot() {
+  if (thumbRunning < THUMB_MAX_PARALLEL) { thumbRunning++; return Promise.resolve(); }
+  return new Promise((resolve) => thumbWaiting.push(resolve));
+}
+
+function thumbRelease() {
+  const next = thumbWaiting.shift();
+  if (next) next();               // 待っている人にそのまま席を渡す（数は変えない）
+  else thumbRunning--;
+}
+
+// 元の絵が差し替わったら別の写しになるよう、名前に更新時刻と大きさを混ぜる
+function thumbPath(real, st) {
+  const key = crypto.createHash('sha1')
+    .update(real + ':' + Math.round(st.mtimeMs) + ':' + st.size).digest('hex').slice(0, 32);
+  const jpeg = /\.(jpe?g|heic)$/i.test(real);
+  return { file: path.join(THUMB_DIR, key + (jpeg ? '.jpg' : '.png')), jpeg };
+}
+
+function pruneThumbs() {
+  try {
+    const files = fs.readdirSync(THUMB_DIR)
+      .map((f) => { const full = path.join(THUMB_DIR, f);
+                    return { full, at: fs.statSync(full).mtimeMs }; })
+      .sort((a, b) => b.at - a.at);
+    for (const f of files.slice(THUMB_KEEP)) fs.unlinkSync(f.full);
+  } catch (e) { /* 無ければ何もしない */ }
+}
+
+// iCloud は「ストレージを最適化」で、本体をクラウドだけに置いて手元から消す。
+// 見かけの大きさは残るが実ブロック数が 0 になり、**読もうとすると EDEADLK
+// （Unknown system error -11）で失敗する**。降りてくるのを待ってはくれない。
+// 2026-09-04 の実測：置き場 1417件のうち 1299件（92%）がこの状態だった。
+// ＝ここを通さないと、一覧の絵も、これまでのプレビューも、9割は開けない。
+//
+// ⚠️ 同期の fs 呼び出しは使わない（このフォルダで固まると全部止まる）。
+//    brctl に頼んだあとも、降りきるまでは短い間隔で見に行く。
+const BRCTL = '/usr/bin/brctl';
+const LOCALIZE_WAIT_MS = 6000;
+
+async function ensureLocal(real, st) {
+  if (!st || st.blocks !== 0 || st.size === 0) return true;   // もう手元にある
+  try {
+    await new Promise((resolve, reject) => {
+      execFile(BRCTL, ['download', real], { timeout: 15000 },
+        (err) => (err ? reject(err) : resolve()));
+    });
+  } catch (e) {
+    return false;   // brctl が無い・断られた。呼び手は元のまま進んで、失敗を受ける
+  }
+  // brctl は「頼んだ」だけで戻ることがある。降りるまで待つが、待ちすぎない
+  const until = Date.now() + LOCALIZE_WAIT_MS;
+  while (Date.now() < until) {
+    try {
+      const s2 = await fsp.stat(real);
+      if (s2.blocks !== 0) return true;
+    } catch (e) { return false; }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
+}
+
+// 写しを作って、その場所を返す。作れなければ null（呼び手は元の絵を配る）
+async function makeThumb(real, st) {
+  const { file, jpeg } = thumbPath(real, st);
+  try { await fsp.access(file); return file; } catch (e) { /* まだ無い */ }
+  await thumbSlot();
+  try {
+    // 一覧の絵のために大物まで降ろさない。小さいものだけ取りに行く
+    if (st.size <= 20 * 1024 * 1024 && !(await ensureLocal(real, st))) return null;
+    await fsp.mkdir(THUMB_DIR, { recursive: true, mode: 0o700 });
+    // 作りかけを配らないよう、別名で書いてから置き換える
+    const tmp = file + '.' + crypto.randomBytes(3).toString('hex') + '.tmp';
+    await new Promise((resolve, reject) => {
+      execFile(SIPS, ['-Z', String(THUMB_PX), '-s', 'format', jpeg ? 'jpeg' : 'png',
+        '--out', tmp, real], { timeout: 8000 }, (err) => (err ? reject(err) : resolve()));
+    });
+    await fsp.rename(tmp, file);
+    pruneThumbs();
+    return file;
+  } catch (e) {
+    return null;
+  } finally {
+    thumbRelease();
+  }
+}
+
 // -------------------------------------------------------------- プレビュー
 
 // つみきの持ちもの一式（ロゴ・名刺・書類ひな形・やり取りの出力）の置き場。
@@ -893,6 +1000,90 @@ async function listPreviewables(limit = 200) {
   await walk(PREVIEW_ROOT, 0);
   out.sort((a, b) => b.mtime - a.mtime);
   return out.slice(0, limit);
+}
+
+// 置き場の中かどうかを確かめてから、本当の場所を返す。外に出るものは null。
+// ⚠️ 必ず制限時間つきで呼ぶこと（iCloud の realpath は返らないことがある）
+async function resolveInRoot(rel) {
+  const full = path.resolve(PREVIEW_ROOT, rel || '.');
+  let real, rootReal;
+  try {
+    rootReal = await within(fsp.realpath(PREVIEW_ROOT), 4000, 'iCloud');
+    real = await within(fsp.realpath(full), 4000, 'iCloud');
+  } catch (e) { return null; }
+  // シンボリックリンクを辿った先が外なら拒否する（/preview/ と同じ守り）
+  if (real !== rootReal && !real.startsWith(rootReal + path.sep)) return null;
+  return real;
+}
+
+// フォルダ1つぶんの中身。フォルダが先、そのあと名前順。
+// ⚠️ 見せられない形式（pptx・key・zip など）も**隠さない**。開けないことより
+//    「あることが分からない」ほうが困る。開けるかどうかは open で返す。
+async function browseDir(rel) {
+  const real = await resolveInRoot(rel);
+  if (!real) return null;
+  const entries = await within(
+    fsp.readdir(real, { withFileTypes: true }), 6000, 'iCloud の読み込み');
+  const dirs = [], files = [];
+  await Promise.all(entries.map(async (e) => {
+    if (e.name.startsWith('.')) return;
+    const full = path.join(real, e.name);
+    const item = { name: e.name, rel: rel ? rel + '/' + e.name : e.name, dir: e.isDirectory() };
+    if (e.isDirectory()) {
+      if (SKIP_DIR.test(e.name)) return;
+      // 中の数は「あると助かる」程度のもの。返ってこなければ黙って諦める
+      try {
+        const kids = await within(fsp.readdir(full), 2500, 'iCloud');
+        item.count = kids.filter((n) => !n.startsWith('.')).length;
+      } catch (e2) { /* 数は出さない */ }
+      dirs.push(item);
+    } else {
+      try {
+        const st = await within(fsp.stat(full), 2500, 'iCloud');
+        item.mtime = st.mtimeMs; item.size = st.size;
+      } catch (e2) { /* 日付と大きさは出さない */ }
+      item.open = PREVIEW_EXT.test(e.name);
+      files.push(item);
+    }
+  }));
+  const byName = (a, b) => a.name.localeCompare(b.name, 'ja');
+  dirs.sort(byName);
+  files.sort(byName);
+  return { dir: rel, entries: dirs.concat(files) };
+}
+
+// 名前でさがす。置き場ぜんぶを深さ4まで。フォルダが先、ファイルは新しい順。
+async function searchFiles(q, limit = 200) {
+  const needle = q.toLowerCase();
+  const dirs = [], files = [];
+  async function walk(dir, depth) {
+    if (depth > 4 || dirs.length + files.length >= limit) return;
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      const rel = path.relative(PREVIEW_ROOT, full);
+      const hit = e.name.toLowerCase().includes(needle);
+      if (e.isDirectory()) {
+        if (SKIP_DIR.test(e.name)) continue;
+        if (hit) dirs.push({ name: e.name, rel, dir: true });
+        await walk(full, depth + 1);
+      } else if (hit) {
+        let st = null;
+        try { st = await fsp.stat(full); } catch (e2) { /* 読めないものは日付なしで出す */ }
+        files.push({
+          name: e.name, rel, dir: false,
+          mtime: st ? st.mtimeMs : 0, size: st ? st.size : 0,
+          open: PREVIEW_EXT.test(e.name),
+        });
+      }
+    }
+  }
+  await walk(PREVIEW_ROOT, 0);
+  dirs.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  files.sort((a, b) => b.mtime - a.mtime);
+  return dirs.concat(files).slice(0, limit);
 }
 
 const PREVIEW_MIME = {
@@ -1117,10 +1308,32 @@ const server = http.createServer(async (req, res) => {
     }
     if (st.isDirectory()) return send(res, 404, 'フォルダは開けません', 'text/plain; charset=utf-8');
 
-    const type = PREVIEW_MIME[path.extname(real).toLowerCase()] || 'application/octet-stream';
+    // 一覧に出す小さな写し。**わざと同じ /preview/ の道に相乗りさせる**＝
+    // 置き場の外を弾く守りも、合言葉のクッキーも、すでにここで効いている。
+    // 作れなかったときは元の絵をそのまま配る（サムネイルが出ないだけ）。
+    // ⚠️ 画面側は ?v=<更新時刻> を付けて呼ぶ。写しの名前にも更新時刻が入っているので、
+    //    絵を描き直したら別の写しになり、古いものが残り続けることはない
+    // 本体がクラウドだけにあるなら、先に降ろしてもらう。
+    // ここを入れるまで、置き場の9割は開いても中身が来なかった（2026-09-04）
+    await ensureLocal(real, st);
+
+    let serving = real;
+    let servingType = null;
+    if (url.searchParams.get('thumb') && THUMBABLE_RE.test(real)) {
+      const t = await makeThumb(real, st).catch(() => null);
+      if (t) {
+        serving = t;
+        servingType = t.endsWith('.jpg') ? 'image/jpeg' : 'image/png';
+      }
+    }
+
+    const type = servingType
+      || PREVIEW_MIME[path.extname(real).toLowerCase()] || 'application/octet-stream';
     const headers = {
       'content-type': type,
-      'cache-control': 'no-store',
+      // 元の絵は毎回取りに行く（描き直しがすぐ映る）。写しは URL に更新時刻が
+      // 入っていて、絵が変われば URL も変わるので、端末に置いておいてよい
+      'cache-control': serving === real ? 'no-store' : 'private, max-age=604800',
       'x-content-type-options': 'nosniff',
       // ⚠️ ここで配るものは**アプリと同じ出どころ（オリジン）**で開く。つまり
       // 制作物の中の JavaScript から、このサーバの /api/send がそのまま叩ける＝
@@ -1144,7 +1357,7 @@ const server = http.createServer(async (req, res) => {
     // ファイルを読むと EDEADLK（`Unknown system error -11`）で失敗することがあり、
     // 受け手が無いと uncaughtException まで飛んでログが汚れる（実際に出た）。
     // 見出しはもう送ってしまっているので、あとは黙って切るしかない
-    const rs = fs.createReadStream(real);
+    const rs = fs.createReadStream(serving);
     rs.on('error', (e) => {
       console.log('preview 読めません: ' + String(e && e.message).slice(0, 80));
       try { res.destroy(); } catch (e2) {}
@@ -1336,15 +1549,34 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
-    // 制作物の一覧（新しい順）
+    // 制作物の一覧。3つの顔を1本の口で返す
+    //   ?q=…    名前でさがす（置き場ぜんぶ）
+    //   ?dir=…  そのフォルダの中（dir= の空は一番上）
+    //   なし    さいきん（新しい順のベタ並び）
+    // entries は3つとも同じ形にしてある＝画面側は1つの描き方で済む。
+    // files は古い画面（端末に写しが残っている版）のための置き土産。
     if (p === '/api/files' && req.method === 'GET') {
-      let files;
+      const q = String(url.searchParams.get('q') || '').trim();
       try {
-        files = await within(listPreviewables(400), 4000, 'iCloud の読み込み');
+        if (q) {
+          const entries = await within(searchFiles(q, 200), 8000, 'iCloud の読み込み');
+          return json(res, 200, { root: PREVIEW_ROOT, mode: 'search', q, entries });
+        }
+        if (url.searchParams.has('dir')) {
+          const rel = String(url.searchParams.get('dir') || '');
+          const r = await within(browseDir(rel), 8000, 'iCloud の読み込み');
+          if (!r) return json(res, 404, { error: 'そのフォルダはありません' });
+          return json(res, 200, { root: PREVIEW_ROOT, mode: 'browse', dir: r.dir, entries: r.entries });
+        }
+        const files = (await within(listPreviewables(400), 4000, 'iCloud の読み込み')).slice(0, 120);
+        const entries = files.map((f) => ({
+          name: f.rel.split('/').pop(), rel: f.rel, dir: false,
+          mtime: f.mtime, size: f.size, open: true,
+        }));
+        return json(res, 200, { root: PREVIEW_ROOT, mode: 'recent', files, entries });
       } catch (e) {
         return json(res, 504, { error: String(e.message) });
       }
-      return json(res, 200, { root: PREVIEW_ROOT, files: files.slice(0, 120) });
     }
 
     // 画像やPDFを Mac に置く。Claude Code はファイルそのものを受け取れないが、

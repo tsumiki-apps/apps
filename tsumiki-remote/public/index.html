@@ -505,6 +505,120 @@
     text-align:center;pointer-events:none}
   .vtoast[hidden]{display:none}
 
+  /* ==========================================================================
+     制作物（Apple の「ファイル」に寄せた全画面）
+     以前は下から出るシートに、新しい順のベタ並びを120件出すだけだった。
+     置き場には600件以上あってフォルダも12個あるので、それでは辿り着けない。
+     ここは全画面にして、上に「さいきん／フォルダ」の札と検索欄を置く。
+     地の色はつみきのまま（--bg / --panel）。真似るのは**形**であって色ではない。
+     ⚠️ z-index は 35。プレビュー(40)より下・シート(30)より上に必ず入れること
+        ＝一覧を開いたままプレビューが重なり、戻ると同じ場所に帰ってくる
+     ========================================================================== */
+  #files{position:fixed;inset:0;z-index:35;background:var(--bg);
+    display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) 0 0}
+  #files[hidden]{display:none}
+  /* 上の細い帯だけは動かさない。名前が長くても真ん中に来るよう、左右は同じ幅 */
+  .fbar{display:flex;align-items:center;gap:6px;padding:4px 6px;flex:0 0 auto;
+    border-bottom:1px solid var(--line)}
+  .fbar button{flex:0 0 auto;min-width:44px;min-height:44px;padding:0 8px;
+    border:0;background:none;color:#5c9cf5;font:inherit;font-size:15px;
+    display:flex;align-items:center;justify-content:center;gap:2px}
+  .fbar button:active{opacity:.5}
+  .fbar button .lbl{max-width:9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 帯の題は、めくって大見出しが上に消えてから出す（Apple と同じ）。
+     最初から出すと、すぐ下の大見出しと同じ字が2つ並んで場所を食う */
+  #fbartitle{flex:1 1 auto;min-width:0;text-align:center;font-size:15px;font-weight:700;
+    color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    opacity:0;transition:opacity .18s}
+  #fbartitle.show{opacity:1}
+  .fbar .spacer{flex:0 0 44px}
+  /* 大見出し・検索・札は中身と一緒に流す（Apple と同じで、めくると上に消える） */
+  #fscroll{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:0 12px calc(24px + env(safe-area-inset-bottom))}
+  #fbig{font-size:26px;font-weight:800;letter-spacing:.01em;margin:10px 4px 12px;
+    color:var(--fg);overflow-wrap:anywhere}
+  .fsearch{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px;
+    background:#1a1d24;border:1px solid var(--line);border-radius:11px}
+  .fsearch svg{flex:0 0 auto;color:var(--dim)}
+  /* 16px 未満にすると iOS が画面ごと拡大する（打った瞬間に一覧が見えなくなる） */
+  .fsearch input{flex:1 1 auto;min-width:0;background:none;border:0;outline:none;
+    color:var(--fg);font:inherit;font-size:16px}
+  .fsearch input::placeholder{color:var(--dim)}
+  #fqclear{flex:0 0 auto;width:28px;height:28px;border:0;border-radius:50%;
+    background:#333944;color:var(--fg);font-size:15px;line-height:1;padding:0}
+  #fqclear[hidden]{display:none}
+  .fseg{display:flex;gap:3px;margin:10px 0 0;padding:3px;
+    background:#1a1d24;border:1px solid var(--line);border-radius:11px}
+  .fseg button{flex:1 1 0;min-height:44px;border:0;border-radius:8px;background:none;
+    color:var(--dim);font:inherit;font-size:14px;font-weight:700}
+  .fseg button.on{background:#2b313c;color:var(--fg)}
+  .fseg[hidden]{display:none}
+  /* 一組のまとまり（角丸の板）に行を積む。Apple の「まとめ表」の形 */
+  .fgroup{margin:14px 0 0;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden}
+  .fsection{font-size:12px;color:var(--dim);padding:16px 6px 0;font-weight:700}
+  .frow{position:relative;display:flex;align-items:center;gap:12px;width:100%;
+    min-height:58px;padding:8px 12px;border:0;background:none;color:var(--fg);
+    font:inherit;font-size:15px;text-align:left}
+  .frow:active{background:#1e222a}
+  /* 区切り線は絵の右端から引く（Apple と同じ。左端まで引くと表が細切れに見える） */
+  .frow + .frow::before{content:'';position:absolute;left:64px;right:0;top:0;height:1px;
+    background:var(--line)}
+  .ficon{flex:0 0 40px;height:40px;display:flex;align-items:center;justify-content:center}
+  /* 絵のファイルは、種類の印ではなく**中身**を出す。320枚ある png は
+     名前だけでは選べない（2026-09-04）。
+     ⚠️ contain（全体を入れる）にしてある。cover（切り取り）だと、縦長のスクショが
+        真ん中だけになって、何の画面か分からなくなる */
+  .fthumb{background:#20242c;border-radius:6px;overflow:hidden}
+  .fthumb img{width:40px;height:40px;object-fit:contain;display:block}
+  .fmain{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fsub{font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fchev{flex:0 0 auto;color:#4a515e;font-size:17px;line-height:1}
+  /* ここでは開けない形式（pptx・key・zip など）。隠さずに薄くして、
+     あることだけは分かるようにする */
+  .frow.dim .fname{color:var(--dim)}
+  .fnote{padding:26px 8px;text-align:center;color:var(--dim);font-size:13px;line-height:1.7}
+  /* 絵を探すときの並べかた（Apple の「アイコン表示」）。
+     縦長のスクショは行の40pxだと細い帯にしか見えない。絵を探す用事のときだけ
+     大きく並べられるようにして、字を読む用事のときは行に戻す。
+     選んだ側は端末に覚えさせる（毎回選び直させない） */
+  .fgrid{display:grid;gap:16px 10px;margin:14px 0 0;
+    grid-template-columns:repeat(auto-fill,minmax(92px,1fr))}
+  .fcell{display:flex;flex-direction:column;align-items:center;gap:7px;padding:0;
+    border:0;background:none;color:var(--fg);font:inherit;font-size:12px}
+  .fcell:active{opacity:.55}
+  .fcicon{width:100%;aspect-ratio:1/1;border-radius:11px;overflow:hidden;
+    background:var(--panel);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center}
+  /* フォルダは「板」に載せない。Apple と同じで、青い印がそのまま置いてある形 */
+  .fcicon.plain{background:none;border:0}
+  .fcicon img{width:100%;height:100%;object-fit:contain;display:block}
+  .fcicon svg{width:52px;height:52px}
+  .fcicon.plain svg{width:60px;height:60px}
+  .fcname{width:100%;text-align:center;line-height:1.35;overflow:hidden;overflow-wrap:anywhere;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .fcell.dim .fcname{color:var(--dim)}
+  .fcsub{font-size:10px;color:var(--dim)}
+  /* 種類ごとの色。フォルダだけ塗り、あとは線画にする＝一覧が青い点で読める */
+  .ic-folder{color:#5c9cf5}
+  .ic-img{color:#2ec4a6}
+  .ic-pdf{color:#f2685c}
+  .ic-code{color:#e8a44c}
+  .ic-txt{color:#98a2b3}
+  .ic-etc{color:#5a6273}
+  /* 広い画面（600〜）。行を画面いっぱいに引き伸ばすと、名前と日付が
+     左右の端に離れて読みづらい。中央に寄せて、読める幅で止める。
+     ブレイクポイントは家の決まりどおり 600 の1本だけ（900 は要らない＝
+     この画面は1列で、列を増やしても探しやすくならない） */
+  @media (min-width:600px){
+    #fscroll{padding-left:max(12px,calc(50% - 380px));padding-right:max(12px,calc(50% - 380px))}
+    #fbig{font-size:30px}
+    .frow{font-size:16px}
+    .fgrid{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+  }
+
   #sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);
     display:flex;align-items:flex-end}
   #sheet[hidden]{display:none}
@@ -757,6 +871,31 @@
        中の文書に貼った CSP（connect-src 'none'）は、その文書“自身”の通信しか止められない。 -->
   <iframe id="viewerframe" title="制作物のプレビュー" sandbox="allow-scripts"></iframe>
   <div id="viewertoast" class="vtoast" hidden></div>
+</div>
+
+<div id="files" hidden>
+  <div class="fbar">
+    <button id="fback" aria-label="もどる"><span aria-hidden="true">‹</span><span class="lbl" id="fbacklabel"></span></button>
+    <span id="fbartitle">制作物</span>
+    <button id="fview" aria-label="並べかたを変える" title="並べかたを変える"></button>
+  </div>
+  <div id="fscroll">
+    <h1 id="fbig">制作物</h1>
+    <div class="fsearch">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+        <circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.9"></circle>
+        <path d="M15.8 15.8 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path>
+      </svg>
+      <input id="fq" type="search" placeholder="検索" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+      <button id="fqclear" aria-label="消す" hidden>✕</button>
+    </div>
+    <div class="fseg" id="fseg">
+      <button data-seg="recent" class="on">さいきん</button>
+      <button data-seg="browse">フォルダ</button>
+    </div>
+    <div id="flist"></div>
+  </div>
+  <div id="filestoast" class="vtoast" hidden></div>
 </div>
 
 <div id="sheet" hidden>
@@ -3170,7 +3309,7 @@
   // どこが消えるか（席の名前）と危険の合図（⚠️）は文字数を使ってでも残す。
   document.getElementById('menu').onclick = function () {
     openSheet('版 ' + (seenVersion || '?'));
-    sheetItem('制作物を見る', '', function () { openFileList(); });
+    sheetItem('制作物を見る', '', function () { openFiles(); });
     sheetItem('Mac の画面を消す', '', function () { closeSheet(); doDark(); });
     sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
       function () { closeSheet(); doKill(current); }, { disabled: !current });
@@ -3180,29 +3319,463 @@
   };
 
   // ---------------------------------------------------------- 制作物を見る
+  //
+  // Apple の「ファイル」に寄せた全画面。
+  //   さいきん … 新しい順のベタ並び（今までの一覧と同じ中身）
+  //   フォルダ … 置き場をそのまま辿る（12個の仕分けがやっと効く）
+  //   検索欄  … どこにいても、置き場ぜんぶから名前でさがす
+  // 以前は下から出るシートに120件並べるだけで、600件以上ある置き場の
+  // 少し前のものには辿り着けなかった（2026-09-04）。
+  //
+  // ⚠️ プレビューを開いてもこの一覧は閉じない（上に重なるだけ）。戻ると同じ場所・
+  //    同じ並びに帰ってくる。前は一覧ごと閉じていて、2つ目を見るのに全部やり直しだった。
 
-  function openFileList() {
-    openSheet('制作物（新しい順）');
-    var loading = document.createElement('div');
-    loading.className = 'sheethead';
-    loading.textContent = '読み込み中…';
-    sheetBody.appendChild(loading);
+  var filesEl = document.getElementById('files');
+  var fScroll = document.getElementById('fscroll');
+  var fList = document.getElementById('flist');
+  var fBarTitle = document.getElementById('fbartitle');
+  var fBig = document.getElementById('fbig');
+  var fBack = document.getElementById('fback');
+  var fBackLabel = document.getElementById('fbacklabel');
+  var fSeg = document.getElementById('fseg');
+  var fQInput = document.getElementById('fq');
+  var fQClear = document.getElementById('fqclear');
+  var filesToast = document.getElementById('filestoast');
 
-    api('/api/files').then(function (d) {
-      sheetBody.innerHTML = '';
-      if (!d.files.length) { sheetItem('ファイルがありません', d.root, closeSheet); return; }
-      d.files.forEach(function (f) {
-        var name = f.rel.split('/').pop();
-        sheetItem(name, f.rel + ' ・ ' + fmtSize(f.size) + ' ・ ' + fmtWhen(f.mtime), function () {
-          closeSheet();
-          openPreview(f.rel);
-        });
-      });
-    }).catch(function (e) {
-      sheetBody.innerHTML = '';
-      sheetItem('読み込めません', e.message, closeSheet);
+  var fMode = 'recent';   // 'recent' | 'browse'
+  var fDir = '';          // フォルダを辿っているときの居場所（置き場からの相対）
+  var fQuery = '';        // 検索の文字。空でないあいだは fMode より優先
+  var fSeq = 0;           // 取りに行った順番。古い返事で画面を書き換えない
+  var fStack = [];        // 積んだ履歴のぶんだけ、前の居場所が入る
+  var fWantTop = 0;       // 描き終わってから戻すスクロール位置
+  var fPushed = false;
+
+  // 種類の絵。フォルダだけ塗りつぶし、あとは線画にする＝
+  // 一覧を上から流し見たとき、青い塊が「入れ物」だと一目で分かる
+  var FIC = {};
+  (function () {
+    var DOC =
+      '<path d="M13.2 2.9H7.6A2.6 2.6 0 0 0 5 5.5v13A2.6 2.6 0 0 0 7.6 21.1h8.8A2.6 2.6 0 0 0 19 18.5V8.5z"' +
+      ' fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>' +
+      '<path d="M13.2 2.9v5.6H19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>';
+    var LINES =
+      '<path d="M8.4 13.4h6.2M8.4 16.6h3.8" fill="none" stroke="currentColor"' +
+      ' stroke-width="1.6" stroke-linecap="round"/>';
+    function ic(inner, cls) {
+      return '<span class="ficon ' + cls + '"><svg viewBox="0 0 24 24" width="25" height="25"' +
+        ' aria-hidden="true" focusable="false">' + inner + '</svg></span>';
+    }
+    FIC.folder = ic('<path d="M4.6 4.8h4.2c.6 0 1.1.2 1.5.7l1.1 1.3h8A2.6 2.6 0 0 1 22 9.4v8' +
+      'A2.6 2.6 0 0 1 19.4 20H4.6A2.6 2.6 0 0 1 2 17.4V7.4a2.6 2.6 0 0 1 2.6-2.6z" fill="currentColor"/>',
+      'ic-folder');
+    FIC.img = ic('<rect x="3" y="5" width="18" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+      '<circle cx="8.6" cy="10" r="1.5" fill="currentColor"/>' +
+      '<path d="M4.2 17.4 8.6 13l2.9 2.8 3.4-3.6 4.9 5.2" fill="none" stroke="currentColor"' +
+      ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>', 'ic-img');
+    FIC.pdf = ic(DOC + LINES, 'ic-pdf');
+    FIC.txt = ic(DOC + LINES, 'ic-txt');
+    FIC.code = ic(DOC + '<path d="M10.4 13.3 8.6 15.1l1.8 1.8M14 13.3l1.8 1.8-1.8 1.8"' +
+      ' fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+      'ic-code');
+    FIC.etc = ic(DOC, 'ic-etc');
+  })();
+
+  // 右上の札。いま「どちらに切り替わるか」の絵を出す（Apple と同じ）
+  var IC_GRID = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
+    '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/>' +
+    '<rect x="13" y="3.5" width="7.5" height="7.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/>' +
+    '<rect x="3.5" y="13" width="7.5" height="7.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/>' +
+    '<rect x="13" y="13" width="7.5" height="7.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>';
+  var IC_LIST = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
+    '<path d="M8.5 6h12M8.5 12h12M8.5 18h12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>' +
+    '<circle cx="4.3" cy="6" r="1.4" fill="currentColor"/><circle cx="4.3" cy="12" r="1.4" fill="currentColor"/>' +
+    '<circle cx="4.3" cy="18" r="1.4" fill="currentColor"/></svg>';
+
+  var VIEW_LS = 'tsumiki-remote-files-view';
+  var fView = 'list';
+  try { if (localStorage.getItem(VIEW_LS) === 'grid') fView = 'grid'; } catch (e) {}
+  var fLast = null;          // いま出ている中身。並べかたを変えるとき取り直さない
+
+  var CODE_RE = /\.(html?|svg|js|css|json|xml)$/i;
+  var TEXT_RE = /\.(md|txt|csv)$/i;
+
+  function fKind(name) {
+    if (IMG_RE.test(name)) return 'img';
+    if (PDF_RE.test(name)) return 'pdf';
+    if (CODE_RE.test(name)) return 'code';
+    if (TEXT_RE.test(name)) return 'txt';
+    return 'etc';
+  }
+
+  function fParent(rel) { var i = rel.lastIndexOf('/'); return i < 0 ? '' : rel.slice(0, i); }
+  function fBase(rel) { return rel.split('/').pop(); }
+
+  // 上の帯・大見出し・札の出しわけ。どの状態からでもここ1か所で決まるようにする
+  function fChrome() {
+    var title;
+    if (fQuery) title = 'さがす';
+    else if (fMode === 'browse') title = fDir ? fBase(fDir) : '制作物';
+    else title = 'さいきん';
+    fBarTitle.textContent = title;
+    fBig.textContent = title;
+    // 押したらどうなるかを絵にする（いまの状態ではなく、切り替わる先を出す）
+    fViewBtn.innerHTML = fView === 'grid' ? IC_LIST : IC_GRID;
+    // 札は「一番上にいて、さがしていないとき」だけ。潜ったら場所を示すほうが大事
+    fSeg.hidden = !!fQuery || !!fDir;
+    Array.prototype.forEach.call(fSeg.querySelectorAll('button'), function (x) {
+      x.classList.toggle('on', x.getAttribute('data-seg') === fMode);
+    });
+    if (!fQuery && fMode === 'browse' && fDir) {
+      var par = fParent(fDir);
+      fBackLabel.textContent = par ? fBase(par) : '制作物';
+    } else if (fQuery) {
+      fBackLabel.textContent = 'もどる';
+    } else {
+      fBackLabel.textContent = 'とじる';
+    }
+  }
+
+  var fViewBtn = document.getElementById('fview');
+
+  fViewBtn.onclick = function () {
+    fView = fView === 'grid' ? 'list' : 'grid';
+    try { localStorage.setItem(VIEW_LS, fView); } catch (e) {}
+    fChrome();
+    // 中身はもう手元にある。取り直さずに並べ替えるだけ
+    if (fLast) { fWantTop = 0; fPaint(fLast); }
+  };
+
+  function fNote(text) {
+    var d = document.createElement('div');
+    d.className = 'fnote';
+    d.textContent = text;
+    return d;
+  }
+
+  function fSection(text) {
+    var d = document.createElement('div');
+    d.className = 'fsection';
+    d.textContent = text;
+    return d;
+  }
+
+  function fSubOf(e) {
+    if (e.dir) return typeof e.count === 'number' ? e.count + ' 項目' : '';
+    var bits = [];
+    // 新しい順・さがすの一覧では「どこに入っているか」がいちばん知りたい。
+    // フォルダを辿っているときは自明なので出さない（名前の場所を食うだけ）
+    // 相対パスをまるごと出すと、深いものは切れて読めない。
+    // すぐ上のフォルダ名だけで「どこの話か」は十分わかる
+    if (fQuery || fMode === 'recent') {
+      var par = fParent(e.rel);
+      bits.push(par ? fBase(par) : '制作物');
+    }
+    if (e.mtime) bits.push(fmtWhen(e.mtime));
+    if (e.size) bits.push(fmtSize(e.size));
+    return bits.join(' ・ ');
+  }
+
+  // 一覧に出す小さな写し。合言葉はクッキーで通す（URL には載せない＝
+  // /preview/ のときと同じ理由）。?v= は元の絵の更新時刻で、描き直したら
+  // URL が変わる＝端末に残った古い写しを見せない
+  function thumbUrl(e) {
+    return previewPath(e.rel) + '?thumb=1&v=' + encodeURIComponent(Math.round(e.mtime || 0));
+  }
+
+  // 先に必ず取りに行くサムネイルの数。一覧を描くたびに戻す
+  var FIRST_THUMBS = 24;
+  var fEager = 0;
+
+  function fRow(e) {
+    var b = document.createElement('button');
+    b.className = 'frow' + (!e.dir && !e.open ? ' dim' : '');
+    var kind = e.dir ? 'folder' : fKind(e.name);
+    b.innerHTML = FIC[kind];                               // 絵はこちらが持っている定数だけ
+    // png・jpg などは中身を小さく出す。取りに行けなかったら種類の印のまま
+    if (kind === 'img' && e.open && fCookieOk) {
+      var box = b.querySelector('.ficon');
+      var im = document.createElement('img');
+      // 先頭のひとかたまりは必ず取りに行き、残りは画面に入ってから（lazy）。
+      // lazy だけにすると、開いた瞬間に見えている行まで出ないことがある
+      // ＝ブラウザが「画面に入った」と判断するまで動かないため（2026-09-04 実測）
+      im.loading = fEager > 0 ? 'eager' : 'lazy';
+      fEager--;
+      im.decoding = 'async';
+      im.alt = '';
+      im.onerror = function () { box.classList.remove('fthumb'); box.innerHTML = FIC[kind]
+        .replace(/^<span[^>]*>/, '').replace(/<\/span>$/, ''); };
+      box.classList.add('fthumb');
+      box.innerHTML = '';
+      box.appendChild(im);
+      // ⚠️ src はここで入れない。**画面に並べ終えてから**入れる（2026-09-04 実測）。
+      //    まだ document に入っていない <img> に src を入れると、lazy が
+      //    「画面の外にある」と判断したまま戻ってこず、35枚とも1枚も取りに行かなかった
+      //    （eager にすると即座に出たので、lazy の判定時期が原因だと確かめた）
+      im.dataset.u = thumbUrl(e);
+    }
+    var main = document.createElement('span');
+    main.className = 'fmain';
+    var n = document.createElement('span');
+    n.className = 'fname';
+    n.textContent = e.name;                                 // 名前は必ず textContent
+    main.appendChild(n);
+    var sub = fSubOf(e);
+    if (sub) {
+      var s2 = document.createElement('span');
+      s2.className = 'fsub';
+      s2.textContent = sub;
+      main.appendChild(s2);
+    }
+    b.appendChild(main);
+    if (e.dir) {
+      var c = document.createElement('span');
+      c.className = 'fchev';
+      c.textContent = '›';
+      b.appendChild(c);
+    }
+    b.onclick = function () {
+      if (e.dir) return fGo('browse', e.rel);
+      if (!e.open) return ftoast('この形式はここでは開けません');
+      openPreview(e.rel);
+    };
+    return b;
+  }
+
+  // 枡ひとつぶん（アイコン表示）。押したときの動きは行とまったく同じ
+  function fCell(e) {
+    var b = document.createElement('button');
+    b.className = 'fcell' + (!e.dir && !e.open ? ' dim' : '');
+    var kind = e.dir ? 'folder' : fKind(e.name);
+    var box = document.createElement('span');
+    box.className = 'fcicon' + (e.dir ? ' plain' : '');
+    box.innerHTML = FIC[kind].replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '');
+    box.classList.add(e.dir ? 'ic-folder' : ('ic-' + kind));
+    if (kind === 'img' && e.open && fCookieOk) {
+      var im = document.createElement('img');
+      im.loading = fEager > 0 ? 'eager' : 'lazy';
+      fEager--;
+      im.decoding = 'async';
+      im.alt = '';
+      im.onerror = function () {
+        box.innerHTML = FIC[kind].replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '');
+      };
+      box.innerHTML = '';
+      im.dataset.u = thumbUrl(e);     // src は並べ終えてから（行のときと同じ理由）
+      box.appendChild(im);
+    }
+    b.appendChild(box);
+    var n = document.createElement('span');
+    n.className = 'fcname';
+    n.textContent = e.name;
+    b.appendChild(n);
+    if (e.dir && typeof e.count === 'number') {
+      var c = document.createElement('span');
+      c.className = 'fcsub';
+      c.textContent = e.count + ' 項目';
+      b.appendChild(c);
+    }
+    b.onclick = function () {
+      if (e.dir) return fGo('browse', e.rel);
+      if (!e.open) return ftoast('この形式はここでは開けません');
+      openPreview(e.rel);
+    };
+    return b;
+  }
+
+  function fGroup(list) {
+    var g = document.createElement('div');
+    if (fView === 'grid') {
+      g.className = 'fgrid';
+      list.forEach(function (e) { g.appendChild(fCell(e)); });
+      return g;
+    }
+    g.className = 'fgroup';
+    list.forEach(function (e) { g.appendChild(fRow(e)); });
+    return g;
+  }
+
+  function fPaint(entries) {
+    fLast = entries;
+    fEager = FIRST_THUMBS;
+    fList.innerHTML = '';
+    if (!entries.length) {
+      fList.appendChild(fNote(fQuery ? '「' + fQuery + '」は見つかりません' : 'なにもありません'));
+      return;
+    }
+    var dirs = [], files = [];
+    entries.forEach(function (e) { (e.dir ? dirs : files).push(e); });
+    // さがしたときだけ2つに分ける。辿っているときは並び順（フォルダが先）で分かる
+    if (fQuery && dirs.length && files.length) {
+      fList.appendChild(fSection('フォルダ'));
+      fList.appendChild(fGroup(dirs));
+      fList.appendChild(fSection('ファイル'));
+      fList.appendChild(fGroup(files));
+    } else {
+      fList.appendChild(fGroup(entries));
+    }
+    fScroll.scrollTop = fWantTop || 0;
+    fBarSync();
+    // 並べ終えてからサムネイルを頼む。ここまで来ていれば lazy が正しく効く＝
+    // 画面に入っているぶんだけ取りに行く（120件を一度に引かない）
+    Array.prototype.forEach.call(fList.querySelectorAll('img[data-u]'), function (im) {
+      var u = im.dataset.u;
+      delete im.dataset.u;
+      im.src = u;
     });
   }
+
+  function fBarSync() {
+    fBarTitle.classList.toggle('show', fScroll.scrollTop > 34);
+  }
+  fScroll.addEventListener('scroll', fBarSync, { passive: true });
+
+  // ⚠️ サムネイルは <img> で取りに行くので、合言葉をヘッダに載せられない。
+  //    先に挨拶してクッキーをもらってから描く。もらえなかったときは種類の印だけで
+  //    描く（一覧そのものは動く）。1回もらえば以降は使い回される
+  var fCookieOk = false;
+
+  function fLoad() {
+    var seq = ++fSeq;
+    fChrome();
+    fList.innerHTML = '';
+    fList.appendChild(fNote('読み込み中…'));
+    var qs = fQuery ? '?q=' + encodeURIComponent(fQuery)
+      : (fMode === 'browse' ? '?dir=' + encodeURIComponent(fDir) : '');
+    var hello = ensurePreviewCookie().then(function () { fCookieOk = true; },
+                                           function () { fCookieOk = false; });
+    Promise.all([api('/api/files' + qs), hello]).then(function (r) {
+      if (seq !== fSeq) return;          // そのあいだに別の場所へ移っていたら捨てる
+      fPaint(r[0].entries || []);
+    }).catch(function (e) {
+      if (seq !== fSeq) return;
+      fList.innerHTML = '';
+      fList.appendChild(fNote(e.message || '読み込めませんでした'));
+    });
+  }
+
+  // 居場所をひとまとめにして積む／戻す。履歴（端から引く動き）と数を合わせるので、
+  // fStack に1つ積むときは history にも必ず1つ積む
+  function fSnap() { return { mode: fMode, dir: fDir, q: fQuery, top: fScroll.scrollTop }; }
+
+  function fRestore(s) {
+    fMode = s.mode; fDir = s.dir; fQuery = s.q;
+    fQInput.value = fQuery;
+    fQClear.hidden = !fQuery;
+    fWantTop = s.top;
+    fLoad();
+  }
+
+  function fGo(mode, dir) {
+    fStack.push(fSnap());
+    try { history.pushState({ tsumikiFiles: 1 }, ''); } catch (e) {}
+    fMode = mode; fDir = dir || ''; fQuery = '';
+    fQInput.value = '';
+    fQClear.hidden = true;
+    fWantTop = 0;
+    fLoad();
+  }
+
+  var fqTimer = null;
+
+  function fSearch(text) {
+    text = String(text || '').trim();
+    if (text === fQuery) return;
+    if (text && !fQuery) {                 // さがしはじめ＝戻れるように1つ積む
+      fStack.push(fSnap());
+      try { history.pushState({ tsumikiFiles: 1 }, ''); } catch (e) {}
+    } else if (!text && fQuery && fStack.length) {
+      history.back();                      // 空にした＝積んだところへ戻す
+      return;
+    }
+    fQuery = text;
+    fWantTop = 0;
+    fLoad();
+  }
+
+  fQInput.oninput = function () {
+    var v = fQInput.value;
+    fQClear.hidden = !v;
+    clearTimeout(fqTimer);
+    fqTimer = setTimeout(function () { fSearch(v); }, 260);
+  };
+  fQInput.onkeydown = function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(fqTimer);
+    fSearch(fQInput.value);
+    fQInput.blur();
+  };
+  fQClear.onclick = function () {
+    clearTimeout(fqTimer);
+    fQInput.value = '';
+    fQClear.hidden = true;
+    fSearch('');
+    fQInput.blur();
+  };
+
+  Array.prototype.forEach.call(fSeg.querySelectorAll('button'), function (b) {
+    b.onclick = function () {
+      var seg = b.getAttribute('data-seg');
+      if (seg === fMode && !fDir && !fQuery) return;
+      fMode = seg; fDir = ''; fWantTop = 0;
+      fLoad();
+    };
+  });
+
+  var ftoastTimer = null;
+
+  function ftoast(msg, ms) {
+    filesToast.textContent = msg;
+    filesToast.hidden = false;
+    clearTimeout(ftoastTimer);
+    ftoastTimer = setTimeout(hideFToast, ms || 1800);
+  }
+
+  function hideFToast() {
+    clearTimeout(ftoastTimer);
+    filesToast.hidden = true;
+  }
+
+  function openFiles() {
+    closeSheet();
+    filesEl.hidden = false;
+    fStack = [];
+    fQuery = '';
+    fQInput.value = '';
+    fQClear.hidden = true;
+    hideFToast();
+    if (!fPushed) {
+      try { history.pushState({ tsumikiFiles: 1 }, ''); fPushed = true; } catch (e) {}
+    }
+    fWantTop = 0;
+    fLoad();     // fMode / fDir は前に見ていた場所のまま＝続きから見られる
+  }
+
+  function closeFiles() {
+    filesEl.hidden = true;
+    fList.innerHTML = '';
+    fStack = [];
+    fQuery = '';
+    fQInput.value = '';
+    fQClear.hidden = true;
+    hideFToast();
+  }
+
+  fBack.onclick = function () {
+    if (fPushed || fStack.length) history.back();   // 閉じ方は popstate 側に1本化する
+    else closeFiles();
+  };
+
+  // ⚠️ この popstate は**プレビューのものより先に**登録すること（この位置＝ソースの上）。
+  //    先に走って「上にプレビューが乗っているならこちらは何もしない」と譲る形にしてある。
+  //    順番が入れ替わると、プレビューを閉じた同じ1回で一覧も1つ戻ってしまう。
+  window.addEventListener('popstate', function () {
+    if (filesEl.hidden) return;
+    if (!viewer.hidden) return;                     // いまのはプレビューの担当
+    if (fStack.length) { fRestore(fStack.pop()); return; }
+    fPushed = false;
+    closeFiles();
+  });
 
   // このアプリの中で開く。iframe は同じサーバーを見るので、
   // 最初の1回でクッキーが配られ、CSSや画像の読み込みもそのまま通る。
@@ -3515,6 +4088,11 @@
     var d = new Date(ms), now = new Date();
     var p = function (x) { return ('0' + x).slice(-2); };
     if (d.toDateString() === now.toDateString()) return p(d.getHours()) + ':' + p(d.getMinutes());
+    // 年をまたいだものは年も出す。置き場には去年のものも残っていて、
+    // 「8/14」だけだと今年のものと見分けられない
+    if (d.getFullYear() !== now.getFullYear()) {
+      return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+    }
     return (d.getMonth() + 1) + '/' + d.getDate();
   }
 
