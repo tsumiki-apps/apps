@@ -875,9 +875,9 @@
 
 <div id="files" hidden>
   <div class="fbar">
-    <button id="fback" aria-label="もどる"><span aria-hidden="true">‹</span><span class="lbl" id="fbacklabel"></span></button>
+    <button id="fback" aria-label="Back"><span aria-hidden="true">‹</span><span class="lbl" id="fbacklabel"></span></button>
     <span id="fbartitle">制作物</span>
-    <button id="fview" aria-label="並べかたを変える" title="並べかたを変える"></button>
+    <button id="fview" aria-label="Change view" title="Change view"></button>
   </div>
   <div id="fscroll">
     <h1 id="fbig">制作物</h1>
@@ -886,12 +886,12 @@
         <circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.9"></circle>
         <path d="M15.8 15.8 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path>
       </svg>
-      <input id="fq" type="search" placeholder="検索" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
-      <button id="fqclear" aria-label="消す" hidden>✕</button>
+      <input id="fq" type="search" placeholder="Search" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+      <button id="fqclear" aria-label="Clear" hidden>✕</button>
     </div>
     <div class="fseg" id="fseg">
-      <button data-seg="recent" class="on">さいきん</button>
-      <button data-seg="browse">フォルダ</button>
+      <button data-seg="recent" class="on">Recents</button>
+      <button data-seg="browse">Browse</button>
     </div>
     <div id="flist"></div>
   </div>
@@ -3413,9 +3413,12 @@
   // 上の帯・大見出し・札の出しわけ。どの状態からでもここ1か所で決まるようにする
   function fChrome() {
     var title;
-    if (fQuery) title = 'さがす';
-    else if (fMode === 'browse') title = fDir ? fBase(fDir) : '制作物';
-    else title = 'さいきん';
+    // 操作の言葉は英語にする（2026-09-04 本人の指示）。ただし**フォルダ名と
+    // ファイル名はそのまま**＝置き場の実物の名前を書き換えて見せない。
+    // 不具合の知らせも日本語のまま（困ったときに読む文なので）
+    if (fQuery) title = 'Search';
+    else if (fMode === 'browse') title = fDir ? fBase(fDir) : 'Tsumiki';
+    else title = 'Recents';
     fBarTitle.textContent = title;
     fBig.textContent = title;
     // 押したらどうなるかを絵にする（いまの状態ではなく、切り替わる先を出す）
@@ -3427,11 +3430,11 @@
     });
     if (!fQuery && fMode === 'browse' && fDir) {
       var par = fParent(fDir);
-      fBackLabel.textContent = par ? fBase(par) : '制作物';
+      fBackLabel.textContent = par ? fBase(par) : 'Tsumiki';
     } else if (fQuery) {
-      fBackLabel.textContent = 'もどる';
+      fBackLabel.textContent = 'Back';
     } else {
-      fBackLabel.textContent = 'とじる';
+      fBackLabel.textContent = 'Close';
     }
   }
 
@@ -3460,7 +3463,7 @@
   }
 
   function fSubOf(e) {
-    if (e.dir) return typeof e.count === 'number' ? e.count + ' 項目' : '';
+    if (e.dir) return typeof e.count === 'number' ? e.count + ' items' : '';
     var bits = [];
     // 新しい順・さがすの一覧では「どこに入っているか」がいちばん知りたい。
     // フォルダを辿っているときは自明なので出さない（名前の場所を食うだけ）
@@ -3468,7 +3471,7 @@
     // すぐ上のフォルダ名だけで「どこの話か」は十分わかる
     if (fQuery || fMode === 'recent') {
       var par = fParent(e.rel);
-      bits.push(par ? fBase(par) : '制作物');
+      bits.push(par ? fBase(par) : 'Tsumiki');
     }
     if (e.mtime) bits.push(fmtWhen(e.mtime));
     if (e.size) bits.push(fmtSize(e.size));
@@ -3571,7 +3574,7 @@
     if (e.dir && typeof e.count === 'number') {
       var c = document.createElement('span');
       c.className = 'fcsub';
-      c.textContent = e.count + ' 項目';
+      c.textContent = e.count + ' items';
       b.appendChild(c);
     }
     b.onclick = function () {
@@ -3599,16 +3602,16 @@
     fEager = FIRST_THUMBS;
     fList.innerHTML = '';
     if (!entries.length) {
-      fList.appendChild(fNote(fQuery ? '「' + fQuery + '」は見つかりません' : 'なにもありません'));
+      fList.appendChild(fNote(fQuery ? 'No results for "' + fQuery + '"' : 'No items'));
       return;
     }
     var dirs = [], files = [];
     entries.forEach(function (e) { (e.dir ? dirs : files).push(e); });
     // さがしたときだけ2つに分ける。辿っているときは並び順（フォルダが先）で分かる
     if (fQuery && dirs.length && files.length) {
-      fList.appendChild(fSection('フォルダ'));
+      fList.appendChild(fSection('Folders'));
       fList.appendChild(fGroup(dirs));
-      fList.appendChild(fSection('ファイル'));
+      fList.appendChild(fSection('Files'));
       fList.appendChild(fGroup(files));
     } else {
       fList.appendChild(fGroup(entries));
@@ -3638,7 +3641,7 @@
     var seq = ++fSeq;
     fChrome();
     fList.innerHTML = '';
-    fList.appendChild(fNote('読み込み中…'));
+    fList.appendChild(fNote('Loading…'));
     var qs = fQuery ? '?q=' + encodeURIComponent(fQuery)
       : (fMode === 'browse' ? '?dir=' + encodeURIComponent(fDir) : '');
     var hello = ensurePreviewCookie().then(function () { fCookieOk = true; },
