@@ -125,6 +125,8 @@
   }
   .c-body.open { display: block; -webkit-line-clamp: unset; overflow: visible; }
   .c-more { font-size: 11px; color: var(--ghost); margin-top: 3px; }
+  .c-left { font-size: 11.5px; color: var(--ghost); margin-top: 5px; }
+  .done-lead { font-size: 11.5px; color: var(--ghost); padding: 0 4px 8px; }
   .card.is-done .c-title { color: var(--ghost); }
   .card.is-done .c-body { color: var(--ghost); }
 
@@ -696,6 +698,40 @@ function renderSync(){
 function activeItems(){ return db.items.filter(x=>x.status!=='done'); }
 function doneItems(){ return db.items.filter(x=>x.status==='done'); }
 
+/* ===================== 完了の自動片づけ（24時間） =====================
+   ★ 何も押さなくても走る削除なので、条件をできるだけ狭くする。
+     ・完了（done）だけ／完了時刻がはっきりしている物だけ／24時間を過ぎた物だけ
+     ・時計がずれて「未来に完了」になっている物は触らない
+     ・消す前に必ず保険（snapshot）を取る → 「🛟 消えたメモを探す」から拾い戻せる
+     ・シートを開いている間は走らせない（操作中に足元が変わらないように） */
+const DONE_TTL = 24*60*60*1000;
+function doneAtOf(x){ return x.doneAt || x.updated || x.ts || 0; }
+/* 片づくまでの残り。完了カードに出す。 */
+function leftText(x){
+  const left = DONE_TTL - (Date.now() - doneAtOf(x));
+  if(left <= 0) return 'まもなく片づきます';
+  const h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000);
+  return 'あと' + (h ? h+'時間' + (m?m+'分':'') : m+'分') + 'で片づきます';
+}
+function purgeOldDone(){
+  if(sheetOpen) return 0;
+  const now = Date.now();
+  const gone = db.items.filter(x=>{
+    if(x.status !== 'done') return false;
+    const t = doneAtOf(x);
+    if(!t || t > now) return false;
+    return (now - t) >= DONE_TTL;
+  });
+  if(!gone.length) return 0;
+  snapshot('done-24h');
+  const ids = new Set(gone.map(x=>x.id));
+  db.items = db.items.filter(x=>!ids.has(x.id));
+  gone.forEach(x=>openIds.delete(x.id));
+  save(); render();
+  toast('完了から24時間たった'+gone.length+'件を片づけました');
+  return gone.length;
+}
+
 function render(){
   renderChips();
   renderList();
@@ -734,6 +770,7 @@ function cardHTML(x){
   }
   html += '<span class="mchev">'+svg('chev',16)+'</span>';
   html += '</div>';
+  if(isDone) html += '<div class="c-left">🕛 '+leftText(x)+'</div>';
   if(open){
     html += '<div class="n-list">';
     html += '<button class="add-note" data-addnote="'+x.id+'">＋ メモを追加</button>';
@@ -763,7 +800,11 @@ function renderDone(){
   const items = doneItems().slice().sort((a,b)=>(b.doneAt||b.updated||0)-(a.doneAt||a.updated||0));
   if(!items.length){ el.innerHTML=''; return; }
   let html = '<button class="done-toggle'+(doneOpen?' open':'')+'" id="doneToggle">'+svg('chev',14)+'✅ 完了済み（'+items.length+'）</button>';
-  if(doneOpen) html += '<div class="grid">' + items.map(cardHTML).join('') + '</div>';
+  if(doneOpen){
+    html += '<div class="done-lead">完了から24時間たつと自動で片づきます。'+
+            '（消えても下の🛟から戻せます）</div>';
+    html += '<div class="grid">' + items.map(cardHTML).join('') + '</div>';
+  }
   el.innerHTML = html;
   document.getElementById('doneToggle').onclick = ()=>{ doneOpen=!doneOpen; renderDone(); };
   if(doneOpen) bindCardEvents(el);
@@ -1165,13 +1206,15 @@ migrate();
 render();
 restoreDraft();
 renderSync();
-loadRemote();
+loadRemote().then(purgeOldDone);
 subscribeRealtime();
+/* 1分ごとに見に行く（開きっぱなしでも、日付をまたいだら片づく） */
+setInterval(purgeOldDone, 60000);
 /* 画面を離れる時は、350msの待ちを飛ばして今すぐ送る（iOSは裏に回るとタイマーが止まるため）。
    戻ってきた時は取り込む。未送信が残っていれば mergeRemote が差し戻すので消えない。 */
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden){ if(pendingSave) push(); }
-  else loadRemote();
+  else loadRemote().then(purgeOldDone);
 });
 window.addEventListener('pagehide', ()=>{ if(pendingSave) push(); });
 /* 通信が復活したら自動で繋ぎ直す（手動リロード不要でオフライン表示を解消） */
