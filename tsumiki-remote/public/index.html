@@ -1916,11 +1916,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     el.authbar.hidden = false;
     el.authbar.classList.toggle('bad', st === 'expired');
     el.authbar.textContent = st === 'expired'
-      ? 'Claude のログインが切れています。このままでは席は動きません'
-      : 'Claude のログインは ' + authWhen(auth.deadline) + ' に切れます';
+      ? 'ログインが切れています'
+      : 'ログインは ' + authWhen(auth.deadline) + ' に切れます';
     var go = document.createElement('span');
     go.className = 'go';
-    go.textContent = 'ここを押すと、この画面から入り直せます';
+    go.textContent = '押して入り直す';
     el.authbar.appendChild(go);
   }
 
@@ -1951,20 +1951,19 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   function openLoginSheet() {
     var name = loginTarget();
-    openSheet('Claude にログインし直す');
+    openSheet('ログインし直す');
     if (!name) {
-      sheetItem('Claude の作業場所がありません', '＋Claude で作ってから、もう一度',
+      sheetItem('Claude の席がありません', '＋Claude で作ってください',
         function () { closeSheet(); }, { disabled: true, wrap: true });
       return;
     }
-    sheetItem('「' + name + '」で始める', 'この席に /login を打ちます',
+    sheetItem('「' + name + '」で始める', '',
       function () { startLogin(name); }, { icon: 'check', iconCls: 'edit' });
   }
 
   function startLogin(name) {
     openSheet('ログイン：' + name);
-    sheetItem('サインインのURLを待っています…',
-      '席の画面で「1. Claude account」を選ぶところが出たら、下の 1 を押してください',
+    sheetItem('URLを待っています…', '選択肢が出たら 1 を押す',
       function () {}, { disabled: true, wrap: true });
     api('/api/login', { method: 'POST', body: JSON.stringify({ name: name }) }, 8000)
       .catch(function (e) {
@@ -1981,7 +1980,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       if (++tries > LOGIN_TRIES) {
         stopLoginPoll();
         openSheet('ログイン：' + name);
-        sheetItem('URLが見つかりませんでした', '席の画面をそのまま見て、手で進めてください',
+        sheetItem('URLが見つかりません', '席の画面から進めてください',
           function () { closeSheet(); }, { disabled: true, wrap: true });
         return;
       }
@@ -1995,14 +1994,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   function showLoginUrl(name, u) {
     openSheet('ログイン：' + name);
-    sheetItem('サインインの画面を開く', '新しいタブで開きます。ログインして許可してください',
+    // ⚠️ 「戻る」は残す。新しいタブで開くので、サインインが終わった時点で目の前に
+    //    あるのは Claude のページ＝つみきリモートは別のタブにいる。ここを言わないと
+    //    出先で「コードは出たのに貼る場所が無い」になる。
+    //    ただし2項目に分けない＝流れは1行で足りる（短いほうが出先で読める）
+    sheetItem('サインインを開く', '終わったら戻ってコードを貼る',
       function () { window.open(u, '_blank'); }, { icon: 'check', iconCls: 'edit' });
-    // ⚠️ 「戻る」を言葉にしておく。新しいタブで開くので、サインインが終わった時点で
-    //    目の前にあるのは Claude のページ＝つみきリモートは別のタブにいる。
-    //    ここを書いていないと、出先で「コードは出たのに貼る場所が無い」になる
-    sheetItem('このあと', 'サインインが終わったら Safari でこの画面のタブに戻り、'
-      + 'コードを下の入力欄に貼って送ってください',
-      function () { closeSheet(); }, { disabled: true, wrap: true });
   }
 
   // ---- 最後に見た内容を iPhone の中に残す（オフラインでも開けるように）
@@ -4313,8 +4310,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
       function () { closeSheet(); doKill(current); },
       { disabled: !current, icon: 'power', iconCls: 'stop' });
-    sheetItem('Claude にログインし直す',
-      auth && auth.state === 'expired' ? '⚠️ いま切れています'
+    sheetItem('ログインし直す',
+      auth && auth.state === 'expired' ? '⚠️ 切れています'
         : auth && auth.state === 'soon' ? authWhen(auth.deadline) + ' に切れます' : '',
       function () { openLoginSheet(); },
       { icon: 'undo', iconCls: 'edit' });
