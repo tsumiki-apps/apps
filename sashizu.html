@@ -110,6 +110,7 @@
   .pill.st-review { background: rgba(176,138,62,.14); color: var(--orange); }
   .pill.st-fix    { background: rgba(176,106,82,.13); color: var(--red); }
   .pill.st-done   { background: rgba(95,143,106,.14); color: var(--green); }
+  .pill.st-shelf  { background: transparent; color: var(--sub); box-shadow: inset 0 0 0 1px var(--line); }
   .c-actions { margin-left: auto; display: flex; gap: 2px; }
   .icon-btn {
     border: none; background: none; cursor: pointer; color: var(--sub);
@@ -127,6 +128,7 @@
   .c-more { font-size: 11px; color: var(--ghost); margin-top: 3px; }
   .c-left { font-size: 11.5px; color: var(--ghost); margin-top: 5px; }
   .done-lead { font-size: 11.5px; color: var(--ghost); padding: 0 4px 8px; }
+  .card.is-shelf { border-style: dashed; }
   .card.is-done .c-title { color: var(--ghost); }
   .card.is-done .c-body { color: var(--ghost); }
 
@@ -349,6 +351,7 @@
 
   <main id="list" class="grid"></main>
 
+  <div id="shelfWrap"></div>
   <div id="doneWrap"></div>
 
   <footer>
@@ -434,6 +437,7 @@ const STATUSES = [
   { key:'review', emoji:'👀', label:'確認待ち', desc:'自分のチェック待ち' },
   { key:'fix',    emoji:'🔧', label:'修正中',   desc:'直しを依頼している' },
   { key:'done',   emoji:'✅', label:'完了',     desc:'実装済み' },
+  { key:'shelf',  emoji:'📦', label:'あたため中', desc:'いまはやらない・しまっておく' },
 ];
 const ST = Object.fromEntries(STATUSES.map(s=>[s.key,s]));
 
@@ -494,6 +498,7 @@ const DEV_ID = (function(){
 })();
 let filter = 'all';          // 'all' | status key（doneは下の畳みセクション固定）
 let doneOpen = false;
+let shelfOpen = false;
 let sheetItemId = null;      // ステータス/編集シートの対象ことづて
 let sheetNoteId = null;      // ステータス/編集シートの対象メモ（null＝ことづて自体）
 let sheetOpen = false;       // シート表示中はリアルタイム上書き描画を遅延
@@ -695,8 +700,11 @@ function renderSync(){
 }
 
 /* ===================== 描画 ===================== */
-function activeItems(){ return db.items.filter(x=>x.status!=='done'); }
+/* 進行中＝畳んでしまう2つ（✅完了・📦あたため中）を除いたもの */
+const TUCKED = ['done','shelf'];
+function activeItems(){ return db.items.filter(x=>TUCKED.indexOf(x.status)<0); }
 function doneItems(){ return db.items.filter(x=>x.status==='done'); }
+function shelfItems(){ return db.items.filter(x=>x.status==='shelf'); }
 
 /* ===================== 完了の自動片づけ（24時間） =====================
    ★ 何も押さなくても走る削除なので、条件をできるだけ狭くする。
@@ -735,13 +743,14 @@ function purgeOldDone(){
 function render(){
   renderChips();
   renderList();
+  renderShelf();
   renderDone();
 }
 function renderChips(){
   const el = document.getElementById('chips');
   const act = activeItems();
   let html = '<button class="chip'+(filter==='all'?' on':'')+'" data-filter="all">すべて <span class="n">'+act.length+'</span></button>';
-  STATUSES.filter(s=>s.key!=='done').forEach(s=>{
+  STATUSES.filter(s=>TUCKED.indexOf(s.key)<0).forEach(s=>{
     const n = act.filter(x=>x.status===s.key).length;
     html += '<button class="chip'+(filter===s.key?' on':'')+'" data-filter="'+s.key+'">'+s.emoji+' '+s.label+' <span class="n">'+n+'</span></button>';
   });
@@ -754,7 +763,7 @@ function cardHTML(x){
   const s = ST[x.status];
   const isDone = x.status==='done';
   const notes = x.notes || [];
-  let html = '<div class="card'+(isDone?' is-done':'')+'" data-id="'+x.id+'">';
+  let html = '<div class="card'+(isDone?' is-done':'')+(x.status==='shelf'?' is-shelf':'')+'" data-id="'+x.id+'">';
   html += '<div class="c-top">';
   html += '<button class="pill st-'+x.status+'" data-st="'+x.id+'">'+s.emoji+' '+s.label+'</button>';
   html += '<div class="c-actions">';
@@ -794,6 +803,21 @@ function renderList(){
   }
   el.innerHTML = items.map(cardHTML).join('');
   bindCardEvents(el);
+}
+/* 📦 あたため中：完了と同じように畳んでしまっておく。
+   ★ 自動の片づけ（24時間）は status==='done' だけを見るので、ここは消えない。 */
+function renderShelf(){
+  const el = document.getElementById('shelfWrap');
+  const items = shelfItems().slice().sort((a,b)=>(b.updated||b.ts||0)-(a.updated||a.ts||0));
+  if(!items.length){ el.innerHTML=''; return; }
+  let html = '<button class="done-toggle'+(shelfOpen?' open':'')+'" id="shelfToggle">'+svg('chev',14)+'📦 あたため中（'+items.length+'）</button>';
+  if(shelfOpen){
+    html += '<div class="done-lead">いまはやらない分。自動では片づきません。</div>';
+    html += '<div class="grid">' + items.map(cardHTML).join('') + '</div>';
+  }
+  el.innerHTML = html;
+  document.getElementById('shelfToggle').onclick = ()=>{ shelfOpen=!shelfOpen; renderShelf(); };
+  if(shelfOpen) bindCardEvents(el);
 }
 function renderDone(){
   const el = document.getElementById('doneWrap');
