@@ -162,7 +162,9 @@
   .grip { width:40px;height:5px;background:#dcd3c6;border-radius:3px;margin:8px auto 14px;}
   .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom: 16px;}
   .modal-head h3 { margin:0; font-size:19px; font-weight:700;}
-  .modal-head .close { font-size:22px; color:var(--sub); cursor:pointer; padding:4px 8px;}
+  .modal-head .close { font-size:22px; color:var(--sub); cursor:pointer;
+    width:44px; height:44px; margin:-4px -10px -4px 0; flex:none;
+    display:flex; align-items:center; justify-content:center; }
   #recordModal .modal { overflow-x: hidden; }   /* 記録シートは縦スクロールのみ（横ズレを完全に止める） */
 
   label.fld { display:block; font-size: 13px; color: var(--sub); margin: 16px 0 6px; font-weight:600;}
@@ -258,7 +260,7 @@
 
   /* ===== いいねボタン（詳細） ===== */
   .like-row { display:flex; align-items:center; gap:12px; margin-top:18px; flex-wrap:wrap; }
-  .like-btn { display:flex; align-items:center; gap:7px; background:var(--chip); border:none; border-radius:999px; padding:9px 17px; font-size:15px; font-weight:700; font-family:inherit; color:var(--sub); cursor:pointer; }
+  .like-btn { display:flex; align-items:center; gap:7px; background:var(--chip); border:none; border-radius:999px; min-height:44px; padding:0 17px; font-size:15px; font-weight:700; font-family:inherit; color:var(--sub); cursor:pointer; }
   .like-btn.on { background:#fde7e4; color:var(--red); }
   .like-who { font-size:12.5px; color:var(--sub); }
 
@@ -425,6 +427,34 @@
     background:var(--accent); margin-right:7px; vertical-align:middle; }
   .sort-row { display:flex; gap:8px; align-items:center; padding:2px 0 0; }
 
+  /* ===== カードの投稿時刻（時間帯） ===== */
+  .entry .e-time { font-size:11.5px; color:var(--sub); }
+  .d-when { color:var(--sub); font-weight:600; }
+
+  /* ===== 🔔 お知らせ一覧 ===== */
+  .iconbtn .num { position:absolute; top:4px; right:2px; min-width:17px; height:17px; padding:0 4px;
+    border-radius:999px; background:var(--accent); color:#fff; font-size:10.5px; font-weight:700;
+    line-height:17px; text-align:center; box-shadow:0 0 0 2px var(--bg); }
+  .n-bar { display:flex; align-items:center; gap:10px; margin:-6px 0 8px; }
+  .n-bar .cnt { font-size:12.5px; color:var(--sub); }
+  .n-read { margin-left:auto; flex:none; border:none; background:var(--chip); color:var(--text);
+    font-family:inherit; font-size:13px; font-weight:700; border-radius:999px;
+    min-height:44px; padding:0 16px; cursor:pointer; }
+  .n-read:disabled { color:var(--sub); opacity:.55; cursor:default; }
+  .nitem { display:flex; gap:11px; align-items:center; padding:11px 10px; margin:0 -10px;
+    border-bottom:1px solid var(--line); cursor:pointer; border-radius:14px; }
+  .nitem:active { background:var(--chip); }
+  .nitem.unread { background:var(--accent-soft); }
+  .nitem .nth { flex:none; width:50px; height:50px; border-radius:13px; object-fit:cover;
+    background:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; }
+  .nitem .ntx { flex:1; min-width:0; }
+  .nitem .nt1 { font-size:14px; line-height:1.55; }
+  .nitem .nt1 b { font-weight:700; }
+  .nitem .nt2 { font-size:11.5px; color:var(--sub); margin-top:2px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .nitem .ndot { flex:none; width:8px; height:8px; border-radius:50%; background:var(--accent); }
+  .n-setting { margin-top:20px; }
+
   /* ===== ☰ メニューシート（思い出・リクエスト・通信・数字をここへ集約） ===== */
   .menu-item { display:flex; align-items:center; gap:13px; width:100%; border:none; background:transparent;
     font-family:inherit; font-size:16px; font-weight:600; color:var(--text); padding:15px 4px;
@@ -508,6 +538,7 @@
     <h1>ゆずごはん日記</h1>
     <div class="hacts">
       <button class="iconbtn" id="searchBtn" aria-label="さがす・絞りこむ">🔍<span class="dot" id="searchDot" hidden></span></button>
+      <button class="iconbtn" id="notifListBtn" aria-label="お知らせ">🔔<span class="num" id="notifCount" hidden>0</span></button>
       <button class="iconbtn" id="menuBtn" aria-label="メニュー">⋯</button>
     </div>
   </div>
@@ -622,7 +653,24 @@
     <button class="menu-item" id="memoryBtn"><span class="ic">🎞️</span>思い出をめくる</button>
     <button class="menu-item" id="reqBtn"><span class="ic">🙏</span>またこれ食べたい<span class="n" id="reqCount">0</span></button>
     <button class="menu-item" id="reportBtn"><span class="ic">📮</span>ゆずごはん通信</button>
-    <button class="menu-item" id="notifyBtn"><span class="ic">🔔</span>お知らせ<span class="st" id="notifyState"></span></button>
+    <button class="menu-item" id="notifyBtn"><span class="ic">🔔</span>お知らせの設定<span class="st" id="notifyState"></span></button>
+  </div>
+</div>
+
+<!-- ===== 🔔 お知らせ一覧（いいね・コメント・スタンプ・新しい記録） ===== -->
+<div class="modal-bg" id="notifListModal">
+  <div class="modal">
+    <div class="grip"></div>
+    <div class="modal-head">
+      <h3>🔔 お知らせ</h3>
+      <span class="close" data-close="notifListModal">✕</span>
+    </div>
+    <div class="n-bar">
+      <span class="cnt" id="notifBarCnt"></span>
+      <button class="n-read" id="notifReadAll">すべて既読にする</button>
+    </div>
+    <div id="notifListBody"></div>
+    <button class="btn sec n-setting" id="notifGoSetting">⚙️ お知らせの設定</button>
   </div>
 </div>
 
@@ -631,7 +679,7 @@
   <div class="modal">
     <div class="grip"></div>
     <div class="modal-head">
-      <h3>🔔 お知らせ</h3>
+      <h3>🔔 お知らせの設定</h3>
       <span class="close" data-close="notifyModal">✕</span>
     </div>
     <div id="notifyBody"></div>
@@ -1101,6 +1149,7 @@ function setWho(name){
   // 通知は「いきなり許可ダイアログ」を出さない。フィード先頭のお願いパネル（shouldAskNotify）と
   // ⋯ →「お知らせ」からだけ聞く。ここは、既に許可済みの端末の購読を名前つきで登録しなおすだけ。
   ensurePushSubscription(); syncNotifyUI();
+  updateNotifBadge();          // 名前が決まると「自分の分」を数えなくなるので、数え直す
   const cb=pendingWhoCb; pendingWhoCb=null;
   if(cb) cb(); else renderCurrentView();
   if(openDetailId) renderDetail(openDetailId);
@@ -1196,6 +1245,96 @@ function toggleReaction(id, emoji){
   }
 }
 
+
+/* ============ 🔔 お知らせ一覧（いいね・コメント・スタンプ・新しい記録） ============
+   これまでは「新着の点（🍋）」だけだったので、何が起きたのかは開いて探すしかなかった。
+   ここでは、相手（自分以外）の動きを新しい順に一枚のシートにまとめて出す。
+   既読の目印は端末ごと（localStorage の yuzuNotifRead）。押した時刻より新しいものが未読。
+   ※ 通知そのものの設定（OS通知の許可）は ⋯ →「お知らせの設定」のまま。 */
+const NOTIF_MAX = 80;                    /* 出すのは新しい方から80件まで（重くしない） */
+let notifRead = +(localStorage.getItem('yuzuNotifRead')||0);
+if(!notifRead){                          /* 初回だけ：これまでの分は読んだことにする（バッジだらけを防ぐ） */
+  notifRead = Date.now();
+  localStorage.setItem('yuzuNotifRead', String(notifRead));
+}
+/* 自分の動きは出さない。名前をまだ選んでいない端末では、ひとまず全部出す */
+function notMine(w){ return !(who && w===who); }
+function notifItems(){
+  const byId = new Map(allRecords.map(r=>[r.id, r]));
+  const out = [];
+  allRecords.forEach(r=>{
+    if(!r.createdAt || !notMine(r.who)) return;
+    out.push({ ts:r.createdAt, rec:r, ic:'🍳', who:r.who, act:'新しく記録しました', sub:r.name });
+  });
+  allComments.forEach(c=>{
+    const r=byId.get(c.record_id);
+    if(!r || !notMine(c.who)) return;
+    out.push({ ts:c.created_at||0, rec:r, ic:'💬', who:c.who, act:'コメントしました', sub:`「${c.body||''}」` });
+  });
+  allLikes.forEach(l=>{
+    const r=byId.get(l.record_id);
+    if(!r || !notMine(l.who)) return;
+    out.push({ ts:l.created_at||0, rec:r, ic:'❤️', who:l.who, act:'いいねしました', sub:r.name });
+  });
+  allReactions.forEach(x=>{
+    const r=byId.get(x.record_id);
+    if(!r || !notMine(x.who)) return;
+    const want = x.emoji===WANT_EMOJI;
+    out.push({ ts:x.created_at||0, rec:r, ic:x.emoji||'✨', who:x.who,
+               act: want?'「またこれ食べたい」を押しました':'スタンプを押しました', sub:r.name });
+  });
+  out.sort((a,b)=>(b.ts||0)-(a.ts||0));
+  return out.slice(0, NOTIF_MAX);
+}
+function unreadNotif(){ return notifItems().filter(n=>n.ts>notifRead).length; }
+/* ヘッダーの 🔔 に未読の数を出す（0なら出さない） */
+function updateNotifBadge(){
+  const el=$('#notifCount'); if(!el) return;
+  const n=unreadNotif();
+  el.textContent = n>99? '99+' : String(n);
+  el.hidden = !n;
+}
+function renderNotifList(){
+  const items=notifItems();
+  const un=items.filter(n=>n.ts>notifRead).length;
+  $('#notifBarCnt').textContent = un? `未読 ${un}件` : 'ぜんぶ読みました 🍋';
+  $('#notifReadAll').disabled = !un;
+  const body=$('#notifListBody');
+  if(!items.length){
+    body.innerHTML=`<div class="empty"><span class="big">🔔</span>お知らせはまだありません。<br>いいね・コメント・スタンプが付くと、<br>ここに並びます。</div>`;
+    return;
+  }
+  body.innerHTML = items.map(n=>{
+    const pic=(n.rec.photos||[])[0];
+    const unread = n.ts>notifRead;
+    return `<div class="nitem ${unread?'unread':''}" data-open="${n.rec.id}">
+      ${pic?`<img class="nth" src="${pic}" loading="lazy" decoding="async">`:`<div class="nth">🍽️</div>`}
+      <div class="ntx">
+        <div class="nt1">${n.ic} <b>${esc(n.who||'だれか')}</b> が${n.act}</div>
+        <div class="nt2">${esc(n.sub||'')}　・　${fmtAgo(n.ts)}</div>
+      </div>
+      ${unread?`<span class="ndot"></span>`:''}
+    </div>`;
+  }).join('');
+  body.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>{
+    hideModal('notifListModal'); openDetail(el.dataset.open);
+  });
+}
+function openNotifList(){ renderNotifList(); showModal('notifListModal'); }
+/* 一括既読：ここより前のものは全部「読んだ」ことにする。フィードの🍋新着も一緒に消す */
+function markAllNotifRead(){
+  notifRead = Date.now();
+  localStorage.setItem('yuzuNotifRead', String(notifRead));
+  lastSeen = notifRead;
+  localStorage.setItem('yuzuLastSeen', String(lastSeen));
+  _feedSig='';                       // 新着の点を消すためにカードを組み直す
+  updateNotifBadge(); renderNotifList(); renderSortRow(); renderCurrentView();
+  toast('すべて既読にしました 🍋');
+}
+$('#notifListBtn').onclick = openNotifList;
+$('#notifReadAll').onclick = markAllNotifRead;
+$('#notifGoSetting').onclick = ()=>{ hideModal('notifListModal'); openNotify(); };
+
 /* ============ 日付整形 ============ */
 const WD=['日','月','火','水','木','金','土'];
 function fmtDate(iso){
@@ -1212,6 +1351,40 @@ function fmtDateShort(iso){
 function monthKey(iso){ return iso? iso.slice(0,7) : '0000-00'; }
 function fmtMonth(key){ const [y,m]=key.split('-'); return `${y}年${+m}月`; }
 function fmtWhen(ts){ if(!ts) return ''; const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${d.getMonth()+1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+/* 時刻だけ（19:23） */
+function fmtClock(ts){ if(!ts) return ''; const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${p(d.getHours())}:${p(d.getMinutes())}`; }
+/* 何時に残したか＝時間帯。絵文字と、やさしい呼び名をセットで返す */
+const TIME_BANDS=[
+  { until:5,  e:'🌙', l:'夜ふけ' },
+  { until:10, e:'🌅', l:'朝' },
+  { until:15, e:'☀️', l:'昼' },
+  { until:17, e:'🍵', l:'おやつ' },
+  { until:21, e:'🌇', l:'夕ごはん' },
+  { until:24, e:'🌙', l:'夜' },
+];
+function timeBand(ts){
+  const h=new Date(ts).getHours();
+  return TIME_BANDS.find(b=>h<b.until) || TIME_BANDS[TIME_BANDS.length-1];
+}
+/* カード用：🌇 18:42（投稿＝記録に残した時刻） */
+function fmtPostedShort(ts){ if(!ts) return ''; return `${timeBand(ts).e} ${fmtClock(ts)}`; }
+/* 詳細用：🌇 夕ごはん・18:42 に記録 */
+function fmtPostedLong(ts){
+  if(!ts) return '';
+  const b=timeBand(ts);
+  return `${b.e} ${b.l}・${fmtClock(ts)} に記録`;
+}
+/* お知らせ用：たった今 / 12分前 / 3時間前 / 2日前 / 8/29 19:23 */
+function fmtAgo(ts){
+  if(!ts) return '';
+  const s=(Date.now()-ts)/1000;
+  if(s<0) return 'たった今';
+  if(s<60) return 'たった今';
+  if(s<3600) return `${Math.floor(s/60)}分前`;
+  if(s<86400) return `${Math.floor(s/3600)}時間前`;
+  if(s<86400*7) return `${Math.floor(s/86400)}日前`;
+  return fmtWhen(ts);
+}
 function renderCurrentView(){
   if(viewMode==='calendar'){ renderPanels(); renderCalendar(); }
   else renderFeed();
@@ -1235,6 +1408,7 @@ function recordListHTML(list, {groupByMonth=true}={}){
       : `<div class="cover placeholder">🍽️</div>`;
     const tags=(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
     const cc=commentsFor(r.id).length;
+    const posted = fmtPostedShort(r.createdAt);   // 記録に残した時間帯（🌇 18:42）
     const isNew = (r.createdAt||0) > lastSeen;
     const badge = isNew? `<span class="newdot" aria-label="新着"></span>` : '';
     html+=`
@@ -1243,6 +1417,7 @@ function recordListHTML(list, {groupByMonth=true}={}){
         <div class="body">
           <div class="e-top">
             <span class="e-date">${fmtDateShort(r.date)}</span>
+            ${posted?`<span class="e-time">${posted}</span>`:''}
             <span class="e-cmt">${cc?`💬 ${cc}`:''}</span>
           </div>
           <div class="e-name">${badge}${esc(r.name)}</div>
@@ -1424,7 +1599,7 @@ function renderPanels(){
 /* 記録1件の「見た目に効く中身」。ここが変わっていなければカードは作り直さない。
    いいね・スタンプ・コメント数は入れない＝それだけならボタンの行だけ差し替える。 */
 function recordSig(r){
-  return [r.id, r.name, r.date, r.note||'', (r.tags||[]).join(','), (r.photos||[]).join('|')].join('¦');
+  return [r.id, r.name, r.date, r.note||'', (r.tags||[]).join(','), (r.photos||[]).join('|'), r.createdAt||0].join('¦');
 }
 let _feedSig='';
 function renderFeed(){
@@ -1477,8 +1652,10 @@ async function loadRecords(){
     localStorage.setItem('yuzuLastSeen', String(Date.now()));
   }
   updateStats(); renderCookFilter(); renderSortRow(); renderTagFilter();
+  updateNotifBadge();
   renderCurrentView();
   if(openDetailId) renderDetail(openDetailId);
+  if($('#notifListModal').classList.contains('show')) renderNotifList();
   if($('#requestModal').classList.contains('show')) renderRequests();
   if($('#reportModal').classList.contains('show')) renderReport();
   if($('#story').classList.contains('show')) refreshStoryReactions();   // ストーリーズ表示中なら相手のリアクションを反映
@@ -1783,7 +1960,7 @@ function renderDetail(id){
   const n=commentsFor(id).length;
   $('#detailBody').innerHTML = `
     ${photoHtml}
-    <div class="d-date">${fmtDate(r.date)}</div>
+    <div class="d-date">${fmtDate(r.date)}${r.createdAt?`<span class="d-when">　${fmtPostedLong(r.createdAt)}</span>`:''}</div>
     <div class="d-name">${esc(r.name)}</div>
     ${tags?`<div class="tags" style="margin-top:8px">${tags}</div>`:''}
     ${r.note?`<div class="note-card"><div class="lab">ひとこと</div><div class="d-note" style="margin-top:0">${esc(r.note)}</div></div>`:''}
