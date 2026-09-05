@@ -113,16 +113,34 @@
   .empty { text-align:center; color:var(--sub); padding: 60px 24px; font-size:15px; }
   .empty .big { font-size:46px; display:block; margin-bottom:14px; }
 
-  /* ===== 追加ボタン（FAB） ===== */
-  .fab {
+  /* ===== 追加ボタン（FAB）＝押すと液体のように 2 つに分かれる ===== */
+  /* 器。芽が動いた先まで含む大きさにしておく（下に敷く SVG の輪郭がここに描かれる）。
+     器そのものは押せない＝空きは下の日記に通す */
+  .fabwrap {
     position: fixed; right: 20px; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 40;
-    width: 60px; height: 60px; border-radius: 50%; border:none;
-    background: var(--accent); color:#fff; font-size: 30px; line-height: 1;
+    width: 150px; height: 150px; pointer-events: none;
+  }
+  .fab, .bud {
+    position: absolute; right: 0; bottom: 0; border: none;
+    background: var(--accent); color:#fff; line-height: 1;
     box-shadow: 0 6px 18px rgba(232,145,91,.45); cursor:pointer;
     display:flex; align-items:center; justify-content:center;
     -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;  /* 長押し＝アルバムなので選択メニューを出さない */
+    pointer-events: auto;
   }
-  .fab:active { transform: scale(.93); }
+  .fab { width: 60px; height: 60px; border-radius: 50%; font-size: 30px; }
+  .bud { width: 52px; height: 52px; border-radius: 50%; font-size: 22px; }
+  .fab .ico.x { display:none; font-size: 26px; }
+  .fabwrap.open .fab .ico.cam { display:none; }
+  .fabwrap.open .fab .ico.x { display:block; }
+  /* 液体の層が敷けたときだけ：色と影は下の SVG が描くので、ここは文字だけにする。
+     敷けなかったときは上の見た目のまま 📷 が1個残る＝壊れて消えない */
+  .fabwrap.liq .fab, .fabwrap.liq .bud { background: transparent; box-shadow: none; }
+  .fabwrap:not(.liq) .bud { display:none; }
+  .bud[aria-hidden="true"] { pointer-events: none; }
+  /* 押したへこみ。液体のときは transform を動きが使うので、中の文字だけ縮める */
+  .fabwrap:not(.liq) .fab:active { transform: scale(.93); }
+  .fabwrap.liq .fab:active .ico, .fabwrap.liq .bud:active { opacity: .72; }
 
   /* ===== 家族モード（いいね・コメントOK／投稿・編集・削除は不可） ===== */
   .view-badge { display:none; margin:10px auto 0; max-width:max-content;
@@ -131,7 +149,7 @@
     padding:5px 12px; border-radius:999px; }
   body.family .view-badge { display:block; }
   /* 投稿・編集・削除だけ隠す（いいね・コメント・スタンプは残す） */
-  body.family .fab,
+  body.family .fabwrap,
   body.family #editRecBtn,
   body.family #deleteRecordBtn,
   body.family .cmt .del { display:none !important; }
@@ -565,7 +583,11 @@
   <div class="cal" id="calendar" style="display:none"></div>
 </main>
 
-<button class="fab" id="fab" aria-label="ごはんを撮って記録する">📷</button>
+<div class="fabwrap" id="fabwrap">
+  <button class="bud" id="fabAlbum" data-item aria-hidden="true" tabindex="-1" aria-label="アルバムから選ぶ">🖼</button>
+  <button class="bud" id="fabCam" data-item aria-hidden="true" tabindex="-1" aria-label="いま撮る">📷</button>
+  <button class="fab" id="fab" data-item aria-haspopup="true" aria-expanded="false" aria-label="ごはんを記録する"><span class="ico cam">📷</span><span class="ico x">✕</span></button>
+</div>
 <!-- ＋タップ＝アプリ内カメラ起動。getUserMediaが使えない時だけ下の純正カメラにフォールバック -->
 <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
 
@@ -1882,20 +1904,236 @@ $('#deleteRecordBtn').onclick=async()=>{
     hideModal('recordModal'); toast('削除しました');
   }catch(e){ console.error(e); toast('削除に失敗しました'); }
 };
-/* ＋（📷）＝タップでその場のカメラ。長押しはアルバムから選ぶ従来の入力シート */
+/* =====================================================================
+   📷 を押すと、液体のように 📷（いま撮る）と 🖼（アルバム）に分かれる。
+   liquid-gooey 0.2.1（Jakub Antalik / MIT）の React に依らない層を写したもの。
+   https://github.com/Jakubantalik/Libraries  packages/liquid-gooey
+   npm も React も使わない。通信・保存・動的実行はしない。
+   数値（バネの定数・きわの中点の式）は配布物のまま。
+   ===================================================================== */
+const makeLiquid = (()=>{
+  "use strict";
+  /* ---- バネ（src/spring.ts の写し） ---- */
+  const PRESETS = { snappy:{s:480,d:34}, smooth:{s:190,d:26}, bouncy:{s:320,d:17} };
+  const DT = 1/240;
+  function simulate(c){
+    let x=0, v=0, t=0, settledAt=-1; const xs=[0];
+    while(t < 10){
+      const a = (-c.s*(x-1) - c.d*v);
+      v += a*DT; x += v*DT; t += DT; xs.push(x);
+      if(Math.abs(x-1) < 1e-3 && Math.abs(v) < 0.02){
+        if(settledAt < 0) settledAt = t;
+        if(t - settledAt >= 0.064) break;
+      } else settledAt = -1;
+    }
+    const duration = settledAt > 0 ? settledAt : t;
+    const n = Math.round(Math.min(120, Math.max(24, duration*90)));
+    const lastIdx = Math.min(xs.length-1, duration/DT);
+    const values = [];
+    for(let i=0;i<=n;i++){
+      const idx = Math.min(xs.length-1, Math.round(i/n*lastIdx));
+      values.push(Math.round(xs[idx]*1e4)/1e4);
+    }
+    values[values.length-1] = 1;
+    return { duration, values };
+  }
+  const springCache = {};
+  function resolveTransition(name){
+    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      return { duration:0, ease:t=>t };            // 「動きを減らす」なら動かさずに出す
+    }
+    if(springCache[name]) return springCache[name];
+    const sim = simulate(PRESETS[name] || PRESETS.smooth), vals = sim.values;
+    return springCache[name] = {
+      duration: Math.round(sim.duration*1000),
+      ease(t){
+        if(t <= 0) return vals[0];
+        if(t >= 1) return vals[vals.length-1];
+        const f = t*(vals.length-1), i = Math.floor(f);
+        return vals[i] + (vals[i+1]-vals[i])*(f-i);
+      }
+    };
+  }
+  /* ---- 丸みの読み取り（src/geometry.ts の写し） ---- */
+  function radiusOf(el, w, h){
+    const first = String(getComputedStyle(el).borderTopLeftRadius).split(' ')[0];
+    return first.slice(-1) === '%' ? (parseFloat(first)||0)/100*Math.min(w,h) : (parseFloat(first)||0);
+  }
+  function offsetTo(el, anc){
+    let x=0, y=0, n=el;
+    while(n && n !== anc){ x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+    return {x,y};
+  }
+  /* ---- goo フィルタ（src/GooFilter.tsx の写し） ---- */
+  const NS = 'http://www.w3.org/2000/svg';
+  function mk(tag, attrs){
+    const e = document.createElementNS(NS, tag);
+    for(const k in attrs) if(attrs[k] != null) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  function buildFilter(filter, o){
+    while(filter.firstChild) filter.removeChild(filter.firstChild);
+    /* きわの傾きに合わせて中点をずらす。この式がこの効果の要 */
+    const intercept = Math.round((0.5 - o.contrast*(5/12))*100)/100;
+    filter.appendChild(mk('feGaussianBlur',{in:'SourceGraphic',stdDeviation:o.blur,result:'blur'}));
+    filter.appendChild(mk('feColorMatrix',{in:'blur',type:'matrix',
+      values:`1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${o.contrast} ${intercept}`,result:'goo'}));
+    filter.appendChild(mk('feComposite',{in:'SourceGraphic',in2:'goo',operator:'atop',result:'shape'}));
+    const sh = o.shadow;                 /* 影は「くっついた後の輪郭」に掛ける＝継ぎ目が出ない */
+    if(sh){
+      let src = 'shape';
+      if(sh.blur > 0){ filter.appendChild(mk('feGaussianBlur',{in:src,stdDeviation:sh.blur/2,result:'s-b'})); src='s-b'; }
+      if(sh.x || sh.y){ filter.appendChild(mk('feOffset',{in:src,dx:sh.x,dy:sh.y,result:'s-o'})); src='s-o'; }
+      filter.appendChild(mk('feFlood',{'flood-color':sh.color,result:'s-c'}));
+      filter.appendChild(mk('feComposite',{in:'s-c',in2:src,operator:'in',result:'s'}));
+      const merge = mk('feMerge',{});
+      merge.appendChild(mk('feMergeNode',{in:'s'}));
+      merge.appendChild(mk('feMergeNode',{in:'shape'}));
+      filter.appendChild(merge);
+    }
+  }
+  /* ---- 本体 ---- */
+  let uidN = 0;
+  return function createLiquid(root, opts){
+    const uid = 'yuzuLiq' + (++uidN), PAD = 34;   /* PAD＝外にはみ出す分の余白 */
+    const o = Object.assign({ blur:14, contrast:18, fill:'#e8915b',
+      shadow:{x:0,y:6,blur:18,color:'rgba(232,145,91,.45)'} }, opts||{});
+    const svg = mk('svg',{'aria-hidden':'true',focusable:'false'});
+    svg.style.cssText = `position:absolute;left:${-PAD}px;top:${-PAD}px;pointer-events:none;overflow:visible`;
+    const defs = mk('defs',{});
+    const filter = mk('filter',{id:uid,filterUnits:'userSpaceOnUse','color-interpolation-filters':'sRGB'});
+    defs.appendChild(filter); svg.appendChild(defs);
+    const g = mk('g',{filter:`url(#${uid})`}); svg.appendChild(g);
+    root.insertBefore(svg, root.firstChild);
+
+    const items = [...root.querySelectorAll('[data-item]')].map(el=>{
+      const blob = mk('rect',{fill:o.fill});
+      blob.style.cssText = 'transform-box:fill-box;transform-origin:center;will-change:transform';
+      g.appendChild(blob);
+      el.style.willChange = 'transform';
+      return { el, blob, tx:0, ty:0, delay:0, cx:0, cy:0, fx:0, fy:0 };
+    });
+
+    function measure(){
+      const W = root.offsetWidth, H = root.offsetHeight;
+      svg.setAttribute('width', W+PAD*2); svg.setAttribute('height', H+PAD*2);
+      svg.setAttribute('viewBox', `${-PAD} ${-PAD} ${W+PAD*2} ${H+PAD*2}`);
+      filter.setAttribute('x',-PAD); filter.setAttribute('y',-PAD);
+      filter.setAttribute('width', W+PAD*2); filter.setAttribute('height', H+PAD*2);
+      items.forEach(it=>{
+        const p = offsetTo(it.el, root), w = it.el.offsetWidth, h = it.el.offsetHeight;
+        const rx = Math.max(0, Math.min(radiusOf(it.el,w,h), Math.min(w,h)/2));
+        it.blob.setAttribute('x',p.x); it.blob.setAttribute('y',p.y);
+        it.blob.setAttribute('width',w); it.blob.setAttribute('height',h);
+        it.blob.setAttribute('rx',rx); it.blob.setAttribute('ry',rx);
+      });
+    }
+    const write = (it,x,y)=>{                     /* 文字と輪郭を同じコマで書く＝ずれない */
+      const t = `translate(${x}px, ${y}px)`;
+      it.el.style.transform = t; it.blob.style.transform = t;
+    };
+
+    let raf = 0, open = false;
+    function animate(toOpen){
+      open = toOpen;
+      const tr = resolveTransition(api.transition), start = performance.now();
+      items.forEach(it=>{ it.fx = it.cx; it.fy = it.cy; });
+      if(tr.duration <= 0){
+        items.forEach(it=>{ it.cx = toOpen?it.tx:0; it.cy = toOpen?it.ty:0; write(it,it.cx,it.cy); });
+        return;
+      }
+      if(raf) cancelAnimationFrame(raf);
+      const tick = now=>{
+        let alive = false;
+        for(const it of items){
+          const gx = toOpen?it.tx:0, gy = toOpen?it.ty:0;
+          let p = (now - start - it.delay) / tr.duration;
+          if(p < 0) p = 0; if(p > 1) p = 1;
+          const e = tr.ease(p);
+          it.cx = it.fx + (gx-it.fx)*e; it.cy = it.fy + (gy-it.fy)*e;
+          write(it, it.cx, it.cy);
+          if(p < 1) alive = true;
+        }
+        /* 全部たどり着いたら輪を止める＝待機中は 1 コマも回らない */
+        raf = alive ? requestAnimationFrame(tick) : 0;
+      };
+      raf = requestAnimationFrame(tick);
+    }
+
+    const api = {
+      transition: opts && opts.transition || 'bouncy',
+      isOpen: ()=>open,
+      toggle(){ animate(!open); return open; },
+      close(){ if(open) animate(false); },
+      measure,
+      setTargets(fn){ items.forEach((it,i)=>{ const t = fn(it.el,i); it.tx=t[0]; it.ty=t[1]; it.delay=t[2]||0; });
+        measure(); if(open) animate(true); else items.forEach(it=>{ it.cx=0; it.cy=0; write(it,0,0); }); }
+    };
+    buildFilter(filter, o); measure(); items.forEach(it=>write(it,0,0));
+    if(window.ResizeObserver){
+      const ro = new ResizeObserver(measure);
+      ro.observe(root); items.forEach(it=>ro.observe(it.el));
+    } else window.addEventListener('resize', measure);
+    return api;
+  };
+})();
+
+/* ---- 📷 に液体を敷く ---- */
+const fabWrap = $('#fabwrap');
+let fabLiquid = null;
+try{
+  fabLiquid = makeLiquid(fabWrap, {});
+  /* 行き先。📷 の中心から 82px、110°（斜め上）と 162°（左）。
+     真上に置くと ✕ と上下にそろって「ひょうたん」に見えるので斜めに逃がしてある。
+     実際のすき間は約 21px（芽は 52px・📷 は 60px で中心が 4px ずれるため）。
+     ぼかし 14・きわ 18 と組で、3 つと分かるが細い首でつながる見え方になる。 */
+  fabLiquid.setTargets(el=>{
+    if(el === $('#fab')) return [0,0,0];
+    const deg = (el === $('#fabCam')) ? 110 : 162;
+    const rad = deg*Math.PI/180, R = 82;
+    return [Math.round(R*Math.cos(rad)), -Math.round(R*Math.sin(rad)), (el===$('#fabCam')?0:45)];
+  });
+  fabWrap.classList.add('liq');
+}catch(e){ console.error('液体の 📷 を敷けませんでした', e); }   // 敷けなくても 📷 は今までどおり残る
+
+function setFabOpen(v){
+  fabWrap.classList.toggle('open', v);
+  $('#fab').setAttribute('aria-expanded', v ? 'true' : 'false');
+  [$('#fabCam'), $('#fabAlbum')].forEach(b=>{
+    b.setAttribute('aria-hidden', v ? 'false' : 'true');
+    b.tabIndex = v ? 0 : -1;
+  });
+}
+function closeFab(){ if(fabLiquid) fabLiquid.close(); setFabOpen(false); }
+
+/* ＋（📷）＝タップで 📷 と 🖼 に分かれる。長押しは従来どおり入力シート */
 let fabHoldTimer=null, fabHeld=false;
 $('#fab').addEventListener('touchstart',()=>{
   fabHeld=false;
-  fabHoldTimer=setTimeout(()=>{ fabHeld=true; haptic(); ensureWho(()=>openRecord(null)); }, 500);
+  fabHoldTimer=setTimeout(()=>{ fabHeld=true; haptic(); closeFab(); ensureWho(()=>openRecord(null)); }, 500);
 },{passive:true});
 ['touchend','touchcancel','touchmove'].forEach(ev=>
   $('#fab').addEventListener(ev,()=>clearTimeout(fabHoldTimer),{passive:true}));
 $('#fab').onclick=()=>{
   if(fabHeld){ fabHeld=false; return; }        // 長押しでシートを開いた直後のクリックは無視
-  // who が未設定（初回）のときだけ名前を聞く。以降はタップ＝アプリ内カメラ。
-  if(!who){ ensureWho(()=>openCamera()); return; }
-  openCamera();
+  if(!fabLiquid){ ensureWho(()=>openCamera()); return; }   // 液体が敷けなかったとき＝従来どおり
+  haptic();
+  setFabOpen(fabLiquid.toggle());
 };
+// who が未設定（初回）のときだけ名前を聞く。以降はそのまま進む。
+$('#fabCam').onclick   = ()=>{ closeFab(); ensureWho(()=>openCamera()); };
+$('#fabAlbum').onclick = ()=>{ closeFab(); ensureWho(()=>openRecord(null)); };
+
+/* 外を触ったら閉じるだけにする（そのタップで日記が開かないように飲み込む） */
+document.addEventListener('click', e=>{
+  if(fabLiquid && fabLiquid.isOpen() && !fabWrap.contains(e.target)){
+    e.preventDefault(); e.stopPropagation(); closeFab();
+  }
+}, true);
+window.addEventListener('scroll', ()=>{ if(fabLiquid && fabLiquid.isOpen()) closeFab(); }, {passive:true});
+document.addEventListener('keydown', e=>{
+  if(e.key === 'Escape' && fabLiquid && fabLiquid.isOpen()){ closeFab(); $('#fab').focus(); }
+});
 
 /* ============ 詳細モーダル ============ */
 function openDetail(id){
