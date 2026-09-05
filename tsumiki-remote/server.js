@@ -12,6 +12,7 @@ const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const { execFile } = require('child_process');
+const AUTH = require('./lib/auth');
 
 const PORT = Number(process.env.TSUMIKI_REMOTE_PORT || 8787);
 const HOST = process.env.TSUMIKI_REMOTE_HOST || '127.0.0.1';
@@ -317,7 +318,6 @@ function usageWaitInfo() {
 const AUTH_FILE = path.join(CONF_DIR, 'auth.json');
 const AUTH_TTL_OK = 5 * 60 * 1000;      // 生きているときは5分おきに見れば足りる
 const AUTH_TTL_BAD = 45 * 1000;         // 切れているときは短く＝ログイン直後に帯が消える
-const AUTH_SOON_MS = 24 * 3600 * 1000;  // 残りこれを切ったら「もうすぐ切れます」
 
 let authCache = { at: 0, value: null };   // value = { state, deadline }
 let authFetching = null;
@@ -338,59 +338,31 @@ function authSave() {
 }
 authLoad();
 
-// キーチェーンの中身 → { state, deadline }
-//   ok      … まだ余裕がある
-//   soon    … 24時間以内に切れる
-//   expired … もう切れている（鍵が空、または期限を過ぎている）
-//   unknown … 読めなかった（キーチェーンが閉じている等）。**切れたとは言わない**
-function authStateOf(o) {
-  if (!o) return { state: 'unknown', deadline: 0 };
-  const acc = typeof o.accessToken === 'string' ? o.accessToken : '';
-  const ref = typeof o.refreshToken === 'string' ? o.refreshToken : '';
-  // 断られたときに Claude Code が鍵を空にして片付ける＝これが「切れた」の印
-  if (!acc || !ref) return { state: 'expired', deadline: 0 };
-  const now = Date.now();
-  const accAt = Number(o.expiresAt) || 0;
-  const refAt = Number(o.refreshTokenExpiresAt) || 0;
-  // 更新用の鍵が生きているあいだは、その期限が「ログインそのものの寿命」。
-  // すでに切れているなら、次の更新で落ちる＝手持ちの通行証が切れる時刻が最期
-  const deadline = refAt > now ? refAt : accAt;
-  if (!deadline) return { state: 'unknown', deadline: 0 };
-  if (deadline <= now) return { state: 'expired', deadline };
-  return { state: deadline - now < AUTH_SOON_MS ? 'soon' : 'ok', deadline };
-}
-
 // iPhone に一言だけ知らせる。**状態が変わったときだけ**（毎回鳴らさない）。
 // 送るのは決まり文句だけで、鍵も題名も送らない（ntfy.sh は外のサーバー）。
 function authNotify(state, deadline) {
   if (state === 'unknown' || state === authNotified) return;
-  // ⚠️ 夜中は鳴らさない。「もうすぐ切れます」は24時間前に出るので、期限が
-  //    深夜だと知らせも深夜になる（実際、次の期限は 10/03 01:32）。
-  //    ここでは**記録もしない**＝朝になったら、その時の状態でもう一度ここへ来る。
-  //    帯（画面）のほうは時刻に関係なく、いつでも出ている。
-  const h = new Date().getHours();
-  if (h < 8 || h >= 22) return;
+  // ⚠️ 夜中は鳴らさない。ここでは**記録もしない**＝朝になったら、その時の状態で
+  //    もう一度ここへ来る。帯（画面）のほうは時刻に関係なく、いつでも出ている。
+  //    判断そのものは lib/auth.js（bin/auth_check.js で通しで試せる）
+  if (AUTH.quiet()) return;
   const prev = authNotified;
   authNotified = state;
   authSave();
   // 初回の起動でいきなり「元に戻りました」とは言わない
   if (state === 'ok' && !(prev === 'expired' || prev === 'soon')) return;
+  const say = AUTH.notifyText(state, deadline);
+  if (!say) return;
   let topic = '';
   try { topic = fs.readFileSync(path.join(CONF_DIR, 'ntfy-topic'), 'utf8').trim(); }
   catch (e) { return; }
   if (!topic) return;
-  const when = deadline ? new Date(deadline).toLocaleString('ja-JP',
-    { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-  const say = state === 'expired'
-    ? ['Claude のログインが切れました', 'つみきリモートから入り直せます', 'warning', 'high']
-    : state === 'soon'
-      ? ['Claude のログインがもうすぐ切れます', when + ' に切れます。今のうちに入り直せます', 'hourglass', 'default']
-      : ['Claude のログインが戻りました', '席はそのまま続けられます', 'white_check_mark', 'low'];
   // ⚠️ 日本語の見出しは curl 経由で送る（hooks/ntfy-notify.sh と同じ道）。
   //    node の fetch はヘッダに非ASCIIを載せると弾く
   execFile('/usr/bin/curl', ['-s', '-m', '5',
-    '-H', 'Title: ' + say[0], '-H', 'Tags: ' + say[2], '-H', 'Priority: ' + say[3],
-    '-d', say[1], 'https://ntfy.sh/' + topic], { timeout: 8000 }, () => {});
+    '-H', 'Title: ' + say.title, '-H', 'Tags: ' + say.tags, '-H', 'Priority: ' + say.priority,
+    '-d', say.body, 'https://ntfy.sh/' + topic], { timeout: 8000 }, () => {});
+  const when = AUTH.whenText(deadline);
   console.log(`auth ${state}${when ? '（' + when + '）' : ''} → iPhone に知らせた`);
 }
 
@@ -401,7 +373,7 @@ function authSnapshot() {
   if (!authFetching && now - authCache.at > ttl) {
     authFetching = keychainRead()
       .then((o) => {
-        const v = authStateOf(o);
+        const v = AUTH.stateOf(o);
         const before = authCache.value && authCache.value.state;
         authCache = { at: Date.now(), value: v };
         if (v.state !== before) console.log(`auth ${before || '—'} → ${v.state}`);
@@ -795,47 +767,6 @@ async function captureHistory(name, lines) {
   if (!NAME_RE.test(name)) return null;
   const r = await tmux(['capture-pane', '-p', '-t', '=' + name + ':', '-S', '-' + Math.max(1, Math.min(2000, lines))]);
   return r.ok ? r.out.replace(/\s+$/, '') : null;
-}
-
-// ------------------------------------------------ サインインのURLを画面から拾う
-//
-// ログインが切れたとき、出先でも入り直せるようにするための1本。
-// `/login` を打つと席の画面にサインインのURLが出るので、それを拾って
-// iPhone で押せるリンクとして渡す（サインインは本人がブラウザで行う）。
-//
-// ⚠️ **URLは端末の幅で何行にも割れている**（2026-09-05 実測・80桁で6行）。
-//    しかも `capture-pane -J` ではつながらなかった。Claude Code 側が自分で
-//    折り返して出しているので、tmux から見ると「折り返し」ではなく別の行になる。
-//    なので、URLの頭の行を見つけたら、**続きに見える行を自分でつなぐ**。
-//    続きの条件＝空でない・空白を含まない・URLに使える字だけ、の3つ。
-//
-// ⚠️ 途中で切れたURLは返さない（押した先がログイン画面でないと、出先では
-//    何が起きたのかも分からなくなる）。`state=` が末尾に付くので、
-//    **client_id= と state= が揃っていること**を切れていない印として使う。
-//    Anthropic 側が並びを変えたらこの見張りは効かなくなるが、そのときは
-//    「URLが拾えません」と出るだけ＝壊れたリンクを渡すことはない。
-const LOGIN_URL_HEAD = /https:\/\/(?:claude\.com|claude\.ai|console\.anthropic\.com)\/[A-Za-z0-9_./-]*oauth\/authorize\?/;
-const URL_CHARS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/;
-
-function findLoginUrl(text) {
-  const lines = String(text || '').replace(/\r/g, '').split('\n');
-  const found = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(LOGIN_URL_HEAD);
-    if (!m) continue;
-    let u = lines[i].slice(m.index).trim();
-    // 続きに見える行だけをつなぐ。空行・空白入りの行が来たらそこで終わり
-    for (let j = i + 1; j < lines.length; j++) {
-      const t = lines[j].trim();
-      if (!t || t !== lines[j].replace(/\s/g, '') || !URL_CHARS.test(t)) break;
-      u += t;
-    }
-    found.push(u.replace(/[)\]}.,]+$/, ''));
-  }
-  // 切れていないものだけ。同じ画面に前回のURLが残っていることがあるので、
-  // いちばん新しい（下にある）ものを返す
-  const ok = found.filter((u) => u.includes('client_id=') && u.includes('state='));
-  return ok.length ? ok[ok.length - 1] : null;
 }
 
 // ------------------------------------------------------- 状態の判定ロジック
@@ -1705,7 +1636,7 @@ const server = http.createServer(async (req, res) => {
       // 途中で切れたURLを「押せるリンク」として渡してしまう
       const r = await tmux(['capture-pane', '-p', '-J', '-t', '=' + name + ':', '-S', '-200']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
-      return json(res, 200, { url: findLoginUrl(r.out) });
+      return json(res, 200, { url: AUTH.findLoginUrl(r.out) });
     }
 
     // 文字を送る（末尾で Enter を打つかは enter フラグ）
