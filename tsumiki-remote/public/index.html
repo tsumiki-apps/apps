@@ -255,6 +255,28 @@
     color:var(--wait);font-size:11px;line-height:1.45;
   }
   #stale[hidden]{display:none}
+
+  /* Claude のログインの期限を言う帯。
+     なぜ要るか（2026-09-05）: CLI のログインが昼に切れて、tmux の席が全部いっぺんに
+     「Login expired」になった。そのとき画面に出ていたのは残量バーの「?」だけで、
+     外出先からは何が起きたのか分からなかった。**切れる前に言う場所**を画面に持つ。
+     ⚠️ 押せる（button）。押すとログインし直しのシートが開く＝読むだけの帯にしない。
+     色は2段：黄＝もうすぐ切れる／赤＝もう切れている。届いていないときの帯（#stale）
+     とは別の場所に出す（同じ場所で入れ替えると、どちらの話か分からなくなる） */
+  #authbar{
+    flex:0 0 auto;margin:0 10px 6px;padding:9px 10px;border-radius:10px;
+    font:inherit;font-size:11px;line-height:1.45;text-align:left;
+    /* 押せるものなので高さの下限を Apple の 44px に置く。帯は横いっぱいなので
+       幅は足りているが、2行ぶんだと 40px 前後で足りない（8幅検品で出る） */
+    display:block;width:auto;min-height:44px;
+    background:rgba(245,158,11,.13);border:1px solid rgba(245,158,11,.32);
+    color:var(--wait);
+  }
+  #authbar.bad{
+    background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.42);color:#fca5a5;
+  }
+  #authbar .go{display:block;margin-top:3px;color:var(--fg);opacity:.75}
+  #authbar[hidden]{display:none}
   /* 届いていないあいだ、札の「作業中」は今の話ではない（点滅は動いている合図に
      見えてしまう）。止めて、薄くして、古い情報だと分かるようにする */
   body.offline nav{opacity:.5}
@@ -792,6 +814,7 @@
     .tab .n{font-size:14px}
     .tab.add{min-width:64px;font-size:19px}
     #stale{margin:0 14px 8px;font-size:12px;padding:9px 12px}
+    #authbar{margin:0 14px 8px;font-size:12px;padding:10px 12px}
     main{margin:0 14px}
     #out{font-size:13px;line-height:1.55;padding:16px}
     #out .tbl{font-size:12px}
@@ -844,9 +867,10 @@
     body{
       display:grid;
       grid-template-columns:clamp(200px,22vw,290px) minmax(0,1fr);
-      grid-template-rows:auto auto minmax(0,1fr) auto;
+      grid-template-rows:auto auto auto minmax(0,1fr) auto;
       grid-template-areas:
         "head head"
+        "nav  auth"
         "nav  stale"
         "nav  main"
         "nav  foot";
@@ -873,6 +897,7 @@
        ⚠️ 中の字だけを細くするのではなく、**枠ごと**細くして中央に置く。
        枠を端まで伸ばしたまま中の字だけ寄せると、広い画面では黒い額縁の中に
        文が浮いて「読み込み中に見える」（1920px で実際にそう見えた） */
+    #authbar{grid-area:auth;width:100%;max-width:1060px;margin:0 auto 8px}
     #stale{grid-area:stale;width:100%;max-width:1060px;margin:0 auto 8px}
     main{grid-area:main;width:100%;max-width:1060px;margin:0 auto}
     footer{grid-area:foot;padding:8px 0 max(10px, env(safe-area-inset-bottom))}
@@ -910,6 +935,8 @@
 </header>
 
 <nav id="tabs"></nav>
+
+<button id="authbar" hidden></button>
 
 <div id="stale" hidden></div>
 
@@ -1604,7 +1631,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     batt: document.getElementById('batt'),
     bolt: document.querySelector('#batt .bolt'),
     cell: document.querySelector('#batt .cell'),
-    bnum: document.getElementById('bnum')
+    bnum: document.getElementById('bnum'),
+    authbar: document.getElementById('authbar')
   };
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
@@ -1853,6 +1881,120 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   el.batt.addEventListener('click', function () {
     if (battery) toast(battLine(), 2800);
   });
+
+  // ---- Claude のログインの期限
+  //
+  // 2026-09-05: CLI のログイン（更新用の鍵）が朝5時に期限を迎え、昼12:05 に
+  // 更新へ行って断られ、tmux の席が全部いっぺんに「Login expired」になった。
+  // そのとき画面に出ていたのは残量バーの「?」だけで、外出先からは何が起きたのか
+  // 分からなかった。期限そのものは延ばせないので、ここでやるのは2つ:
+  //   ① 切れる前に言う（残り24時間で黄色い帯）
+  //   ② 切れたら、その場で入り直せる入口を出す（赤い帯 → ログインのシート）
+  var auth = null;
+
+  // 「いつ切れるか」。今日・明日は言葉で言う（日付だけだと出先で数えることになる）
+  function authWhen(ms) {
+    if (!ms) return '';
+    var d = new Date(ms), now = new Date();
+    var hm = d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2);
+    if (d.toDateString() === now.toDateString()) return '今日 ' + hm;
+    if (d.toDateString() === new Date(now.getTime() + 86400000).toDateString()) return '明日 ' + hm;
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+  }
+
+  function renderAuth(a) {
+    auth = a || null;
+    var st = auth && auth.state;
+    // unknown（キーチェーンが読めなかった）は黙る。**読めないことと切れたことは別**。
+    // ここで一緒にすると、鍵が閉じているだけの朝に「切れました」と嘘をつく
+    if (st !== 'expired' && st !== 'soon') { el.authbar.hidden = true; return; }
+    el.authbar.hidden = false;
+    el.authbar.classList.toggle('bad', st === 'expired');
+    el.authbar.textContent = st === 'expired'
+      ? 'Claude のログインが切れています。このままでは席は動きません'
+      : 'Claude のログインは ' + authWhen(auth.deadline) + ' に切れます';
+    var go = document.createElement('span');
+    go.className = 'go';
+    go.textContent = 'ここを押すと、この画面から入り直せます';
+    el.authbar.appendChild(go);
+  }
+
+  el.authbar.addEventListener('click', function () { openLoginSheet(); });
+
+  // ---- 出先からログインし直す
+  //
+  // 流れ:
+  //   ① 席に `/login` を打つ（サーバーの /api/login）
+  //   ② 画面に出たサインインのURLを拾う（/api/loginurl）。URLは端末の幅で
+  //      何行にも割れて出るので、つなぎ直すのはサーバー側の仕事
+  //   ③ サインインは iPhone のブラウザで**本人が**行う
+  //   ④ 出てきたコードは、いつもの入力欄に貼って送る（新しい道は作らない＝
+  //      合言葉のようなものが通る道を増やさない）
+  var loginPoll = null;
+  var LOGIN_TRIES = 45;      // 2秒おき＝90秒まで待つ
+
+  function stopLoginPoll() {
+    if (loginPoll) { clearInterval(loginPoll); loginPoll = null; }
+  }
+
+  // ログインを打つ先。いま見ている席が Claude ならそこ、違えば最初の Claude の席
+  function loginTarget() {
+    var cs = sessions.filter(function (x) { return x.kind === 'claude'; });
+    if (current && cs.some(function (x) { return x.name === current; })) return current;
+    return cs.length ? cs[0].name : '';
+  }
+
+  function openLoginSheet() {
+    var name = loginTarget();
+    openSheet('Claude にログインし直す');
+    if (!name) {
+      sheetItem('Claude の作業場所がありません', '＋Claude で作ってから、もう一度',
+        function () { closeSheet(); }, { disabled: true });
+      return;
+    }
+    sheetItem('「' + name + '」で始める', 'この席に /login を打ちます',
+      function () { startLogin(name); }, { icon: 'check', iconCls: 'edit' });
+  }
+
+  function startLogin(name) {
+    openSheet('ログイン：' + name);
+    sheetItem('サインインのURLを待っています…',
+      '席の画面で「1. Claude account」を選ぶところが出たら、下の 1 を押してください',
+      function () {}, { disabled: true });
+    api('/api/login', { method: 'POST', body: JSON.stringify({ name: name }) }, 8000)
+      .catch(function (e) {
+        stopLoginPoll();
+        openSheet('ログイン：' + name);
+        sheetItem('/login を打てませんでした', String(e.message || e),
+          function () { closeSheet(); }, { disabled: true });
+      });
+    var tries = 0;
+    stopLoginPoll();
+    loginPoll = setInterval(function () {
+      // シートを閉じたら見張りも止める（閉じたのに裏で問い合わせ続けない）
+      if (sheet.hidden) return stopLoginPoll();
+      if (++tries > LOGIN_TRIES) {
+        stopLoginPoll();
+        openSheet('ログイン：' + name);
+        sheetItem('URLが見つかりませんでした', '席の画面をそのまま見て、手で進めてください',
+          function () { closeSheet(); }, { disabled: true });
+        return;
+      }
+      api('/api/loginurl?name=' + encodeURIComponent(name), null, 8000).then(function (d) {
+        if (!d || !d.url) return;
+        stopLoginPoll();
+        showLoginUrl(name, d.url);
+      }).catch(function () { /* 1回の失敗では諦めない（次の巡回で拾う） */ });
+    }, 2000);
+  }
+
+  function showLoginUrl(name, u) {
+    openSheet('ログイン：' + name);
+    sheetItem('サインインの画面を開く', 'Safari が開きます。ログインして許可してください',
+      function () { window.open(u, '_blank'); }, { icon: 'check', iconCls: 'edit' });
+    sheetItem('このあと', 'コードが出たら、シートを閉じて下の入力欄に貼って送ってください',
+      function () { closeSheet(); }, { disabled: true });
+  }
 
   // ---- 最後に見た内容を iPhone の中に残す（オフラインでも開けるように）
   //
@@ -2263,6 +2405,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       checkVersion(d.version);
       renderUsage(d.usage, d.usageWait);
       renderBatt(d.battery);
+      renderAuth(d.auth);
       sessions = d.sessions;
       if (!sessions.length) {
         current = '';
@@ -4160,6 +4303,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
       function () { closeSheet(); doKill(current); },
       { disabled: !current, icon: 'power', iconCls: 'stop' });
+    sheetItem('Claude にログインし直す',
+      auth && auth.state === 'expired' ? '⚠️ いま切れています'
+        : auth && auth.state === 'soon' ? authWhen(auth.deadline) + ' に切れます' : '',
+      function () { openLoginSheet(); },
+      { icon: 'undo', iconCls: 'edit' });
     var killable = killableList();
     sheetItem('作業中と中断を残して終わらせる', killable.length ? killable.length + ' 件' : '',
       function () { confirmKillIdle(); },
