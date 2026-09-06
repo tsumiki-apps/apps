@@ -113,7 +113,7 @@
   .empty { text-align:center; color:var(--sub); padding: 60px 24px; font-size:15px; }
   .empty .big { font-size:46px; display:block; margin-bottom:14px; }
 
-  /* ===== 追加ボタン（FAB）＝押すと液体のように 2 つに分かれる ===== */
+  /* ===== 追加ボタン（FAB）＝＋を押すと液体のように 📷 と 🖼 に分かれる ===== */
   /* 器。芽が動いた先まで含む大きさにしておく（下に敷く SVG の輪郭がここに描かれる）。
      器そのものは押せない＝空きは下の日記に通す */
   .fabwrap {
@@ -130,13 +130,20 @@
   }
   .fab { width: 60px; height: 60px; border-radius: 50%; font-size: 30px; }
   .bud { width: 52px; height: 52px; border-radius: 50%; font-size: 22px; }
-  .fab .ico.x { display:none; font-size: 26px; }
-  .fabwrap.open .fab .ico.cam { display:none; }
-  .fabwrap.open .fab .ico.x { display:block; }
+  /* ＋ が 45°まわって ✕ になる＝閉じる場所が同じところにあると分かる */
+  .fab .ico.add { font-size: 34px; font-weight: 300; line-height: 1;
+    transition: transform .22s cubic-bezier(.2,.8,.3,1); }
+  .fabwrap.open .fab .ico.add { transform: rotate(45deg); }
   /* 液体の層が敷けたときだけ：色と影は下の SVG が描くので、ここは文字だけにする。
-     敷けなかったときは上の見た目のまま 📷 が1個残る＝壊れて消えない */
+     敷けなかったときは上の見た目のまま ＋ が1個残る＝壊れて消えない */
   .fabwrap.liq .fab, .fabwrap.liq .bud { background: transparent; box-shadow: none; }
   .fabwrap:not(.liq) .bud { display:none; }
+  /* 閉じているあいだ、芽（📷 🖼）の文字は消しておく。
+     液体のときは ＋ の下地が透明なので、重なった芽の絵文字が透けて
+     「アイコンが2つ重なって見える」ことになる（2026-09-06 実発生）。
+     色と丸は下の SVG が描いているので、文字を消しても丸は残る。 */
+  .fabwrap.liq .bud { opacity: 0; transition: opacity .16s ease; }
+  .fabwrap.liq.open .bud { opacity: 1; }
   .bud[aria-hidden="true"] { pointer-events: none; }
   /* 押したへこみ。液体のときは transform を動きが使うので、中の文字だけ縮める */
   .fabwrap:not(.liq) .fab:active { transform: scale(.93); }
@@ -654,7 +661,7 @@
 <div class="fabwrap" id="fabwrap">
   <button class="bud" id="fabAlbum" data-item aria-hidden="true" tabindex="-1" aria-label="アルバムから選ぶ">🖼</button>
   <button class="bud" id="fabCam" data-item aria-hidden="true" tabindex="-1" aria-label="いま撮る">📷</button>
-  <button class="fab" id="fab" data-item aria-haspopup="true" aria-expanded="false" aria-label="ごはんを記録する"><span class="ico cam">📷</span><span class="ico x">✕</span></button>
+  <button class="fab" id="fab" data-item aria-haspopup="true" aria-expanded="false" aria-label="ごはんを記録する"><span class="ico add">＋</span></button>
 </div>
 <!-- ＋タップ＝アプリ内カメラ起動。getUserMediaが使えない時だけ下の純正カメラにフォールバック -->
 <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
@@ -2287,6 +2294,7 @@ try{
 function setFabOpen(v){
   fabWrap.classList.toggle('open', v);
   $('#fab').setAttribute('aria-expanded', v ? 'true' : 'false');
+  $('#fab').setAttribute('aria-label', v ? '閉じる' : 'ごはんを記録する');
   [$('#fabCam'), $('#fabAlbum')].forEach(b=>{
     b.setAttribute('aria-hidden', v ? 'false' : 'true');
     b.tabIndex = v ? 0 : -1;
@@ -2294,7 +2302,7 @@ function setFabOpen(v){
 }
 function closeFab(){ if(fabLiquid) fabLiquid.close(); setFabOpen(false); }
 
-/* ＋（📷）＝タップで 📷 と 🖼 に分かれる。長押しは従来どおり入力シート */
+/* ＋＝タップで 📷（いま撮る）と 🖼（アルバム）に分かれる。長押しは従来どおり入力シート */
 let fabHoldTimer=null, fabHeld=false;
 $('#fab').addEventListener('touchstart',()=>{
   fabHeld=false;
@@ -2304,7 +2312,7 @@ $('#fab').addEventListener('touchstart',()=>{
   $('#fab').addEventListener(ev,()=>clearTimeout(fabHoldTimer),{passive:true}));
 $('#fab').onclick=()=>{
   if(fabHeld){ fabHeld=false; return; }        // 長押しでシートを開いた直後のクリックは無視
-  if(!fabLiquid){ ensureWho(()=>openCamera()); return; }   // 液体が敷けなかったとき＝従来どおり
+  if(!fabLiquid){ ensureWho(()=>openRecord(null)); return; }   // 液体が敷けなかったとき＝記録シート（中に 📷 と ＋写真 がある）
   haptic();
   setFabOpen(fabLiquid.toggle());
 };
@@ -2314,6 +2322,11 @@ $('#fabAlbum').onclick = ()=>{ closeFab(); ensureWho(()=>openRecord(null)); };
 
 /* 外を触ったら閉じるだけにする（そのタップで日記が開かないように飲み込む） */
 document.addEventListener('click', e=>{
+  /* haptic() は画面外の隠しスイッチ（.haptic-switch）を click() で叩いて振動を出している。
+     それも click として流れてくるので、「外を触った」と数えてしまうと
+     いったん閉じたあとに ✕ の toggle が開き直し、✕ が永久に効かなくなる
+     （2026-09-06 実発生）。振動用のクリックは、外のタップとして数えない。 */
+  if(e.target instanceof Element && e.target.closest('.haptic-switch')) return;
   if(fabLiquid && fabLiquid.isOpen() && !fabWrap.contains(e.target)){
     e.preventDefault(); e.stopPropagation(); closeFab();
   }
@@ -2936,7 +2949,7 @@ function bindStoryControls(){
     const r=storyList[storyIdx]; if(!r) return;
     ensureWho(async()=>{
       e.target.value=''; e.target.blur();
-      try{ await addComment(r.id, v); haptic(); toast('返信しました 🍋'); }
+      try{ await addComment(r.id, v, null, pickMentions(v)); haptic(); toast('返信しました 🍋'); }   // ここでも @ で呼べる
       catch(err){ toast('送信に失敗しました'); }
     });
   });
