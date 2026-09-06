@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POSTのみ対応" }, 405);
 
   try {
-    const { kind, actor, recordName, body, emoji } = await req.json();
+    const { kind, actor, recordName, body, emoji, to, actorName } = await req.json();
     if (!actor) return json({ error: "actor が必要です" }, 400);
 
     const pub = Deno.env.get("VAPID_PUBLIC_KEY");
@@ -54,31 +54,39 @@ Deno.serve(async (req) => {
     // 2026-08-13〜 家族端末（こうだい/ゆずは 以外の名前）にも通知が届くようになった。
     // ただし家族に送るのは「新しい投稿」だけ。いいね/コメント/スタンプで
     // 1投稿あたり何通も鳴ると、見る側にはうるさいので送らない。
+    // 2026-09-06〜 例外：to（@で呼ばれた人・返信された人）に入っている家族には届ける。
     const COUPLE = ["こうだい", "ゆずは"];
+    const named: string[] = Array.isArray(to) ? to.filter((x) => typeof x === "string") : [];
     const targets = (subs || []).filter((s) =>
-      COUPLE.includes(s.who) ? true : kind === "post"
+      COUPLE.includes(s.who) ? true : (kind === "post" || named.includes(s.who))
     );
 
     const name = recordName || "日記";
+    const from = actorName || actor;   // 表示する名前（本人が設定していればそれ、無ければ鍵の名前）
     const msg = kind === "like"
-      ? `${actor}さんが「${name}」にいいねしました ❤️`
+      ? `${from}さんが「${name}」にいいねしました ❤️`
       : kind === "comment"
-      ? `${actor}さんが「${name}」にコメントしました 💬${body ? "：" + body : ""}`
+      ? `${from}さんが「${name}」にコメントしました 💬${body ? "：" + body : ""}`
+      : kind === "reply"
+      ? `${from}さんが「${name}」で返信しました ↩️${body ? "：" + body : ""}`
       : kind === "react"
       // react: body に絵文字が入ってくる（🙏＝またこれ食べたい、それ以外＝ひとこと返事）
       ? ((emoji || body) === "🙏"
-        ? `${actor}さんが「${name}」をまた食べたいそうです 🙏`
-        : `${actor}さんが「${name}」に ${emoji || body} しました`)
+        ? `${from}さんが「${name}」をまた食べたいそうです 🙏`
+        : `${from}さんが「${name}」に ${emoji || body} しました`)
       // post: クライアントが用意した文面（保存メッセージ）をそのまま使う
-      : (body || `${actor}さんが「${name}」を投稿しました 📔`);
+      : (body || `${from}さんが「${name}」を投稿しました 📔`);
+    // 名指しされた人（@で呼ばれた・返信された）には、その旨がひと目で分かる文面にする
+    const mentionMsg = `${from}さんがあなたを呼びました 📣${body ? "：" + body : ""}`;
     const payload = JSON.stringify({ title: "🍋 ゆずごはん日記", body: msg });
+    const mentionPayload = JSON.stringify({ title: "🍋 ゆずごはん日記", body: mentionMsg });
 
     let sent = 0;
     for (const s of targets) {
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          payload,
+          named.includes(s.who) && kind !== "post" ? mentionPayload : payload,
         );
         sent++;
       } catch (e) {
