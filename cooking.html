@@ -159,7 +159,8 @@
   body.family .fabwrap,
   body.family #editRecBtn,
   body.family #deleteRecordBtn,
-  body.family .cmt .del { display:none !important; }
+  body.family .cmt .del,
+  body.family .cmt .edit { display:none !important; }
   /* 名前入力カード（家族モードのみ表示） */
   #whoCardFamily { display:none; }
   #whoCardFamily input { width:100%; box-sizing:border-box; font-family:inherit;
@@ -307,6 +308,18 @@
     padding:13px 6px; display:inline-flex; align-items:center; }
   .cmt .bub .acts .rep { color:var(--accent); font-weight:700; }
   .cmt .bub .del { font-size:11.5px; color:var(--sub); cursor:pointer; display:inline-block; }
+  .cmt .bub .when .ed { margin-left:5px; opacity:.85; }   /* （直しました） */
+  /* あとから直すときの入れ物 */
+  .cmt-edit { position:relative; margin-top:4px; }
+  .cmt-edit textarea { width:100%; min-height:64px; font-size:16px; padding:9px 11px;
+    border:1px solid var(--accent); border-radius:11px; background:#fff;
+    font-family:inherit; color:var(--text); line-height:1.6; }
+  .cmt-edit textarea:focus { outline:none; }
+  .cmt-edit .btns { display:flex; gap:8px; margin-top:8px; }
+  .cmt-edit .btns button { min-height:44px; padding:0 16px; border:none; border-radius:11px;
+    font-family:inherit; font-size:14px; font-weight:700; cursor:pointer; }
+  .cmt-edit .btns .ok { background:var(--accent); color:#fff; }
+  .cmt-edit .btns .no { background:var(--chip); color:var(--sub); }
   /* 呼びかけ（@名前） */
   .men { color:var(--accent); font-weight:700; }
   /* 返信は1段だけ。親のアイコンぶん（30px）＋すきま（9px）だけ内側に寄せる */
@@ -1389,6 +1402,17 @@ async function addComment(id, body, parentId, mentions){
   const to = [...new Set([].concat(mentions||[], parent? [parent.who] : []))].filter(w=>w && w!==who);
   pushNotify(parentId? 'reply' : 'comment', id, body, to);
 }
+/* あとから本文を直す。@ で新しく呼んだ人だけに、そっとお知らせする
+   （もう呼ばれている人・相手にはもう一度鳴らさない＝直すたびに通知が飛ばない） */
+async function updateComment(cid, body, mentions){
+  const before = allComments.find(c=>c.id===cid);
+  const { error } = await sb.from('comments')
+    .update({ body, mentions: mentions||[], edited_at: Date.now() }).eq('id', cid);
+  if(error){ console.error(error); throw error; }
+  const had = (before && Array.isArray(before.mentions)) ? before.mentions : [];
+  const added = (mentions||[]).filter(w=>had.indexOf(w)<0 && w!==who);
+  if(added.length && before) pushNotify('mention', before.record_id, body, added);
+}
 /* 親を消すときは、ぶら下がっている返信も一緒に消す（宙に浮いた返信を残さない） */
 async function deleteComment(cid){
   const ids=[cid].concat(allComments.filter(c=>c.parent_id===cid).map(c=>c.id));
@@ -2339,7 +2363,7 @@ document.addEventListener('keydown', e=>{
 /* ============ 詳細モーダル ============ */
 function openDetail(id){
   openDetailId=id;
-  replyTo=null;
+  replyTo=null; editingCmt=null;
   renderDetail(id);
   showModal('detailModal');
 }
@@ -2379,16 +2403,29 @@ function markMentions(text){
   return out;
 }
 function cmtHTML(c, isRep){
-  return `<div class="cmt${isRep?' is-reply':''}">
-      ${avatarHTML(c.who)}
-      <div class="bub">
-        <div class="top"><span class="who">${esc(dispName(c.who))}</span><span class="when">${fmtWhen(c.created_at)}</span></div>
+  const head = `<div class="top"><span class="who">${esc(dispName(c.who))}</span>` +
+    `<span class="when">${fmtWhen(c.created_at)}${c.edited_at?`<span class="ed">（直しました）</span>`:''}</span></div>`;
+  /* 直している最中のコメントは、吹き出しの中身を書き直せる形に入れ替える */
+  const inner = (editingCmt===c.id)
+    ? `${head}
+        <div class="cmt-edit">
+          <div class="men-sug" id="menSugEdit"></div>
+          <textarea id="cmtEditTa">${esc(c.body||'')}</textarea>
+          <div class="btns">
+            <button type="button" class="ok" data-savec="${c.id}">保存する</button>
+            <button type="button" class="no" data-cancelc="1">やめる</button>
+          </div>
+        </div>`
+    : `${head}
         <div class="txt">${markMentions(c.body)}</div>
         <div class="acts">
           <span class="rep" data-rep="${c.id}">返信</span>
+          ${c.who===who?`<span class="edit" data-editc="${c.id}">編集</span>`:''}
           ${c.who===who?`<span class="del" data-delc="${c.id}">削除</span>`:''}
-        </div>
-      </div>
+        </div>`;
+  return `<div class="cmt${isRep?' is-reply':''}">
+      ${avatarHTML(c.who)}
+      <div class="bub">${inner}</div>
     </div>`;
 }
 /* 詳細のコメント一覧 */
@@ -2403,14 +2440,53 @@ function bindDetailReact(id){
   const lb=$('#likeBtn'); if(lb) lb.onclick=()=>ensureWho(()=>toggleLike(id));
   const z=$('#dReact'); if(z) bindReactions(z);
 }
-let replyTo=null;   /* いま返信しようとしている親コメント {cid, who} */
+let replyTo=null;      /* いま返信しようとしている親コメント {cid, who} */
+let editingCmt=null;   /* いま直している最中のコメントid */
+function startEditCmt(cid){
+  const c=allComments.find(x=>x.id===cid);
+  if(!c || c.who!==who) return;
+  cancelReply();
+  editingCmt=cid;
+  const cl=$('#cmtList'); if(cl){ cl.innerHTML=detailCmtHTML(openDetailId); bindDetailCmt(); }
+  const ta=$('#cmtEditTa');
+  if(ta){ ta.focus(); try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(e){}
+    if(ta.scrollIntoView) ta.scrollIntoView({block:'center', behavior:'smooth'}); }
+}
+function cancelEditCmt(){
+  if(!editingCmt) return;
+  editingCmt=null;
+  const cl=$('#cmtList'); if(cl){ cl.innerHTML=detailCmtHTML(openDetailId); bindDetailCmt(); }
+}
+async function saveEditCmt(cid){
+  const ta=$('#cmtEditTa'); if(!ta) return;
+  const v=ta.value.trim();
+  if(!v){ toast('からっぽにはできません'); ta.focus(); return; }
+  const c=allComments.find(x=>x.id===cid);
+  if(c && v===(c.body||'')){ cancelEditCmt(); return; }   // 変わっていなければ書き込まない
+  const btn=$('[data-savec]'); if(btn){ btn.disabled=true; btn.textContent='保存しています…'; }
+  try{
+    await updateComment(cid, v, pickMentions(v));
+    editingCmt=null;
+    await loadRecords();
+    toast('コメントを直しました 🍋');
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='保存する'; }
+    toast('直せませんでした');
+  }
+}
 function bindDetailCmt(){
   const list=$('#cmtList'); if(!list) return;
+  list.querySelectorAll('[data-editc]').forEach(el=>el.onclick=()=>startEditCmt(el.dataset.editc));
+  list.querySelectorAll('[data-cancelc]').forEach(el=>el.onclick=cancelEditCmt);
+  list.querySelectorAll('[data-savec]').forEach(el=>el.onclick=()=>saveEditCmt(el.dataset.savec));
+  const ta=list.querySelector('#cmtEditTa');
+  if(ta) bindMentionInput(ta, list.querySelector('#menSugEdit'));
   list.querySelectorAll('[data-delc]').forEach(el=>el.onclick=async()=>{
     const c=allComments.find(x=>x.id===el.dataset.delc);
     const hasReps = c && allComments.some(x=>x.parent_id===c.id);
     if(!confirm(hasReps? 'このコメントと、ぶら下がっている返信も消します。よろしいですか？' : 'コメントを削除しますか？')) return;
     if(replyTo && replyTo.cid===el.dataset.delc) cancelReply();
+    if(editingCmt===el.dataset.delc) editingCmt=null;
     await deleteComment(el.dataset.delc); await loadRecords();
   });
   list.querySelectorAll('[data-rep]').forEach(el=>el.onclick=()=>startReply(el.dataset.rep));
@@ -2418,6 +2494,7 @@ function bindDetailCmt(){
 /* 「返信」を押したとき。返信への返信も、いちばん上の親にぶら下げる（1段だけ） */
 function startReply(cid){
   const c=allComments.find(x=>x.id===cid); if(!c) return;
+  if(editingCmt) cancelEditCmt();   // 直しかけがあれば、そちらはやめる（画面も元に戻す）
   const root = (c.parent_id && allComments.some(x=>x.id===c.parent_id)) ? c.parent_id : c.id;
   replyTo = { cid: root, who: c.who };
   renderReplyChip();
@@ -2435,32 +2512,40 @@ function renderReplyChip(){
   chip.classList.toggle('show', !!replyTo);
   if(replyTo){ const b=chip.querySelector('b'); if(b) b.textContent = dispName(replyTo.who); }
 }
-/* ===== @ で相手を呼ぶ ===== */
+/* ===== @ で相手を呼ぶ（新しく書くときも、あとから直すときも同じ仕掛けを使う） ===== */
 function mentionQuery(inp){
   const pos = (inp.selectionStart==null)? inp.value.length : inp.selectionStart;
   const m = inp.value.slice(0,pos).match(/@([^\s@]*)$/);
   return m? m[1] : null;
 }
-function renderMentionSuggest(){
-  const inp=$('#cmtInput'), box=$('#menSug'); if(!inp||!box) return;
+function hideMentionSuggest(box){ if(box){ box.classList.remove('show'); box.innerHTML=''; } }
+function renderMentionSuggest(inp, box){
+  if(!inp||!box) return;
   const q=mentionQuery(inp);
-  if(q===null){ box.classList.remove('show'); box.innerHTML=''; return; }
+  if(q===null){ hideMentionSuggest(box); return; }
   const ql=q.toLowerCase();
   const list=knownPeople().filter(w=>w!==who)
     .filter(w=>!ql || dispName(w).toLowerCase().indexOf(ql)>=0)
     .slice(0,8);
-  if(!list.length){ box.classList.remove('show'); box.innerHTML=''; return; }
+  if(!list.length){ hideMentionSuggest(box); return; }
   box.innerHTML = list.map(w=>`<button type="button" data-men="${esc(w)}">${avatarHTML(w)}<span>${esc(dispName(w))}</span></button>`).join('');
   box.classList.add('show');
-  box.querySelectorAll('[data-men]').forEach(b=>b.onclick=()=>insertMention(b.dataset.men));
+  box.querySelectorAll('[data-men]').forEach(b=>b.onclick=()=>insertMention(b.dataset.men, inp, box));
 }
-function insertMention(w){
-  const inp=$('#cmtInput'); if(!inp) return;
+function insertMention(w, inp, box){
+  if(!inp) return;
   const pos = (inp.selectionStart==null)? inp.value.length : inp.selectionStart;
   const before=inp.value.slice(0,pos).replace(/@([^\s@]*)$/, '@'+dispName(w)+' ');
   inp.value = before + inp.value.slice(pos);
   inp.focus(); try{ inp.setSelectionRange(before.length, before.length); }catch(e){}
-  const box=$('#menSug'); if(box){ box.classList.remove('show'); box.innerHTML=''; }
+  hideMentionSuggest(box);
+}
+/* 入力欄と候補の箱を結びつける */
+function bindMentionInput(inp, box){
+  if(!inp||!box) return;
+  const upd=()=>renderMentionSuggest(inp, box);
+  inp.addEventListener('input', upd);
+  inp.addEventListener('click', upd);
 }
 /* 本文の「@表示名」を、その人の鍵（who）に直す */
 function pickMentions(text){
@@ -2477,6 +2562,7 @@ function refreshDetailUI(id){
   z.innerHTML = detailReactHTML(id); bindDetailReact(id);
   const n=commentsFor(id).length;
   const lab=$('#dCmtLab'); if(lab) lab.textContent = 'コメント ' + (n||'');
+  if(editingCmt) return;   // 直している最中は作り直さない（書きかけが消える）
   const cl=$('#cmtList'); if(cl){ cl.innerHTML = detailCmtHTML(id); bindDetailCmt(); }
 }
 let _detailSig='';
@@ -2486,6 +2572,7 @@ function renderDetail(id){
   const sig=recordSig(r);
   if(sig===_detailSig && $('#dReact')){ refreshDetailUI(id); return; }   // 写真を読み直さない
   _detailSig=sig;
+  editingCmt=null;                       // 一から組み直すので、直しかけは持ち越さない
   const photos=r.photos||[];
   const photoHtml = photos.length
     ? `<div class="detail-photos">${photos.map((p,i)=>`<img src="${p}" data-lb="${i}" decoding="async">`).join('')}</div>`
@@ -2518,8 +2605,7 @@ function renderDetail(id){
   bindDetailCmt();
   $('#cmtSend').onclick=()=>sendComment(id);
   $('#cmtInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); sendComment(id); } });
-  $('#cmtInput').addEventListener('input', renderMentionSuggest);
-  $('#cmtInput').addEventListener('click', renderMentionSuggest);
+  bindMentionInput($('#cmtInput'), $('#menSug'));
   $('#replyCancel').onclick=cancelReply;
   renderReplyChip();
   $('#detailBody').querySelectorAll('[data-lb]').forEach(el=>el.onclick=()=>openLightbox(photos, +el.dataset.lb));
@@ -2529,7 +2615,7 @@ function sendComment(id){
   const parent = replyTo? replyTo.cid : null;
   ensureWho(async()=>{
     inp.value='';
-    const box=$('#menSug'); if(box){ box.classList.remove('show'); box.innerHTML=''; }
+    hideMentionSuggest($('#menSug'));
     cancelReply();
     try{ await addComment(id, v, parent, pickMentions(v)); await loadRecords(); }
     catch(e){ toast('コメントの送信に失敗しました'); }
@@ -2614,13 +2700,15 @@ function shouldAskProfile(){
 /* ============ 📣 アップデートのお知らせ ============
    新しくしたことは、いちばん上に1つ足す。端末が覚えている版と違えば、起動時に1回だけ開く。 */
 const RELEASE_NOTES = [
-  { v:'2026-09-06', title:'返信・呼びかけ・じぶんの設定', items:[
+  { id:'2026-09-06b', v:'2026年9月6日', title:'返信・呼びかけ・じぶんの設定', items:[
       { ic:'💬', t:'コメントに返信できます',   d:'コメントの下の「返信」を押すと、その人のコメントにぶら下がる形で返せます。' },
+      { ic:'✏️', t:'コメントをあとから直せます', d:'自分のコメントの「編集」から、書き直せます。直したものには（直しました）と付きます。' },
       { ic:'📣', t:'@ で相手を呼べます',       d:'コメント欄で @ を打つと名前の候補が出ます。呼ばれた人には、お知らせが届きます。' },
       { ic:'👤', t:'アイコンと名前を決められます', d:'⋯ →「じぶんの設定」で、写真か絵文字のアイコンと、画面に出る名前を変えられます。' },
+      { ic:'＋', t:'右下のボタンが ＋ に戻りました', d:'押すと 📷（いま撮る）と 🖼（アルバム）に分かれます。もう一度押すと閉じます。' },
   ]},
 ];
-const APP_VERSION = RELEASE_NOTES[0].v;
+const APP_VERSION = RELEASE_NOTES[0].id;   /* 端末に覚えさせる印。日付の見た目（v）とは分けてある */
 function renderUpdate(all){
   const list = all? RELEASE_NOTES : RELEASE_NOTES.slice(0,1);
   const need = !profileDone();
@@ -3008,7 +3096,7 @@ function showModal(id){
 }
 function hideModal(id){
   $('#'+id).classList.remove('show');
-  if(id==='detailModal'){ openDetailId=null; replyTo=null; }
+  if(id==='detailModal'){ openDetailId=null; replyTo=null; editingCmt=null; }
   // まだ別のシートが開いているなら、背面のスクロールは止めたままにする
   document.body.style.overflow = document.querySelector('.modal-bg.show') ? 'hidden' : '';
 }

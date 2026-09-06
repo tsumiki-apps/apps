@@ -57,8 +57,12 @@ Deno.serve(async (req) => {
     // 2026-09-06〜 例外：to（@で呼ばれた人・返信された人）に入っている家族には届ける。
     const COUPLE = ["こうだい", "ゆずは"];
     const named: string[] = Array.isArray(to) ? to.filter((x) => typeof x === "string") : [];
+    // kind==="mention" は「@で新しく呼んだ人だけ」に送る（コメントを直したときに使う）。
+    // 直すたびに相手のぶんまで鳴ると、うるさいので送らない。
     const targets = (subs || []).filter((s) =>
-      COUPLE.includes(s.who) ? true : (kind === "post" || named.includes(s.who))
+      kind === "mention"
+        ? named.includes(s.who)
+        : COUPLE.includes(s.who) ? true : (kind === "post" || named.includes(s.who))
     );
 
     const name = recordName || "日記";

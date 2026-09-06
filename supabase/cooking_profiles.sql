@@ -3,9 +3,11 @@
 -- 2026-09-06 に本番へ適用ずみ（migration: yuzu_cooking_replies_mentions_profiles）
 -- 追加のみ・冪等。何度流しても同じ状態になる。
 
--- 返信＝親コメントのid、メンション＝呼んだ人の who を並べた配列
+-- 返信＝親コメントのid、メンション＝呼んだ人の who を並べた配列、
+-- edited_at＝あとから直した時刻（2026-09-06 追加：migration yuzu_cooking_comment_edited_at）
 alter table public.comments add column if not exists parent_id text;
 alter table public.comments add column if not exists mentions jsonb default '[]'::jsonb;
+alter table public.comments add column if not exists edited_at bigint;
 
 -- who（＝その人を指す鍵。こうだい / ゆずは / 家族が入力した名前）は変えない。
 -- 画面に出る名前とアイコンだけをここに置く＝過去のいいね・コメントが迷子にならない。
