@@ -73,6 +73,8 @@ em{font-style:normal;background:var(--ink);color:#F4F2EE;border-radius:8px;paddi
   border-radius:22px;padding:16px;box-shadow:0 6px 22px rgba(36,35,33,.08);
   display:flex;flex-direction:column;overflow:hidden}
 .shot img{width:100%;display:block;border-radius:8px}
+.sw{position:relative;display:block}
+.sw > svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .fold{display:flex;align-items:center;gap:12px;margin:12px 2px;color:var(--sub);font-size:19px}
 .fold i{flex:1;height:0;border-top:2px dashed var(--line)}
 .notes{flex:1 1 auto;display:flex;flex-direction:column;gap:22px;padding-top:4px}
@@ -196,17 +198,68 @@ def prep_images(card, jdir, workdir):
         name = f"img{idx}.png"
         im.save(workdir / name)
         ratios[name] = im.height / im.width
-        return name
+        spec["_name"], spec["_w"], spec["_h"] = name, im.width, im.height
+        return spec
 
     if card["type"] == "zoom":
         card["_shots"] = [one(s, i) for i, s in enumerate(card["shots"], 1)]
     elif card["type"] == "compare":
         if card.get("shot"):
-            card["_shot"] = one(card["shot"], 1)
+            card["_shot"] = one(card["shot"], 1)["_name"]
     else:
         for i, st in enumerate(card["steps"], 1):
-            st["_img"] = one(st["img"], i)
+            st["_img"] = one(st["img"], i)["_name"]
     return ratios
+
+
+# ────────────────────────────── 画面の上の注釈（Skitch のような矢印と囲み）
+#   座標は 0〜1 の割合で書く（crop したあとの画像のどこか）。
+#   viewBox は 1000 × 縦 に固定するので、画像の大きさが変わっても矢印の太さは同じに見える。
+ANNO = "#D9452B"     # 朱。画面の茶色ににじまない濃さ
+
+def anno_svg(spec):
+    ars, boxes = spec.get("arrows") or [], spec.get("boxes") or []
+    if not ars and not boxes:
+        return ""
+    import math
+    vh = 1000.0 * spec["_h"] / spec["_w"]
+    out = []
+    for b in boxes:
+        x, y, w, h = b["rect"]
+        col = b.get("color", ANNO)
+        out.append(f'<rect x="{x*1000:.1f}" y="{y*vh:.1f}" width="{w*1000:.1f}" height="{h*vh:.1f}" '
+                   f'rx="{b.get("r",18)}" fill="none" stroke="#fff" stroke-width="16"/>')
+        out.append(f'<rect x="{x*1000:.1f}" y="{y*vh:.1f}" width="{w*1000:.1f}" height="{h*vh:.1f}" '
+                   f'rx="{b.get("r",18)}" fill="none" stroke="{col}" stroke-width="8"/>')
+        if b.get("n"):                                # 囲みにも番号を出せる（右の説明と対応させる）
+            cx, cy = x*1000, y*vh
+            out.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="30" fill="#fff"/>')
+            out.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="26" fill="{col}"/>')
+            out.append(f'<text x="{cx:.1f}" y="{cy+11:.1f}" text-anchor="middle" fill="#fff" '
+                       f'font-size="34" font-weight="700" font-family="inherit">{int(b["n"])}</text>')
+    for a in ars:
+        x1, y1 = a["from"][0]*1000, a["from"][1]*vh
+        x2, y2 = a["to"][0]*1000,   a["to"][1]*vh
+        col = a.get("color", ANNO)
+        ang = math.atan2(y2-y1, x2-x1)
+        head = a.get("head", 34)                      # 矢じりの長さ
+        bx, by = x2 - head*math.cos(ang), y2 - head*math.sin(ang)   # 線はここで止める
+        tri = " ".join(f"{px:.1f},{py:.1f}" for px, py in (
+            (x2, y2),
+            (bx - head*0.42*math.sin(ang), by + head*0.42*math.cos(ang)),
+            (bx + head*0.42*math.sin(ang), by - head*0.42*math.cos(ang))))
+        for c, w in ((("#fff"), 22), (col, 11)):      # 白フチ → 本体 の順に重ねる
+            out.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{bx:.1f}" y2="{by:.1f}" '
+                       f'stroke="{c}" stroke-width="{w}" stroke-linecap="round"/>')
+        out.append(f'<polygon points="{tri}" fill="#fff" stroke="#fff" stroke-width="12" stroke-linejoin="round"/>')
+        out.append(f'<polygon points="{tri}" fill="{col}"/>')
+        if a.get("n"):                                # 右の説明の①②③と同じ番号を根元に置く
+            out.append(f'<circle cx="{x1:.1f}" cy="{y1:.1f}" r="30" fill="#fff"/>')
+            out.append(f'<circle cx="{x1:.1f}" cy="{y1:.1f}" r="26" fill="{col}"/>')
+            out.append(f'<text x="{x1:.1f}" y="{y1+11:.1f}" text-anchor="middle" fill="#fff" '
+                       f'font-size="34" font-weight="700" font-family="inherit">{int(a["n"])}</text>')
+    return (f'<svg viewBox="0 0 1000 {vh:.1f}" preserveAspectRatio="none" '
+            f'xmlns="http://www.w3.org/2000/svg">{"".join(out)}</svg>')
 
 
 # ────────────────────────────── HTMLを組む
@@ -228,7 +281,7 @@ def build_html(card, ratios):
         for i, f in enumerate(card["_shots"]):
             if i:
                 pieces.append(f'<div class="fold"><i></i>{esc(fold)}<i></i></div>')
-            pieces.append(f'<img src="{f}" alt="">')
+            pieces.append(f'<div class="sw"><img src="{f["_name"]}" alt="">{anno_svg(f)}</div>')
         notes = "".join(
             f'<div class="n"><div class="num">{i}</div><div class="tx"><b>{esc(x["t"])}</b>'
             + (f'<small>{esc(x["s"])}</small>' if x.get("s") else "")
