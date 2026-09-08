@@ -2369,16 +2369,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    作った席）は輪にバイパスが入っていないので切り替えられない。押したときに
   //    サーバーが「切り替えられません」と返してくるので、そのまま出す。
   var PERM = [
-    { key: 'bypass', label: 'バイパス', name: 'バイパス（聞かずに実行）',
-      sub: 'いつもの状態。許可を求めて止まりません' },
-    { key: 'auto',   label: 'おまかせ', name: 'おまかせ',
-      sub: 'Claude Code のふつうの設定。危ないところだけ聞いてきます' },
-    { key: 'accept', label: '編集だけ自動', name: '編集だけ自動',
-      sub: 'ファイルの書き換えは黙ってやり、コマンドは聞いてきます' },
-    { key: 'manual', label: '毎回きく', name: '毎回きく',
-      sub: '何をするにも確認します。出先だと答えるのが大変です' },
-    { key: 'plan',   label: '計画だけ', name: '計画だけ（書き換えない）',
-      sub: '調べて案を出すところまで。ファイルは変えません' }
+    { key: 'bypass', label: 'Bypass', name: 'Bypass permissions',
+      sub: 'Runs without asking — the usual state' },
+    { key: 'auto',   label: 'Auto', name: 'Auto',
+      sub: "Claude Code's default — asks only on risky steps" },
+    { key: 'accept', label: 'Accept edits', name: 'Accept edits',
+      sub: 'Edits files silently, asks before commands' },
+    { key: 'manual', label: 'Manual', name: 'Manual',
+      sub: 'Asks every time — hard to answer on the go' },
+    { key: 'plan',   label: 'Plan', name: 'Plan',
+      sub: 'Reads and proposes only — changes nothing' }
   ];
   var PERM_BY = {};
   PERM.forEach(function (m) { PERM_BY[m.key] = m; });
@@ -4113,7 +4113,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // シェルの席には無い話なので、項目そのものを置かない
     if (s.kind === 'claude') {
       var pm = PERM_BY[s.perm];
-      sheetItem('許可のしかた', pm ? 'いま「' + pm.label + '」' : 'いまの状態が読めていません',
+      sheetItem('Permissions', pm ? 'Now: ' + pm.label : 'Now: unknown',
         function () { permMenu(s.name); }, { icon: 'shield', iconCls: 'edit' });
     }
 
@@ -4135,20 +4135,20 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var s = null;
     sessions.forEach(function (x) { if (x.name === name) s = x; });
     if (!s) return;
-    openSheet('許可のしかた');
+    openSheet('Permissions');
 
     var head = document.createElement('div');
     head.className = 'sheethead';
     var pm = PERM_BY[s.perm];
-    head.textContent = name + ' が、どこまで自分で決めてよいか。'
-      + (pm ? 'いまは「' + pm.label + '」です。' : 'いまの状態は読めていません。')
-      + (s.status === 'waiting' ? '\n⚠️ いま返事を待っています。先に答えてからでないと変えられません。' : '');
+    head.textContent = 'How much ' + name + ' may decide on its own. '
+      + (pm ? 'Now: ' + pm.label + '.' : 'Current state unknown.')
+      + (s.status === 'waiting' ? '\n⚠️ Waiting for your reply — answer that first.' : '');
     head.style.whiteSpace = 'pre-line';
     sheetBody.appendChild(head);
 
     PERM.forEach(function (m) {
       var now = m.key === s.perm;
-      sheetItem(m.name, now ? 'いまこれ・' + m.sub : m.sub,
+      sheetItem(m.name, now ? 'Current · ' + m.sub : m.sub,
         function () { closeSheet(); if (!now) doPerm(name, m); },
         { on: now, wrap: true, icon: now ? 'check' : undefined,
           iconCls: now ? 'ok' : undefined });
@@ -4159,7 +4159,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     toast(m.label + ' に切り替えています…');
     api('/api/perm', { method: 'POST', body: JSON.stringify({ name: name, mode: m.key }) })
       .then(function () {
-        toast(name + ' を「' + m.label + '」にしました');
+        toast(name + ' を ' + m.label + ' にしました');
         tick(true);
       })
       .catch(function (e) {
