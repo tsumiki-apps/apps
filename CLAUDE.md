@@ -33,6 +33,18 @@
   `~/.claude/skills/refero-styles/SKILL.md`。道具は `refero_tokens.py`、見本は `design_refs/`。
 - スキル本体は git 管理外なので、直したら `python3 sync_skills.py --write` で `skills/` に控えを取る。
 
+## 2.6 JSを書かずに済ませる部品（tn.css）
+- 選択カード・チェック・つまみ・アコーディオン・ダイアログ・明細・メーター・進捗・チップ・タブ・表・押せる行は
+  **`tn.css` に用意してある**。クラスは全部 `tn-` 始まりで、既存アプリのCSSとぶつからない。
+  色は `--card/--ink/--sub/--line/--accent/--radius` をそのまま使う（無いアプリでも既定値で動く）。
+- 注入は `python3 inject_tn.py <HTML>`（何度でも実行可・古い版は自動で最新に置換）。
+  確認 `--check`／取り外し `--remove`。見本は `_tn_見本.html`（このページ自体が注入の動作確認）。
+- **戻るボタンと違い、外部配布(`~/tsumiki-tools`)に入れてもよい**（見た目だけで屋号も戻る導線も含まない）。
+- 「どれか1つ選ぶ」を作るとき `classList.toggle('on')` を手書きしない → `.tn-choice` + `:has(:checked)`。
+- 出どころは sashimi UI(MIT)の手法を書き直したもの。調査の記録は
+  `~/つみき出力/道具としらべ/sashimi-ui調査_2026-09-08.html`。
+- 必要ブラウザ: `:has()` Safari 15.4+ / `color-mix()` Safari 16.2+（未裏取り）。実機iPhoneでは未検証。
+
 ## 3. このリポジトリ固有の禁止
 - `~/制作物` は PUBLIC。受託ソースは `.gitignore`（`Kouban/` `Teppari/`）、成果物HTMLだけ `~/tsumiki-tools` へ。サンプルは架空名。
   （commit前の実名grepと `--force` で消えない件は A層の核にある）

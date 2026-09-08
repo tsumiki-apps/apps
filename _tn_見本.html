@@ -1,0 +1,461 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>つみき用ネイティブ部品 — 見本</title>
+<style>
+:root{ --bg:#f5f5f7; --card:#fff; --ink:#1d1d1f; --sub:#6e6e73; --line:#e3e3e6;
+       --accent:#0071e3; --good:#34c759; --warn:#ff9500; --danger:#ff3b30; --radius:16px; }
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
+     background:var(--bg);color:var(--ink);line-height:1.6}
+input,select,textarea,button{font-family:inherit;font-size:16px}
+.wrap{max-width:680px;margin:0 auto;padding:20px 16px 80px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:14px;font-weight:700;color:var(--sub);letter-spacing:.06em;margin:32px 0 10px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.lead{color:var(--sub);font-size:14px;margin:0 0 16px}
+.how{font-size:13px;color:var(--sub);margin:6px 2px 0;line-height:1.7}
+.how code{background:#eceef1;border-radius:5px;padding:1px 5px;font-size:12px}
+</style>
+<!-- tsumiki-native-parts sha=5a2eedb2 -->
+<style>
+/* ================================================================
+   つみき用「ネイティブ部品」CSS  v1  (2026-09-08)
+   sashimi UI (MIT / yuto-hasegawa) の作り方を参考に、
+   つみきの決まりごと（タップ44px・入力16px・8幅・変数名）へ書き直したもの。
+   コードはコピーではなく書き直し。考え方の出どころだけ上に記す。
+
+   使い方：単一HTMLの <style> にこのまま貼る。クラスはすべて tn- 始まり。
+   色は既存アプリの変数（--card/--ink/--sub/--line/--accent/--radius など）を
+   そのまま使う。無いアプリでも下の既定値で動く。
+   ================================================================ */
+
+:root{
+  /* 既存アプリの変数があればそちらが勝つ。無ければこの値 */
+  --tn-paper:      var(--card,   #ffffff);
+  --tn-ink:        var(--ink,    #1d1d1f);
+  --tn-sub:        var(--sub,    #6e6e73);
+  --tn-line:       var(--line,   #e3e3e6);
+  --tn-accent:     var(--accent, #0071e3);
+  --tn-on-accent:  #ffffff;
+  --tn-radius:     var(--radius, 16px);
+  --tn-good:       var(--good,   #34c759);
+  --tn-warn:       var(--warn,   #ff9500);
+  --tn-danger:     var(--danger, #ff3b30);
+
+  /* 1色から淡い面を自動でつくる（--accent-soft などを手で持たなくていい） */
+  --tn-accent-wash: color-mix(in srgb, var(--tn-accent) 12%, transparent);
+  --tn-hover:       color-mix(in srgb, var(--tn-ink)    5%, transparent);
+
+  --tn-tap: 44px;          /* つみきの最小タップ。ここだけ直せば全部そろう */
+  --tn-gap: 12px;
+}
+
+/* ---- 触れるものすべてに同じフォーカスの輪（キーボード操作のときだけ出る） ---- */
+:where(.tn-choice,.tn-optrow):has(:focus-visible),
+:where(.tn-chip,.tn-tab,.tn-acc>summary,.tn-check,.tn-radio,.tn-switch,.tn-row):focus-visible{
+  outline:2px solid var(--tn-accent); outline-offset:2px; border-radius:8px;
+}
+
+/* ================================================================
+   1. tn-choice — 押せる選択カード（JS 0行）
+   <label class="tn-choice"><input type="radio" class="tn-radio" name="x">
+     <b>おまかせ</b><small>その日のおすすめ</small></label>
+   選ばれたかどうかは :has(:checked) が見てくれる。
+   ================================================================ */
+.tn-choice{
+  display:grid; grid-template-columns:auto 1fr; align-items:start;
+  column-gap:var(--tn-gap); row-gap:2px;
+  width:100%; min-height:var(--tn-tap); padding:14px;
+  box-sizing:border-box; cursor:pointer;
+  background:var(--tn-paper); color:var(--tn-ink);
+  border:1px solid var(--tn-line); border-radius:var(--tn-radius);
+  transition:background .15s, border-color .15s;
+}
+.tn-choice > :not(input){ grid-column:2; }
+.tn-choice > input{ grid-row:1; margin:0; margin-top:2px; }
+@supports (margin-top:1lh){ .tn-choice > input{ margin-top:calc((1lh - 22px) / 2) } }
+.tn-choice > small{ color:var(--tn-sub); font-size:13px; line-height:1.5; }
+.tn-choice:has(:checked){
+  background:var(--tn-accent-wash); border-color:var(--tn-accent);
+}
+.tn-choice:has(:disabled){ opacity:.5; cursor:default; }
+@media (hover:hover){ .tn-choice:hover:not(:has(:disabled)){ background:var(--tn-hover); } }
+.tn-choice:active:not(:has(:disabled)){ transform:scale(.99); }
+
+/* ================================================================
+   2. tn-check / tn-radio — チェックと丸。画像もJSも使わない
+   ✓ は疑似要素2本の線を「短い方 → 長い方」の順に伸ばして描く。
+   ※ input 自体は22px。指で押す44pxは必ず親の .tn-optrow / .tn-choice が持つ。
+   <label class="tn-optrow"><input type="checkbox" class="tn-check">同意する</label>
+   ================================================================ */
+.tn-optrow{
+  display:flex; align-items:center; gap:10px;
+  min-height:var(--tn-tap); padding:4px 2px; cursor:pointer;
+}
+.tn-optrow:has(:disabled){ opacity:.45; cursor:default }
+
+.tn-check,.tn-radio{
+  appearance:none; -webkit-appearance:none; background-color:transparent;
+  position:relative; flex:0 0 auto; box-sizing:border-box;
+  width:22px; height:22px; min-width:22px; margin:0; padding:0; cursor:pointer;
+}
+
+.tn-check{
+  border-radius:7px; box-shadow:inset 0 0 0 2px var(--tn-line);
+  background-image:radial-gradient(circle, var(--tn-accent) 50%, transparent 50%);
+  background-position:center; background-repeat:no-repeat; background-size:0 0;
+  transition:box-shadow .15s, background-size 60ms cubic-bezier(1,.35,1,.27);
+}
+.tn-check:checked{
+  box-shadow:inset 0 0 0 2px var(--tn-accent);
+  background-size:44px 44px;
+  transition:box-shadow .15s, background-size .16s ease-out;
+}
+.tn-check::before,.tn-check::after{
+  content:""; position:absolute; left:7.5px; top:14.2px;
+  width:0; height:2.6px; border-radius:1.3px;
+  background:var(--tn-on-accent); transform-origin:left center;
+}
+.tn-check::before{ transform:rotate(-135deg); transition:width 70ms ease-in }
+.tn-check::after { transform:rotate(-45deg);  transition:width 90ms ease-in }
+.tn-check:checked::before{ width:6.5px;  transition:width 80ms  ease-out }
+.tn-check:checked::after { width:11.5px; transition:width 110ms ease-out 70ms }
+
+.tn-radio{
+  border-radius:50%; border:2px solid var(--tn-line); transition:border-color .15s;
+}
+.tn-radio::before{
+  content:""; position:absolute; inset:50% auto auto 50%;
+  width:0; height:0; border-radius:50%; background:var(--tn-accent);
+  transform:translate(-50%,-50%); transition:width .12s ease-out, height .12s ease-out;
+}
+.tn-radio:checked{ border-color:var(--tn-accent) }
+.tn-radio:checked::before{ width:12px; height:12px }
+
+.tn-check:disabled,.tn-radio:disabled{ cursor:default }
+.tn-check:disabled:not(:checked),.tn-radio:disabled:not(:checked){ opacity:.45 }
+
+/* ================================================================
+   3. tn-switch — 入／切のつまみ（input[type=checkbox] 1個だけ）
+   ================================================================ */
+.tn-switch{
+  appearance:none; -webkit-appearance:none;
+  position:relative; flex:0 0 auto; vertical-align:middle;
+  width:52px; height:32px; margin:0; border-radius:999px; cursor:pointer;
+  background:var(--tn-line); transition:background-color .18s ease;
+}
+.tn-switch::before{                      /* 当たり判定を縦44pxに */
+  content:""; position:absolute; inset:-6px 0; 
+}
+.tn-switch::after{
+  content:""; position:absolute; top:3px; left:3px;
+  width:26px; height:26px; border-radius:50%; background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.25);
+  transition:left .18s ease;
+}
+.tn-switch:checked{ background:var(--tn-accent); }
+.tn-switch:checked::after{ left:23px; }
+.tn-switch:disabled{ opacity:.45; cursor:default; }
+
+/* ================================================================
+   4. tn-acc — 開いて読むところ（details / summary。JS 0行）
+   <details class="tn-acc"><summary>くわしく</summary><p>…</p></details>
+   ================================================================ */
+.tn-acc{
+  width:100%; box-sizing:border-box; overflow:hidden;
+  background:var(--tn-paper); border:1px solid var(--tn-line);
+  border-radius:var(--tn-radius);
+}
+.tn-acc > summary{
+  display:flex; align-items:center; gap:8px;
+  min-height:var(--tn-tap); padding:14px 16px;
+  font-weight:700; list-style:none; cursor:pointer;
+}
+.tn-acc > summary::-webkit-details-marker{ display:none; }
+.tn-acc > summary::after{                /* ▾ を線2本で作る（画像不要） */
+  content:""; width:.5em; height:.5em; margin-inline-start:auto;
+  border-right:2px solid currentColor; border-bottom:2px solid currentColor;
+  transform:translateY(-2px) rotate(45deg); transition:transform .18s ease-out;
+}
+.tn-acc[open] > summary::after{ transform:translateY(2px) rotate(225deg); }
+.tn-acc > :not(summary){ margin:0 16px 16px; }
+@media (hover:hover){ .tn-acc > summary:hover{ background:var(--tn-hover); } }
+
+/* ================================================================
+   5. tn-sheet — ダイアログ（<dialog>。Escで閉じる・背面固定はブラウザ任せ）
+   出す: el.showModal()   閉じる: el.close()
+   ================================================================ */
+.tn-sheet{
+  border:0; padding:0; max-width:min(560px, calc(100% - 32px));
+  width:100%; box-sizing:border-box;
+  background:var(--tn-paper); color:var(--tn-ink);
+  border-radius:var(--tn-radius);
+  box-shadow:0 10px 40px rgba(0,0,0,.18);
+}
+.tn-sheet::backdrop{ background:rgba(0,0,0,.45); }
+.tn-sheet > .tn-sheet-body{ padding:20px; }
+/* 幅600px以下では下からせり上がる「シート」にする */
+@media (max-width:600px){
+  .tn-sheet{
+    max-width:100%; margin:auto auto 0; 
+    border-radius:var(--tn-radius) var(--tn-radius) 0 0;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+}
+
+/* ================================================================
+   6. tn-kv — 明細（<dl>。合計・内訳・レシート）
+   ================================================================ */
+.tn-kv{
+  display:grid; grid-template-columns:1fr auto;
+  column-gap:16px; row-gap:8px; margin:0;
+}
+.tn-kv dt{ color:var(--tn-sub); }
+.tn-kv dd{ margin:0; justify-self:end; font-variant-numeric:tabular-nums; }
+.tn-kv .tn-total{ font-weight:700; color:var(--tn-ink); }
+
+/* ================================================================
+   7. tn-meter / tn-bar / tn-spin / tn-skel — 量と待ち時間
+   <meter class="tn-meter" value=".8" low=".3" high=".7" optimum=".1">
+   → しきい値を超えると自動で色が変わる（JSで色を出し分けなくていい）
+   ================================================================ */
+.tn-meter{
+  appearance:none; -webkit-appearance:none;
+  width:100%; height:10px; border:0; border-radius:999px; overflow:hidden;
+  background:var(--tn-line);
+}
+.tn-meter::-webkit-meter-bar{ background:var(--tn-line); border:0; border-radius:999px; }
+.tn-meter::-webkit-meter-optimum-value        { background:var(--tn-good);   border-radius:999px; }
+.tn-meter::-webkit-meter-suboptimum-value     { background:var(--tn-warn);   border-radius:999px; }
+.tn-meter::-webkit-meter-even-less-good-value { background:var(--tn-danger); border-radius:999px; }
+.tn-meter::-moz-meter-bar{ background:var(--tn-good); border-radius:999px; }
+.tn-meter:-moz-meter-sub-optimum::-moz-meter-bar{ background:var(--tn-warn); }
+.tn-meter:-moz-meter-sub-sub-optimum::-moz-meter-bar{ background:var(--tn-danger); }
+
+.tn-bar{
+  appearance:none; -webkit-appearance:none;
+  position:relative; width:100%; height:8px; border:0; border-radius:999px;
+  overflow:hidden; background:var(--tn-line);
+}
+.tn-bar::-webkit-progress-bar{ background:var(--tn-line); }
+.tn-bar::-webkit-progress-value{ background:var(--tn-accent); border-radius:999px; }
+.tn-bar::-moz-progress-bar{ background:var(--tn-accent); }
+.tn-bar:indeterminate::before{
+  content:""; position:absolute; inset:0; background:var(--tn-accent);
+  transform-origin:0 50%; animation:tn-run 1s linear infinite;
+}
+@keyframes tn-run{
+  0%{ transform:translateX(0) scaleX(0) }
+  40%{ transform:translateX(0) scaleX(.4) }
+  100%{ transform:translateX(100%) scaleX(.5) }
+}
+
+.tn-spin{                                  /* ぐるぐる（画像もJSも無し） */
+  width:32px; height:32px; border-radius:50%;
+  border:3px solid var(--tn-line); border-top-color:var(--tn-accent);
+  animation:tn-turn .8s linear infinite;
+}
+@keyframes tn-turn{ to{ transform:rotate(360deg) } }
+
+.tn-skel{                                  /* 読み込み中の灰色の板 */
+  border-radius:12px; background:var(--tn-line); position:relative; overflow:hidden;
+}
+.tn-skel::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(100deg, transparent 20%,
+             color-mix(in srgb, var(--tn-paper) 70%, transparent) 50%, transparent 80%);
+  animation:tn-sweep 1.1s linear infinite;
+}
+@keyframes tn-sweep{ from{ transform:translateX(-100%) } to{ transform:translateX(100%) } }
+
+@media (prefers-reduced-motion:reduce){
+  .tn-spin,.tn-skel::after,.tn-bar:indeterminate::before{ animation:none }
+  *{ transition-duration:.01ms !important }
+}
+
+/* ================================================================
+   8. tn-note — おしらせの囲み。1色から淡い面を color-mix で作る
+   ================================================================ */
+.tn-note{
+  padding:14px 16px; margin:0; border-radius:var(--tn-radius);
+  background:var(--tn-accent-wash);
+  border:1px solid color-mix(in srgb, var(--tn-accent) 25%, transparent);
+}
+.tn-note.tn-good  { background:color-mix(in srgb, var(--tn-good)   12%, transparent);
+                    border-color:color-mix(in srgb, var(--tn-good)   28%, transparent); }
+.tn-note.tn-warn  { background:color-mix(in srgb, var(--tn-warn)   14%, transparent);
+                    border-color:color-mix(in srgb, var(--tn-warn)   32%, transparent); }
+.tn-note.tn-danger{ background:color-mix(in srgb, var(--tn-danger) 10%, transparent);
+                    border-color:color-mix(in srgb, var(--tn-danger) 28%, transparent); }
+.tn-note > :first-child{ margin-top:0 } .tn-note > :last-child{ margin-bottom:0 }
+
+/* ================================================================
+   9. tn-chip / tn-tabs — 絞り込みと切り替え（どちらも44px）
+   ================================================================ */
+.tn-chip{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-height:var(--tn-tap); padding:0 16px; box-sizing:border-box;
+  font:inherit; font-size:14px; font-weight:700; line-height:1;
+  color:var(--tn-ink); background:var(--tn-paper);
+  border:1px solid var(--tn-line); border-radius:999px;
+  cursor:pointer; white-space:nowrap;
+}
+.tn-chip.on{ color:var(--tn-accent); background:var(--tn-accent-wash); border-color:var(--tn-accent); }
+.tn-chip:disabled{ opacity:.45; cursor:default; }
+.tn-chips{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;
+           scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.tn-chips::-webkit-scrollbar{ display:none }
+
+.tn-tabs{ display:flex; gap:4px; border-bottom:1px solid var(--tn-line); overflow-x:auto;
+          scrollbar-width:none } .tn-tabs::-webkit-scrollbar{ display:none }
+.tn-tab{
+  position:relative; flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:64px; min-height:var(--tn-tap); padding:0 16px;
+  font:inherit; font-weight:600; color:var(--tn-sub);
+  background:none; border:0; cursor:pointer; white-space:nowrap;
+}
+.tn-tab.on{ color:var(--tn-accent); font-weight:700 }
+.tn-tab.on::after{
+  content:""; position:absolute; inset-inline:12px; bottom:0;
+  height:3px; border-radius:3px 3px 0 0; background:currentColor;
+}
+
+/* ================================================================
+   10. tn-table — 表。横に長いときは自分だけ横スクロールさせる
+   <div class="tn-scroll"><table class="tn-table">…</table></div>
+   ================================================================ */
+.tn-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch }
+.tn-table{ border-collapse:collapse; width:100%; min-width:max-content }
+.tn-table thead{ border-bottom:1px solid var(--tn-line) }
+.tn-table th{ color:var(--tn-sub); font-weight:600; text-align:left;
+              padding:8px 12px; white-space:nowrap }
+.tn-table td{ padding:12px; vertical-align:middle }
+.tn-table tbody tr + tr{ border-top:1px solid var(--tn-line) }
+.tn-table .tn-num{ text-align:right; font-variant-numeric:tabular-nums }
+
+/* ================================================================
+   11. tn-row — 一覧の1行（押せる行）。押した波紋を親の中に閉じ込める
+   ※ isolation:isolate を必ず付ける。付けないと波紋が背景の下に潜って見えない
+   ================================================================ */
+.tn-row{
+  position:relative; isolation:isolate; overflow:hidden;
+  display:flex; align-items:center; gap:10px;
+  width:100%; min-height:var(--tn-tap); padding:12px 14px;
+  box-sizing:border-box; text-align:left; font:inherit; color:inherit;
+  background:none; border:0; border-radius:var(--tn-radius); cursor:pointer;
+}
+.tn-row::before{
+  content:""; position:absolute; left:50%; top:50%; z-index:-1;
+  width:120%; aspect-ratio:1; border-radius:50%;
+  background:var(--tn-ink); opacity:0;
+  transform:translate(-50%,-50%); transition:all 260ms ease-out;
+}
+.tn-row:active::before{ width:0; height:0; opacity:.14; transition:none }
+.tn-row.on{ background:var(--tn-accent-wash); color:var(--tn-accent) }
+
+/* ================================================================
+   12. 文字まわり — 蛍光ペンと注記
+   ================================================================ */
+.tn-mark{
+  padding-inline:.1em;
+  background:linear-gradient(transparent 58%, var(--tn-accent-wash) 58%);
+}
+.tn-hint{ margin:4px 0 0; font-size:13px; line-height:1.5; color:var(--tn-sub) }
+.tn-hint.tn-danger{ color:var(--tn-danger) }
+</style>
+<!-- /tsumiki-native-parts -->
+</head><body><div class="wrap">
+<h1>つみき用ネイティブ部品</h1>
+<p class="lead">JSをできるだけ書かずに済ませる部品の見本。中身は<span class="tn-mark">架空のデータ</span>です。
+このページ自体が <code style="font-size:12px">inject_tn.py</code> の動作確認を兼ねています。</p>
+
+<h2>選択カード（JS 0行）</h2>
+<div class="stack">
+<label class="tn-choice"><input type="radio" class="tn-radio" name="p" checked>
+  <b>おまかせ</b><small>その日のおすすめを6かん</small></label>
+<label class="tn-choice"><input type="radio" class="tn-radio" name="p">
+  <b>自分で選ぶ</b><small>好きなものを6かん</small></label>
+<label class="tn-choice"><input type="checkbox" class="tn-check">
+  <b>わさびを別にする</b><small>小皿でお出しします</small></label>
+<label class="tn-choice"><input type="radio" class="tn-radio" name="p" disabled>
+  <b>本日は品切れ</b><small>また次の機会に</small></label>
+</div>
+<p class="how">選ばれたかどうかは <code>:has(:checked)</code> が見る。<code>classList.toggle('on')</code> が要らない。</p>
+
+<h2>チェック・丸・つまみ</h2>
+<div class="box stack">
+<label class="tn-optrow"><input type="checkbox" class="tn-check" checked>同意する</label>
+<label class="tn-optrow"><input type="checkbox" class="tn-check">あとで読む</label>
+<label class="tn-optrow"><input type="radio" class="tn-radio" name="q" checked>朝</label>
+<label class="tn-optrow"><input type="radio" class="tn-radio" name="q">夜</label>
+<label class="tn-optrow"><input type="checkbox" class="tn-switch" checked>お知らせを受け取る</label>
+<label class="tn-optrow"><input type="checkbox" class="tn-switch">音を鳴らす</label>
+</div>
+<p class="how">✓ は疑似要素2本の線。指で押す44pxは親の <code>.tn-optrow</code> が持つ。</p>
+
+<h2>絞り込み・切り替え</h2>
+<div class="tn-chips"><button class="tn-chip on">すべて</button><button class="tn-chip">まぐろ</button>
+<button class="tn-chip">白身</button><button class="tn-chip">貝</button><button class="tn-chip" disabled>売り切れ</button></div>
+<div class="tn-tabs" style="margin-top:12px"><button class="tn-tab on">一覧</button>
+<button class="tn-tab">おしらせ</button><button class="tn-tab">設定</button></div>
+<p class="how">チップの列は自分の中だけで横スクロールする（ページは動かない）。</p>
+
+<h2>おしらせの囲み</h2>
+<div class="stack">
+<div class="tn-note"><p style="margin:0">締切は9月20日です。</p></div>
+<div class="tn-note tn-good"><p style="margin:0">保存しました。</p></div>
+<div class="tn-note tn-warn"><p style="margin:0">まだ3人が未提出です。</p></div>
+<div class="tn-note tn-danger"><p style="margin:0">この操作はもとに戻せません。</p></div>
+</div>
+<p class="how">淡い色は <code>color-mix()</code> で1色から自動生成。<code>--accent-soft</code> を手で持たなくてよい。</p>
+
+<h2>開いて読むところ</h2>
+<details class="tn-acc"><summary>くわしい使い方</summary>
+<p style="margin:0">JSは1行も要りません。開閉はブラウザがやります。▾ は線2本で描いていて、画像もSVGも使っていません。</p></details>
+
+<h2>ダイアログ</h2>
+<button class="tn-chip on" onclick="document.getElementById('sh').showModal()">シートを出す</button>
+<dialog class="tn-sheet" id="sh"><div class="tn-sheet-body">
+<p style="margin:0 0 14px">Escキーでも閉じられます。背面のスクロール止めもフォーカスの閉じ込めもブラウザ任せ。</p>
+<button class="tn-chip" onclick="this.closest('dialog').close()">とじる</button></div></dialog>
+<p class="how">幅600px以下では下からせり上がるシートになる。</p>
+
+<h2>量とすすみ具合</h2>
+<div class="box stack">
+<div><small style="color:var(--sub)">今月の食費（余裕あり）</small>
+<meter class="tn-meter" value="0.25" low="0.6" high="0.85" optimum="0"></meter></div>
+<div><small style="color:var(--sub)">今月の食費（そろそろ）</small>
+<meter class="tn-meter" value="0.72" low="0.6" high="0.85" optimum="0"></meter></div>
+<div><small style="color:var(--sub)">今月の食費（使いすぎ）</small>
+<meter class="tn-meter" value="0.95" low="0.6" high="0.85" optimum="0"></meter></div>
+<div><small style="color:var(--sub)">アップロード 60%</small><progress class="tn-bar" value="0.6"></progress></div>
+<div><small style="color:var(--sub)">待っています</small><progress class="tn-bar"></progress></div>
+<div style="display:flex;gap:14px;align-items:center"><div class="tn-spin"></div>
+<div class="tn-skel" style="flex:1;height:40px"></div></div>
+</div>
+<p class="how"><code>low / high / optimum</code> を書くだけで、緑→橙→赤にブラウザが切り替える。</p>
+
+<h2>明細と表</h2>
+<div class="box">
+<dl class="tn-kv"><dt>おまかせ</dt><dd>¥4,800</dd><dt>お茶 ×2</dt><dd>¥600</dd>
+<dt>消費税</dt><dd>¥540</dd><dt class="tn-total">合計</dt><dd class="tn-total">¥5,940</dd></dl>
+</div>
+<div class="box tn-scroll" style="margin-top:10px">
+<table class="tn-table"><thead><tr><th>日</th><th>担当</th><th>時間</th><th class="tn-num">人数</th></tr></thead>
+<tbody><tr><td>10/1</td><td>あさひ</td><td>9:00–14:00</td><td class="tn-num">3</td></tr>
+<tr><td>10/2</td><td>ひなた</td><td>14:00–21:00</td><td class="tn-num">2</td></tr>
+<tr><td>10/3</td><td>みなも</td><td>9:00–18:00</td><td class="tn-num">4</td></tr></tbody></table>
+</div>
+<p class="how">明細は <code>&lt;dl&gt;</code> の2列グリッド。表は <code>.tn-scroll</code> で包むと自分だけ横に動く。</p>
+
+<h2>押せる行</h2>
+<div class="box" style="padding:6px">
+<button class="tn-row">きょうの分をつける</button>
+<button class="tn-row on">先月のふりかえり</button>
+<button class="tn-row">設定</button>
+</div>
+<p class="how">押した波紋は <code>isolation:isolate</code> で行の中に閉じ込めてある。</p>
+</div></body></html>
