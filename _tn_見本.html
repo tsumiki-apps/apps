@@ -18,7 +18,7 @@ h2{font-size:14px;font-weight:700;color:var(--sub);letter-spacing:.06em;margin:3
 .how{font-size:13px;color:var(--sub);margin:6px 2px 0;line-height:1.7}
 .how code{background:var(--tn-hover);border-radius:5px;padding:1px 5px;font-size:12px}
 </style>
-<!-- tsumiki-native-parts sha=95ddfcf6 -->
+<!-- tsumiki-native-parts sha=a7ab3c12 -->
 <style>
 /* ================================================================
    つみき用「ネイティブ部品」CSS  v2  (2026-09-09)
@@ -126,15 +126,17 @@ h2{font-size:14px;font-weight:700;color:var(--sub);letter-spacing:.06em;margin:3
   background-size:44px 44px;
   transition:box-shadow .15s, background-size .16s ease-out;
 }
-.tn-check::before,.tn-check::after{
-  content:""; position:absolute; left:7.5px; top:14.2px;
-  width:0; height:2.6px; border-radius:1.3px;
-  background:var(--tn-on-fill); transform-origin:left center;
+/* ✓ は「線2本を順に伸ばす」書き方もできるが、それだと ::before と ::after を
+   両方使い切ってしまい、44px の当たり判定（下の .tn-hit）を載せる場所が無くなる。
+   つみきは 44px のほうが決まりごとなので、✓ は ::before ひとつ＝角を回した枠で描く。 */
+.tn-check::before{
+  content:""; position:absolute; left:7.5px; top:3.5px;
+  width:5.5px; height:11px; box-sizing:border-box;
+  border:solid var(--tn-on-fill); border-width:0 2.6px 2.6px 0;
+  transform:rotate(45deg) scale(.2); transform-origin:center; opacity:0;
+  transition:transform 120ms cubic-bezier(.5,1.5,.5,1), opacity 90ms ease-out;
 }
-.tn-check::before{ transform:rotate(-135deg); transition:width 70ms ease-in }
-.tn-check::after { transform:rotate(-45deg);  transition:width 90ms ease-in }
-.tn-check:checked::before{ width:6.5px;  transition:width 80ms  ease-out }
-.tn-check:checked::after { width:11.5px; transition:width 110ms ease-out 70ms }
+.tn-check:checked::before{ transform:rotate(45deg) scale(1); opacity:1 }
 
 .tn-radio{
   border-radius:50%; border:2px solid var(--tn-line); transition:border-color .15s;
@@ -159,17 +161,15 @@ h2{font-size:14px;font-weight:700;color:var(--sub);letter-spacing:.06em;margin:3
   width:52px; height:32px; margin:0; border-radius:999px; cursor:pointer;
   background:var(--tn-line); transition:background-color .18s ease;
 }
-.tn-switch::before{                      /* 当たり判定を縦44pxに */
-  content:""; position:absolute; inset:-6px 0; 
-}
-.tn-switch::after{
+.tn-switch::before{                      /* つまみ。見た目は ::before に統一し
+                                            ::after は当たり判定(.tn-hit)に空けておく */
   content:""; position:absolute; top:3px; left:3px;
   width:26px; height:26px; border-radius:50%; background:var(--tn-paper);
   box-shadow:0 1px 3px rgba(0,0,0,.25);
   transition:left .18s ease;
 }
 .tn-switch:checked{ background:var(--tn-fill); }
-.tn-switch:checked::after{ left:23px; }
+.tn-switch:checked::before{ left:23px; }
 .tn-switch:disabled{ opacity:.45; cursor:default; }
 
 /* ================================================================
@@ -285,7 +285,10 @@ h2{font-size:14px;font-weight:700;color:var(--sub);letter-spacing:.06em;margin:3
 
 @media (prefers-reduced-motion:reduce){
   .tn-spin,.tn-skel::after,.tn-bar:indeterminate::before{ animation:none }
-  *{ transition-duration:.01ms !important }
+  /* 止めるのは tn の部品だけ。アプリ全体に !important を撃たない
+     （@layer の中の !important は層の外＝アプリ側の指定に勝ってしまう）。
+     JS側の動きは tn.js の TN.reduced() が別に見ている。 */
+  [class*="tn-"], [class*="tn-"] *{ transition-duration:.01ms }
 }
 
 /* ================================================================
@@ -500,6 +503,31 @@ h2{font-size:14px;font-weight:700;color:var(--sub);letter-spacing:.06em;margin:3
 }
 .tn-search > .tn-input::-webkit-search-decoration,
 .tn-search > .tn-input::-webkit-search-cancel-button{ -webkit-appearance:none }
+
+/* ================================================================
+   19. tn-hit — 見た目はそのままで「押せる範囲」だけ44pxに広げる
+   つみきの決まり「タップ44px」を、22pxのチェックや24pxの×ボタンで守るための道具。
+   透明な板を疑似要素で敷くだけなので、並びも大きさもずれない。
+
+   <button class="row-del tn-hit">×</button>
+   <input type="checkbox" class="tn-check tn-hit">
+
+   使えない場所・注意:
+   - その要素が ::after を自分で使っていると付けられない。
+     tn-check / tn-radio / tn-switch は、そのために ::after を空けてある。
+   - 透明な板が左右上下にはみ出す。**11px以内に別の押せるものがあると
+     そちらのタップを横取りする。** 隣り合うときは片方だけに付ける。
+   - 親に overflow:hidden があると板も切られる（＝広がらない）。
+   ================================================================ */
+.tn-hit{ position:relative }
+.tn-hit::after{
+  content:""; position:absolute; left:50%; top:50%;
+  width:max(100%, var(--tn-tap)); height:max(100%, var(--tn-tap));
+  transform:translate(-50%,-50%);
+}
+/* 行の端にあるものは、外へはみ出すぶんを内側に寄せたいことがある */
+.tn-hit.tn-hit-left::after { left:0;  transform:translateY(-50%) }
+.tn-hit.tn-hit-right::after{ left:auto; right:0; transform:translateY(-50%) }
 }
 </style>
 <script>
@@ -793,6 +821,15 @@ h2{font-size:14px;font-weight:700;color:var(--sub);letter-spacing:.06em;margin:3
     });
   })();
 </script>
+
+<h2>押せる範囲だけ44pxに広げる</h2>
+<div class="box" style="display:flex;align-items:center;gap:10px">
+  <input type="checkbox" class="tn-check tn-hit" id="h1" checked>
+  <span style="flex:1">22pxのチェックでも、押せる範囲は44px</span>
+  <button class="tn-hit" id="h2" style="background:none;border:0;font-size:18px;color:var(--sub);cursor:pointer;padding:3px 5px">✕</button>
+</div>
+<p class="how">見た目は22px・24pxのまま。透明な板を <code>::after</code> で敷いて当たり判定だけ広げる。
+<code>tn-check</code> / <code>tn-radio</code> / <code>tn-switch</code> は、そのために <code>::after</code> を空けてある。</p>
 
 <h2>押せる行</h2>
 <div class="box" style="padding:6px">
