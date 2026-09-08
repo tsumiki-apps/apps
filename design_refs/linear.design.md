@@ -1,17 +1,79 @@
+---
+version: alpha
+name: "linear（refero styles の写し）"
+description: "midnight precision instrument"
+omitted:
+  - section: typography
+    reason: "つみきの書体は Zen Maru Gothic 固定。欧文は日本語グリフが無いので写さない"
+  - section: components
+    reason: "部品の正本は tn.css と ~/制作物/DESIGN.md"
+colors:
+  primary: "{colors.accent}"
+  paper: "#f8f9f9"
+  bg: "#f8f9f9"
+  card: "#ffffff"
+  surface: "#ffffff"
+  surface-2: "#f3f4f4"
+  ink: "#171717"
+  ink-mid: "#51555c"
+  ink-soft: "#61656b"
+  sub: "#606061"
+  muted: "#707171"
+  line: "#dedfe3"
+  line-2: "#ced1d4"
+  hair: "#ecedef"
+  accent: "#6d7407"
+  accent-2: "#646a06"
+  accent-wash: "#edeee6"
+  accent-soft: "#dcdec9"
+  dark-paper: "#08090a"
+  dark-bg: "#08090a"
+  dark-card: "#0f1011"
+  dark-surface: "#0f1011"
+  dark-surface-2: "#161718"
+  dark-ink: "#ffffff"
+  dark-ink-mid: "#8a8f98"
+  dark-ink-soft: "#757a82"
+  dark-sub: "#ababac"
+  dark-muted: "#8d8e8e"
+  dark-line: "#23252a"
+  dark-line-2: "#383b3f"
+  dark-hair: "#141618"
+  dark-accent: "#e4f222"
+  dark-accent-2: "#e4f222"
+  dark-accent-wash: "#1a1c0c"
+  dark-accent-soft: "#34380f"
+rounded:
+  cards: 12px
+  pills: 9999px
+  small: 2px
+  badges: 4px
+  inputs: 6px
+  buttons: 6px
+spacing:
+  element-gap: 8px
+  section-gap: 96px
+  card-padding: 24px
+  page-max-width: 1200px
+---
+
 # linear（refero styles の参照メモ）
 
 - **出典URL**: https://styles.refero.design/style/90ce5883-bb24-4466-93f7-801cd617b0d1
-- **取得日**: 2026-09-04
+- **取得日**: 2026-09-09
 - **northStar**: midnight precision instrument
 - **基調**: dark ／ 業種: devtools
 
 > ロゴ・画像・フォント本体は取っていない。借りるのは数値と方針だけ。
+> 上のトークン名は**つみきのCSS変数名**（`paper` = `--paper`）。`dark-` はダーク側。
 
-## 一言でいうと
+## Overview
 
 Linear's design system is a midnight command center built on near-black surfaces (#08090a) with paper-white type and one electric acid-lime accent (#e4f222) that functions as a functional flashlight — small, high-contrast, and used sparingly to signal action. The interface treats darkness as a substrate rather than a theme: text is crisp white at tight tracking (-0.022em), weights sit in a low 400–510 band rather than bold, and borders are hairline-thin (0.5px) to let geometry do the work that shadows usually would. Components feel precision-machined — 6px and 12px radii, compact 8–12px paddings, and almost no decorative ornament — letting the product UI (issue cards, kanban boards, AI agent panels) be the only visual texture in an otherwise quiet system.
 
-## つみきの変数に写した結果（ライト）
+## Colors
+
+つみきの変数に写した結果（ライト）。
 
 | 変数 | 値 |
 |---|---|
@@ -34,22 +96,24 @@ Linear's design system is a midnight command center built on near-black surfaces
 | `--accent-soft` | `#dcdec9` |
 | `--radius` | `12px` |
 
-## 余白と角丸（そのままは使わない。8幅ルールが優先）
+写しきれずに残った色（捨てない）:
 
-| 項目 | 値 |
-|---|---|
-| 要素の間 | `8px` |
-| 節の間 | `96px` |
-| カード内 | `24px` |
-| 最大幅 | `1200px` |
-| 角丸 cards | `12px` |
-| 角丸 pills | `9999px` |
-| 角丸 small | `2px` |
-| 角丸 badges | `4px` |
-| 角丸 inputs | `6px` |
-| 角丸 buttons | `6px` |
+| hex | 名前 | 役割 |
+|---|---|---|
+| `#08090a` | Void | Page canvas, full-bleed backgrounds — the default everything sits on |
+| `#0f1011` | Carbon | Card surfaces, nav bars — one step above canvas for contained content |
+| `#161718` | Obsidian | Elevated surfaces, deeper card panels |
+| `#d0d6e0` | Mist | Secondary headings, button text on dark surfaces |
+| `#e5e5e6` | Bone | Near-white surface fills, high-contrast button text |
+| `#27a644` | Pulse Green | Green outline accent for tags, dividers, and focused UI edges. Use as a supporting accent, not as a status color |
+| `#eb5757` | Coral Red | Red wash for highlight backgrounds, decorative bands, and soft emphasis behind content. Use as a supporting accent, not  |
+| `#02b8cc` | Signal Teal | Decorative accent, informational icon fills |
+| `#6366f1` | Iris Violet | Tag/badge fills — soft chromatic punctuation on tags and labels |
+| `#8b5cf6` | Lavender | Secondary tag fills, category indicators |
 
-## 文字（**本文には使わない**。借りるのは階層だけ）
+## Typography
+
+**本文には使わない。** 借りるのはサイズ階層・ウェイト・行間・字間だけ。
 
 - **Inter Variable**（weight 300, 400, 510, 590 ／ 代替: Inter (variable), or system-ui as fallback）
   - サイズ: 10, 11, 12, 13, 14, 15, 16, 17, 20, 24, 32, 48, 64, 72
@@ -66,12 +130,39 @@ Linear's design system is a midnight command center built on near-black surfaces
 > ブランド書体 Zen Maru Gothic は上書きしない。数字・英字ラベルだけ、
 > `substitute` を見て Google Fonts で置き換えてよい。
 
-## 影
+## Layout
+
+**そのままは使わない。つみきの8幅ルール（600/900の2本）が優先。**
+
+| 項目 | 値 |
+|---|---|
+| 要素の間 | `8px` |
+| 節の間 | `96px` |
+| カード内 | `24px` |
+| 最大幅 | `1200px` |
+
+- **layout（原文）**: Layout is max-width contained at ~1200px, centered, with full-bleed dark backgrounds extending to viewport edges. The hero is a left-aligned oversized headline (64–72px) paired with a right-aligned link CTA, followed by a large product screenshot that bleeds beyond the max-width slightly. Section rhythm alternates between text-left/image-right 2-column compositions and full-width product showcase bands, separated by 96px vertical gaps. The customer logo strip is a single horizontal row. The page never uses 3-column card grids or masonry — information density stays low, with most sections using generous whitespace and a single focal point per screen. Navigation is a fixed top bar with left-aligned logo and right-aligned links, no sidebar, no mega-menu.
+- **imagery（原文）**: Linear's visual language is product-screenshot-first: the hero and section illustrations are real Linear app UI captured at full fidelity — issue cards, kanban boards, AI agent panels, command palettes — placed inside framed card containers with hairline borders. No stock photography, no lifestyle imagery, no abstract illustration. Logos appear as a customer strip in neutral grey (#8a8f98) at uniform size. Icons are minimal line-art SVGs in single-color grey scale. The hero screenshot floats on a subtle linear gradient (dark-to-light) that creates atmospheric depth without literal scenery. Every visual element is a functional artifact of the product itself.
+
+## Elevation & Depth
 
 
 考え方: Elevation in Linear's system is achieved almost entirely through hairline borders (0.5px #23252a or 1px inset #23252a) and subtle dark drop shadows (rgba(0,0,0,0.4) 0 2px 4px) rather than layered shadow stacks. The visual hierarchy comes from the surface-level progression (#08090a → #0f1011 → #161718 → #23252a) and border definition, not from ambient shadow. The acid-lime CTA button uses an inset shadow stack (0px 5px 2px / 0px 3px 2px / 0px 1px 1px) — the only place in the system where a real shadow is applied to a chrome element.
 
-## やること / やらないこと（原文）
+## Shapes
+
+| 角丸 | 値 |
+|---|---|
+| cards | `12px` |
+| pills | `9999px` |
+| small | `2px` |
+| badges | `4px` |
+| inputs | `6px` |
+| buttons | `6px` |
+
+## Do's and Don'ts
+
+もとのサイトの原文。
 
 **Do**
 
@@ -122,37 +213,24 @@ Linear's design system is a midnight command center built on near-black surfaces
 >    丸ゴシックは細字だと日本語が痩せて読みにくい。ウェイトは借りず、角丸・余白・罫線だけ借りる。
 > ④ 「影を使わない」は refero の方針。つみき既存アプリの `--shadow` を消すかは人が決める。
 
-## レイアウト・写真の方針（原文）
+## 写したときの記録
 
-- **layout**: Layout is max-width contained at ~1200px, centered, with full-bleed dark backgrounds extending to viewport edges. The hero is a left-aligned oversized headline (64–72px) paired with a right-aligned link CTA, followed by a large product screenshot that bleeds beyond the max-width slightly. Section rhythm alternates between text-left/image-right 2-column compositions and full-width product showcase bands, separated by 96px vertical gaps. The customer logo strip is a single horizontal row. The page never uses 3-column card grids or masonry — information density stays low, with most sections using generous whitespace and a single focal point per screen. Navigation is a fixed top bar with left-aligned logo and right-aligned links, no sidebar, no mega-menu.
-- **imagery**: Linear's visual language is product-screenshot-first: the hero and section illustrations are real Linear app UI captured at full fidelity — issue cards, kanban boards, AI agent panels, command palettes — placed inside framed card containers with hairline borders. No stock photography, no lifestyle imagery, no abstract illustration. Logos appear as a customer strip in neutral grey (#8a8f98) at uniform size. Icons are minimal line-art SVGs in single-color grey scale. The hero screenshot floats on a subtle linear gradient (dark-to-light) that creates atmospheric depth without literal scenery. Every visual element is a functional artifact of the product itself.
-
-## 読みやすさのために直した色
+読みやすさのために沈めた色:
 
 | 変数 | もと | 直した | もとの比 | 直した比 |
 |---|---|---|---|---|
 | `--ink-soft` | `#62666d` | `#757a82` | 3.45:1 | 4.61:1 |
 | `--accent（ライト・導出）` | `#e4f222` | `#6d7407` | 1.17:1 | 4.80:1 |
 
-## 人が見て決めること
+人が見て決めること:
 
 - #27a644 Pulse Green は罫線と書いてあるが有彩色。--line には入れず未割当にした
 - もとが dark 基調のため、:root（ライト）は導出値。ダーク側が refero の実値。ライトは必ず目視すること
 - ライト: --accent #6d7407 の塗りの上は白文字でよい（5.06:1）
 - ダーク: --accent #e4f222 の塗りの上に**白文字は 1.23:1 で足りない**。濃い文字（--paper #08090a なら 16.15:1）に切り替えること
 
-## 未割当の色（捨てずに残す）
+---
 
-| hex | 名前 | 役割 |
-|---|---|---|
-| `#08090a` | Void | Page canvas, full-bleed backgrounds — the default everything sits on |
-| `#0f1011` | Carbon | Card surfaces, nav bars — one step above canvas for contained content |
-| `#161718` | Obsidian | Elevated surfaces, deeper card panels |
-| `#d0d6e0` | Mist | Secondary headings, button text on dark surfaces |
-| `#e5e5e6` | Bone | Near-white surface fills, high-contrast button text |
-| `#27a644` | Pulse Green | Green outline accent for tags, dividers, and focused UI edges. Use as a supporting accent, not as a status color |
-| `#eb5757` | Coral Red | Red wash for highlight backgrounds, decorative bands, and soft emphasis behind content. Use as a supporting accent, not  |
-| `#02b8cc` | Signal Teal | Decorative accent, informational icon fills |
-| `#6366f1` | Iris Violet | Tag/badge fills — soft chromatic punctuation on tags and labels |
-| `#8b5cf6` | Lavender | Secondary tag fills, category indicators |
-
+規格: [DESIGN.md](https://github.com/google-labs-code/design.md)（Apache-2.0・`alpha`）／
+検査: `npx @google/design.md lint <このファイル>`／
+つみきの正本: `~/制作物/DESIGN.md`

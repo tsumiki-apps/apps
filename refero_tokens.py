@@ -673,11 +673,91 @@ def render_css(m, light, dark, url, today):
     return "\n".join(L) + "\n"
 
 
+DIM = re.compile(r"^-?[\d.]+(px|em|rem)$")
+
+
+def _yaml_str(s):
+    """YAMLの1行文字列にする。改行と引用符を潰す。"""
+    s = re.sub(r"\s+", " ", (s or "").strip())
+    return '"%s"' % s.replace("\\", "＼").replace('"', "'")
+
+
+def _dim(v):
+    """Dimension（px/em/rem）として使える値だけ返す。それ以外は None。"""
+    if v is None:
+        return None
+    v = str(v).strip()
+    return v if DIM.match(v) else None
+
+
 def render_memo(m, light, dark, url, today):
+    """DESIGN.md 規格（google-labs-code/design.md・Apache-2.0）に沿った参照メモを書く。
+
+    frontmatter に機械が読むトークン、本文に人が読む理由。
+    見出しは規格の順（Overview → Colors → Typography → Layout →
+    Elevation & Depth → Shapes → Components → Do's and Don'ts）。
+    規格に無いセクション（写した記録・日本語要約）は末尾に置く＝規格上は preserve される。
+    """
     ds = m.ds
     sp = ds.get("spacing") or {}
     rad = sp.get("radius") or {}
     L = []
+
+    # ------------------------------------------------ frontmatter（機械が読む）
+    L.append("---")
+    L.append("version: alpha")
+    L.append("name: %s" % _yaml_str("%s（refero styles の写し）" % m.name))
+    L.append("description: %s" % _yaml_str(
+        (ds.get("northStar") or ds.get("description") or "refero styles から写した見本")[:200]))
+    L.append("omitted:")
+    L.append("  - section: typography")
+    L.append("    reason: %s" % _yaml_str(
+        "つみきの書体は Zen Maru Gothic 固定。欧文は日本語グリフが無いので写さない"))
+    L.append("  - section: components")
+    L.append("    reason: %s" % _yaml_str("部品の正本は tn.css と ~/制作物/DESIGN.md"))
+
+    L.append("colors:")
+    if "--accent" in light:
+        # 規格の推奨名。つみき語彙の accent を指す（値は二重に持たない）
+        L.append('  primary: "{colors.accent}"')
+    for s in ORDER:
+        if s in ("--shadow", "--radius"):
+            continue
+        if s in light:
+            L.append('  %s: "%s"' % (s.lstrip("-"), light[s]))
+    for s in ORDER:
+        if s in ("--shadow", "--radius"):
+            continue
+        if s in dark:
+            L.append('  dark-%s: "%s"' % (s.lstrip("-"), dark[s]))
+
+    rounded = []
+    for k, val in rad.items():
+        d = _dim(val)
+        if d:
+            rounded.append((re.sub(r"[^0-9A-Za-z_-]", "-", str(k)), d))
+    if not rounded and _dim(light.get("--radius")):
+        rounded.append(("md", _dim(light["--radius"])))
+    if rounded:
+        L.append("rounded:")
+        for k, v in rounded:
+            L.append("  %s: %s" % (k, v))
+
+    spacing = []
+    for k, label in (("baseUnit", "base"), ("elementGap", "element-gap"),
+                     ("sectionGap", "section-gap"), ("cardPadding", "card-padding"),
+                     ("pageMaxWidth", "page-max-width")):
+        d = _dim(sp.get(k))
+        if d:
+            spacing.append((label, d))
+    if spacing:
+        L.append("spacing:")
+        for k, v in spacing:
+            L.append("  %s: %s" % (k, v))
+    L.append("---")
+    L.append("")
+
+    # ------------------------------------------------ 本文（人が読む）
     L.append("# %s（refero styles の参照メモ）" % m.name)
     L.append("")
     L.append("- **出典URL**: %s" % url)
@@ -686,12 +766,17 @@ def render_memo(m, light, dark, url, today):
     L.append("- **基調**: %s ／ 業種: %s" % (ds.get("theme") or "—", ds.get("industry") or "—"))
     L.append("")
     L.append("> ロゴ・画像・フォント本体は取っていない。借りるのは数値と方針だけ。")
+    L.append("> 上のトークン名は**つみきのCSS変数名**（`paper` = `--paper`）。`dark-` はダーク側。")
     L.append("")
-    L.append("## 一言でいうと")
+
+    L.append("## Overview")
     L.append("")
     L.append((ds.get("description") or "—").strip())
     L.append("")
-    L.append("## つみきの変数に写した結果（ライト）")
+
+    L.append("## Colors")
+    L.append("")
+    L.append("つみきの変数に写した結果（ライト）。")
     L.append("")
     L.append("| 変数 | 値 |")
     L.append("|---|---|")
@@ -699,19 +784,18 @@ def render_memo(m, light, dark, url, today):
         if s in light:
             L.append("| `%s` | `%s` |" % (s, light[s]))
     L.append("")
-    L.append("## 余白と角丸（そのままは使わない。8幅ルールが優先）")
+    if m.unassigned:
+        L.append("写しきれずに残った色（捨てない）:")
+        L.append("")
+        L.append("| hex | 名前 | 役割 |")
+        L.append("|---|---|---|")
+        for hexv, nm, role in m.unassigned:
+            L.append("| `%s` | %s | %s |" % (hexv, nm, (role or "").replace("|", "／")[:120]))
+        L.append("")
+
+    L.append("## Typography")
     L.append("")
-    L.append("| 項目 | 値 |")
-    L.append("|---|---|")
-    for k, label in (("baseUnit", "基本単位"), ("elementGap", "要素の間"),
-                     ("sectionGap", "節の間"), ("cardPadding", "カード内"),
-                     ("pageMaxWidth", "最大幅")):
-        if sp.get(k):
-            L.append("| %s | `%s` |" % (label, sp[k]))
-    for k, val in rad.items():
-        L.append("| 角丸 %s | `%s` |" % (k, val))
-    L.append("")
-    L.append("## 文字（**本文には使わない**。借りるのは階層だけ）")
+    L.append("**本文には使わない。** 借りるのはサイズ階層・ウェイト・行間・字間だけ。")
     L.append("")
     for t in (ds.get("typography") or []):
         L.append("- **%s**（weight %s ／ 代替: %s）" % (t.get("family", "—"),
@@ -730,7 +814,26 @@ def render_memo(m, light, dark, url, today):
     L.append("> ブランド書体 Zen Maru Gothic は上書きしない。数字・英字ラベルだけ、")
     L.append("> `substitute` を見て Google Fonts で置き換えてよい。")
     L.append("")
-    L.append("## 影")
+
+    L.append("## Layout")
+    L.append("")
+    L.append("**そのままは使わない。つみきの8幅ルール（600/900の2本）が優先。**")
+    L.append("")
+    L.append("| 項目 | 値 |")
+    L.append("|---|---|")
+    for k, label in (("baseUnit", "基本単位"), ("elementGap", "要素の間"),
+                     ("sectionGap", "節の間"), ("cardPadding", "カード内"),
+                     ("pageMaxWidth", "最大幅")):
+        if sp.get(k):
+            L.append("| %s | `%s` |" % (label, sp[k]))
+    L.append("")
+    if ds.get("layout"):
+        L.append("- **layout（原文）**: %s" % ds["layout"])
+    if ds.get("imagery"):
+        L.append("- **imagery（原文）**: %s" % ds["imagery"])
+    L.append("")
+
+    L.append("## Elevation & Depth")
     L.append("")
     for e in (ds.get("elevation") or []):
         L.append("- **%s**: `%s`" % (e.get("element", "—"), e.get("style", "—")))
@@ -738,7 +841,21 @@ def render_memo(m, light, dark, url, today):
         L.append("")
         L.append("考え方: %s" % ds["elevationPhilosophy"])
     L.append("")
-    L.append("## やること / やらないこと（原文）")
+
+    L.append("## Shapes")
+    L.append("")
+    if rad:
+        L.append("| 角丸 | 値 |")
+        L.append("|---|---|")
+        for k, val in rad.items():
+            L.append("| %s | `%s` |" % (k, val))
+    else:
+        L.append("（もとの designSystem に角丸の記載が無い）")
+    L.append("")
+
+    L.append("## Do's and Don'ts")
+    L.append("")
+    L.append("もとのサイトの原文。")
     L.append("")
     L.append("**Do**")
     L.append("")
@@ -750,22 +867,19 @@ def render_memo(m, light, dark, url, today):
     for d in (ds.get("donts") or []):
         L.append("- %s" % (d if isinstance(d, str) else json.dumps(d, ensure_ascii=False)))
     L.append("")
-    L.append("## 日本語要約（Do / Don't）")
+
+    L.append(SUMMARY_HEAD)
     L.append("")
     L.append("<!-- ここはスクリプトでは埋められない。skill 側（Claude）が上の原文を訳して埋める。")
     L.append("     埋めていないなら「未記入」と正直に残すこと。 -->")
     L.append("")
     L.append("（未記入）")
     L.append("")
-    L.append("## レイアウト・写真の方針（原文）")
-    L.append("")
-    if ds.get("layout"):
-        L.append("- **layout**: %s" % ds["layout"])
-    if ds.get("imagery"):
-        L.append("- **imagery**: %s" % ds["imagery"])
+
+    L.append("## 写したときの記録")
     L.append("")
     if m.adjust:
-        L.append("## 読みやすさのために直した色")
+        L.append("読みやすさのために沈めた色:")
         L.append("")
         L.append("| 変数 | もと | 直した | もとの比 | 直した比 |")
         L.append("|---|---|---|---|---|")
@@ -773,19 +887,19 @@ def render_memo(m, light, dark, url, today):
             L.append("| `%s` | `%s` | `%s` | %.2f:1 | %.2f:1 |" % (slot, before, after, cb, ca))
         L.append("")
     if m.warnings:
-        L.append("## 人が見て決めること")
+        L.append("人が見て決めること:")
         L.append("")
         for w in m.warnings:
             L.append("- %s" % w)
         L.append("")
-    if m.unassigned:
-        L.append("## 未割当の色（捨てずに残す）")
+    if not m.adjust and not m.warnings:
+        L.append("（直した色・保留はなし）")
         L.append("")
-        L.append("| hex | 名前 | 役割 |")
-        L.append("|---|---|---|")
-        for hexv, nm, role in m.unassigned:
-            L.append("| `%s` | %s | %s |" % (hexv, nm, (role or "").replace("|", "／")[:120]))
-        L.append("")
+    L.append("---")
+    L.append("")
+    L.append("規格: [DESIGN.md](https://github.com/google-labs-code/design.md)（Apache-2.0・`alpha`）／")
+    L.append("検査: `npx @google/design.md lint <このファイル>`／")
+    L.append("つみきの正本: `~/制作物/DESIGN.md`")
     return "\n".join(L) + "\n"
 
 
@@ -821,6 +935,8 @@ def main():
     ap.add_argument("--memo", action="store_true", help="design_refs/<name>.design.md も書く")
     ap.add_argument("--out", default=None, help="CSSの書き出し先（既定は標準出力）")
     ap.add_argument("--raw", default=None, help="designSystem の生JSONの保存先")
+    ap.add_argument("--source-url", default=None,
+                    help="手元のHTML/JSONから作り直すとき、参照メモに残す本来の出典URL")
     a = ap.parse_args()
 
     t = a.target.strip()
@@ -836,6 +952,8 @@ def main():
         html = open(t, encoding="utf-8", errors="replace").read()
         ds = extract_design_system(html)
         url = "(手元のHTML: %s)" % t
+    if a.source_url:
+        url = a.source_url
 
     name = a.name or re.sub(r"[^0-9A-Za-z一-龥ぁ-んァ-ヶー_-]", "",
                             (ds.get("northStar") or "refero").split()[0]) or "refero"

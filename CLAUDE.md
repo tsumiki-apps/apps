@@ -29,16 +29,67 @@
 - **外部配布（tools）には注入しない。**
 
 ## 2.5 見た目（配色・角丸・影）を決めるとき
+
+### 正本は `DESIGN.md`（このリポジトリの直下）
+つみきの配色・書体・余白・角丸・影・動き・禁止事項は **`~/制作物/DESIGN.md` に1本化**した。
+[Google Labs の DESIGN.md 規格](https://github.com/google-labs-code/design.md)（Apache-2.0・`alpha`）準拠。
+**新しいアプリを作る前・既存の色を変える前に、まずこれを読む。**
+
+実測で決めた要点（迷ったらここ）:
+- 塗りつぶしボタンは **ライト＝`--accent-2` の地に `--paper` の文字（5.35:1）／ダーク＝`--accent` の地に `--ink`（墨）の文字（7.07:1）**。
+  **`--accent`（黄土 `#b06f26`）に白文字は 4.08:1 で不合格。** `color:#fff` の直書きをしない。
+- 洗い色の帯の文字は `--good-ink` / `--warn-ink`（濃い側）。`--good` をそのまま `--good-wash` に置くと 3.98:1。
+- 顔料6色は**塗りの地にしない**（文字色が色ごとに変わる）。`pigment-N-wash` に敷いて文字は墨。
+
+### 検査（色を触ったら必ず通す）
+
+    python3 design_check.py <HTML>     # そのHTMLだけ
+    python3 design_check.py            # DESIGN.md ＋ 全HTML
+    python3 design_check.py --spec-only
+
+コントラスト（大きい文字の例外込み）・純白純黒・ブレイクポイント・入力欄16px を一度に見る。
+HTMLは書き換えない。指摘して返すだけ。
+
+2026-09-09 の初回スキャンで **444件／77本** の既往指摘がある（未着手・別作業）。
+**新しく足した分を増やさないための関門**として使う。
+
+もう1本、**役の違う検査**がある。`design_check.py` は「正本のルールを守れているか」、
+`color_leak.py` は「**決めた色板から漏れていないか**」を見る。重ならないので両方通す。
+
+    python3 color_leak.py <HTML>          # ✗色漏れ / △直書き / ・無彩色 に分けて出す
+    python3 color_leak.py --all <HTML>    # 無彩色もぜんぶ並べる
+
+`:root` と dark の上書きで宣言した変数を色板とみなし、`var()` を通さずに直に書かれた色を拾う。
+グラデーションの途中・SVGの `fill`・JSの中の色文字列も見る（目では見落とすところ）。
+**✗ が1件でもあると終了コード1。** 出どころは lieflat-charts の validate.mjs の考え方
+（コードは写していない）→ `design_refs/lieflat.chart.md`。
+
+### refero styles から写すとき
 - `refero-styles` スキルを起動する → 提案の義務は A層 §5 P2、手順の正本は
   `~/.claude/skills/refero-styles/SKILL.md`。道具は `refero_tokens.py`、見本は `design_refs/`。
+- 見本は **`design_refs/<名前>.design.md`（DESIGN.md 規格準拠）**。`npx @google/design.md lint` が通る形。
 - スキル本体は git 管理外なので、直したら `python3 sync_skills.py --write` で `skills/` に控えを取る。
 
-## 2.6 JSを書かずに済ませる部品（tn.css）
+## 2.6 JSを書かずに済ませる部品（tn.css）と、動きの下ごしらえ（tn.js）
 - 選択カード・チェック・つまみ・アコーディオン・ダイアログ・明細・メーター・進捗・チップ・タブ・表・押せる行は
   **`tn.css` に用意してある**。クラスは全部 `tn-` 始まりで、既存アプリのCSSとぶつからない。
   色は `--card/--ink/--sub/--line/--accent/--radius` をそのまま使う（無いアプリでも既定値で動く）。
 - 注入は `python3 inject_tn.py <HTML>`（何度でも実行可・古い版は自動で最新に置換）。
-  確認 `--check`／取り外し `--remove`。見本は `_tn_見本.html`（このページ自体が注入の動作確認）。
+  **`tn.css` と `tn.js` を1つのマーカーで一緒に入れる。** 確認 `--check`／取り外し `--remove`。
+  見本は `_tn_見本.html`（このページ自体が注入の動作確認）。
+- **`tn.js` は CSS で書けない2つだけを持つ**（ぶら下がる名前は `window.TN` の1つ）。
+  - `TN.rnd(i,k)` … **決定論の擬似乱数。デモ・架空データで `Math.random()` を使わない**
+    （`~/制作物` の HTML 48本がまだ使っている・2026-09-09 実測）。
+    リロードのたびに形が変わると、お返事カードもIG投稿も毎回ちがう絵になり、
+    「前と同じか」の見比べもできない。`rndIn/pick/shuffle` も同じ理屈で決定論。
+  - `TN.reveal(id, fn)` … 見えたら再生・押したらもう一度。**再生前にタイマーを全部消す**
+    ので、連打しても積み上がらない（5回押しても走っているのは1本・実測）。
+    **画面に寸法が無いところ（Claude のブラウザペインは 0×0・スクショ用ヘッドレス・
+    PDF書き出し・`display:none` の iframe）では IntersectionObserver が永久に発火しない。**
+    そのまま焼くと図が白いままになるので、寸法が無いときだけ 1.2 秒後に描く保険が入っている。
+- 出どころは lieflat-charts の**考え方だけ**（あちらは非商用ライセンスなのでコードは写していない）。
+  `rnd` の式は本家をそのまま使うと k=0 で等差の直線になるため、別のかき混ぜに替えてある。
+  調査 → `~/つみき出力/道具としらべ/lieflat-charts_調査と採用可否_2026-09-08.md`
 - **戻るボタンと違い、外部配布(`~/tsumiki-tools`)に入れてもよい**（見た目だけで屋号も戻る導線も含まない）。
 - 「どれか1つ選ぶ」を作るとき `classList.toggle('on')` を手書きしない → `.tn-choice` + `:has(:checked)`。
 - 出どころは sashimi UI(MIT)の手法を書き直したもの。調査の記録は
