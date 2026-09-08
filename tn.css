@@ -1,5 +1,5 @@
 /* ================================================================
-   つみき用「ネイティブ部品」CSS  v1  (2026-09-08)
+   つみき用「ネイティブ部品」CSS  v2  (2026-09-09)
    sashimi UI (MIT / yuto-hasegawa) の作り方を参考に、
    つみきの決まりごと（タップ44px・入力16px・8幅・変数名）へ書き直したもの。
    コードはコピーではなく書き直し。考え方の出どころだけ上に記す。
@@ -9,18 +9,31 @@
    そのまま使う。無いアプリでも下の既定値で動く。
    ================================================================ */
 
+/* すべてを @layer tn に入れてある。
+   層に入れた規則は、層に入っていないアプリ側の規則に**必ず負ける**（順番も詳細度も関係ない）。
+   だから tn.css を </head> の直前＝アプリのCSSより後に入れても、
+   アプリが持っている見た目が勝つ。上書きに !important は要らない。 */
+@layer tn {
+
 :root{
-  /* 既存アプリの変数があればそちらが勝つ。無ければこの値 */
-  --tn-paper:      var(--card,   #ffffff);
-  --tn-ink:        var(--ink,    #1d1d1f);
-  --tn-sub:        var(--sub,    #6e6e73);
-  --tn-line:       var(--line,   #e3e3e6);
-  --tn-accent:     var(--accent, #0071e3);
-  --tn-on-accent:  #ffffff;
-  --tn-radius:     var(--radius, 16px);
-  --tn-good:       var(--good,   #34c759);
+  /* 既存アプリの変数があればそちらが勝つ。無ければ次の候補→最後に既定値。
+     ⚠ --accent を持たないアプリに青を差し込まないよう、accent は最後に --ink へ落とす
+        （墨色なら何色のアプリに混ぜても浮かない）。 */
+  --tn-paper:      var(--paper,  var(--card, var(--surface, #ffffff)));
+  --tn-ink:        var(--ink,     var(--text,  #1d1d1f));
+  --tn-sub:        var(--sub,     var(--muted, #6e6e73));
+  --tn-line:       var(--line,    var(--hair,  #e3e3e6));
+  --tn-accent:     var(--accent,  var(--ink,   #0071e3));
+  /* 塗りつぶしの地は --accent-2（濃い側）。DESIGN.md いわく --accent に白文字は 4.08:1 で不合格 */
+  --tn-fill:       var(--accent-2, var(--tn-accent));
+  --tn-on-fill:    var(--paper,    #ffffff);
+  --tn-radius:     var(--radius, 14px);
+  --tn-good:       var(--good,   var(--ok,   #34c759));
   --tn-warn:       var(--warn,   #ff9500);
-  --tn-danger:     var(--danger, #ff3b30);
+  --tn-danger:     var(--danger, var(--red,  #ff3b30));
+  /* 洗い色の帯に載せる文字は濃い側を使う（--good をそのまま置くと 3.98:1） */
+  --tn-good-ink:   var(--good-ink, var(--tn-good));
+  --tn-warn-ink:   var(--warn-ink, var(--tn-warn));
 
   /* 1色から淡い面を自動でつくる（--accent-soft などを手で持たなくていい） */
   --tn-accent-wash: color-mix(in srgb, var(--tn-accent) 12%, transparent);
@@ -82,19 +95,19 @@
 
 .tn-check{
   border-radius:7px; box-shadow:inset 0 0 0 2px var(--tn-line);
-  background-image:radial-gradient(circle, var(--tn-accent) 50%, transparent 50%);
+  background-image:radial-gradient(circle, var(--tn-fill) 50%, transparent 50%);
   background-position:center; background-repeat:no-repeat; background-size:0 0;
   transition:box-shadow .15s, background-size 60ms cubic-bezier(1,.35,1,.27);
 }
 .tn-check:checked{
-  box-shadow:inset 0 0 0 2px var(--tn-accent);
+  box-shadow:inset 0 0 0 2px var(--tn-fill);
   background-size:44px 44px;
   transition:box-shadow .15s, background-size .16s ease-out;
 }
 .tn-check::before,.tn-check::after{
   content:""; position:absolute; left:7.5px; top:14.2px;
   width:0; height:2.6px; border-radius:1.3px;
-  background:var(--tn-on-accent); transform-origin:left center;
+  background:var(--tn-on-fill); transform-origin:left center;
 }
 .tn-check::before{ transform:rotate(-135deg); transition:width 70ms ease-in }
 .tn-check::after { transform:rotate(-45deg);  transition:width 90ms ease-in }
@@ -106,10 +119,10 @@
 }
 .tn-radio::before{
   content:""; position:absolute; inset:50% auto auto 50%;
-  width:0; height:0; border-radius:50%; background:var(--tn-accent);
+  width:0; height:0; border-radius:50%; background:var(--tn-fill);
   transform:translate(-50%,-50%); transition:width .12s ease-out, height .12s ease-out;
 }
-.tn-radio:checked{ border-color:var(--tn-accent) }
+.tn-radio:checked{ border-color:var(--tn-fill) }
 .tn-radio:checked::before{ width:12px; height:12px }
 
 .tn-check:disabled,.tn-radio:disabled{ cursor:default }
@@ -129,11 +142,11 @@
 }
 .tn-switch::after{
   content:""; position:absolute; top:3px; left:3px;
-  width:26px; height:26px; border-radius:50%; background:#fff;
+  width:26px; height:26px; border-radius:50%; background:var(--tn-paper);
   box-shadow:0 1px 3px rgba(0,0,0,.25);
   transition:left .18s ease;
 }
-.tn-switch:checked{ background:var(--tn-accent); }
+.tn-switch:checked{ background:var(--tn-fill); }
 .tn-switch:checked::after{ left:23px; }
 .tn-switch:disabled{ opacity:.45; cursor:default; }
 
@@ -280,7 +293,7 @@
   border:1px solid var(--tn-line); border-radius:999px;
   cursor:pointer; white-space:nowrap;
 }
-.tn-chip.on{ color:var(--tn-accent); background:var(--tn-accent-wash); border-color:var(--tn-accent); }
+.tn-chip.on{ color:var(--tn-fill); background:var(--tn-accent-wash); border-color:var(--tn-fill); }
 .tn-chip:disabled{ opacity:.45; cursor:default; }
 .tn-chips{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;
            scrollbar-width:none; -webkit-overflow-scrolling:touch; }
@@ -295,7 +308,7 @@
   font:inherit; font-weight:600; color:var(--tn-sub);
   background:none; border:0; cursor:pointer; white-space:nowrap;
 }
-.tn-tab.on{ color:var(--tn-accent); font-weight:700 }
+.tn-tab.on{ color:var(--tn-fill); font-weight:700 }
 .tn-tab.on::after{
   content:""; position:absolute; inset-inline:12px; bottom:0;
   height:3px; border-radius:3px 3px 0 0; background:currentColor;
@@ -332,7 +345,7 @@
   transform:translate(-50%,-50%); transition:all 260ms ease-out;
 }
 .tn-row:active::before{ width:0; height:0; opacity:.14; transition:none }
-.tn-row.on{ background:var(--tn-accent-wash); color:var(--tn-accent) }
+.tn-row.on{ background:var(--tn-accent-wash); color:var(--tn-fill) }
 
 /* ================================================================
    12. 文字まわり — 蛍光ペンと注記
@@ -343,3 +356,126 @@
 }
 .tn-hint{ margin:4px 0 0; font-size:13px; line-height:1.5; color:var(--tn-sub) }
 .tn-hint.tn-danger{ color:var(--tn-danger) }
+
+/* ================================================================
+   13. tn-toast — 一瞬出て消える知らせ（93本中53本が自作していた）
+   <div class="tn-toast" id="toast"></div>
+   出す: t.textContent='保存しました'; t.classList.add('on');
+   消す: setTimeout(()=>t.classList.remove('on'), 2200);
+   ================================================================ */
+.tn-toast{
+  position:fixed; left:50%; z-index:2000;
+  bottom:calc(env(safe-area-inset-bottom) + 24px);
+  max-width:min(92vw, 420px); padding:12px 18px;
+  box-sizing:border-box; text-align:center; line-height:1.5;
+  color:var(--tn-paper); background:rgba(28,28,30,.94);
+  border-radius:999px; box-shadow:0 6px 24px rgba(0,0,0,.28);
+  transform:translate(-50%, 12px); opacity:0; pointer-events:none;
+  transition:transform .22s ease, opacity .22s ease;
+}
+.tn-toast.on{ transform:translate(-50%, 0); opacity:1 }
+
+/* ================================================================
+   14. tn-empty — まだ何も無いときの画面（93本中55本が自作していた）
+   <div class="tn-empty"><span class="tn-empty-em">📄</span>
+     まだ1枚もありません。<br>ここから最初の1枚を。</div>
+   ================================================================ */
+.tn-empty{
+  text-align:center; color:var(--tn-sub);
+  font-size:14px; line-height:1.8; padding:44px 20px;
+}
+.tn-empty-em{
+  display:block; font-size:40px; line-height:1;
+  margin-bottom:10px; opacity:.85;
+}
+
+/* ================================================================
+   15. tn-seg — ひとつながりの切り替え（93本中20本が自作していた）
+   タブと違い「枠の中で選ぶ」型。等分に伸びる。
+   <div class="tn-seg"><button class="on">日</button><button>週</button></div>
+   ================================================================ */
+.tn-seg{
+  display:flex; gap:4px; padding:4px; box-sizing:border-box;
+  background:var(--tn-hover); border-radius:999px;
+}
+.tn-seg > button{
+  flex:1 1 0; min-width:0; min-height:var(--tn-tap);
+  padding:0 12px; font:inherit; font-size:14px; font-weight:700;
+  color:var(--tn-sub); background:transparent; border:0; border-radius:999px;
+  cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  transition:background .15s, color .15s;
+}
+.tn-seg > button.on{
+  color:var(--tn-fill); background:var(--tn-paper);
+  box-shadow:0 1px 3px rgba(0,0,0,.12);
+}
+.tn-seg > button:disabled{ opacity:.45; cursor:default }
+
+/* ================================================================
+   16. tn-badge — 種類や状態の小さな札（93本中11本が自作していた）
+   ================================================================ */
+.tn-badge{
+  display:inline-flex; align-items:center; flex:0 0 auto;
+  padding:2px 9px; border-radius:999px;
+  font-size:11px; font-weight:800; letter-spacing:.02em; line-height:1.6;
+  color:var(--tn-fill); background:var(--tn-accent-wash);
+}
+.tn-badge.tn-good  { color:var(--tn-good-ink); background:color-mix(in srgb, var(--tn-good)   14%, transparent) }
+.tn-badge.tn-warn  { color:var(--tn-warn-ink); background:color-mix(in srgb, var(--tn-warn)   16%, transparent) }
+.tn-badge.tn-danger{ color:var(--tn-danger); background:color-mix(in srgb, var(--tn-danger) 12%, transparent) }
+.tn-badge.tn-quiet { color:var(--tn-sub);    background:var(--tn-hover) }
+
+/* ================================================================
+   17. tn-field / tn-input — 入力ひと組（ラベル＋欄＋補足）
+   つみきの決まり「入力欄は16px以上・高さ44px」をここで守る。
+   iOSは16px未満の入力欄に触ると画面を勝手に拡大するので下げない。
+   ================================================================ */
+.tn-field{ display:flex; flex-direction:column; gap:5px }
+.tn-field > label{
+  font-size:12px; font-weight:700; color:var(--tn-sub);
+  letter-spacing:.02em; padding-inline-start:2px;
+}
+.tn-input,.tn-textarea,.tn-select{
+  width:100%; box-sizing:border-box; font:inherit; font-size:16px;
+  color:var(--tn-ink); background:var(--tn-paper);
+  border:1px solid var(--tn-line); border-radius:10px;
+  padding:11px 12px; min-height:var(--tn-tap);
+}
+.tn-textarea{ resize:vertical; line-height:1.6 }
+.tn-select{
+  appearance:none; -webkit-appearance:none; padding-inline-end:34px;
+  /* ▾ は背景のグラデーション2本で描く（画像もSVGも読み込まない） */
+  background-image:
+    linear-gradient(45deg,  transparent 50%, currentColor 50%, currentColor 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 50%, currentColor 50%, currentColor 58%, transparent 58%);
+  background-size:6px 6px, 6px 6px;
+  background-position:right 18px center, right 13px center;
+  background-repeat:no-repeat;
+}
+.tn-input:focus,.tn-textarea:focus,.tn-select:focus{
+  outline:none; border-color:var(--tn-fill);
+}
+.tn-input:disabled,.tn-textarea:disabled,.tn-select:disabled{
+  opacity:.55; cursor:default;
+}
+.tn-input.tn-danger,.tn-textarea.tn-danger,.tn-select.tn-danger{ border-color:var(--tn-danger) }
+
+/* ================================================================
+   18. tn-search — さがす欄（虫めがねは疑似要素の丸と線で描く）
+   <div class="tn-search"><input class="tn-input" type="search" placeholder="さがす"></div>
+   ================================================================ */
+.tn-search{ position:relative }
+.tn-search > .tn-input{ padding-inline-start:38px }
+.tn-search::before{                     /* レンズ */
+  content:""; position:absolute; left:14px; top:50%; margin-top:-8px;
+  width:11px; height:11px; box-sizing:border-box;
+  border:2px solid var(--tn-sub); border-radius:50%; opacity:.9;
+}
+.tn-search::after{                      /* 柄 */
+  content:""; position:absolute; left:24px; top:50%; margin-top:2px;
+  width:5px; height:2px; border-radius:2px;
+  background:var(--tn-sub); transform:rotate(45deg); opacity:.9;
+}
+.tn-search > .tn-input::-webkit-search-decoration,
+.tn-search > .tn-input::-webkit-search-cancel-button{ -webkit-appearance:none }
+}
