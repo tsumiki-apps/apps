@@ -732,6 +732,13 @@ async function seatState(s, deadline) {
     auto,
     // 始めたときに選んだモデル。選ばずに作った席・アプリの外で作った席は空
     model: s.model,
+    // いまの許可のしかた（bypass / auto / manual / accept / plan）。
+    // 撮ってある画面から読むだけなので、tmux をもう1本起こす必要はない。
+    // ⚠️ 読めない周（起動の途中・箱で覆われた・シェルの席）は**前に読めた値を
+    //    そのまま出す**。null に落とすと、質問の箱が出るたびに札の印が
+    //    ちらちら消える＝「変わった」と誤解させる。席が畳まれれば
+    //    forgetSeat で写しごと消える
+    perm: permOf(text) || (lastSeat.get(s.name) || {}).perm || null,
     preview: lastMeaningfulLine(text),
   };
   lastSeat.set(s.name, row);
@@ -924,6 +931,81 @@ function judge(name, text) {
   if (quietMs < 5000) return { status: 'busy', quietMs };
   return { status: 'idle', quietMs };
 }
+
+// ------------------------------------------------- 許可のしかた（permission mode）
+//
+// Claude Code は入力欄のすぐ下に、いまの許可のしかたを1行で出している。
+//   ⏵⏵ bypass permissions on (shift+tab to cycle)
+//   ⏵⏵ auto mode on          / ⏸ manual mode on
+//   ⏵⏵ accept edits on       / ⏸ plan mode on
+// この行を読めば、その席が「聞かずにやる」状態なのかが分かる。
+// tmux にキーを送るだけで切り替えられる（shift+tab ＝ tmux のキー名 BTab）。
+//
+// ⚠️ 順ぐりの輪は席によって長さが違う（2026-09-08 実測）。
+//   ・bypass 付きで起動した席（このアプリが作る席）… 5つ
+//       bypass → auto → manual → accept → plan → bypass …
+//   ・素の `claude` で起動した席 … 4つ（**bypass が輪に入らない**）
+//       auto → manual → accept → plan → auto …
+//   だから「◯回押せば着く」と数えない。1回ずつ押して画面を読み、
+//   一周して元に戻ったら「この席にその段はない」と判断する（→ setPermMode）。
+//
+// ⚠️ 核になる字だけを見て、最後に当たった行を採る。この字は Claude の返事の
+//   本文にも出うる（まさにこの機能の話をしているときなど）。状態の行は必ず
+//   画面のいちばん下にあるので、後ろから探せば本文に釣られない。
+const PERM_RE = [
+  ['bypass', /bypass permissions on/],
+  ['auto',   /auto mode on/],
+  ['manual', /manual mode on/],
+  ['accept', /accept edits on/],
+  ['plan',   /plan mode on/],
+];
+const PERM_MODES = PERM_RE.map((x) => x[0]);
+
+// 画面から、いまの許可のしかたを読む。読めなければ null
+// （Claude が動いていない席・起動の途中・箱で覆われているとき）
+function permOf(text) {
+  if (!text) return null;
+  const lines = String(text).split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i];
+    for (const [key, re] of PERM_RE) if (re.test(l)) return key;
+  }
+  return null;
+}
+
+// 許可のしかたを目当ての段まで回す。**1回押すごとに画面を読み直す**。
+// 戻り値 { ok, mode, error }
+async function setPermMode(name, target) {
+  const start = permOf(await captureScreen(name));
+  if (!start) return { ok: false, mode: null, error: 'いまの許可のしかたが読めません（Claude が動いていない席かもしれません）' };
+  if (start === target) return { ok: true, mode: start };
+  // 輪はいちばん長くて5つ。一周ぶんに1つ足した回数で必ず打ち切る
+  for (let i = 0; i < 6; i++) {
+    const r = await tmux(['send-keys', '-t', '=' + name + ':', '--', 'BTab']);
+    if (!r.ok) return { ok: false, mode: start, error: r.err.slice(0, 200) };
+    // 端末が描き直すのを待つ。待たずに読むと1つ前の字が残っていて、
+    // 「効かなかった」と勘違いしてもう1回押す＝行き過ぎる
+    await sleep(PERM_STEP_MS);
+    const now = permOf(await captureScreen(name));
+    if (now === target) return { ok: true, mode: now };
+    // 読めない周が続くのは、押した先が想定と違う（箱が出た等）ということ。
+    // これ以上押すと戻せなくなるので、その場で降りる
+    if (!now) return { ok: false, mode: null, error: '画面が読めなくなったので止めました' };
+    // 一周して出発点に帰ってきた＝この席の輪に目当ての段は無い。
+    // 位置は元どおりなので、押した跡は残らない
+    if (now === start) {
+      return { ok: false, mode: start,
+        error: target === 'bypass'
+          ? 'この席はバイパスに切り替えられません（普通の許可つきで起動した席です）'
+          : 'この席には「' + target + '」がありません' };
+    }
+  }
+  return { ok: false, mode: permOf(await captureScreen(name)), error: '切り替えられませんでした' };
+}
+
+// 押してから画面を読むまでの待ち。短いと1つ前の字を読んでしまう
+const PERM_STEP_MS = 220;
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function lastMeaningfulLine(text) {
   const lines = text.split('\n').map((l) => l.replace(/\s+$/, ''));
@@ -1713,6 +1795,32 @@ const server = http.createServer(async (req, res) => {
       console.log(`pause ${name} ${on ? 'on' : 'off'}${w.ok ? '' : ' (席に書けず・写しだけ)'}`);
       forgetScreen(name);   // すぐ見に行くので撮り置きは捨てる
       return json(res, 200, { ok: true });
+    }
+
+    // 許可のしかた（バイパスかどうか）を切り替える。
+    // ⚠️ ここは**唯一 tmux の中へキーを送る「設定」の口**。送るのは shift+tab だけで、
+    //    文字は1つも入らない（打ちかけの文が汚れない）。
+    // ⚠️ 返事を待って止まっている席では受けない。箱（許可ダイアログ・選択肢）が
+    //    出ているあいだの shift+tab がどう読まれるかは、その箱しだいで決まる。
+    //    間違って選んでしまうと取り消せないので、先に答えてもらう（A層 P0）。
+    if (p === '/api/perm' && req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name || '');
+      const mode = String(body.mode || '');
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      if (PERM_MODES.indexOf(mode) < 0) return json(res, 400, { error: 'bad mode' });
+      const last = lastSeat.get(name);
+      if (last && last.status === 'waiting') {
+        return json(res, 409, { error: 'いま返事を待っています。先に答えてから変えてください' });
+      }
+      console.log(`perm ${name} -> ${mode}`);
+      forgetScreen(name);     // 押す前の撮り置きは捨てる（1つ前の字で判断しない）
+      const r = await setPermMode(name, mode);
+      forgetScreen(name);     // 押したあとも捨てる。次の巡回は撮り直す
+      // 写しにも今すぐ書く＝次の巡回（1.5秒後）を待たずに札の印が変わる
+      if (last && r.mode) last.perm = r.mode;
+      if (!r.ok) return json(res, 409, { error: r.error, mode: r.mode });
+      return json(res, 200, { ok: true, mode: r.mode });
     }
 
     // 席に名札を付ける／外す。tmux の席の名前（work1）は変えない。

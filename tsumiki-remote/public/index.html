@@ -232,6 +232,17 @@
   .tab .kind.m-opus,.tab .kind.m-fable,.tab .kind.m-sonnet,.tab .kind.m-haiku{
     background:var(--mbg);color:var(--mfg);
   }
+  /* 許可のしかたの印。**いつもと違うときだけ**出す（→ permChip）。
+     このアプリが作る席はぜんぶバイパスで始まる＝それが「いつも」なので、
+     全部の札に「バイパス」と書いても読み飛ばす字が増えるだけ。
+     出るのは自分で切り替えたときだけなので、出ていること自体が知らせになる。
+     色は状態の色を借りる＝計画だけ（書き換えない）は青、それ以外は黄 */
+  .tab .perm{
+    font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;flex:0 0 auto;
+    display:inline-block;background:#2a2113;color:var(--wait);
+  }
+  .tab .perm.plan{background:#131c25;color:var(--pause)}
+
   /* ＋とドット絵の2段を、札の真ん中に置く。
      line-height:1 が要点＝文字の標準の行間（1.5）のままだと ＋ の下に見えない
      余白がぶら下がり、2段の塊が上に寄って見える（真ん中に見えない） */
@@ -446,6 +457,14 @@
     background:var(--mbg,#13301f);color:var(--mfg,#4ade80);
   }
   #dest .dm[hidden]{display:none}
+  /* 送り先の行にも同じ印。打っているあいだ、ずっと目に入るのはこの行だけなので、
+     いつもと違う許可のしかたのまま送ってしまうのをここで止める */
+  #dest .dp{
+    flex:0 0 auto;font-size:9px;letter-spacing:.04em;padding:1px 5px;border-radius:5px;
+    background:#2a2113;color:var(--wait);
+  }
+  #dest .dp.plan{background:#131c25;color:var(--pause)}
+  #dest .dp[hidden]{display:none}
 
   #keys{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
   #keys::-webkit-scrollbar{display:none}
@@ -948,7 +967,7 @@
 <main><pre id="out">セッションを選んでください。</pre></main>
 
 <footer>
-  <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span></div>
+  <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span><span class="dp" hidden></span></div>
   <div id="keys">
     <button data-key="Escape">esc</button>
     <button id="khold">hold</button>
@@ -1624,6 +1643,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     dest: document.getElementById('dest'),
     destName: document.querySelector('#dest .dn'),
     destModel: document.querySelector('#dest .dm'),
+    destPerm: document.querySelector('#dest .dp'),
     gate: document.getElementById('gate'),
     tokenInput: document.getElementById('tokenInput'),
     tokenSave: document.getElementById('tokenSave'),
@@ -2220,6 +2240,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       // （「Claude」と「Opus」を並べない＝札が狭いのと、Claude であることは
       //   もう場所で分かっているため）
       var chip = modelChip(s);
+      // 許可のしかたが「いつもと違う」ときだけ、その印も並べる
+      var pchip = permChip(s);
       // 球と「題名＋状態を包んだ1枚」の2つを並べる。.n と .meta を直接
       // 横に並べない（題名は2〜3行に折り返すので、並べると状態の行が動く）
       b.innerHTML = (orb ? '<canvas class="orb" data-orb="' + orb + '"></canvas>' : '') +
@@ -2230,6 +2252,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
                       '<span class="kind ' + s.kind + (chip ? ' ' + chip.cls : '') + '">' +
                         (chip ? chip.label : KIND[s.kind]) +
                       '</span>' +
+                      (pchip ? '<span class="perm ' + pchip.cls + '">' + escapeHtml(pchip.label) + '</span>' : '') +
                     '</div>' +
                     (orb ? '</div>' : '');
       // 1回目＝切り替え、選ばれている札をもう一度＝その席のメニュー。
@@ -2272,6 +2295,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       el.destModel.textContent = curChip ? curChip.label : '';
       el.destModel.className = 'dm' + (curChip ? ' ' + curChip.cls : '');
       el.destModel.hidden = !curChip;
+      // 許可のしかたがいつもと違うなら、その印もここに出す。
+      // 打っているあいだ目に入るのはこの行だけなので、「計画だけのまま指示を
+      // 送って、書き換わらなくて悩む」をここで止める
+      var curPerm = permChip(cur);
+      el.destPerm.textContent = curPerm ? curPerm.label : '';
+      el.destPerm.className = 'dp' + (curPerm ? ' ' + curPerm.cls : '');
+      el.destPerm.hidden = !curPerm;
     }
     // 札を作り直したので球も敷き直す（canvas は作り直しで白紙に戻る）
     syncOrbs();
@@ -2327,6 +2357,39 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (!s || s.kind !== 'claude') return null;
     var c = MODEL_CHIP[s.model];
     return (c && typeof c.label === 'string') ? c : null;
+  }
+
+  // ---------------------------------------------- 許可のしかた（バイパスかどうか）
+  //
+  // Claude Code の shift+tab で順ぐりに変わる段。サーバーが画面の1行を読んで
+  // s.perm に入れてくれる（→ server.js の permOf）。
+  // このアプリが作る席はぜんぶ「バイパス」で始まる＝それが**いつも**の状態。
+  //
+  // ⚠️ 席によって選べる段が違う。素の `claude` で起動した席（このアプリの外で
+  //    作った席）は輪にバイパスが入っていないので切り替えられない。押したときに
+  //    サーバーが「切り替えられません」と返してくるので、そのまま出す。
+  var PERM = [
+    { key: 'bypass', label: 'バイパス', name: 'バイパス（聞かずに実行）',
+      sub: 'いつもの状態。許可を求めて止まりません' },
+    { key: 'auto',   label: 'おまかせ', name: 'おまかせ',
+      sub: 'Claude Code のふつうの設定。危ないところだけ聞いてきます' },
+    { key: 'accept', label: '編集だけ自動', name: '編集だけ自動',
+      sub: 'ファイルの書き換えは黙ってやり、コマンドは聞いてきます' },
+    { key: 'manual', label: '毎回きく', name: '毎回きく',
+      sub: '何をするにも確認します。出先だと答えるのが大変です' },
+    { key: 'plan',   label: '計画だけ', name: '計画だけ（書き換えない）',
+      sub: '調べて案を出すところまで。ファイルは変えません' }
+  ];
+  var PERM_BY = {};
+  PERM.forEach(function (m) { PERM_BY[m.key] = m; });
+
+  // 札や送り先の行に出す印。**バイパスのときは何も返さない**＝
+  // いつもと違うときだけ印が出る。読めていない席（起動の途中・シェル）も出さない
+  function permChip(s) {
+    if (!s || s.kind !== 'claude') return null;
+    var m = PERM_BY[s.perm];
+    if (!m || m.key === 'bypass') return null;
+    return { label: m.label, cls: m.key === 'plan' ? 'plan' : '' };
   }
 
   // 席ができたあとからモデルを見分ける手がかりは画面の中にしか無いので、
@@ -4046,12 +4109,63 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     sheetItem('名前を変える', s.label ? 'いま「' + s.label + '」' : '自動（Claude が書いた題名）',
       function () { renameMenu(s.name); }, { icon: 'pencil', iconCls: 'edit' });
 
+    // 許可のしかた（バイパスかどうか）。Claude の席のときだけ出す。
+    // シェルの席には無い話なので、項目そのものを置かない
+    if (s.kind === 'claude') {
+      var pm = PERM_BY[s.perm];
+      sheetItem('許可のしかた', pm ? 'いま「' + pm.label + '」' : 'いまの状態が読めていません',
+        function () { permMenu(s.name); }, { icon: 'shield', iconCls: 'edit' });
+    }
+
     // 押したらすぐ終わる。確認シートは挟まない（ここに来るまでに
     //「札をタップ→もう一度タップ」を踏んでいて、題名も目の前に出ている＝
     // 間違った席を畳む余地が小さい。毎回2枚目を出すほうが邪魔）
     sheetItem('片付ける（終わらせる）',
       (s.status === 'busy' ? '⚠️ いま作業中です・' : '') + '押すとすぐ終わります（取り消せません）',
       function () { closeSheet(); doKill(s.name); }, { icon: 'power', iconCls: 'stop' });
+  }
+
+  // 許可のしかたを選ぶ。押すと Mac 側で shift+tab を必要な回数だけ押してくれる
+  // （→ server.js の setPermMode）。文字は1つも入らないので、書きかけの指示は汚れない。
+  //
+  // ⚠️ 返事を待って止まっている席では変えられない（サーバーが断る）。
+  //    箱が出ているあいだの shift+tab がどう読まれるかは箱しだいで、
+  //    間違って選んでしまうと取り消せないため。先に答えてから変える。
+  function permMenu(name) {
+    var s = null;
+    sessions.forEach(function (x) { if (x.name === name) s = x; });
+    if (!s) return;
+    openSheet('許可のしかた');
+
+    var head = document.createElement('div');
+    head.className = 'sheethead';
+    var pm = PERM_BY[s.perm];
+    head.textContent = name + ' が、どこまで自分で決めてよいか。'
+      + (pm ? 'いまは「' + pm.label + '」です。' : 'いまの状態は読めていません。')
+      + (s.status === 'waiting' ? '\n⚠️ いま返事を待っています。先に答えてからでないと変えられません。' : '');
+    head.style.whiteSpace = 'pre-line';
+    sheetBody.appendChild(head);
+
+    PERM.forEach(function (m) {
+      var now = m.key === s.perm;
+      sheetItem(m.name, now ? 'いまこれ・' + m.sub : m.sub,
+        function () { closeSheet(); if (!now) doPerm(name, m); },
+        { on: now, wrap: true, icon: now ? 'check' : undefined,
+          iconCls: now ? 'ok' : undefined });
+    });
+  }
+
+  function doPerm(name, m) {
+    toast(m.label + ' に切り替えています…');
+    api('/api/perm', { method: 'POST', body: JSON.stringify({ name: name, mode: m.key }) })
+      .then(function () {
+        toast(name + ' を「' + m.label + '」にしました');
+        tick(true);
+      })
+      .catch(function (e) {
+        toast('切り替えられません: ' + e.message, 3600);
+        tick(true);
+      });
   }
 
   // 席に自分の名前を付ける。
@@ -4228,6 +4342,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 電源＝動いているものを止める
     power: '<path d="M12 3.4v8"/>'
       + '<path d="M17.4 6.5a7.5 7.5 0 1 1-10.8 0"/>',
+    // 盾＝どこまで自分で決めさせるか（許可のしかた）
+    shield: '<path d="M12 3.2 19.4 6v6c0 4.2-3 7.4-7.4 8.8C7.6 19.4 4.6 16.2 4.6 12V6z"/>',
     // 月＝画面を消す（眠らせる）
     moon: '<path d="M20.4 14.8A8.5 8.5 0 0 1 9.2 3.6 8.5 8.5 0 1 0 20.4 14.8z"/>',
     // ✓＝これで決まり
