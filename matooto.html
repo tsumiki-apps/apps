@@ -19,20 +19,34 @@
     --line:#292e37; --line-2:#363c47;
     --ink:#eef1f6; --ink-mid:#98a1ae; --ink-soft:#69717e;
     --led:#38e0ff; --led-2:#7ef0ff; --led-dim:#1c5f6e;
+
+    /* 盤そのものの色。テーマ色ではなく「もののいろ」なので、明暗で切り替えない */
+    --board-rim:#101013; --board-rim-2:#0c0c0f;
+    --board-bed-dark:#17161a; --board-bed-light:#e4ddc9;
+    --board-red:#c8323c; --board-green:#2f8f5b;
+    --board-wire:#8e8574; --board-num:#9aa2ae;
+    /* 表示窓のガラスと、背景の落ち込み */
+    --disp-top:#0d1014; --disp-bottom:#080a0d;
+    --disp-scan:#0e1015; --disp-scan-2:#0a0c10;
+    --bg-glow:#16191f;
+    /* あかり（演出）。--lamp-line は世代ごとに下で差し替える */
+    --lamp-bull:#ffe07a; --lamp-bull-2:#fff2b0;
+    --lamp-line:#1e3a44; --lamp-alert:#ff3b4d;
+
     --col:1080px;
     --brand-font:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
     --sans:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif;
     --disp:"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN",sans-serif;
   }
   /* DARTSLIVE2 ＝ 盤面がカラフルにチカチカ光る世代。あかりを電球色に寄せる */
-  [data-mode="dl2"]{ --led:#ffc23d; --led-2:#ffe08a; --led-dim:#6b4d13; }
+  [data-mode="dl2"]{ --led:#ffc23d; --led-2:#ffe08a; --led-dim:#6b4d13; --lamp-line:#3a4152; }
   /* DARTSLIVE3 ＝ フルフラットのガラス。あかりは青白く、つやを出す */
   [data-mode="dl3"]{ --led:#38e0ff; --led-2:#a8f2ff; --led-dim:#16505d; }
 
   *{box-sizing:border-box;}
   html,body{margin:0; padding:0;}
   body{
-    background:radial-gradient(120% 70% at 50% -10%, #16191f 0%, var(--bg) 62%) fixed, var(--bg);
+    background:radial-gradient(120% 70% at 50% -10%, var(--bg-glow) 0%, var(--bg) 62%) fixed, var(--bg);
     color:var(--ink); font-family:var(--sans); line-height:1.6;
     -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
     min-height:100dvh; -webkit-tap-highlight-color:transparent;
@@ -93,19 +107,19 @@
   .board.boom{ box-shadow:0 0 0 1px var(--led), 0 0 44px -4px var(--led), 0 18px 40px -22px #000; }
   .board svg{width:100%; height:100%;}
   .seg-p{transition:fill .07s linear; cursor:pointer;}
-  .wire{stroke:#8e8574; stroke-width:.5; fill:none; opacity:.55; pointer-events:none;}
+  .wire{stroke:var(--board-wire); stroke-width:.5; fill:none; opacity:.55; pointer-events:none;}
   .board text{pointer-events:none; user-select:none;}
 
   /* --- 表示窓 --- */
   .display{
     width:100%; border-radius:13px; padding:14px; min-height:70px;
-    background:linear-gradient(180deg,#0d1014,#080a0d);
+    background:linear-gradient(180deg,var(--disp-top),var(--disp-bottom));
     border:1px solid var(--line-2); position:relative; overflow:hidden;
     display:grid; place-items:center;
   }
   .display::after{content:""; position:absolute; inset:0; pointer-events:none;
     background:linear-gradient(115deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,0) 38%);}
-  [data-mode="dl2"] .display{background:repeating-linear-gradient(180deg,#0e1015 0 2px,#0a0c10 2px 4px);}
+  [data-mode="dl2"] .display{background:repeating-linear-gradient(180deg,var(--disp-scan) 0 2px,var(--disp-scan-2) 2px 4px);}
   .display .en{
     font-family:var(--disp); font-weight:800; font-size:clamp(1.35rem,6.6vw,2.1rem);
     letter-spacing:.07em; line-height:1.15; color:var(--led); text-align:center;
@@ -619,23 +633,27 @@ function ring(r0, r1, a0, a1){
          'L'+p2[0].toFixed(2)+' '+p2[1].toFixed(2)+
          'A'+r0+' '+r0+' 0 0 0 '+p3[0].toFixed(2)+' '+p3[1].toFixed(2)+'Z';
 }
+/* 色は CSS の変数から読む。data-mode の差し替えが効くように body から読む。 */
+function V(name){
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
 function buildBoard(){
   var svg = document.getElementById('boardSvg');
-  var parts = ['<circle class="seg-p" data-ring="out" data-idx="0" cx="110" cy="110" r="100" fill="#101013"/>',
-               '<circle class="seg-p" data-ring="out" data-idx="0" cx="110" cy="110" r="93.5" fill="#0c0c0f"/>'];
+  var parts = ['<circle class="seg-p" data-ring="out" data-idx="0" cx="110" cy="110" r="100" fill="'+V('--board-rim')+'"/>',
+               '<circle class="seg-p" data-ring="out" data-idx="0" cx="110" cy="110" r="93.5" fill="'+V('--board-rim-2')+'"/>'];
   var i, a0, a1, dark, bed, rgc, RAD = Math.PI/180;
   for(i=0;i<20;i++){
     a0 = (-90 - 9 + i*18) * RAD; a1 = a0 + 18*RAD;
     dark = (i % 2 === 0);
-    bed = dark ? '#17161a' : '#e4ddc9';
-    rgc = dark ? '#c8323c' : '#2f8f5b';
+    bed = dark ? V('--board-bed-dark') : V('--board-bed-light');
+    rgc = dark ? V('--board-red') : V('--board-green');
     parts.push('<path class="seg-p" data-ring="s1" data-idx="'+i+'" fill="'+bed+'" d="'+ring(RR.bO, RR.tI, a0, a1)+'"/>');
     parts.push('<path class="seg-p" data-ring="t"  data-idx="'+i+'" fill="'+rgc+'" d="'+ring(RR.tI, RR.tO, a0, a1)+'"/>');
     parts.push('<path class="seg-p" data-ring="s2" data-idx="'+i+'" fill="'+bed+'" d="'+ring(RR.tO, RR.dI, a0, a1)+'"/>');
     parts.push('<path class="seg-p" data-ring="d"  data-idx="'+i+'" fill="'+rgc+'" d="'+ring(RR.dI, RR.dO, a0, a1)+'"/>');
   }
-  parts.push('<circle class="seg-p" data-ring="ob" data-idx="0" cx="110" cy="110" r="'+RR.bO+'" fill="#2f8f5b"/>');
-  parts.push('<circle class="seg-p" data-ring="ib" data-idx="0" cx="110" cy="110" r="'+RR.bI+'" fill="#c8323c"/>');
+  parts.push('<circle class="seg-p" data-ring="ob" data-idx="0" cx="110" cy="110" r="'+RR.bO+'" fill="'+V('--board-green')+'"/>');
+  parts.push('<circle class="seg-p" data-ring="ib" data-idx="0" cx="110" cy="110" r="'+RR.bI+'" fill="'+V('--board-red')+'"/>');
   for(i=0;i<20;i++){
     a0 = (-90 - 9 + i*18) * RAD;
     var q0 = pol(RR.bO, a0), q1 = pol(RR.dO, a0);
@@ -646,7 +664,7 @@ function buildBoard(){
   });
   for(i=0;i<20;i++){
     var ac = (-90 + i*18) * RAD, p = pol(RR.num, ac);
-    parts.push('<text x="'+p[0].toFixed(2)+'" y="'+p[1].toFixed(2)+'" fill="#9aa2ae" font-size="9" font-weight="700" font-family="Helvetica Neue,Arial,sans-serif" text-anchor="middle" dominant-baseline="central">'+NUMS[i]+'</text>');
+    parts.push('<text x="'+p[0].toFixed(2)+'" y="'+p[1].toFixed(2)+'" fill="'+V('--board-num')+'" font-size="9" font-weight="700" font-family="Helvetica Neue,Arial,sans-serif" text-anchor="middle" dominant-baseline="central">'+NUMS[i]+'</text>');
   }
   svg.innerHTML = parts.join('');
   var list = svg.querySelectorAll('.seg-p');
@@ -660,8 +678,8 @@ function lightable(){ return segs.filter(function(s){ return s.ring !== 'out'; }
 
 function hue(i){
   return (mode === 'dl2')
-    ? 'hsl(' + ((i*41 + 20) % 360) + ' 92% 60%)'          /* 2＝虹色にチカチカ */
-    : 'hsl(' + (188 + (i*9) % 34) + ' 96% 66%)';          /* 3＝青白くすっと光る */
+    ? 'hsl(' + ((i*41 + 20) % 360) + ' 92% 60%)'   /* 2＝虹色にチカチカ・色ok: 色相を回す演出。1色に固定できない */
+    : 'hsl(' + (188 + (i*9) % 34) + ' 96% 66%)';   /* 3＝青白くすっと光る・色ok: 同上 */
 }
 function lite(s, color, ms, delay){
   var timers = lite.timers || (lite.timers = []);
@@ -708,20 +726,20 @@ function fx(name, at){
     boom(280);
     break;
   case 'bull':
-    bullSegs().forEach(function(x){ lite(x, '#ffe07a', 700); });
+    bullSegs().forEach(function(x){ lite(x, V('--lamp-bull'), 700); });
     pick('t').forEach(function(x, k){ lite(x, hue(k), 200, 120 + k*16); });
     pick('d').forEach(function(x, k){ lite(x, hue(k+7), 200, 300 + k*16); });
     boom(600);
     break;
   case 'dbull':
-    bullSegs().forEach(function(x){ lite(x, '#fff2b0', 1000); });
+    bullSegs().forEach(function(x){ lite(x, V('--lamp-bull-2'), 1000); });
     for(i=0;i<3;i++){
       (function(j){ L.forEach(function(x, k){ lite(x, hue(k + j*5), 130, 90 + j*220); }); })(i);
     }
     boom(900);
     break;
   case 'hat':
-    for(i=0;i<3;i++){ (function(j){ bullSegs().forEach(function(x){ lite(x, '#ffe07a', 110, j*130); }); })(i); }
+    for(i=0;i<3;i++){ (function(j){ bullSegs().forEach(function(x){ lite(x, V('--lamp-bull'), 110, j*130); }); })(i); }
     L.forEach(function(x, k){ lite(x, hue(k), 220, 430 + (k%20)*12); });
     boom(900);
     break;
@@ -737,7 +755,7 @@ function fx(name, at){
     for(i=0;i<4;i++){
       (function(j){ L.forEach(function(x, k){ lite(x, hue(k + j*9), 140, 1220 + j*190); }); })(i);
     }
-    bullSegs().forEach(function(x){ lite(x, '#fff2b0', 900, 1220); });
+    bullSegs().forEach(function(x){ lite(x, V('--lamp-bull-2'), 900, 1220); });
     boom(2400);
     break;
   case 'ring':
@@ -779,11 +797,11 @@ function fx(name, at){
     });
     break;
   case 'dim':
-    L.forEach(function(x, k){ lite(x, (mode === 'dl2' ? '#3a4152' : '#1e3a44'), 340, (k % 20) * 6); });
+    L.forEach(function(x, k){ lite(x, V('--lamp-line'), 340, (k % 20) * 6); });
     break;
   case 'bust':
   case 'red':
-    for(i=0;i<3;i++){ (function(j){ L.forEach(function(x){ lite(x, '#ff3b4d', 120, j*160); }); })(i); }
+    for(i=0;i<3;i++){ (function(j){ L.forEach(function(x){ lite(x, V('--lamp-alert'), 120, j*160); }); })(i); }
     boom(560);
     break;
   }

@@ -125,7 +125,7 @@ MEASURE_JS = r"""
                vp: vp ? (vp.getAttribute('content') || '') : null,
                seen: {el: 0, tap: 0, input: 0, table: 0},
                dom: {tap: 0, input: 0, table: 0},
-               inlink: 0,
+               inlink: 0, labelled: 0,
                docScrollWidth: document.documentElement.scrollWidth};
 
   const cs = (e) => getComputedStyle(e);
@@ -211,6 +211,25 @@ MEASURE_JS = r"""
         if (prose >= 8) { out.inlink++; continue; }
       }
     }
+    // ラベルと入力欄は「どちらか一方が44pxあれば指は届く」。片方だけ見て落とさない。
+    // (a) ラベルに包まれた入力欄 … 当たり判定は包んでいる label 全面。
+    //     実測 2026-09-09: tn.css の .tn-choice は 343×77 で、中の input は 22×22。
+    // (b) 見出しの label（for= で離れた入力を指す）… 本命の当たり判定は入力欄のほう。
+    //     実測 2026-09-09: tn.css の .tn-field の label は 313×19.2 だが、
+    //     指す input は44px以上ある。
+    if (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') {
+      const wrap = (el.labels ? [...el.labels] : []).find(l => l.contains(el));
+      if (wrap) {
+        const lr = wrap.getBoundingClientRect();
+        if (lr.width >= 44 && lr.height >= 44) { out.labelled++; continue; }
+      }
+    } else if (el.tagName === 'LABEL' && el.htmlFor) {
+      const ctl = document.getElementById(el.htmlFor);
+      if (ctl && !el.contains(ctl) && vis(ctl)) {
+        const cr = ctl.getBoundingClientRect();
+        if (cr.width >= 44 && cr.height >= 44) { out.labelled++; continue; }
+      }
+    }
     out.seen.tap++;
     const r = el.getBoundingClientRect();
     if (r.width < 44 || r.height < 44) {
@@ -232,16 +251,47 @@ MEASURE_JS = r"""
   //    ※ 横だけ測ると見逃す＝2026-08-31 の実例（札が2pxだけはみ出して切れていた）
   //    ※ 中身が飾り（バー・図形）の overflow:hidden はわざとなので数えない
   //    ※ text-overflow:ellipsis の「…」もわざとなので数えない
+  //    ※ scrollHeight/scrollWidth は position:absolute の飾り（波紋・光・図形）も数えてしまう。
+  //      それは overflow:hidden でわざと切っているものなので、文字は1文字も切れていない。
+  //      実測 2026-09-09: tn.css の .tn-row::before（波紋・120%の円・z-index:-1）だけで
+  //      枠 329×50 に対して中身 362×222 になり、全8幅で「切れ」と誤って出ていた。
+  //      そこで「流れの中にある中身」だけの張り出しで判定する（浮かせたものは外す）。
+  const rg = document.createRange();
+  const flowExtent = (el) => {
+    const r = el.getBoundingClientRect(), st = cs(el);
+    const oy = r.top + (parseFloat(st.borderTopWidth) || 0);
+    const ox = r.left + (parseFloat(st.borderLeftWidth) || 0);
+    let h = 0, w = 0;
+    for (const n of el.childNodes) {
+      let rr = null;
+      if (n.nodeType === 3) {
+        if (!n.textContent.trim()) continue;
+        rg.selectNodeContents(n); rr = rg.getBoundingClientRect();
+      } else if (n.nodeType === 1) {
+        const ps = cs(n).position;
+        if (ps === 'absolute' || ps === 'fixed') continue;   // 浮かせた飾りは外す
+        rr = n.getBoundingClientRect();
+      }
+      if (!rr || (rr.width === 0 && rr.height === 0)) continue;
+      h = Math.max(h, rr.bottom - oy);
+      w = Math.max(w, rr.right - ox);
+    }
+    return {h: Math.round(h), w: Math.round(w)};
+  };
   for (const el of document.querySelectorAll('body *')) {
     if (!vis(el)) continue;
     if ((el.innerText || '').trim().length === 0) continue;
     const s = cs(el);
-    if (el.scrollHeight > el.clientHeight + 1 && (s.overflowY === 'hidden' || s.overflowY === 'clip')) {
-      out.clip.push({sel: sel(el), need: el.scrollHeight, have: el.clientHeight, axis: 'Y'});
+    const clipY = (s.overflowY === 'hidden' || s.overflowY === 'clip');
+    const clipX = (s.overflowX === 'hidden' || s.overflowX === 'clip') && s.textOverflow !== 'ellipsis';
+    if (!clipY && !clipX) continue;
+    if (el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1) continue;
+    const fe = flowExtent(el);
+    if (clipY && el.scrollHeight > el.clientHeight + 1 && fe.h > el.clientHeight + 1) {
+      out.clip.push({sel: sel(el), need: fe.h, have: el.clientHeight, axis: 'Y'});
     }
-    if (el.scrollWidth > el.clientWidth + 1 && (s.overflowX === 'hidden' || s.overflowX === 'clip')
-        && s.textOverflow !== 'ellipsis') {
-      out.clip.push({sel: sel(el), need: el.scrollWidth, have: el.clientWidth, axis: 'X'});
+    if (clipX && el.scrollWidth > el.clientWidth + 1 && fe.w > el.clientWidth + 1) {
+      out.clip.push({sel: sel(el), need: fe.w, have: el.clientWidth, axis: 'X'});
     }
   }
 
@@ -715,9 +765,13 @@ def report(note, results, css, limit, blocked, anc, blocked_kind, invalid, ws_le
         print(f"  調べた件数（{ref['_w']}px）: 見えている要素 {s['el']} / "
               f"押せるもの {s['tap']}（DOMには {d['tap']}） / "
               f"入力欄 {s['input']}（DOMには {d['input']}） / 表 {s['table']}（DOMには {d['table']}）")
-        if d["tap"] > s["tap"] + ref.get("inlink", 0):
-            print(f"    ※ 差の {d['tap'] - s['tap'] - ref.get('inlink', 0)}件は、いま画面に見えていません"
+        excluded = ref.get("inlink", 0) + ref.get("labelled", 0)
+        if d["tap"] > s["tap"] + excluded:
+            print(f"    ※ 差の {d['tap'] - s['tap'] - excluded}件は、いま画面に見えていません"
                   "（閉じているシート・ダイアログの中身は測れていません）")
+        if ref.get("labelled"):
+            print(f"    ※ ラベルと入力欄の組 {ref['labelled']}件は、相方が44px以上あるので"
+                  f" 44pxの対象から外しています（包むラベル／for= の見出しラベル）")
         if ref.get("inlink"):
             print(f"    ※ 本文中のインラインリンク {ref['inlink']}件は 44px の対象から外しています"
                   "（親から、その中のリンクの字を引いた「地の文」が8文字以上あるもの）")

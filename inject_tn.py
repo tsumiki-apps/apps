@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
-"""単一HTMLアプリに「つみき用ネイティブ部品CSS」(tn.css) を注入する。
+"""単一HTMLアプリに「つみき用ネイティブ部品」(tn.css + tn.js) を注入する。
 
 何をするか:
-  tn.css の中身を <style> ごと </head> の直前に差し込む。マーカーで囲むので、
-  もう一度走らせると**古いブロックを最新の tn.css で置き換える**（何度やっても同じ結果）。
-  クラス名はすべて tn- 始まりなので、アプリが元から持っているCSSとぶつからない。
+  tn.css を <style>、tn.js を <script> にして、ひとつのマーカーで囲み
+  </head> の直前に差し込む。もう一度走らせると**古いブロックを最新版で置き換える**
+  （何度やっても同じ結果）。
+  クラス名はすべて tn- 始まり、JSは window.TN の1つだけなので、
+  アプリが元から持っているCSS・JSとぶつからない。
+
+  tn.js が入るもの:
+    TN.rnd(i,k)      決定論の擬似乱数（Math.random() の置き換え）
+    TN.reveal(id,fn) 見えたら再生・押したらもう一度（タイマーの掃除つき）
+  <script> は関数を定義するだけで、読み込み時にDOMを触らない。だから <head> でよい。
 
 使い方:
   python3 inject_tn.py <HTML> [<HTML> ...]   注入する／最新版に更新する
@@ -23,6 +30,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CSS_PATH = HERE / "tn.css"
+JS_PATH = HERE / "tn.js"
 
 OPEN_RE = re.compile(r"<!-- tsumiki-native-parts(?: [^>]*)? -->")
 BLOCK_RE = re.compile(
@@ -33,20 +41,26 @@ HEAD_RE = re.compile(r"</head>", re.IGNORECASE)
 BODY_RE = re.compile(r"</body>", re.IGNORECASE)
 
 
-def load_css():
+def load_parts():
+    """tn.css と tn.js を読む。版の8桁は2つを合わせた内容から作る。"""
     if not CSS_PATH.exists():
-        sys.exit(f"! {CSS_PATH} が見つかりません。tn.css と同じ場所に置いてください。")
+        sys.exit(f"! {CSS_PATH} が見つかりません。inject_tn.py と同じ場所に置いてください。")
     css = CSS_PATH.read_text(encoding="utf-8").strip()
-    stamp = hashlib.sha256(css.encode("utf-8")).hexdigest()[:8]
-    return css, stamp
+    # tn.js は無くても動く（CSSだけ注入する）。あれば一緒に入れる。
+    js = JS_PATH.read_text(encoding="utf-8").strip() if JS_PATH.exists() else ""
+    stamp = hashlib.sha256((css + "\n\x00\n" + js).encode("utf-8")).hexdigest()[:8]
+    return css, js, stamp
 
 
-def make_block(css, stamp):
-    return (
+def make_block(css, js, stamp):
+    out = (
         f"<!-- tsumiki-native-parts sha={stamp} -->\n"
         "<style>\n" + css + "\n</style>\n"
-        "<!-- /tsumiki-native-parts -->\n"
     )
+    if js:
+        out += "<script>\n" + js + "\n</script>\n"
+    out += "<!-- /tsumiki-native-parts -->\n"
+    return out
 
 
 def current_stamp(html):
@@ -58,9 +72,9 @@ def current_stamp(html):
     return got.group(1) if got else "unknown"
 
 
-def inject(path, css, stamp):
+def inject(path, css, js, stamp):
     html = Path(path).read_text(encoding="utf-8")
-    block = make_block(css, stamp)
+    block = make_block(css, js, stamp)
     now = current_stamp(html)
 
     if now is not None:
@@ -113,11 +127,11 @@ def check(paths, stamp):
             print(f"△ {path}: 古い版（{got}）→ python3 inject_tn.py {path} で更新")
     if found == 0:
         print("- どのファイルにも入っていません")
-    print(f"\n手元の tn.css は sha={stamp}")
+    print(f"\n手元の tn.css + tn.js は sha={stamp}")
 
 
 def main():
-    css, stamp = load_css()
+    css, js, stamp = load_parts()
     args = sys.argv[1:]
 
     if not args:
@@ -141,7 +155,7 @@ def main():
         if not Path(path).exists():
             print(f"! {path}: ファイルがありません")
             continue
-        inject(path, css, stamp)
+        inject(path, css, js, stamp)
 
 
 if __name__ == "__main__":
