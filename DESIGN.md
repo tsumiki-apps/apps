@@ -9,7 +9,7 @@ colors:
   surface-2: "#efece5"
   ink: "#1d1a15"
   ink-mid: "#5b554a"
-  ink-soft: "#8f8877"
+  ink-soft: "#666154"
   line: "#e2ded4"
   line-2: "#d8d3c7"
   accent: "#b06f26"
@@ -26,7 +26,7 @@ colors:
   dark-surface-2: "#2b2619"
   dark-ink: "#efe8da"
   dark-ink-mid: "#a89e8b"
-  dark-ink-soft: "#847c6c"
+  dark-ink-soft: "#9f988a"
   dark-line: "#36301f"
   dark-line-2: "#443d2b"
   dark-accent: "#d59a4d"
@@ -220,10 +220,16 @@ components:
 - **Surface**（`{colors.surface}`）— 紙の上に置いた、もう一枚。カードの地。
 - **Ink**（`{colors.ink}`）— 墨。すべての本文。**純黒 `#000000` は使わない。**
 - **Ink-mid / Ink-soft** — 薄墨。補助の文字と、日付や単位のような添え物。
-- **Line / Line-2** — 罫線。有彩色の罫線は引かない。
+  `ink-soft` はもとの `#8f8877` だと**どの地の上でも 4.5 に届かなかった**（2.75〜3.50）ので、
+  6つの地すべてで 4.8 以上になるところまで沈めた（現在 `{colors.ink-soft}`）。
+  ダーク側も同じ理由で `#847c6c` → `{colors.dark-ink-soft}`。
+  **これより薄い文字を新しく作らない。** 薄さは色ではなく、字の大きさと余白で出す。
+- **Line / Line-2** — 罫線。有彩色の罫線は引かない。**文字には使わない。**
 - **Accent**（`{colors.accent}`）— 黄土。判子ひとつ。
   **1画面にひとつの、いちばん大事な操作だけ**に使う。
-- **Accent-2**（`{colors.accent-2}`）— 濃い黄土。**塗りつぶしのボタンはこちら**（後述）。
+  **`accent` を文字色にしない。** どの地の上でも 4.5 に届かない（3.18〜4.04・実測）。
+  洗い色のチップやタグに文字を置くときは `{colors.accent-2}` を使う。
+- **Accent-2**（`{colors.accent-2}`）— 濃い黄土。**塗りつぶしのボタンと、色つきの文字はこちら**。
 - **Good / Warn**（`{colors.good}` / `{colors.warn}`）— 苔と弁柄。
   信号機の赤緑は使わない。和らげた色で「よい」「気をつけて」を出す。
   **洗い色の帯の上に置く文字は `{colors.good-ink}` / `{colors.warn-ink}`**（濃い側）。
@@ -329,6 +335,8 @@ motion:
 - **Do** 新しいアプリを作る前に `~/制作物/design_refs/*.design.md` を見る。
 - **Don't** 純白 `#ffffff` と純黒 `#000000` を地や文字に使う。
 - **Don't** `{colors.accent}` を1画面に2つ以上の主役として置く。
+- **Don't** `{colors.accent}` を文字色にする（どの地でも 4.5 未満）。色つきの文字は `{colors.accent-2}`。
+- **Don't** `{colors.ink-soft}` より薄い文字色を新しく作る。薄さは字の大きさと余白で出す。
 - **Don't** 塗りの上に `color:#fff` を直書きする。トークンで指定する。
 - **Don't** 欧文書体を本文やブランド書体に採用する。
 - **Don't** ブレイクポイントを 600 / 900 以外に増やす。

@@ -85,6 +85,29 @@ def to_px(v):
 
 BLOCK = re.compile(r"([^{}]+)\{([^{}]*)\}", re.S)
 
+# `.foo.on` `.foo:hover` のような状態つきセレクタから、素の `.foo` を作る
+STATE = re.compile(r"(?::hover|:focus|:active|:checked|:first-child|:last-child"
+                   r"|\.on|\.active|\.selected|\.current|\.open)+$")
+
+
+def base_color(sel, idx):
+    """文字色が同じブロックに無いとき、素の状態のブロックから受け継ぐ。
+
+    `.stepck.on{background:...}` のように、色は `.stepck{color:#fff}` の側にある
+    書き方が多い。ここを追わないと「塗りの上の白文字」を取りこぼす。
+    """
+    for one in sel.split(","):
+        one = one.strip().split("\n")[-1].strip()
+        if not one:
+            continue
+        last = one.split()[-1] if " " in one else one
+        for cand in (last, STATE.sub("", last)):
+            if cand and cand != last or cand == last:
+                got = idx.get(cand)
+                if got and got[2]:
+                    return got[2]
+    return None
+
 
 def css_blocks(src):
     """<style> の中身だけを見る。JSの中の { } を拾わないようにする。"""
@@ -146,29 +169,42 @@ def check_html(path, quiet=False):
             return v
         return None
 
-    # --- セレクタごとの font-size / font-weight の索引
+    # --- セレクタごとの font-size / font-weight / color の索引
     idx = {}
     for sel, body in blocks:
         fs = re.search(r"font-size:\s*([^;}]+)", body)
         fw = re.search(r"font-weight:\s*([^;}]+)", body)
+        fc = re.search(r"(?<!-)color:\s*(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8})", body)
         for one in sel.split(","):
             one = one.strip()
             if not one:
                 continue
-            cur = idx.setdefault(one, [None, None])
+            cur = idx.setdefault(one, [None, None, None])
             if fs:
                 cur[0] = fs.group(1).strip()
             if fw:
                 cur[1] = fw.group(1).strip()
+            if fc:
+                cur[2] = fc.group(1).strip()
 
     # --- 1. 塗りの上の文字のコントラスト
     for sel, body in blocks:
+        # 無効状態は WCAG 1.4.3 の対象外
+        if re.search(r":disabled|\[disabled\]|\.disabled\b|\.is-disabled\b", sel):
+            continue
         bg = re.search(r"background(?:-color)?:\s*(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8})", body)
         fg = re.search(r"(?<!-)color:\s*(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8})", body)
-        if not (bg and fg):
+        if not bg:
             continue
-        bgc, fgc = resolve(bg.group(1)), resolve(fg.group(1))
+        # 文字色が同じブロックに無いとき、素の状態（.foo.on → .foo）から受け継ぐ
+        fgraw = fg.group(1) if fg else base_color(sel, idx)
+        if not fgraw:
+            continue
+        bgc, fgc = resolve(bg.group(1)), resolve(fgraw)
         if not bgc or not fgc:
+            continue
+        # 同じ色＝そこに文字は無い（空のチェックボックス等）。見えないので数えない
+        if hex2rgb(bgc) == hex2rgb(fgc):
             continue
         r = contrast(fgc, bgc)
         if r is None:
