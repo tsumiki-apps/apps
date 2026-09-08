@@ -15,7 +15,7 @@ DESIGN.md（正本）の検査と、HTMLが正本のルールを守っている�
   1. DESIGN.md を `npx @google/design.md lint` にかける（ネットが無ければ飛ばす）
   2. 塗りの上の文字のコントラスト（WCAG の大きい文字の例外も見る）
   3. 純白 #ffffff / 純黒 #000000 を地や文字に使っていないか
-  4. ブレイクポイントが 600 / 900 の2本だけか
+  4. 区切り（@media）が増えすぎていないか ※参考。8幅の実測は check_widths.py
   5. 入力欄の font-size が 16px 以上か
 
 やらないこと:
@@ -237,19 +237,30 @@ def check_html(path, quiet=False):
         if name in ("--paper", "--bg", "--ink", "--card", "--surface", "--text"):
             found.append(("NG", path, "純白/純黒を地か文字に使っている: %s: %s" % (name, val)))
 
-    # --- 3. ブレイクポイント
+    # --- 3. ブレイクポイント（参考。NG にはしない）
+    #
+    # 「600 と 900 の2本だけ」は**新しく作るときの指針**であって、
+    # 既にある多段レイアウトを壊してまで揃えるものではない。
+    # 実測すると 768 / 760 / 1080 は意図的な段組みで使われていて、
+    # 大画面まで作り込んだアプリ（tsumijikan は 760/1080/1440/1920/2200）もある。
+    # 本当に見るべきは「8幅で崩れないか」で、それは check_widths.py の仕事。
+    # ここでは本数が増えすぎていないかだけを知らせる。
     bps = set()
     for w in re.findall(r"@media[^{]*?(?:max|min)-width:\s*(\d+)px", src):
         bps.add(int(w))
     odd = sorted(b for b in bps if b not in (600, 900, 599, 899, 601, 901))
-    if odd:
-        found.append(("NG", path,
-                      "ブレイクポイントが 600/900 以外にある: %s"
-                      % ", ".join("%dpx" % b for b in odd)))
+    if len(odd) >= 3:
+        found.append(("参考", path,
+                      "区切りが %d本ある: %s ／ 8幅で崩れないなら残してよい"
+                      "（確かめるなら python3 check_widths.py %s）"
+                      % (len(odd), ", ".join("%dpx" % b for b in odd),
+                         os.path.basename(path))))
 
     # --- 4. 入力欄の font-size
     for sel, body in blocks:
-        if not re.search(r"\b(input|textarea|select)\b", sel):
+        # 要素としての input / textarea / select だけを見る。
+        # `.select-bar` `.phone .input .box` のようなクラス名を拾わない。
+        if not re.search(r"(?<![.\w#-])(input|textarea|select)(?![\w-])", sel):
             continue
         fs = re.search(r"font-size:\s*([^;}]+)", body)
         if not fs:
@@ -290,12 +301,14 @@ def main():
     for p in targets:
         rel = os.path.basename(p)
         found = check_html(p, a.quiet)
+        hard = [f for f in found if f[0] == "NG"]
         if found:
-            ng_files.add(rel)
+            if hard:
+                ng_files.add(rel)
             print("\n  ● %s" % rel)
-            for _, _, msg in found:
-                print("      %s" % msg)
-            all_found.extend((rel, m) for _, _, m in found)
+            for kind, _, msg in found:
+                print("      %s%s" % ("" if kind == "NG" else "（参考）", msg))
+            all_found.extend((rel, m) for k, _, m in found if k == "NG")
         elif not a.quiet:
             print("  ok %s" % rel)
 
