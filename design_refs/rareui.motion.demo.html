@@ -1,0 +1,600 @@
+<!doctype html>
+<!-- Rare UI (https://rareui.com / github.com/swamimalode07/rare-ui, MIT) の考え方を
+     つみきの単一HTML・素のJSに移植した見本。2026-09-08 -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Rare UI 移植見本 — つみき</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F2EE; --card:#FBFAF7; --surface:#ECE9E3; --ink:#242321;
+  --sub:#77736B; --line:#D8D4CC; --ghost:#BEB9B0;
+  --accent:#b06f26; --accent-wash:#f0e4d1; --radius:20px;
+  --ok:#2f8f4e; --ng:#c2452c;
+  /* Rare UI から写した「持ち上がり」の影：髪の毛線 + やわらかい影 + 上端のハイライト */
+  --lift:0 .5px 1px rgba(0,0,0,.05), 0 1px 3px rgba(0,0,0,.08), inset 0 .5px 0 rgba(255,255,255,.9);
+  --brand-font:'Zen Maru Gothic',-apple-system,BlinkMacSystemFont,"Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+  --ease:cubic-bezier(.32,.72,0,1);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#1B1A18; --card:#242321; --surface:#2C2A27; --ink:#F0EDE7;
+    --sub:#9B968C; --line:#3A3733; --ghost:#57534C;
+    --accent:#d59a4d; --accent-wash:#362a19;
+    --lift:0 .5px 1px rgba(0,0,0,.35), 0 1.5px 4px rgba(0,0,0,.25), inset 0 .5px 0 rgba(255,255,255,.07);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font:15px/1.7 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  min-height:100dvh; padding:24px 16px 64px;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-family:var(--brand-font);font-size:22px;margin:0 0 4px}
+.lead{color:var(--sub);font-size:13px;margin:0 0 28px}
+section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px;margin:0 0 16px}
+h2{font-family:var(--brand-font);font-size:16px;margin:0 0 2px}
+.note{color:var(--sub);font-size:12.5px;margin:0 0 16px}
+.stage{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:18px 0 4px}
+.src{color:var(--ghost);font-size:11px;margin:14px 0 0;border-top:1px dashed var(--line);padding-top:10px}
+button{font:inherit;color:inherit}
+button.chip{cursor:pointer;min-height:44px}
+
+/* ============ 1. ぐにゃりタブ（gooey nav） ============ */
+.gnav{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.gnav::-webkit-scrollbar{display:none}
+.gnav ul{display:flex;align-items:center;list-style:none;margin:0;padding:2px 0}
+.gnav li{position:relative;background:var(--surface);flex:none}
+.gnav li.on{background:var(--accent)}
+.gnav button{
+  display:flex;align-items:center;gap:8px;white-space:nowrap;border:0;background:none;
+  padding:11px 20px;font-size:14px;line-height:20px;font-weight:600;color:var(--sub);
+  cursor:pointer;min-height:44px;
+}
+.gnav li.on button{color:#fff;transition:color .4s}
+.gnav .neck{position:absolute;top:0;right:100%;height:100%;pointer-events:none;display:block}
+@supports (corner-shape:squircle){ .gnav li{corner-shape:squircle} }
+
+/* ============ 2. その場で確かめる削除 ============ */
+.del{
+  display:inline-flex;align-items:center;height:48px;background:var(--surface);
+  border-radius:14px;overflow:hidden;width:48px;
+  transition:width .62s var(--ease);
+}
+.del.open{width:146px}
+.del.done{width:150px}
+.del-trigger{
+  width:48px;height:48px;flex:none;border:0;background:none;display:grid;place-items:center;
+  cursor:pointer;color:var(--sub);
+}
+.del-trigger svg{overflow:visible}
+/* transform-box:view-box が無いと、回転の軸が viewBox ではなく図形自身の箱になってずれる */
+.del-lid{transform-box:view-box;transform-origin:3px 6px;transition:transform .6s cubic-bezier(.34,1.1,.64,1)}
+.del.open .del-lid{transform:rotate(-35deg)}
+.del-panel{display:flex;align-items:center;gap:2px;padding-right:6px;opacity:0;transform:translateX(-6px);
+  transition:opacity .3s var(--ease),transform .3s var(--ease);pointer-events:none}
+.del.open .del-panel{opacity:1;transform:none;pointer-events:auto;transition-delay:.14s;transition-duration:.44s}
+/* 見た目は30px の丸、指で押せる範囲は44px（つみきの決まり） */
+.del-circle{
+  width:44px;height:44px;border:0;background:none;padding:0;
+  display:grid;place-items:center;cursor:pointer;color:var(--sub);
+  transition:transform .2s var(--ease),opacity .3s var(--ease);opacity:0;transform:scale(.9);
+}
+.del-circle i{
+  width:30px;height:30px;border-radius:999px;background:var(--card);box-shadow:var(--lift);
+  display:grid;place-items:center;
+}
+.del.open .del-circle{opacity:1;transform:none}
+.del.open .del-circle:nth-child(1){transition-delay:.14s}
+.del.open .del-circle:nth-child(2){transition-delay:.21s}
+.del-circle:active i{transform:scale(.84);transition:transform .2s var(--ease)}
+.del-circle.yes{color:var(--ng)}
+.del-status{white-space:nowrap;font-size:13px;font-weight:600;color:var(--sub);padding-right:14px;opacity:0;
+  transition:opacity .22s var(--ease)}
+.del.done .del-status{opacity:1}
+.del.done .del-panel{opacity:0;pointer-events:none;transition-delay:0s}
+
+/* ============ 3. くるくる回る数字 ============ */
+.counter{display:inline-flex;align-items:baseline;font-variant-numeric:tabular-nums;
+  font-weight:700;font-size:30px;letter-spacing:.01em}
+.counter .win{
+  display:block;overflow:hidden;height:1.5em;
+  -webkit-mask-image:var(--fade);mask-image:var(--fade);
+}
+.counter .col{display:block;will-change:transform}
+.counter .col span{display:block;height:1.5em;line-height:1.5em;text-align:center}
+.counter .fixed{display:block;height:1.5em;line-height:1.5em}
+
+/* ============ 4. 割れる時間入力 ============ */
+.dur{display:inline-flex;align-items:center;color:var(--ink)}
+.dur .seg{
+  height:48px;display:flex;align-items:center;gap:4px;background:var(--surface);
+  border-radius:12px 0 0 12px;
+}
+.dur .seg.mid{border-radius:0}
+.dur .seg.btn{border-radius:0 12px 12px 0;padding:0;width:48px;justify-content:center}
+@supports (corner-shape:squircle){ .dur .seg{corner-shape:squircle} }
+.dur .seg:first-child{padding-left:10px}
+.dur input{
+  height:100%;border:0;background:none;text-align:center;font:inherit;font-weight:700;font-size:16px;
+  color:var(--ink);outline:none;-moz-appearance:textfield;width:24px;padding:0;
+}
+.dur input::-webkit-inner-spin-button,.dur input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.dur .unit{color:var(--sub);font-weight:600;font-size:13px;padding-right:4px}
+.dur .toggle{width:48px;height:48px;border:0;background:none;display:grid;place-items:center;cursor:pointer}
+.dur .toggle:active{transform:scale(.9)}
+.dur .toggle svg path{transition:opacity .28s var(--ease),transform .28s var(--ease);transform-origin:12px 12px}
+.dur .ic-tick{opacity:0;transform:scale(.7)}
+.dur.editing .ic-pen{opacity:0;transform:scale(.7)}
+.dur.editing .ic-tick{opacity:1;transform:none}
+
+/* ============ 5. プロダクトキー入力 ============ */
+.otp{display:flex;gap:6px;width:100%;max-width:340px}
+.otp .box{position:relative;flex:1 1 0;min-width:0;height:52px}
+.otp input{
+  width:100%;height:100%;border:0;border-radius:12px;background:var(--surface);
+  text-align:center;font:inherit;font-size:20px;font-weight:700;color:transparent;
+  caret-color:transparent;outline:none;box-shadow:0 0 0 0 transparent;
+  transition:box-shadow .2s;
+}
+@supports (corner-shape:squircle){ .otp input{corner-shape:squircle} }
+.otp input:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--sub) 50%,transparent)}
+.otp .face{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden;pointer-events:none;
+  font-size:20px;font-weight:700}
+.otp .face b{display:block;transition:transform .32s var(--ease),opacity .32s var(--ease)}
+.otp .box.empty .face b{transform:translateY(60%);opacity:0}
+.otp .caret{position:absolute;left:50%;top:50%;width:2px;height:24px;margin:-12px 0 0 -1px;
+  background:var(--sub);border-radius:2px;opacity:0}
+.otp .box.caret-on .caret{opacity:1;animation:blink 1.1s steps(1,end) infinite}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+.otp .ring{position:absolute;inset:0;pointer-events:none}
+.otp .ring rect{fill:none;stroke:var(--ok);stroke-width:2;stroke-dasharray:200;stroke-dashoffset:200;
+  transition:stroke-dashoffset .5s var(--ease)}
+.otp.ok .ring rect{stroke-dashoffset:0}
+.otp.ng input{box-shadow:0 0 0 2px color-mix(in srgb,var(--ng) 70%,transparent)}
+.otp.ng{animation:shake .4s}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+
+/* ============ トークン見本 ============ */
+.tokens{display:flex;flex-wrap:wrap;gap:10px}
+.chip{border:0;padding:10px 14px;border-radius:14px;background:var(--card);box-shadow:var(--lift);font-size:12px}
+@supports (corner-shape:squircle){ .chip{corner-shape:squircle} }
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Rare UI 移植見本</h1>
+<p class="lead">rareui.com（MIT・React + Motion）の考え方を、つみきの単一HTML／素のJSに写したもの。色は「つみきの紙」に置き換え済み。</p>
+
+<section>
+  <h2>1. ぐにゃりタブ</h2>
+  <p class="note">えらんだ札だけが群れから離れ、離れぎわに「首」が伸びて切れる。ぼかしフィルタではなく<b>SVGの曲線</b>で首を描くので、にじまない・文字が汚れない・軽い。</p>
+  <div class="stage"><nav class="gnav" id="gnav"></nav></div>
+  <p class="src">元：Gooey nav ／ 首＝2本の二次ベジェ、すき間が「間隔×0.22」を超えた時点で首は消える</p>
+</section>
+
+<section>
+  <h2>2. その場で確かめる削除</h2>
+  <p class="note">confirm() の代わり。ゴミ箱のフタが開いて、缶が身をかがめ、右に ✓ と ✕ が出る。画面が飛ばないので、何を消そうとしているか見えたまま決められる。</p>
+  <div class="stage"><span id="delhost"></span></div>
+  <p class="src">元：Delete button ／ フタは 3px 6px を軸に −35°、缶の胴は d 属性を 6→13.5 で書き換え</p>
+</section>
+
+<section>
+  <h2>3. くるくる回る数字</h2>
+  <p class="note">合計や件数が変わったとき、桁がドラムのように回る。上下を<b>ぼかしマスク</b>で溶かすので、止まっている桁はくっきり、回っている桁だけ流れて見える。</p>
+  <div class="stage">
+    <span class="counter" id="cnt"></span>
+    <button class="chip" id="cnt-add">+ 1,280</button>
+    <button class="chip" id="cnt-rnd">ばらばらに</button>
+  </div>
+  <p class="src">元：Animated counter ／ マスクは 22%〜78% が不透明、その外を段階的に抜く</p>
+</section>
+
+<section>
+  <h2>4. 割れる時間入力</h2>
+  <p class="note">ふだんは1つのかたまり。えんぴつを押すと3つに割れて角が丸くなり、割れる勢いで中身が少し横に振れる。「いま編集中」が形でわかる。</p>
+  <div class="stage"><div id="durhost"></div></div>
+  <p class="src">元：Duration picker ／ すき間ばねの<b>速度</b>を ±3px の横ゆれに写している（アイコンの変形は簡略化＝入れ替え）</p>
+</section>
+
+<section>
+  <h2>5. プロダクトキー入力</h2>
+  <p class="note">1文字ずつ下から転がり込む。そろったら緑の枠が描かれ、ちがえば赤くふるえる。<code>TSUMIKI</code> と打つと成功、それ以外は失敗。</p>
+  <div class="stage"><div class="otp" id="otp"></div></div>
+  <p class="src">元：OTP input ／ 成功の枠は SVG の stroke-dashoffset で「描かれる」</p>
+</section>
+
+<section>
+  <h2>6. 表面のトークン</h2>
+  <p class="note">Rare UI の「持ち上がり」は影が3枚重ね。<b>0.5px の輪郭 + 3px のやわらかい影 + 上端の白いハイライト</b>。つみきの紙色にそのまま効く。角は squircle（対応ブラウザのみ）。</p>
+  <div class="stage tokens">
+    <span class="chip">--lift（3枚重ねの影）</span>
+    <span class="chip">corner-shape:squircle</span>
+    <span class="chip">ばね stiffness 200 / damping 28</span>
+  </div>
+  <p class="src">元：全コンポーネント共通の SURFACE / GLYPH / LIFT 定数</p>
+</section>
+
+</div>
+
+<script>
+/* ---------------------------------------------------------------
+   Rare UI（https://rareui.com, MIT, swamimalode07/rare-ui）の
+   考え方を素のJSに移植したもの。React / Motion は使っていない。
+----------------------------------------------------------------*/
+
+/* ---- ちいさなばね（Motion の useSpring 相当） ---- */
+const springs = new Set();
+class Spring {
+  constructor(value, {stiffness=200, damping=28, mass=1}={}) {
+    this.v = value; this.target = value; this.vel = 0;
+    this.k = stiffness; this.c = damping; this.m = mass;
+    springs.add(this);
+  }
+  set(t){ this.target = t; }
+  jump(t){ this.target = this.v = t; this.vel = 0; }
+  step(dt){
+    // 1/240 秒ずつ刻んで積分する（大きな dt でも暴れない）
+    let left = dt;
+    while (left > 0) {
+      const h = Math.min(left, 1/240); left -= h;
+      const a = (-this.k * (this.v - this.target) - this.c * this.vel) / this.m;
+      this.vel += a * h; this.v += this.vel * h;
+    }
+    return this.v;
+  }
+  get settled(){ return Math.abs(this.v - this.target) < .01 && Math.abs(this.vel) < .01; }
+}
+let last = performance.now();
+const frameJobs = new Set();
+function loop(now){
+  const dt = Math.min((now - last) / 1000, 1/20); last = now;
+  springs.forEach(s => s.step(dt));
+  frameJobs.forEach(fn => fn(dt));
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+// 検証用：ブラウザのペインが隠れていると rAF が止まるので、手でコマを送れるようにしておく
+window.__pump = (ms=16) => { springs.forEach(s => s.step(ms/1000)); frameJobs.forEach(f => f(ms/1000)); };
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* =============== 1. ぐにゃりタブ =============== */
+function gooeyNav(host, items, {span=20, corner=12, onChange} = {}){
+  const ul = document.createElement('ul');
+  host.appendChild(ul);
+  let active = 0;
+  const segs = items.map((label, i) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = label;
+    btn.addEventListener('click', () => select(i));
+    let svg = null, path = null, gStops = null;
+    if (i > 0) {
+      svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('class','neck');
+      svg.setAttribute('width', span);
+      svg.setAttribute('viewBox', `0 0 ${span} 100`);
+      svg.setAttribute('preserveAspectRatio','none');
+      svg.setAttribute('aria-hidden','true');
+      const gid = 'neck'+i+'-'+Math.random().toString(36).slice(2,7);
+      svg.innerHTML = `<defs><linearGradient id="${gid}" x1="0" x2="1">
+        <stop offset="0"></stop><stop offset="1"></stop></linearGradient></defs>
+        <path fill="url(#${gid})"></path>`;
+      path = svg.querySelector('path');
+      gStops = svg.querySelectorAll('stop');
+      li.appendChild(svg);
+    }
+    li.appendChild(btn);
+    ul.appendChild(li);
+    return { li, svg, path, gStops, gap: new Spring(i === 0 ? 0 : -1) };
+  });
+
+  // すき間 gap のとき、首は2本の二次ベジェで描かれる。
+  // すき間が span*0.22 を超えると「くびれ」が0以下になり、首は消える。
+  const NECK_BREAK = 0.22;
+  function neckPath(gap){
+    if (!(gap > 0)) return '';
+    const waist = 100 * (1 - gap / (span * NECK_BREAK));
+    if (waist <= 0) return '';
+    const start = span - gap, mid = start + gap / 2;
+    return `M${start} 0 Q${mid} ${100-waist} ${span} 0 L${span} 100 Q${mid} ${waist} ${start} 100 Z`;
+  }
+
+  const isOpen = seam => seam === 0 || seam === items.length || seam - 1 === active || seam === active;
+
+  function select(i){
+    active = i;
+    segs.forEach((s, k) => {
+      s.li.classList.toggle('on', k === active);
+      const target = k === 0 ? 0 : (isOpen(k) ? span : -1);
+      reduced ? s.gap.jump(target) : s.gap.set(target);
+      s.li.style.borderTopLeftRadius = s.li.style.borderBottomLeftRadius = (isOpen(k) ? corner : 0) + 'px';
+      s.li.style.borderTopRightRadius = s.li.style.borderBottomRightRadius = (isOpen(k+1) ? corner : 0) + 'px';
+      s.li.style.transition = reduced ? 'none' : 'border-radius .45s var(--ease)';
+      if (s.gStops){
+        s.gStops[0].setAttribute('stop-color', k-1 === active ? css('--accent') : css('--surface'));
+        s.gStops[1].setAttribute('stop-color', k   === active ? css('--accent') : css('--surface'));
+      }
+    });
+    onChange && onChange(i, items[i]);
+  }
+
+  frameJobs.add(() => {
+    segs.forEach(s => {
+      s.li.style.marginLeft = s.gap.v + 'px';
+      if (s.path) s.path.setAttribute('d', neckPath(s.gap.v));
+    });
+  });
+  select(0);
+  return { select };
+}
+gooeyNav(document.getElementById('gnav'), ['すべて','未払い','今月','あとで']);
+
+/* =============== 2. その場で確かめる削除 =============== */
+function deleteButton(host, {onConfirm} = {}){
+  const el = document.createElement('span');
+  el.className = 'del';
+  el.innerHTML = `
+    <button class="del-trigger" type="button" aria-label="削除">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <g class="del-lid"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></g>
+        <path class="del-can" d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+      </svg>
+    </button>
+    <span class="del-panel">
+      <button class="del-circle yes" type="button" aria-label="消す"><i>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>
+      </i></button>
+      <button class="del-circle no" type="button" aria-label="やめる"><i>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </i></button>
+    </span>
+    <span class="del-status"></span>`;
+  host.appendChild(el);
+  const can = el.querySelector('.del-can');
+  const status = el.querySelector('.del-status');
+
+  // 缶の胴：フタが開くと top が 6 → 13.5 に上がり、缶が身をかがめる
+  let tw = null;
+  function tweenCan(to){
+    const from = parseFloat(can.dataset.top || 6), ms = reduced ? 0 : 560;
+    tw = { from, to, ms, t: 0 };
+  }
+  const ease = x => 1 - Math.pow(1 - x, 3);
+  frameJobs.add(dt => {
+    if (!tw) return;
+    tw.t += dt * 1000;
+    const p = tw.ms ? Math.min(1, tw.t / tw.ms) : 1;
+    const top = tw.from + (tw.to - tw.from) * ease(p);
+    can.dataset.top = top;
+    can.setAttribute('d', `M19 ${top.toFixed(2)}v${(20-top).toFixed(2)}a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V${top.toFixed(2)}`);
+    if (p >= 1) tw = null;
+  });
+  const open = () => { el.classList.add('open'); tweenCan(13.5); };
+  const close = () => { el.classList.remove('open'); tweenCan(6); };
+
+  el.querySelector('.del-trigger').addEventListener('click', () => {
+    if (el.classList.contains('done')) return;
+    el.classList.contains('open') ? close() : open();
+  });
+  el.querySelector('.no').addEventListener('click', () => { close(); flash('やめました', 600); });
+  el.querySelector('.yes').addEventListener('click', () => { close(); flash('消しました', 1400); onConfirm && onConfirm(); });
+
+  function flash(text, ms){
+    status.textContent = text;
+    el.classList.add('done');
+    setTimeout(() => { el.classList.remove('done'); }, ms);
+  }
+  return el;
+}
+deleteButton(document.getElementById('delhost'));
+
+/* =============== 3. くるくる回る数字 =============== */
+const FADE = `linear-gradient(to bottom,
+  rgba(0,0,0,0) 0%, rgba(0,0,0,.06) 5.5%, rgba(0,0,0,.5) 11%, rgba(0,0,0,.94) 16.5%,
+  #000 22%, #000 78%,
+  rgba(0,0,0,.94) 83.5%, rgba(0,0,0,.5) 89%, rgba(0,0,0,.06) 94.5%, rgba(0,0,0,0) 100%)`;
+
+function counter(host, {prefix='¥'} = {}){
+  host.style.setProperty('--fade', FADE);
+  let slots = [];   // {win, col, digit}
+  let value = null;
+
+  function render(text){
+    host.innerHTML = '';
+    slots = [];
+    [...text].forEach(ch => {
+      if (ch >= '0' && ch <= '9') {
+        const win = document.createElement('span'); win.className = 'win';
+        const col = document.createElement('span'); col.className = 'col';
+        // 末尾にもう1枚 0 を置くと 9→0 が「前へ回って」着地する
+        col.innerHTML = [0,1,2,3,4,5,6,7,8,9,0].map(n => `<span>${n}</span>`).join('');
+        win.appendChild(col); host.appendChild(win);
+        slots.push({ win, col, digit: -1 });
+      } else {
+        const f = document.createElement('span'); f.className = 'fixed'; f.textContent = ch;
+        host.appendChild(f);
+      }
+    });
+  }
+
+  function set(n, {animate=true} = {}){
+    const text = prefix + n.toLocaleString('ja-JP');
+    const digitsOnly = [...text].filter(c => c >= '0' && c <= '9').length;
+    const same = slots.length === digitsOnly && value !== null && text.length === host.childElementCount;
+    if (!same) { render(text); }
+    else {
+      // 桁数が同じなら、区切りなどの固定文字だけ更新
+      let i = 0;
+      [...text].forEach(ch => {
+        const node = host.children[i++];
+        if (node.className === 'fixed') node.textContent = ch;
+      });
+    }
+    let si = 0;
+    [...text].forEach(ch => {
+      if (ch < '0' || ch > '9') return;
+      const s = slots[si++], next = +ch;
+      const forwardWrap = s.digit === 9 && next === 0;   // 9→0 だけは前へ回す
+      const to = forwardWrap ? 10 : next;
+      s.col.style.transition = (!animate || reduced) ? 'none'
+        : `transform .6s cubic-bezier(.22,1,.36,1) ${si * 0.02}s`;
+      s.col.style.transform = `translateY(${-to * 1.5}em)`;
+      if (forwardWrap) {
+        setTimeout(() => { s.col.style.transition = 'none'; s.col.style.transform = 'translateY(0em)'; }, 640);
+      }
+      s.digit = next;
+    });
+    value = n;
+  }
+  return { set, get value(){ return value; } };
+}
+const c = counter(document.getElementById('cnt'));
+c.set(0, {animate:false});
+setTimeout(() => c.set(12480), 300);
+document.getElementById('cnt-add').addEventListener('click', () => c.set((c.value||0) + 1280));
+document.getElementById('cnt-rnd').addEventListener('click', () => c.set(Math.floor(Math.random()*99999)));
+
+/* =============== 4. 割れる時間入力 =============== */
+function durationPicker(host){
+  const el = document.createElement('div');
+  el.className = 'dur';
+  el.innerHTML = `
+    <div class="seg one"><input type="number" inputmode="numeric" value="1" max="24"><span class="unit">時間</span></div>
+    <div class="seg mid"><input type="number" inputmode="numeric" value="30" max="59"><span class="unit">分</span></div>
+    <div class="seg btn">
+      <button class="toggle" type="button" aria-label="編集">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--sub)">
+          <path class="ic-pen" d="M3.8 16.3 3 21l4.7-.8c.8-.1 1.6-.5 2.1-1.1L20.4 8.5c.8-.8.8-2 0-2.8l-2.1-2.2c-.8-.8-2-.8-2.8 0L4.9 14.2c-.6.6-1 1.3-1.1 2.1Z"/>
+          <path class="ic-tick" d="M4.5 12.5 9.5 18 20 5.5"/>
+        </svg>
+      </button>
+    </div>`;
+  host.appendChild(el);
+  const segs = [...el.querySelectorAll('.seg')];
+  const inputs = [...el.querySelectorAll('input')];
+  const units = [...el.querySelectorAll('.unit')];
+  const OPEN_GAP = 8, CORNER = 12;
+  const gap = new Spring(0, {stiffness:200, damping:28, mass:1});
+  const sway = new Spring(0, {stiffness:200, damping:24, mass:1});
+  let editing = false;
+
+  el.querySelector('.toggle').addEventListener('click', () => {
+    editing = !editing;
+    el.classList.toggle('editing', editing);
+    const t = editing ? OPEN_GAP : 0;
+    reduced ? gap.jump(t) : gap.set(t);
+    inputs.forEach(i => { i.readOnly = !editing; });
+    if (editing) inputs[0].focus(); else inputs.forEach(clampInput);
+  });
+  function clampInput(i){
+    const max = +i.max, v = Math.min(max, Math.max(0, Math.trunc(+i.value) || 0));
+    if (String(v) !== i.value) { i.value = v; kick(); }
+  }
+  // 範囲外を打ったら、その場で軽く弾く
+  let kickV = 0;
+  function kick(){ kickV = 6; }
+  inputs.forEach(i => { i.readOnly = true; i.addEventListener('input', () => clampInput(i)); });
+
+  frameJobs.add(() => {
+    const g = gap.v, openness = Math.min(OPEN_GAP, Math.max(0, g)) / OPEN_GAP;
+    const spacing = Math.min(OPEN_GAP, Math.max(0, g)) - (1 - openness);
+    const inner = CORNER * openness;
+    segs[1].style.marginLeft = segs[2].style.marginLeft = spacing + 'px';
+    segs[0].style.borderRadius = `${CORNER}px ${inner}px ${inner}px ${CORNER}px`;
+    segs[1].style.borderRadius = `${inner}px`;
+    segs[2].style.borderRadius = `${inner}px ${CORNER}px ${CORNER}px ${inner}px`;
+    segs[0].style.paddingRight = (3 + 9*openness) + 'px';
+    segs[1].style.paddingLeft = (9*openness) + 'px';
+    segs[1].style.paddingRight = (3 + 9*openness) + 'px';
+    inputs.forEach(i => { i.style.width = (editing ? 34 : 24) + 'px'; });
+    // 割れる勢い（ばねの速度）を ±3px の横ゆれに写す
+    const target = Math.max(-3, Math.min(3, gap.vel / 70 * 3));
+    sway.set(target);
+    kickV *= 0.88; if (Math.abs(kickV) < .05) kickV = 0;
+    const x = sway.v + kickV;
+    inputs.forEach(i => i.style.transform = `translateX(${x.toFixed(2)}px)`);
+    units.forEach(u => u.style.transform = `translateX(${x.toFixed(2)}px)`);
+  });
+  return el;
+}
+durationPicker(document.getElementById('durhost'));
+
+/* =============== 5. プロダクトキー入力 =============== */
+function keyInput(host, {length=7, answer='TSUMIKI'} = {}){
+  host.innerHTML = '';
+  const boxes = [];
+  for (let i = 0; i < length; i++){
+    const box = document.createElement('div');
+    box.className = 'box empty';
+    box.innerHTML = `
+      <input maxlength="1" inputmode="text" autocomplete="off" autocapitalize="characters" aria-label="${i+1}文字目">
+      <span class="face"><b></b></span>
+      <span class="caret"></span>
+      <svg class="ring" viewBox="0 0 44 52"><rect x="1" y="1" width="42" height="50" rx="12"/></svg>`;
+    host.appendChild(box);
+    boxes.push({ box, input: box.querySelector('input'), face: box.querySelector('b') });
+  }
+  const val = () => boxes.map(b => b.input.value).join('').toUpperCase();
+
+  boxes.forEach((b, i) => {
+    b.input.addEventListener('focus', () => paint());
+    b.input.addEventListener('blur', () => paint());
+    b.input.addEventListener('input', () => {
+      const ch = b.input.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,1);
+      b.input.value = ch;
+      b.face.textContent = ch;
+      b.box.classList.toggle('empty', !ch);
+      host.classList.remove('ng','ok');
+      if (ch && i < length-1) boxes[i+1].input.focus();
+      paint(); check();
+    });
+    b.input.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !b.input.value && i > 0) boxes[i-1].input.focus();
+      if (e.key === 'ArrowLeft' && i > 0) boxes[i-1].input.focus();
+      if (e.key === 'ArrowRight' && i < length-1) boxes[i+1].input.focus();
+    });
+    b.input.addEventListener('paste', e => {
+      e.preventDefault();
+      const text = (e.clipboardData.getData('text')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+      [...text].slice(0, length - i).forEach((ch, k) => {
+        const t = boxes[i+k];
+        t.input.value = ch; t.face.textContent = ch; t.box.classList.remove('empty');
+      });
+      boxes[Math.min(length-1, i + text.length)].input.focus();
+      paint(); check();
+    });
+  });
+  function paint(){
+    boxes.forEach(b => b.box.classList.toggle('caret-on',
+      document.activeElement === b.input && !b.input.value));
+  }
+  function check(){
+    const v = val();
+    if (v.length < length) return;
+    if (v === answer) { host.classList.add('ok'); host.classList.remove('ng'); }
+    else { host.classList.add('ng'); host.classList.remove('ok');
+           setTimeout(() => host.classList.remove('ng'), 420); }
+  }
+}
+keyInput(document.getElementById('otp'));
+</script>
+</body>
+</html>
