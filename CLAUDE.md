@@ -31,15 +31,11 @@
 ## 2.5 見た目（配色・角丸・影）を決めるとき
 
 ### 正本は `DESIGN.md`（このリポジトリの直下）
-つみきの配色・書体・余白・角丸・影・動き・禁止事項は **`~/制作物/DESIGN.md` に1本化**した。
-[Google Labs の DESIGN.md 規格](https://github.com/google-labs-code/design.md)（Apache-2.0・`alpha`）準拠。
-**新しいアプリを作る前・既存の色を変える前に、まずこれを読む。**
+正本であること・作る前に読むことは A層 §5 P1。規格 → [Google Labs の DESIGN.md 規格](https://github.com/google-labs-code/design.md)（`alpha`）。
 
-実測で決めた要点（迷ったらここ）:
-- 塗りつぶしボタンは **ライト＝`--accent-2` の地に `--paper` の文字（5.35:1）／ダーク＝`--accent` の地に `--ink`（墨）の文字（7.07:1）**。
-  **`--accent`（黄土 `#b06f26`）に白文字は 4.08:1 で不合格。** `color:#fff` の直書きをしない。
+実測で決めた要点のうち A層に無いもの（ライトの塗りボタン・黄土に白文字・顔料は A層 §5 P1）:
+- ダークの塗りつぶしボタンは `--accent` の地に `--ink`（墨）の文字（7.07:1）。`color:#fff` の直書きをしない。
 - 洗い色の帯の文字は `--good-ink` / `--warn-ink`（濃い側）。`--good` をそのまま `--good-wash` に置くと 3.98:1。
-- 顔料6色は**塗りの地にしない**（文字色が色ごとに変わる）。`pigment-N-wash` に敷いて文字は墨。
 
 ### 検査（色を触ったら必ず通す）
 
@@ -47,8 +43,7 @@
     python3 design_check.py            # DESIGN.md ＋ 全HTML
     python3 design_check.py --spec-only
 
-コントラスト（大きい文字の例外込み）・純白純黒・ブレイクポイント・入力欄16px を一度に見る。
-HTMLは書き換えない。指摘して返すだけ。
+何を見るかは A層 §5 P1。コントラストは大きい文字の例外込みで判定する。HTMLは書き換えない。指摘して返すだけ。
 
 2026-09-11 時点の指摘は **18件／9本**（見たのは93本。初回スキャンは444件／77本）。
 内訳はコントラスト不足が12件、純白/純黒が6件。区切りの本数は「参考」表示で件数に入らない。
@@ -98,10 +93,7 @@ HTMLは書き換えない。指摘して返すだけ。
 - 必要ブラウザ: `:has()` Safari 15.4+ / `color-mix()` Safari 16.2+（未裏取り）。実機iPhoneでは未検証。
 
 ## 3. このリポジトリ固有の禁止
-- `~/制作物` は PUBLIC。受託ソースは `.gitignore`（`Kouban/` `Teppari/`）、成果物HTMLだけ `~/tsumiki-tools` へ。サンプルは架空名。
-  （commit前の実名grepと `--force` で消えない件は A層の核にある）
-- 墨の流体シミュ（`~/tsumiki-portfolio/ink-fluid.js`・`.ink-fluid`）に触らない → A層の核にある。
-- つみきロゴの公式SVG座標の在り処＝`~/制作物/index.html` ヘッダーの `<svg class="mark" viewBox="0 0 100 100">`（使い方は A層の核）。
+- 受託ソースの `.gitignore` 対象は `Kouban/` `Teppari/`。成果物のHTMLだけを `~/tsumiki-tools` へ出す（PUBLIC・実名grep・`--force`・ink-fluid・ロゴは A層 §5 P0/P1）。
 
 ## 4. お客様への「お返事カード」（1枚画像）
 - ご質問・改善のご相談への返信に添える1枚画像は `python3 ~/制作物/make_reply_card.py <カード.json>`。
