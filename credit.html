@@ -275,7 +275,7 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;text-align:center;margin
 .person-card.expanded .chev{transform:rotate(90deg)}
 .loan-item{background:var(--bg);border-radius:10px;padding:12px;margin-bottom:8px}
 .loan-item.fully-paid{background:var(--soft-green)}
-.loan-item-head{display:flex;justify-content:space-between;align-items:start;gap:8px;cursor:pointer}
+.loan-item-head{display:flex;justify-content:space-between;align-items:start;gap:8px;cursor:pointer;min-height:44px}
 .loan-item .loan-desc{font-size:13px;font-weight:500}
 .loan-item .loan-meta{font-size:11px;color:var(--sub);margin-top:2px}
 .loan-item .loan-amt{font-size:14px;font-weight:700;text-align:right;white-space:nowrap}
@@ -608,7 +608,7 @@ const STATE_TABLE='credit_state', STATE_ID='kodai';
 const sb=(window.supabase&&window.supabase.createClient)?supabase.createClient(SUPABASE_URL,SUPABASE_ANON):null;
 let online=null, lastPushed='', pendingSync=false, saveTimer=null;
 let data={months:{},amazonOrders:[],loans:[],payments:[],installments:[],people:[],categoryRules:{},customCategories:[],deletedTxIds:{},deletedLoanIds:{},deletedPaymentIds:{},deletedAmazonIds:{},deletedInstallmentIds:{}};
-let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanFromAmzTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,instEditingId:null,instTargetTxId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set(),showOffset:false};
+let state={currentTab:'credit',currentMonth:null,currentFilter:'self',currentSort:'date-desc',currentAmzFilter:'all',loanFromTxTarget:null,loanFromAmzTarget:null,loanMode:'single',splitNames:[],receiptBlob:null,moveTxTargets:null,editingLoanId:null,paymentTargetLoanId:null,editingAmazonId:null,instEditingId:null,instTargetTxId:null,expandedTxIds:new Set(),expandedLoanIds:new Set(),expandedPersonNames:new Set(),expandedCats:new Set(),expandedCatTxIds:new Set(),selectMode:false,selectedTxIds:new Set(),showOffset:false,showPaidLoans:false};
 
 function load(){
   try{
@@ -1336,9 +1336,22 @@ function getPaymentsForLoan(loanId){return data.payments.filter(p=>p.loanId===lo
 function getPaidAmount(loanId){return getPaymentsForLoan(loanId).reduce((s,p)=>s+p.amount,0);}
 function getRemaining(l){return l.amount-getPaidAmount(l.id);}
 function isFullyPaid(l){return getRemaining(l)<=0;}
-function getPersonStats(){
+// 完済した立て替えは、完済から30日で立て替えタブから外す。データ自体は消さない
+// （明細の「自分の実質支出」と forecast.html が、この立て替えを明細金額からの引き算に使っているため）。
+const PAID_LOAN_KEEP_DAYS=30;
+// 完済した時刻＝回収記録のうち最後に「記録した」時刻。回収日(date)では数えない
+// （昔の日付の回収を今日まとめて付けたとき、その場で消えてしまわないように）。
+function paidOffAt(l){
+  if(!isFullyPaid(l))return null;
+  let t=0;
+  getPaymentsForLoan(l.id).forEach(p=>{const c=+p.createdAt||Date.parse(String(p.date||'').replace(/\//g,'-'))||0;if(c>t)t=c;});
+  return t||(+l.createdAt||null);
+}
+function paidLoanDaysLeft(l){const t=paidOffAt(l);return t==null?null:PAID_LOAN_KEEP_DAYS-Math.floor((Date.now()-t)/86400000);}
+function isLoanRetired(l){const d=paidLoanDaysLeft(l);return d!=null&&d<=0;}
+function getPersonStats(loans){
   const stats={};
-  data.loans.forEach(l=>{
+  (loans||data.loans).forEach(l=>{
     const n=l.personName||'（名前未設定）';
     if(!stats[n])stats[n]={name:n,total:0,paid:0,balance:0,loans:[]};
     const paid=getPaidAmount(l.id);
@@ -2237,9 +2250,28 @@ function renderLoansTab(){
   document.getElementById('loanOutstandingTotal').textContent='¥'+out.toLocaleString();
   document.getElementById('loanCollectedTotal').textContent='¥'+col.toLocaleString();
   const wrap=document.getElementById('loansByPerson');
-  if(stats.length===0){wrap.innerHTML='<div class="card empty-state"><div class="es-ic">🤝</div><div class="es-title">立て替えはまだありません</div><div class="es-sub">クレカ明細やAmazon注文から「立て替えに送る」か、上の「＋ 立て替えを手動で追加」で登録できます。</div></div>';return;}
-  wrap.innerHTML=stats.map(s=>renderPersonCard(s)).join('');
+  if(data.loans.length===0){wrap.innerHTML='<div class="card empty-state"><div class="es-ic">🤝</div><div class="es-title">立て替えはまだありません</div><div class="es-sub">クレカ明細やAmazon注文から「立て替えに送る」か、上の「＋ 立て替えを手動で追加」で登録できます。</div></div>';return;}
+  // 相手ごとのカードには未回収だけ。完済は下の「完済した立て替え」へ、30日を過ぎたらどこにも出さない
+  const open=data.loans.filter(l=>!isFullyPaid(l));
+  const done=data.loans.filter(l=>isFullyPaid(l)&&!isLoanRetired(l));
+  const openHtml=open.length
+    ?getPersonStats(open).map(s=>renderPersonCard(s)).join('')
+    :`<div class="card empty-state"><div class="es-ic">✓</div><div class="es-title">未回収の立て替えはありません</div><div class="es-sub">完済した立て替えは、完済から${PAID_LOAN_KEEP_DAYS}日でこのタブから消えます。明細の「自分の支出」には引き続き反映されます。</div></div>`;
+  wrap.innerHTML=openHtml+(done.length?renderPaidLoansSection(done):'');
 }
+
+function renderPaidLoansSection(loans){
+  const expanded=state.showPaidLoans;
+  const items=loans.slice().sort((a,b)=>(paidOffAt(b)||0)-(paidOffAt(a)||0)).map(l=>renderLoanItem(l,true)).join('');
+  return `<div class="person-card ${expanded?'expanded':''}">
+    <div class="person-header" onclick="togglePaidLoans()">
+      <div><div class="name">✓ 完済した立て替え</div><div class="stats">${loans.length}件 ／ 完済から${PAID_LOAN_KEEP_DAYS}日でこのタブから消えます</div></div>
+      <span class="chev">▶</span>
+    </div>
+    <div class="person-body">${items}</div>
+  </div>`;
+}
+function togglePaidLoans(){state.showPaidLoans=!state.showPaidLoans;renderLoansTab();}
 
 function renderPersonCard(s){
   const expanded=state.expandedPersonNames.has(s.name);
@@ -2256,10 +2288,13 @@ function renderPersonCard(s){
   </div>`;
 }
 
-function renderLoanItem(l){
+function renderLoanItem(l,withPerson){
   const paid=getPaidAmount(l.id);
   const rem=l.amount-paid;
   const full=rem<=0;
+  const left=full?paidLoanDaysLeft(l):null;
+  const who=withPerson?escapeHtml(l.personName||'（名前未設定）')+' ／ ':'';
+  const leftTxt=left!=null?` ／ あと${left}日で消えます`:'';
   const pct=Math.min(100,(paid/l.amount)*100);
   const expanded=state.expandedLoanIds.has(l.id);
   const payments=getPaymentsForLoan(l.id).sort((a,b)=>b.date.localeCompare(a.date));
@@ -2270,7 +2305,7 @@ function renderLoanItem(l){
     :payments.map(p=>`<div class="payment-row"><div><div>${p.date}</div>${p.memo?`<div class="info">${escapeHtml(p.memo)}</div>`:''}</div><div class="amt">¥${p.amount.toLocaleString()}</div><button class="btn-mini danger" onclick="deletePayment('${p.id}')">削除</button></div>`).join('');
   return `<div class="loan-item ${full?'fully-paid':''} ${expanded?'expanded':''}">
     <div class="loan-item-head" onclick="toggleLoanExpand('${l.id}')">
-      <div><div class="loan-desc" title="${escapeHtml(loanRawName(l))}">${escapeHtml(dname)}</div><div class="loan-meta">${l.date} ／ ${src}${l.memo?' ／ '+escapeHtml(l.memo):''}</div></div>
+      <div><div class="loan-desc" title="${escapeHtml(loanRawName(l))}">${escapeHtml(dname)}</div><div class="loan-meta">${who}${l.date} ／ ${src}${l.memo?' ／ '+escapeHtml(l.memo):''}${leftTxt}</div></div>
       <div class="loan-amt">¥${l.amount.toLocaleString()}<div style="font-size:10px;color:${full?'var(--green)':'var(--orange)'}">${full?'✓ 完済':'残¥'+rem.toLocaleString()}</div></div>
     </div>
     <div class="loan-progress"><div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div><div>${pct.toFixed(0)}%</div></div>
