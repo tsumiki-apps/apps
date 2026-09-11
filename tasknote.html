@@ -121,26 +121,6 @@
     background:var(--hover); padding:1.5px 6px; border-radius:5px;}
   .prog svg{width:10px; height:10px;}
   .prog.full{color:var(--c-green-tx); background:var(--c-green-bg);}
-  .replychip{display:inline-flex; align-items:center; gap:2px; font-size:10.5px; font-weight:600; padding:1.5px 6px; border-radius:5px;
-    color:var(--accent-2); background:var(--accent-soft);}
-  .replychip.approve{color:var(--c-green-tx); background:var(--c-green-bg);}
-  .replychip.reject{color:var(--c-red-tx); background:var(--c-red-bg);}
-  .replychip.later{color:var(--sub); background:var(--hover);}
-
-  /* Claudeへ返信セクション（詳細） */
-  .reply-sec{margin:12px 0 2px; padding:12px 14px; border-radius:12px; background:var(--bg-soft); border:1px solid var(--line);}
-  .rs-head{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:var(--ink);}
-  .rs-head svg{width:16px; height:16px; color:var(--accent);}
-  .rs-hint{margin-left:auto; font-size:11px; color:var(--faint); font-weight:400;}
-  .rs-btns{display:flex; gap:8px; margin:10px 0 4px;}
-  .rs-btn{flex:1; padding:9px 0; border-radius:8px; font-size:13.5px; font-weight:600; background:var(--card); border:1px solid var(--line-strong); color:var(--sub);}
-  .rs-btn:active{transform:scale(.97);}
-  .rs-btn.approve.on{background:var(--c-green-bg); color:var(--c-green-tx); border-color:transparent;}
-  .rs-btn.reject.on{background:var(--c-red-bg); color:var(--c-red-tx); border-color:transparent;}
-  .rs-btn.later.on{background:var(--hover); color:var(--ink); border-color:transparent;}
-  .rs-input{width:100%; border:none; outline:none; background:none; resize:none; overflow:hidden; font-size:16px; line-height:1.5; padding:6px 2px 0;}
-  .rs-input::placeholder{color:var(--faint);}
-  .rs-done{margin-top:8px; font-size:12px; color:var(--c-green-tx); font-weight:600;}
 
   /* リストのスワイプ */
   .lrow-wrap{position:relative; overflow:hidden;}
@@ -563,7 +543,6 @@ function daysSince(ts){ return Math.floor((Date.now()-ts)/86400000); }
 function dueDelta(iso){ if(!iso) return null; const dt=new Date(iso+'T00:00:00'); const t=new Date(); t.setHours(0,0,0,0); return Math.round((dt-t)/86400000); }
 function isOverdue(t){ if(!t.due||isDoneStatus(t.status)) return false; return dueDelta(t.due)<0; }
 function stallDays(t){ if(isDoneStatus(t.status)) return 0; const d=daysSince(t.updated||t.created||Date.now()); return d>=3?d:0; }
-function replyLabel(t){ if(!t.reply) return ''; const d=t.reply.decision; return d==='approve'?'承認':d==='reject'?'却下':d==='later'?'あとで':(t.reply.text?'返信':''); }
 
 // 並びは固定（2026-09）：期限が近い順（過ぎたものが先頭・期限なしは後ろ）→ 同じなら最近動いた順。完了は最近動いた順だけ
 function sortTasks(list, done){
@@ -606,7 +585,6 @@ function metaChips(t){
   if(t.due){ const dc=dueClass(t.due,t.status); h+=`<span class="due ${dc}">${svg(IC.clock,2)}${fmtDue(t.due)}</span>`; }
   const sd=stallDays(t); if(sd) h+=`<span class="stall">${svg(IC.clock,2)}${sd}日</span>`;
   const cp=checklistProgress(t); if(cp) h+=`<span class="prog ${cp.done===cp.total?'full':''}">${svg(IC.check,3)}${cp.done}/${cp.total}</span>`;
-  const rl=replyLabel(t); if(rl) h+=`<span class="replychip ${t.reply.decision||''}">↩︎${rl}</span>`;
   t.tags.forEach(id=>{ const tg=tagById(id); if(tg) h+=`<span class="tagchip" style="${tagStyle(tg.color)}">${esc(tg.name)}</span>`; });
   return h;
 }
@@ -750,33 +728,17 @@ function listQuickAdd(rows, colId, addBtn){
   ta.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();commit(true);} if(e.key==='Escape'){committed=true;row.remove();} });
   ta.addEventListener('blur',()=>{ if(!committed) commit(false); });
 }
-// 完了/未完了を切り替える。完了＝完了列へ移動＋（Claude起票で未返信なら）自動で「承認」返信を付ける
-function setDone(t, done){
-  const prevStatus=t.status;
-  const prevReply=t.reply?JSON.parse(JSON.stringify(t.reply)):null;
-  let linked=false;
-  if(done){
-    t.status=firstDoneCol();
-    if(t.source==='claude' && !(t.reply && t.reply.decision)){
-      t.reply={decision:'approve', at:Date.now(), handled:false, auto:true};
-      linked=true;
-    }
-  }else{
-    t.status=defaultOpenCol();
-    if(t.reply && t.reply.auto) t.reply=null;   // 完了で自動付与した返信は、戻すと一緒に取り消す
-  }
-  t.updated=Date.now();
-  return {prevStatus, prevReply, linked};
-}
+// 完了/未完了を切り替える。完了にしたら「元に戻す」を出す（戻すと元の列へ）。返信（reply）は付けない
 function toggleDone(t){
-  const wasDone=isDoneStatus(t.status);
-  const {prevStatus, prevReply, linked}=setDone(t, !wasDone);
+  const prevStatus=t.status;
+  const wasDone=isDoneStatus(prevStatus);
+  t.status = wasDone ? defaultOpenCol() : firstDoneCol();
+  t.updated=Date.now();
   save(); renderView();
-  if(!wasDone && linked){
-    showUndo('完了 → Claudeに「承認」で返信', ()=>{
-      t.status=prevStatus; t.reply=prevReply; t.updated=Date.now(); save(); renderView();
-    });
-  }
+  if(!wasDone) showUndo('完了', ()=>{
+    const x=db.tasks.find(k=>k.id===t.id); if(!x) return;
+    x.status=prevStatus; x.updated=Date.now(); save(); renderView();
+  });
 }
 
 /* ---------- 空状態 ---------- */
@@ -842,8 +804,6 @@ function renderPage(){
   props.appendChild(propRow(IC.tag,'タグ', tagsVal(t), ()=>pickTags()));
   page.appendChild(props);
 
-  page.appendChild(replySection(t));
-
   // 本文は読むだけ（2026-09 に編集をやめた。足すのは Claude の tasknote_update.py --append-body）
   const body=(t.body||[]).filter(b=>b.type==='divider' || (b.text||'').trim());
   if(body.length){
@@ -876,29 +836,6 @@ function dueVal(t){ if(!t.due)return''; const dc=dueClass(t.due,t.status); const
 function tagsVal(t){ if(!t.tags.length)return''; return t.tags.map(id=>{const tg=tagById(id);return tg?`<span class="tagchip" style="${tagStyle(tg.color)}">${esc(tg.name)}</span>`:''}).join(''); }
 function refreshProps(){ if(sheetOpen) renderPage(); }
 
-function replySection(t){
-  const wrap=document.createElement('div'); wrap.className='reply-sec';
-  const decs=[['approve','承認'],['reject','却下'],['later','あとで']];
-  const draw=()=>{
-    const r=t.reply||{};
-    wrap.innerHTML=`<div class="rs-head">${svg('<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v3"/>',2)}<span>Claudeへ返信</span>
-        <span class="rs-hint">次のセッションで私が読みます</span></div>
-      <div class="rs-btns">${decs.map(([v,l])=>`<button class="rs-btn ${v} ${r.decision===v?'on':''}" data-d="${v}">${l}</button>`).join('')}</div>
-      <textarea class="rs-input" rows="1" placeholder="一言そえる（任意）…">${esc(r.text||'')}</textarea>
-      ${r.handled?'<div class="rs-done">✓ 私が確認済み</div>':''}`;
-    wrap.querySelectorAll('.rs-btn').forEach(b=>b.onclick=()=>{
-      t.reply=t.reply||{}; t.reply.decision = t.reply.decision===b.dataset.d ? null : b.dataset.d;
-      t.reply.at=Date.now(); t.reply.handled=false; t.reply.auto=false; cleanReply(t); touch(); draw();
-    });
-    const ta=wrap.querySelector('.rs-input');
-    const grow=()=>{ ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px'; };
-    ta.addEventListener('input',()=>{ t.reply=t.reply||{}; t.reply.text=ta.value; t.reply.at=Date.now(); t.reply.handled=false; t.reply.auto=false; cleanReply(t); touch(); grow(); });
-    setTimeout(grow,0);
-  };
-  draw();
-  return wrap;
-}
-function cleanReply(t){ if(t.reply && !t.reply.decision && !(t.reply.text&&t.reply.text.trim())) t.reply=null; }
 
 /* ---- プロパティ選択 ---- */
 function pickStatus(){
