@@ -99,13 +99,6 @@
   .search svg{width:16px; height:16px; color:var(--faint); flex:0 0 auto;}
   .search input{flex:1; border:none; background:none; outline:none; font-size:16px; min-width:0;}
   .search input::placeholder{color:var(--faint);}
-  .tb-btn{display:flex; align-items:center; gap:5px; padding:7px 10px; border-radius:8px; font-size:13px; font-weight:500;
-    color:var(--sub); background:var(--hover); white-space:nowrap; flex:0 0 auto;}
-  .tb-btn.active{color:var(--accent-2); background:var(--accent-soft);}
-  .tb-btn svg{width:15px; height:15px;}
-  .tb-btn:active{background:var(--active);}
-  .filter-note{padding:0 16px 8px; font-size:12px; color:var(--sub); display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  .filter-note .clr{color:var(--accent); font-weight:500;}
 
   /* サマリー帯 */
   .summary{display:flex; gap:8px; padding:0 12px 10px; overflow-x:auto;}
@@ -203,8 +196,6 @@
   .lrow .l-title{flex:1; font-size:14.5px; min-width:0; word-break:break-word; line-height:1.4;}
   .lrow .l-title.done{color:var(--faint); text-decoration:line-through;}
   .lrow .l-meta{display:flex; align-items:center; gap:7px; flex:0 0 auto;}
-  /* アーカイブ表示中は「追加」系を隠す（足しても見えない場所に増えるだけなので） */
-  body.arcmode .col-add, body.arcmode .col-add-inline, body.arcmode .lgroup-add, body.arcmode .fab{display:none !important;}
   .lgroup-add{display:flex; align-items:center; gap:7px; padding:10px 16px 10px 48px; color:var(--faint); font-size:13px; border-top:1px solid var(--line);}
   .lgroup-add svg{width:15px; height:15px;}
   .lgroup-add:active{background:var(--hover);}
@@ -328,13 +319,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input id="searchInput" placeholder="検索" autocomplete="off">
       </div>
-      <button class="tb-btn" id="filterBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
-        絞り込み
-      </button>
     </div>
     <div class="summary" id="summary"></div>
-    <div class="filter-note" id="filterNote" style="display:none"></div>
   </header>
   <main>
     <div class="view" id="viewRoot"></div>
@@ -385,7 +371,6 @@ const tagStyle = c => `background:var(--c-${c}-bg); color:var(--c-${c}-tx);`;
 
 /* ---- SVGアイコン ---- */
 const IC = {
-  list:'<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
   status:'<circle cx="12" cy="12" r="8"/>',
   flag:'<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5l3 2"/>',
@@ -466,8 +451,6 @@ function normalize(){
   if(!Array.isArray(db.tasks)) db.tasks=[];
   if(!db.projects || typeof db.projects!=='object' || Array.isArray(db.projects)) db.projects={};
   if(!db.ui) db.ui={view:'board',theme:'auto'};
-  if(!('quickFilter' in db.ui) || db.ui.quickFilter==='duesoon') db.ui.quickFilter=null;   // 「期限間近」は 2026-09 に廃止
-  if(!('showArchived' in db.ui)) db.ui.showArchived=false;
   const colIds = db.columns.map(c=>c.id);
   db.tasks.forEach(t=>{
     if(!t.id) t.id=uid();
@@ -615,24 +598,17 @@ function sortTasks(list, done){
   return list.slice().sort((a,b)=>(due(a)-due(b)) || (upd(b)-upd(a)));
 }
 
-/* アーカイブ＝「一旦しまった」カード。既定ではどのビューにも出さず、集計にも数えない。
-   「アーカイブを表示」中は、逆にアーカイブしたものだけを並べる（見返し・復帰用）。 */
+/* アーカイブ＝「一旦しまった」カード。画面にも集計にも出さない（戻すのは tasknote_archive.py --unarchive） */
 function liveTasks(){ return db.tasks.filter(t=>!t.archived); }
-function archivedCount(){ return db.tasks.filter(t=>t.archived).length; }
 
+// 帯のタップと検索の絞り込みは、この端末のこの画面の中だけ（クラウドに書かない）
+let quickFilter=null, searchQ='';
 function visibleTasks(){
-  const q=(db.ui.search||'').trim().toLowerCase();
-  const ft=db.ui.filterTag;
-  const qf=db.ui.quickFilter;
+  const q=searchQ.trim().toLowerCase();
   const wcol=waitingColId();
-  const wantArchived=!!db.ui.showArchived;
-  return db.tasks.filter(t=>{
-    if(!!t.archived !== wantArchived) return false;
-    if(ft && !t.tags.includes(ft)) return false;
-    if(qf==='waiting' && t.status!==wcol) return false;
-    if(qf==='overdue' && !isOverdue(t)) return false;
-    if(qf==='claude' && t.source!=='claude') return false;
-    if(qf==='self' && t.source==='claude') return false;
+  return liveTasks().filter(t=>{
+    if(quickFilter==='waiting' && t.status!==wcol) return false;
+    if(quickFilter==='overdue' && !isOverdue(t)) return false;
     if(q){
       const hay=(t.title+' '+t.body.map(b=>b.text).join(' ')).toLowerCase();
       if(!hay.includes(q)) return false;
@@ -664,62 +640,45 @@ function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>
 /* ============================================================
    ビュー描画
    ============================================================ */
-function renderAll(){ renderView(); renderFilterNote(); if(sheetOpen && curTask) syncPageLive(); }
+function renderAll(){ renderView(); if(sheetOpen && curTask) syncPageLive(); }
 
-const QF_LABEL={waiting:'あなた待ち',overdue:'期限切れ',claude:'Claude起票',self:'自分で作成'};
-function renderFilterNote(){
-  const el=$('#filterNote'); const ft=db.ui.filterTag; const qf=db.ui.quickFilter; const arc=!!db.ui.showArchived;
-  $('#filterBtn').classList.toggle('active', !!ft || qf==='claude' || qf==='self' || arc);
-  if(!ft && !qf && !arc){ el.style.display='none'; return; }
-  el.style.display='flex';
-  let parts='絞り込み中: ';
-  if(arc) parts+=`<span class="tagchip" style="${tagStyle('brown')}">アーカイブ</span> `;
-  if(qf) parts+=`<span class="tagchip" style="${tagStyle('gray')}">${QF_LABEL[qf]||qf}</span> `;
-  if(ft){ const tg=tagById(ft); if(tg) parts+=`<span class="tagchip" style="${tagStyle(tg.color)}">${esc(tg.name)}</span> `; else db.ui.filterTag=null; }
-  parts+=`<span class="clr" id="clrFilter">すべて解除</span>`;
-  el.innerHTML=parts;
-  $('#clrFilter').onclick=()=>{ db.ui.filterTag=null; db.ui.quickFilter=null; db.ui.showArchived=false; save(); renderView(); renderFilterNote(); };
-}
 
 function renderView(){
   const root=$('#viewRoot');
   root.className='view';
-  document.body.classList.toggle('arcmode', !!db.ui.showArchived);
   renderSummary();
-  if(db.ui.showArchived && !archivedCount()){
-    root.innerHTML=`<div class="empty"><div class="e-emoji">🗃️</div>
-      <div class="e-txt">アーカイブは空です。<br>詳細ページの箱アイコンで、いま追わないカードをここへしまえます。</div></div>`;
-    return;
-  }
   renderList(root);   // 画面はリスト1枚（ボード・カレンダー・進捗は 2026-09 に廃止）
 }
 function renderSummary(){
   const el=$('#summary');
-  if(db.ui.showArchived){ el.innerHTML=''; return; }        // アーカイブ表示中は「いま追っている件数」と食い違うので隠す
   const wcol=waitingColId();
   const live=liveTasks();
   const wait=live.filter(t=>t.status===wcol).length;
   const over=live.filter(t=>isOverdue(t)).length;
-  const qf=db.ui.quickFilter;
+  const qf=quickFilter;
   const chips=[
     {k:'waiting', label:'あなた待ち', n:wait, cls:'s-wait'},
     {k:'overdue', label:'期限切れ', n:over, cls:'s-over'},
   ];
   el.innerHTML=chips.map(c=>`<button class="sm ${c.cls} ${qf===c.k?'on':''} ${c.n===0?'zero':''}" data-q="${c.k}"><b>${c.n}</b>${c.label}</button>`).join('');
   el.querySelectorAll('.sm').forEach(b=>b.onclick=()=>{
-    db.ui.quickFilter = (db.ui.quickFilter===b.dataset.q) ? null : b.dataset.q;
-    save(); renderView(); renderFilterNote();
+    quickFilter = (quickFilter===b.dataset.q) ? null : b.dataset.q;
+    renderView();
   });
 }
 
 /* ---------- リスト ---------- */
+// 畳み具合は端末の中だけに持つ（クラウドに書かない）
+const COLLAPSE_KEY=KEY+'_collapsed';
+function collapsedMap(){ try{ return JSON.parse(localStorage.getItem(COLLAPSE_KEY))||{}; }catch(e){ return {}; } }
+function setCollapsed(id,v){ const m=collapsedMap(); m[id]=v; try{ localStorage.setItem(COLLAPSE_KEY, JSON.stringify(m)); }catch(e){} }
 function renderList(root){
   const tasks=visibleTasks();
-  if(!db.ui.showArchived && !liveTasks().length){ root.innerHTML=emptyHTML(); bindEmpty(root); return; }
+  if(!liveTasks().length){ root.innerHTML=emptyHTML(); bindEmpty(root); return; }
   const wrap=document.createElement('div'); wrap.className='list';
   db.columns.forEach(col=>{
     const list=sortTasks(tasks.filter(t=>t.status===col.id), col.done);
-    const cs=db.ui.collapsed||{};
+    const cs=collapsedMap();
     const collapsed=(col.id in cs) ? cs[col.id] : !!col.done;   // 完了は、開いたことがなければ畳んでおく
     const g=document.createElement('div'); g.className='lgroup'+(collapsed?' collapsed':'');
     g.innerHTML=`<div class="lgroup-head">
@@ -736,9 +695,9 @@ function renderList(root){
     rows.appendChild(add);
     g.querySelector('.lgroup-head').onclick=(e)=>{
       if(e.target.closest('.col-add')) return;
-      db.ui.collapsed=db.ui.collapsed||{}; db.ui.collapsed[col.id]=!db.ui.collapsed[col.id]; save(); renderList(root);
+      setCollapsed(col.id, !collapsed); renderList(root);
     };
-    g.querySelector('[data-add]').onclick=(e)=>{ e.stopPropagation(); if(collapsed){db.ui.collapsed[col.id]=false; save(); renderList(root); setTimeout(()=>{},0);} listQuickAdd(rows,col.id,add); };
+    g.querySelector('[data-add]').onclick=(e)=>{ e.stopPropagation(); if(collapsed){setCollapsed(col.id,false); renderList(root); setTimeout(()=>{},0);} listQuickAdd(rows,col.id,add); };
     wrap.appendChild(g);
   });
   root.innerHTML=''; root.appendChild(wrap);
@@ -810,7 +769,7 @@ function listQuickAdd(rows, colId, addBtn){
   ta.focus(); let committed=false;
   const commit=(keepOpen)=>{
     const v=ta.value.trim();
-    if(v){ const now=Date.now(); const t={id:uid(),title:v,status:colId,priority:null,due:null,tags:db.ui.filterTag?[db.ui.filterTag]:[],body:[],created:now,updated:now}; db.tasks.push(t); save(); rows.insertBefore(lrowEl(t), row); }
+    if(v){ const now=Date.now(); const t={id:uid(),title:v,status:colId,priority:null,due:null,tags:[],body:[],created:now,updated:now}; db.tasks.push(t); save(); rows.insertBefore(lrowEl(t), row); }
     if(keepOpen){ ta.value=''; ta.focus(); } else { committed=true; row.remove(); }
   };
   ta.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();commit(true);} if(e.key==='Escape'){committed=true;row.remove();} });
@@ -861,7 +820,7 @@ function openTask(id){
   if(id){ curTask=db.tasks.find(t=>t.id===id); if(!curTask) return; }
   else{
     const now=Date.now();
-    curTask={id:uid(),title:'',status:defaultOpenCol(),priority:null,due:null,tags:db.ui.filterTag?[db.ui.filterTag]:[],body:[],created:now,updated:now,_new:true};
+    curTask={id:uid(),title:'',status:defaultOpenCol(),priority:null,due:null,tags:[],body:[],created:now,updated:now,_new:true};
   }
   sheetOpen=true; pageDirty=false;
   renderPage();
@@ -1140,25 +1099,6 @@ function closePop(){ $('#scrim').classList.remove('show'); $('#pop').classList.r
 let toastT=null;
 function toast(msg){ const el=$('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),1600); }
 
-/* ============================================================
-   フィルタ（タグ）
-   ============================================================ */
-function openFilter(){
-  const qf=db.ui.quickFilter;
-  const nArc=archivedCount();
-  let html=`<div class="ps-title">アーカイブ</div><div class="ps-list">`;
-  html+=`<div class="ps-item ${db.ui.showArchived?'on':''}" data-arc="1"><div class="ic">${svg(IC.box,2)}</div>アーカイブを表示（${nArc}件）<span class="chk">${svg(IC.check,2.4)}</span></div>`;
-  html+=`</div><div class="ps-title">起票元で絞り込み</div><div class="ps-list">`;
-  html+=`<div class="ps-item ${qf==='claude'?'on':''}" data-q="claude"><span class="src-dot" style="margin:0 3px"></span>Claude起票のみ<span class="chk">${svg(IC.check,2.4)}</span></div>`;
-  html+=`<div class="ps-item ${qf==='self'?'on':''}" data-q="self"><div class="ic">${svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/>',2)}</div>自分で作成したもの<span class="chk">${svg(IC.check,2.4)}</span></div>`;
-  html+=`</div><div class="ps-title">タグ（アプリ）で絞り込み</div><div class="ps-list">`;
-  html+=`<div class="ps-item ${!db.ui.filterTag?'on':''}" data-f=""><div class="ic">${svg(IC.list,2)}</div>すべてのタグ<span class="chk">${svg(IC.check,2.4)}</span></div>`;
-  db.tags.forEach(tg=>{ html+=`<div class="ps-item ${db.ui.filterTag===tg.id?'on':''}" data-f="${tg.id}"><span class="swatch" style="background:var(--c-${tg.color}-bg)"></span>${esc(tg.name)}<span class="chk">${svg(IC.check,2.4)}</span></div>`; });
-  html+=`</div>`; openPop(html);
-  $$('#popContent [data-f]').forEach(el=>el.onclick=()=>{ db.ui.filterTag=el.dataset.f||null; save(); closePop(); renderView(); renderFilterNote(); });
-  $$('#popContent [data-q]').forEach(el=>el.onclick=()=>{ db.ui.quickFilter=(db.ui.quickFilter===el.dataset.q)?null:el.dataset.q; save(); closePop(); renderView(); renderFilterNote(); });
-  $$('#popContent [data-arc]').forEach(el=>el.onclick=()=>{ db.ui.showArchived=!db.ui.showArchived; save(); closePop(); renderView(); renderFilterNote(); });
-}
 
 /* ============================================================
    イベント配線
@@ -1173,11 +1113,11 @@ $('#pageArchive').onclick=()=>{
   t.updated=Date.now();
   pageDirty=true; commitNewIfNeeded(); adoptPending();
   $('#sheet').classList.remove('show'); sheetOpen=false;
-  setTimeout(()=>{ curTask=null; renderView(); renderFilterNote(); },200);
+  setTimeout(()=>{ curTask=null; renderView(); },200);
   showUndo(was?'アーカイブから戻しました':'アーカイブしました', ()=>{
     const x=db.tasks.find(k=>k.id===t.id); if(!x) return;   // その間にクラウドから差し替わっていても、id で引き直す
     if(was) x.archived=true; else delete x.archived;
-    x.updated=Date.now(); save(); renderView(); renderFilterNote();
+    x.updated=Date.now(); save(); renderView();
   });
 };
 $('#pageDelete').onclick=()=>{
@@ -1191,9 +1131,8 @@ $('#pageDelete').onclick=()=>{
 };
 $('#scrim').onclick=()=>{ closePop(); };
 $('#themeBtn').onclick=()=>{ const order=['auto','light','dark']; const cur=db.ui.theme||'auto'; db.ui.theme=order[(order.indexOf(cur)+1)%3]; applyTheme(); save(); };
-$('#filterBtn').onclick=openFilter;
 let searchT=null;
-$('#searchInput').addEventListener('input',e=>{ db.ui.search=e.target.value; clearTimeout(searchT); searchT=setTimeout(()=>{ renderView(); },160); });
+$('#searchInput').addEventListener('input',e=>{ searchQ=e.target.value; clearTimeout(searchT); searchT=setTimeout(()=>{ renderView(); },160); });
 document.addEventListener('pointerdown',e=>{ if(slashOpen && !e.target.closest('#slash') && !e.target.closest('.blk-input')) hideSlash(); },true);
 window.addEventListener('resize',()=>{ if(slashOpen) hideSlash(); });
 // 画面に戻ってきたら読み直す（開きっぱなしの古い画面から上書きしないため）
