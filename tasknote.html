@@ -260,27 +260,6 @@
   .lgroup-add svg{width:15px; height:15px;}
   .lgroup-add:active{background:var(--hover);}
 
-  /* ---- カレンダー ---- */
-  .cal{padding:10px 10px 60px;}
-  .cal-head{display:flex; align-items:center; justify-content:center; gap:16px; padding:6px 6px 12px;}
-  .cal-head .m{font-size:16px; font-weight:700; min-width:120px; text-align:center;}
-  .cal-nav{width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--sub);}
-  .cal-nav:active{background:var(--active);}
-  .cal-nav svg{width:18px; height:18px;}
-  .cal-today{font-size:12.5px; color:var(--accent); font-weight:500; padding:6px 10px; border-radius:7px;}
-  .cal-today:active{background:var(--accent-soft);}
-  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:3px;}
-  .cal-wd{text-align:center; font-size:11px; color:var(--faint); font-weight:500; padding:2px 0 6px;}
-  .cal-wd.sun{color:#d3675e;} .cal-wd.sat{color:#5a8fc2;}
-  .cal-cell{min-height:64px; border-radius:8px; padding:4px 4px 3px; background:var(--bg-soft); border:1px solid transparent;
-    display:flex; flex-direction:column; gap:2px; overflow:hidden;}
-  .cal-cell.other{opacity:.38;}
-  .cal-cell:active{background:var(--hover);}
-  .cal-cell .d{font-size:12px; font-weight:500; color:var(--sub); text-align:right; padding:1px 2px;}
-  .cal-cell.today .d{color:var(--bg); background:var(--accent-2); border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; margin-left:auto; font-weight:600;}
-  .cal-chip{font-size:10.5px; line-height:1.3; padding:1.5px 5px; border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .cal-more{font-size:10px; color:var(--faint); padding:0 4px;}
-
   /* 空状態 */
   .empty{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:60px 30px; text-align:center; color:var(--faint);}
   .empty .e-emoji{font-size:38px;}
@@ -464,7 +443,6 @@ const tagStyle = c => `background:var(--c-${c}-bg); color:var(--c-${c}-tx);`;
 const IC = {
   board:'<path d="M4 5h5v14H4zM10 5h5v9h-5zM16 5h4v6h-4z"/>',
   list:'<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
-  cal:'<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v3M16 3v3"/>',
   status:'<circle cx="12" cy="12" r="8"/>',
   flag:'<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5l3 2"/>',
@@ -547,7 +525,7 @@ function normalize(){
   if(!Array.isArray(db.tasks)) db.tasks=[];
   if(!db.projects || typeof db.projects!=='object' || Array.isArray(db.projects)) db.projects={};
   if(!db.ui) db.ui={view:'board',theme:'auto'};
-  if(!['board','list','calendar'].includes(db.ui.view)) db.ui.view='board';   // 進捗ビューは 2026-09 に廃止（projects のデータは残す）
+  if(!['board','list'].includes(db.ui.view)) db.ui.view='board';   // 進捗ビュー・カレンダーは 2026-09 に廃止（projects のデータは残す）
   if(!('sort' in db.ui)) db.ui.sort='manual';
   if(!('quickFilter' in db.ui) || db.ui.quickFilter==='duesoon') db.ui.quickFilter=null;   // 「期限間近」は 2026-09 に廃止
   if(!('showArchived' in db.ui)) db.ui.showArchived=false;
@@ -760,7 +738,7 @@ function renderAll(){ renderViewSwitch(); renderView(); renderFilterNote(); if(s
 
 function renderViewSwitch(){
   const el=$('#viewSwitch'); const v=db.ui.view;
-  const defs=[['board','ボード',IC.board],['list','リスト',IC.list],['calendar','カレンダー',IC.cal]];
+  const defs=[['board','ボード',IC.board],['list','リスト',IC.list]];
   el.innerHTML=defs.map(([k,label,ic])=>`<button class="vbtn ${v===k?'on':''}" data-v="${k}">${svg(ic,1.9)}${label}</button>`).join('');
   el.querySelectorAll('.vbtn').forEach(b=>b.onclick=()=>{ db.ui.view=b.dataset.v; save(); renderView(); renderViewSwitch(); });
 }
@@ -792,9 +770,8 @@ function renderView(){
       <div class="e-txt">アーカイブは空です。<br>詳細ページの箱アイコンで、いま追わないカードをここへしまえます。</div></div>`;
     return;
   }
-  if(db.ui.view==='board') renderBoard(root);
-  else if(db.ui.view==='list') renderList(root);
-  else renderCalendar(root);
+  if(db.ui.view==='list') renderList(root);
+  else renderBoard(root);
 }
 function renderSummary(){
   const el=$('#summary');
@@ -1020,81 +997,6 @@ function toggleDone(t){
       t.status=prevStatus; t.reply=prevReply; t.updated=Date.now(); save(); renderView();
     });
   }
-}
-
-/* ---------- カレンダー ---------- */
-let calYM=null;
-function renderCalendar(root){
-  const tasks=visibleTasks();
-  const today=new Date();
-  if(!calYM) calYM={y:today.getFullYear(), m:today.getMonth()};
-  const {y,m}=calYM;
-  const first=new Date(y,m,1); const startWd=first.getDay();
-  const daysInMonth=new Date(y,m+1,0).getDate();
-  const prevDays=new Date(y,m,0).getDate();
-  const byDate={};
-  tasks.forEach(t=>{ if(t.due){ (byDate[t.due]=byDate[t.due]||[]).push(t); } });
-  const iso=(yy,mm,dd)=>`${yy}-${String(mm+1).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
-  const cells=[];
-  for(let i=0;i<startWd;i++){ const dd=prevDays-startWd+1+i; cells.push({dd,other:true,ym:m-1}); }
-  for(let dd=1;dd<=daysInMonth;dd++) cells.push({dd,other:false,ym:m});
-  while(cells.length%7!==0){ cells.push({dd:cells.length-startWd-daysInMonth+1, other:true, ym:m+1}); }
-  const wds=['日','月','火','水','木','金','土'];
-  const wrap=document.createElement('div'); wrap.className='cal';
-  wrap.innerHTML=`<div class="cal-head">
-      <button class="cal-nav" id="calPrev">${svg('<path d="M15 18l-6-6 6-6"/>',2)}</button>
-      <div class="m">${y}年${m+1}月</div>
-      <button class="cal-nav" id="calNext">${svg('<path d="M9 18l6-6-6-6"/>',2)}</button>
-    </div>
-    <button class="cal-today" id="calToday">今日</button>
-    <div class="cal-grid" id="calGrid"></div>`;
-  const grid=wrap.querySelector('#calGrid');
-  wds.forEach((w,i)=>{ const el=document.createElement('div'); el.className='cal-wd'+(i===0?' sun':i===6?' sat':''); el.textContent=w; grid.appendChild(el); });
-  const todayIso=iso(today.getFullYear(),today.getMonth(),today.getDate());
-  cells.forEach(c=>{
-    let cy=y, cm=m;
-    if(c.ym===m-1){ cm=m-1; if(cm<0){cm=11;cy=y-1;} }
-    else if(c.ym===m+1){ cm=m+1; if(cm>11){cm=0;cy=y+1;} }
-    const dISO=iso(cy,cm,c.dd);
-    const cell=document.createElement('div');
-    cell.className='cal-cell'+(c.other?' other':'')+(dISO===todayIso?' today':'');
-    cell.innerHTML=`<div class="d">${c.dd}</div>`;
-    const items=byDate[dISO]||[];
-    items.slice(0,3).forEach(t=>{
-      const tg=t.tags.length?tagById(t.tags[0]):null;
-      const col=colById(t.status);
-      const color=tg?tg.color:col.color;
-      const chip=document.createElement('div'); chip.className='cal-chip';
-      chip.style.cssText=tagStyle(color)+(isDoneStatus(t.status)?'text-decoration:line-through;opacity:.6;':'');
-      chip.textContent=t.title||'無題';
-      chip.onclick=(e)=>{ e.stopPropagation(); openTask(t.id); };
-      cell.appendChild(chip);
-    });
-    if(items.length>3){ const mo=document.createElement('div'); mo.className='cal-more'; mo.textContent='+'+(items.length-3); cell.appendChild(mo); }
-    cell.onclick=()=>openDaySheet(dISO, items);
-    grid.appendChild(cell);
-  });
-  root.innerHTML=''; root.appendChild(wrap);
-  $('#calPrev').onclick=()=>{ calYM.m--; if(calYM.m<0){calYM.m=11;calYM.y--;} renderCalendar(root); };
-  $('#calNext').onclick=()=>{ calYM.m++; if(calYM.m>11){calYM.m=0;calYM.y++;} renderCalendar(root); };
-  $('#calToday').onclick=()=>{ calYM={y:today.getFullYear(),m:today.getMonth()}; renderCalendar(root); };
-}
-function openDaySheet(dISO, items){
-  const dt=new Date(dISO+'T00:00:00');
-  let html=`<div class="ps-title">${dt.getMonth()+1}月${dt.getDate()}日</div><div class="ps-list">`;
-  if(items.length){
-    items.forEach(t=>{ const done=isDoneStatus(t.status);
-      html+=`<div class="ps-item" data-open="${t.id}"><div class="ic">${svg(colById(t.status).done?IC.check:IC.status,2)}</div><div class="${done?'':''}" style="${done?'color:var(--faint);text-decoration:line-through':''}">${esc(t.title)||'無題'}</div></div>`; });
-  } else html+=`<div class="ps-item" style="color:var(--faint)">予定はありません</div>`;
-  html+=`</div><div class="ps-input-row"><input id="dayAdd" placeholder="この日にタスクを追加…"><button id="dayAddBtn">追加</button></div>`;
-  openPop(html);
-  $$('#popContent [data-open]').forEach(el=>el.onclick=()=>{ closePop(); openTask(el.dataset.open); });
-  const inp=$('#dayAdd');
-  const add=()=>{ const v=inp.value.trim(); if(!v)return; const now=Date.now();
-    db.tasks.push({id:uid(),title:v,status:firstOpenCol(),priority:null,due:dISO,tags:db.ui.filterTag?[db.ui.filterTag]:[],body:[],created:now,updated:now});
-    save(); closePop(); renderView(); toast('追加しました'); };
-  $('#dayAddBtn').onclick=add;
-  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') add(); });
 }
 
 /* ---------- 空状態 ---------- */
