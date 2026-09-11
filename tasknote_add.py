@@ -22,7 +22,8 @@ Obsidian記録に加えてこのハブ（Supabase: tasknote_state / id='kodai'�
   --app : アプリ名（タグになる。省略可）
   --body : 本文の段落（複数回指定でブロック複数）
   --key : 二重起票を防ぐ安定キー（省略時は title から自動生成）
-  --source : 既定 claude（あなた自身の手動起票なら self 等）
+  --source : claude（既定）か self だけ。説明文を入れない（アプリの「Claude起票」の印が消える・2026-09 に8枚あった）
+  --id     : tasknote_state の行id（既定 kodai）。確かめるときは捨てる用の id を使い、kodai を汚さない
 """
 import argparse, json, hashlib, subprocess, sys, time, os
 
@@ -34,6 +35,7 @@ REST = f"https://{PROJECT_REF}.supabase.co/rest/v1/tasknote_state"
 MGMT = f"https://api.supabase.com/v1/projects/{PROJECT_REF}/database/query"
 COLORS = ["gray","brown","orange","yellow","green","blue","purple","pink","red"]
 STATUS_OK = {"waiting","todo","doing","done"}
+SOURCE_OK = {"claude","self"}
 PRIORITY_OK = {"high","mid","low","none",""}
 
 
@@ -47,6 +49,7 @@ def curl_json(args):
 def get_pat():
     """Supabase の Personal Access Token を読む。
     キーチェーン（サービス名 supabase-mcp）を先に見て、無ければ ~/.claude.json の Supabase MCP env から読む。
+    （2026-09-11 から ~/.claude.json には鍵を置いていない＝キーチェーンが読めないと KeyError で止まる）
     置き場の説明は ~/.claude/bin/supabase-mcp.sh の冒頭（MCP の起動口と同じ順で読む）。"""
     try:
         r = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "supabase-mcp", "-w"],
@@ -60,9 +63,9 @@ def get_pat():
     return d["mcpServers"]["supabase"]["env"]["SUPABASE_ACCESS_TOKEN"]
 
 
-def read_state():
+def read_state(state_id="kodai"):
     txt = curl_json(["-H",f"apikey: {ANON}","-H",f"Authorization: Bearer {ANON}",
-                     f"{REST}?id=eq.kodai&select=state"])
+                     f"{REST}?id=eq.{state_id}&select=state"])
     rows = json.loads(txt)
     return rows[0]["state"] if rows else None
 
@@ -92,6 +95,7 @@ def main():
     ap.add_argument("--body", action="append", default=[])
     ap.add_argument("--key", default="")
     ap.add_argument("--source", default="claude")
+    ap.add_argument("--id", default="kodai", help="tasknote_state の行id（既定 kodai）")
     a = ap.parse_args()
 
     if a.status not in STATUS_OK:
@@ -99,13 +103,15 @@ def main():
     # アプリ側のラベルは high/mid/low のみ。medium 等を入れるとカードに undefined と出る
     if a.priority not in PRIORITY_OK:
         sys.exit(f"priority は {sorted(PRIORITY_OK)} のいずれか（medium ではなく mid）")
+    if a.source not in SOURCE_OK:
+        sys.exit(f"source は {sorted(SOURCE_OK)} のいずれか（説明文は --body へ）")
     priority = None if a.priority in ("none","") else a.priority
     due = a.due or None
     key = a.key or ("auto-" + hashlib.md5((a.app+"|"+a.title).encode()).hexdigest()[:12])
 
-    state = read_state()
+    state = read_state(a.id)
     if state is None:
-        sys.exit("tasknote_state に id='kodai' の行がありません（アプリを一度開くか初期化してください）")
+        sys.exit(f"tasknote_state に id={a.id!r} の行がありません")
 
     # --- タグ解決（名前で既存再利用、無ければ作成） ---
     tag_id = None
@@ -121,7 +127,7 @@ def main():
             new_tag_sql = (
                 "update public.tasknote_state set state = jsonb_set(state,'{tags}', "
                 f"(state->'tags') || {dollar(json.dumps(tag_obj, ensure_ascii=False))}::jsonb) "
-                f"where id='kodai' and not (state->'tags' @> {dollar(json.dumps([{'id':tag_id}]))}::jsonb);"
+                f"where id={dollar(a.id)} and not (state->'tags' @> {dollar(json.dumps([{'id':tag_id}]))}::jsonb);"
             )
 
     # --- カード生成 ---
@@ -136,7 +142,7 @@ def main():
     task_sql = (
         "update public.tasknote_state set state = jsonb_set(state,'{tasks}', "
         f"(state->'tasks') || {dollar(json.dumps(task, ensure_ascii=False))}::jsonb), updated_at=now() "
-        f"where id='kodai' and not (state->'tasks' @> {dollar(json.dumps([{'_key':key}]))}::jsonb);"
+        f"where id={dollar(a.id)} and not (state->'tasks' @> {dollar(json.dumps([{'_key':key}]))}::jsonb);"
     )
 
     # 既に同じ _key があるか（冪等チェック・報告用）
