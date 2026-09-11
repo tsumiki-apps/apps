@@ -45,7 +45,13 @@ def curl_json(args):
 
 
 def get_pat():
-    """~/.claude.json の Supabase MCP env から Personal Access Token を読む。"""
+    """Supabase の Personal Access Token を読む。
+    キーチェーン（サービス名 supabase-mcp）を先に見て、無ければ ~/.claude.json の Supabase MCP env から読む。
+    置き場の説明は ~/.claude/bin/supabase-mcp.sh の冒頭（MCP の起動口と同じ順で読む）。"""
+    r = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "supabase-mcp", "-w"],
+                       capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        return r.stdout.strip()
     p = os.path.expanduser("~/.claude.json")
     d = json.load(open(p, encoding="utf-8"))
     return d["mcpServers"]["supabase"]["env"]["SUPABASE_ACCESS_TOKEN"]
