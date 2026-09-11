@@ -1074,11 +1074,13 @@ function cellToInt(cell){
     .replace(/[▲△－]/g,'-').replace(/[¥￥,\s]/g,'');
   return /^-?\d+$/.test(norm)?parseInt(norm,10):NaN;
 }
+// 投資の積立（クレカ積立・投信・NISA など）は買い物ではないので、共同に入れず「こうだい個人」で取り込む
+const PERSONAL_RE=/(投信|積立|つみたて|証券|ＮＩＳＡ|NISA)/i;
 function mkItem(date,desc,amount,counter){
   const baseKey=date+'|'+desc+'|'+amount;
   counter[baseKey]=(counter[baseKey]||0)+1;
   const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
-  return {id:'tx_'+hashStr(baseKey+sfx), src:'csv', date, desc:desc.replace(/\s+/g,' '), amount, tag:'share'};
+  return {id:'tx_'+hashStr(baseKey+sfx), src:'csv', date, desc:desc.replace(/\s+/g,' '), amount, tag:PERSONAL_RE.test(desc)?'kodai':'share'};
 }
 async function parseCreditCSV(file){
   const buf=await file.arrayBuffer();
@@ -1217,12 +1219,14 @@ function openRouteSheet(){
   const src=split?db.periods.find(x=>x.id===R.srcId):null;
   const rows=gs.map((g,i)=>{
     const sum=g.items.reduce((a,b)=>a+b.amount,0);
+    const per=split?[]:g.items.filter(it=>it.tag==='kodai');
+    const perNote=per.length?'<div class="hint" style="text-align:left;margin:-4px 0 8px">うち積立など '+per.length+'件・'+yen(per.reduce((a,b)=>a+b.amount,0))+' は「'+esc(nm('kodai'))+'個人」で入ります</div>':'';
     const opts=db.periods.map(x=>'<option value="'+x.id+'"'+(g.dest===x.id?' selected':'')+'>'+
         (split&&x.id===R.srcId?'そのまま「'+esc(x.name)+'」に残す':'「'+esc(x.name)+'」に入れる')+'</option>').join('')+
       '<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(ymLabel(g.ym))+'」を新しくつくって入れる</option>'+
       (split?'':'<option value="__skip__">取り込まない</option>');
     return '<div class="field"><label>'+esc(ymJa(g.ym))+'　'+g.items.length+'件・'+yen(sum)+'</label>'+
-      '<div class="hint" style="text-align:left;margin:-2px 0 8px">'+esc(sampleNames(g.items))+'</div>'+
+      '<div class="hint" style="text-align:left;margin:-2px 0 8px">'+esc(sampleNames(g.items))+'</div>'+perNote+
       '<select class="rtdest" data-i="'+i+'">'+opts+'</select>'+
       '<div class="rtnote" id="rtNote'+i+'"></div></div>';
   }).join('');
