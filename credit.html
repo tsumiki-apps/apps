@@ -907,32 +907,25 @@ function findHeaderIdx(cols,cands){
 }
 
 // クレカCSV
+const DATE_CELL_RE=/^\s*\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\s*$/;
 async function parseCreditCSV(file){
   const buf=await file.arrayBuffer();
   const text=decodeBuffer(buf);
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   if(lines.length<2){alert('CSVに明細がありません');return null;}
-  const header=parseCsvLine(lines[0]);
-  // 三井住友/Amex/その他カード明細の列名ゆれを吸収
-  const dIdx=findHeaderIdx(header,['ご利用日','利用日','取引日','日付','ご利用年月日','Date','TransactionDate']);
-  // データ処理日(=確定日)。請求サイクルの締めはこの日で決まるので利用日と別に取得。具体名を先、広い「処理日」は最後。利用日列とは別indexのみ採用。
-  const pIdxRaw=findHeaderIdx(header,['データ処理日','ご請求確定日','確定日','売上日','計上日','処理日']);
-  const postIdx=(pIdxRaw>=0&&pIdxRaw!==dIdx)?pIdxRaw:-1;
-  const descIdx=findHeaderIdx(header,['ご利用内容','ご利用先','ご利用店名','ご利用店名・商品名','店名','内容','店舗','摘要','利用店名','加盟店名','Description','Merchant','明細','ご利用明細']);
-  // 金額列は誤検出が事故になるため、具体名を最優先→一般「金額」は補助/手数料/割引/海外現地レート系を除外
-  // 金額列: まず除外語（海外/現地/手数料/割引等）を含まない「金額」系の列だけを候補化し、
-  // その中で具体名を優先。部分一致(例:「海外通貨利用金額」⊃「利用金額」)の誤検出を防ぐ。
-  const AMT_BAD=/海外|現地|手数料|割引|ポイント|レート|為替|キャッシュバック|処理日|利用日/;
-  const amtCand=header.map((h,i)=>({h,i})).filter(o=>/金額/.test(o.h)&&!AMT_BAD.test(o.h));
-  let amtIdx=-1;
-  if(amtCand.length){
-    const pri=amtCand.find(o=>/ご利用金額|ご請求金額|請求金額|お支払金額|支払金額|利用金額|本体金額/.test(o.h));
-    amtIdx=pri?pri.i:amtCand[0].i;
+  // 見出し行は1行目とは限らない（前置きの行が付くCSVがある）。先頭から数行見て、日付・内容・金額の列名がそろう行を見出しにする
+  let hRow=0;
+  for(let r=0;r<Math.min(lines.length,10);r++){const c=parseCsvCols(parseCsvLine(lines[r]));if(c.dIdx>=0&&c.descIdx>=0&&c.amtIdx>=0){hRow=r;break;}}
+  const header=parseCsvLine(lines[hRow]);
+  const {dIdx,postIdx,descIdx,amtIdx}=parseCsvCols(header);
+  if(dIdx<0||descIdx<0||amtIdx<0){
+    // 列名が無く、日付始まりの行がある＝三井住友などのヘッダー無しCSV（1行目が名義・カードごとの見出し行・末尾に合計）。
+    // このアプリは Amex の締め日（7日〜翌月6日）で期間を分けるので、別カードの明細は入れない
+    if(lines.some(l=>DATE_CELL_RE.test(parseCsvLine(l)[0]||''))){alert('このCSVは列名の行が無く、日付から始まる形です（三井住友カードなどのCSV）。\nこのアプリは Amex の締め日（毎月7日〜翌月6日）で明細を分けるため、取り込みませんでした。\n\nAmex の明細CSV（ご利用日・ご利用内容・金額 の列名がある形）を選んでください。');return null;}
+    alert('CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / ')+'\n\n必要列: ご利用日 / ご利用内容(店名) / 金額\nこのヘッダをClaudeに伝えてもらえれば対応を追加します。');return null;
   }
-  if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']);
-  if(dIdx<0||descIdx<0||amtIdx<0){alert('CSVのフォーマットが認識できません。\nヘッダ: '+header.join(' / ')+'\n\n必要列: ご利用日 / ご利用内容(店名) / 金額\nこのヘッダをClaudeに伝えてもらえれば対応を追加します。');return null;}
   const txs=[];const counter={};const signals=[];const suspects=[];const bills=[];
-  for(let i=1;i<lines.length;i++){
+  for(let i=hRow+1;i<lines.length;i++){
     const cols=parseCsvLine(lines[i]);
     if(cols.length<3)continue;
     const date=cols[dIdx]?.trim();
@@ -964,6 +957,49 @@ async function parseCreditCSV(file){
   }
   return {txs,signals,suspects,bills};
 }
+// 見出し行から列の位置を決める
+function parseCsvCols(header){
+  // 三井住友/Amex/その他カード明細の列名ゆれを吸収
+  const dIdx=findHeaderIdx(header,['ご利用日','利用日','取引日','日付','ご利用年月日','Date','TransactionDate']);
+  // データ処理日(=確定日)。請求サイクルの締めはこの日で決まるので利用日と別に取得。具体名を先、広い「処理日」は最後。利用日列とは別indexのみ採用。
+  const pIdxRaw=findHeaderIdx(header,['データ処理日','ご請求確定日','確定日','売上日','計上日','処理日']);
+  const postIdx=(pIdxRaw>=0&&pIdxRaw!==dIdx)?pIdxRaw:-1;
+  const descIdx=findHeaderIdx(header,['ご利用内容','ご利用先','ご利用店名','ご利用店名・商品名','店名','内容','店舗','摘要','利用店名','加盟店名','Description','Merchant','明細','ご利用明細']);
+  // 金額列は誤検出が事故になるため、具体名を最優先→一般「金額」は補助/手数料/割引/海外現地レート系を除外
+  // 金額列: まず除外語（海外/現地/手数料/割引等）を含まない「金額」系の列だけを候補化し、
+  // その中で具体名を優先。部分一致(例:「海外通貨利用金額」⊃「利用金額」)の誤検出を防ぐ。
+  const AMT_BAD=/海外|現地|手数料|割引|ポイント|レート|為替|キャッシュバック|処理日|利用日/;
+  const amtCand=header.map((h,i)=>({h,i})).filter(o=>/金額/.test(o.h)&&!AMT_BAD.test(o.h));
+  let amtIdx=-1;
+  if(amtCand.length){
+    const pri=amtCand.find(o=>/ご利用金額|ご請求金額|請求金額|お支払金額|支払金額|利用金額|本体金額/.test(o.h));
+    amtIdx=pri?pri.i:amtCand[0].i;
+  }
+  if(amtIdx<0)amtIdx=findHeaderIdx(header,['Amount','amount']);
+  return {dIdx,postIdx,descIdx,amtIdx};
+}
+// 「同じ明細か」を見るための鍵。CSVの出どころで変わる 日付の0埋め・空白・全角半角・長音/ハイフン・（注記）・／ｉＤ のゆれを吸う
+function dupKey(t){
+  const m=String(t.date||'').match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  const d=m?m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'):String(t.date||'');
+  const s=toAsciiLower(t.description||'')
+    .replace(/[（(][^）)]*[）)]/g,'')
+    .replace(/[\/／]\s*(id|nfc|ap|apl|qp|edy|waon|nanaco|ic|suica|pasmo|ec|app|qr|pay)\s*$/i,'')
+    .replace(/[\s　]/g,'').replace(/[－ー—‐\-]/g,'ー');
+  return d+'|'+(+t.amount)+'|'+s;
+}
+// すでにある明細と突き合わせる。まず id（日付|内容|金額 の生の文字列）で、残りをゆれを落とした鍵で数で。
+// 同じ日に同じ店・同じ金額が2回あっても、多いぶんだけ新しい明細として残す。dups は [取り込む側, 既存, idで一致したか] の組
+function dupFilter(existing,incoming){
+  const byId=new Map(existing.map(x=>[x.id,x]));
+  const used=new Set(),dups=[],rest=[];
+  incoming.forEach(t=>{const ex=byId.get(t.id);if(ex&&!used.has(ex)){used.add(ex);dups.push([t,ex,true]);}else rest.push(t);});
+  const have={};
+  existing.forEach(x=>{if(used.has(x))return;const k=dupKey(x);(have[k]=have[k]||[]).push(x);});
+  const fresh=[];
+  rest.forEach(t=>{const q=have[dupKey(t)];if(q&&q.length)dups.push([t,q.shift(),false]);else fresh.push(t);});
+  return {fresh,dups};
+}
 // 締め日固定ルール：毎月7日〜翌月6日を1サイクルとする（Amex）
 // キーはサイクル開始日のISO文字列 "YYYY-MM-07"（辞書順=時系列順でソート可）
 function cycleStartFromDate(dStr){
@@ -992,21 +1028,21 @@ async function handleCreditCSV(file){
   if(!parsed)return;
   const {txs,signals,suspects,bills}=parsed;
   if(txs.length===0&&signals.length===0)return;
-  // 追記マージ方式：同じ明細(id一致=日付/内容/金額が同一)は既存をそのまま保持し、
+  // 追記マージ方式：同じ明細は既存をそのまま保持し、
   // Amazon紐付け・期間移動・立替などのユーザー情報を一切消さない。
   // CSVに無い過去の明細も削除しない。新規明細だけを追加。既存には確定日(postDate)だけ補完して請求期間を正す。
-  const idMap=new Map();
-  Object.values(data.months).forEach(m=>m.transactions.forEach(t=>idMap.set(t.id,t)));
-  let added=0,dup=0,nodate=0,fixed=0;
+  const existing=allTxArr(data);
+  const idMap=new Map(existing.map(t=>[t.id,t]));
+  const {fresh,dups}=dupFilter(existing,txs);
+  let added=0,dup=dups.length,nodate=0,fixed=0;
   const touched=new Set();
   const newIds=new Set();
-  txs.forEach(t=>{
-    const ex=idMap.get(t.id);
-    if(ex){                                            // 既存：移動/紐付けは一切触らない
-      dup++;
-      if(t.postDate&&ex.postDate!==t.postDate){ex.postDate=t.postDate;fixed++;} // 確定日だけ補完（請求期間の正規化用）
-      return;
-    }
+  dups.forEach(([t,ex,byId])=>{                       // 既存：移動/紐付けは一切触らない
+    // 確定日だけ補完（請求期間の正規化用）。ゆれの鍵で合わせた組は、同じ日に同額が2回あると取り違えうるので、空のときだけ入れる
+    if(t.postDate&&ex.postDate!==t.postDate&&(byId||!ex.postDate)){ex.postDate=t.postDate;fixed++;}
+  });
+  fresh.forEach(t=>{
+    if(idMap.has(t.id)){dup++;return;}                 // 念のため：同じidを2つ持たない（同期のマージがidで束ねるため）
     const k=txCycle(t);                                // 請求サイクルはデータ処理日優先（確定日で締まる）
     if(!k){nodate++;return;}
     if(data.deletedTxIds&&data.deletedTxIds[t.id]){t.revivedAt=Date.now();delete data.deletedTxIds[t.id];} // 再取込は過去の削除より優先＝復活(他端末の古いtombstoneにも勝つ)

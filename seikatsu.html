@@ -423,6 +423,21 @@ function parseCSV(text){
   }
   return out;
 }
+// 「同じ明細か」を見るための鍵。CSVの出どころで変わる 空白・全角半角・長音/ハイフン・（注記）・／ｉＤ のゆれを吸う
+function dupKey(t){
+  const s=String(t.name||'').replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).toLowerCase()
+    .replace(/[（(][^）)]*[）)]/g,'')
+    .replace(/[\/／]\s*(id|nfc|ap|apl|qp|edy|waon|nanaco|ic|suica|pasmo|ec|app|qr|pay)\s*$/i,'')
+    .replace(/[\s　]/g,'').replace(/[－ー—‐\-]/g,'ー');
+  return t.date+'|'+t.amount+'|'+s;
+}
+// すでにある明細と数で突き合わせる（同じ日に同じ店・同じ金額が2回あっても、多いぶんだけ新しい明細として残す）
+function dupFilter(existing, incoming){
+  const have={}; existing.forEach(x=>{ const k=dupKey(x); have[k]=(have[k]||0)+1; });
+  const fresh=[], dups=[];
+  incoming.forEach(t=>{ const k=dupKey(t); if(have[k]>0){ have[k]--; dups.push(t); } else fresh.push(t); });
+  return {fresh, dups};
+}
 function importCSV(file){
   const reader=new FileReader();
   reader.onload=e=>{
@@ -436,16 +451,10 @@ function importCSV(file){
     }
     const rows=parseCSV(text);
     if(!rows.length){ alert('明細が見つかりませんでした。三井住友カード（Vpass）のCSVか確認してください。'); return; }
-    // 既存CSV明細との重複を除外（日付＋店名＋金額）
-    const seen=new Set(db.tx.filter(t=>t.source==='csv').map(t=>t.date+'|'+t.name+'|'+t.amount));
-    let added=0, skip=0;
-    for(const r of rows){
-      const k=r.date+'|'+r.name+'|'+r.amount;
-      if(seen.has(k)){ skip++; continue; }
-      seen.add(k);
-      db.tx.push({id:uid(), date:r.date, name:r.name, amount:r.amount, source:'csv', memo:''});
-      added++;
-    }
+    // 既存CSV明細との重複を除外（ゆれを落とした 日付＋店名＋金額 を、数で突き合わせる）
+    const {fresh,dups}=dupFilter(db.tx.filter(t=>t.source==='csv'), rows);
+    for(const r of fresh) db.tx.push({id:uid(), date:r.date, name:r.name, amount:r.amount, source:'csv', memo:''});
+    const added=fresh.length, skip=dups.length;
     save();
     // 取り込んだ月へ移動
     const last=rows[rows.length-1];
