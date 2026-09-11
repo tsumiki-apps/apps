@@ -1082,6 +1082,21 @@ function mkItem(date,desc,amount,counter){
   const sfx=counter[baseKey]>1?'|'+counter[baseKey]:'';
   return {id:'tx_'+hashStr(baseKey+sfx), src:'csv', date, desc:desc.replace(/\s+/g,' '), amount, tag:PERSONAL_RE.test(desc)?'kodai':'share'};
 }
+// 「同じ明細か」を見るための鍵。CSVの出どころで変わる 空白・全角半角・長音/ハイフン・（注記）・／ｉＤ のゆれを吸う
+function dupKey(it){
+  const d=zenNum(String(it.desc||'')).toLowerCase()
+    .replace(/[（(][^）)]*[）)]/g,'')
+    .replace(/[\/／]\s*(id|nfc|ap|apl|qp|edy|waon|nanaco|ic|suica|pasmo|ec|app|qr|pay)\s*$/i,'')
+    .replace(/[\s　]/g,'').replace(/[－ー—‐\-]/g,'ー');
+  return it.date+'|'+it.amount+'|'+d;
+}
+// すでにある明細と数で突き合わせる（同じ日に同じ店・同じ金額が2回あっても、多いぶんだけ新しい明細として残す）
+function dupFilter(existing, incoming){
+  const have={}; existing.forEach(x=>{ const k=dupKey(x); have[k]=(have[k]||0)+1; });
+  const fresh=[], dups=[];
+  incoming.forEach(t=>{ const k=dupKey(t); if(have[k]>0){ have[k]--; dups.push(t); } else fresh.push(t); });
+  return {fresh, dups};
+}
 async function parseCreditCSV(file){
   const buf=await file.arrayBuffer();
   const text=decodeBuffer(buf);
@@ -1207,8 +1222,9 @@ function openSplitSheet(p){
 function routeDupCount(g){
   if(g.dest==='__new__'||g.dest==='__skip__') return 0;
   const p=db.periods.find(x=>x.id===g.dest); if(!p) return 0;
+  if(pendingRoute.mode==='import') return dupFilter(p.items,g.items).dups.length;
   const idset=new Set(p.items.map(x=>x.id));
-  return g.items.filter(t=>idset.has(t.id)&&!(pendingRoute.mode==='split'&&p.id===pendingRoute.srcId)).length;
+  return g.items.filter(t=>idset.has(t.id)&&p.id!==pendingRoute.srcId).length;
 }
 function sampleNames(items){
   const ns=[...new Set(items.map(it=>dispName(it)).filter(Boolean))].slice(0,3);
@@ -1283,9 +1299,9 @@ function runImport(){
   pendingRoute.groups.forEach(g=>{
     if(g.dest==='__skip__') return;
     const {p,created}=destPeriod(g); if(!p) return;
-    const idset=new Set(p.items.map(x=>x.id));
-    const ids=[];
-    g.items.forEach(t=>{ if(idset.has(t.id)){dup++;return;} p.items.push(t); idset.add(t.id); ids.push(t.id); added++; });
+    const {fresh,dups}=dupFilter(p.items,g.items);
+    const ids=[]; dup+=dups.length;
+    fresh.forEach(t=>{ p.items.push(t); ids.push(t.id); added++; });
     rememberYm(p);
     log.entries.push({periodId:p.id, itemIds:ids, createdPeriod:created, name:p.name});
     if(ids.length||created){ parts.push(p.name+' '+ids.length+'件'); lastPid=p.id; }
