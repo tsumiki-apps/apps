@@ -112,15 +112,6 @@
   .sm.s-over b{color:var(--danger);}
   .sm:active{transform:scale(.96);}
 
-  /* 停滞・進捗・返信チップ */
-  .stall{display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:600; color:#915b21;
-    background:var(--c-yellow-bg); padding:1.5px 6px; border-radius:5px;}
-  .stall svg{width:10px; height:10px;}
-  html[data-theme="dark"] .stall{color:var(--c-yellow-tx);}
-  .prog{display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:600; color:var(--sub);
-    background:var(--hover); padding:1.5px 6px; border-radius:5px;}
-  .prog svg{width:10px; height:10px;}
-  .prog.full{color:var(--c-green-tx); background:var(--c-green-bg);}
 
   /* リストのスワイプ */
   .lrow-wrap{position:relative; overflow:hidden;}
@@ -275,7 +266,6 @@
       </div>
       <div class="spacer"></div>
       <div class="sync local" id="syncChip"><span class="dot"></span><span id="syncText">…</span></div>
-      <button class="icon-btn" id="themeBtn" title="テーマ"></button>
     </div>
     <div class="toolbar">
       <div class="search">
@@ -342,9 +332,6 @@ const IC = {
   unbox:'<path d="M3 8h18v11a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><rect x="2" y="4" width="20" height="4" rx="1"/><path d="M12 17v-5M9.5 14.5L12 12l2.5 2.5"/>',
   x:'<path d="M6 6l12 12M18 6L6 18"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
-  sun:'<circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8L6 18M18 6l1.8-1.8"/>',
-  moon:'<path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/>',
-  auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17" fill="currentColor" stroke="none"/><path d="M12 3.5a8.5 8.5 0 010 17z" fill="currentColor" stroke="none"/>',
 };
 const svg = (p,w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w||2}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 
@@ -357,35 +344,11 @@ function defaultDB(){
       {id:'doing',   name:'進行中',     color:'blue',   done:false},
       {id:'done',    name:'完了',       color:'green',  done:true},
     ],
-    tags:[
-      {id:'app_tasknote', name:'たすくノート',   color:'blue'},
-      {id:'app_ball',     name:'ボール',         color:'green'},
-      {id:'app_yuzuwari', name:'ゆずわり',       color:'yellow'},
-      {id:'app_cooking',  name:'ゆずごはん日記', color:'orange'},
-      {id:'hold',         name:'保留',           color:'gray'},
-      {id:'personal',     name:'個人',           color:'purple'},
-    ],
+    tags:[],
     tasks:[],
     projects:{},
     ui:{view:'board', theme:'auto'}
   };
-}
-function seedTasks(){
-  const now=Date.now();
-  const d=(off)=>{ const x=new Date(); x.setDate(x.getDate()+off); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; };
-  return [
-    {id:uid(),title:'たすくノート＝あなたのやることハブ 👋',status:'waiting',priority:'mid',due:null,tags:['app_tasknote'],source:'claude',created:now,updated:now,
-      body:[
-        {id:uid(),type:'text',text:'Claude Codeと並行して作っている各アプリで「Kodaiがやること・確認すること」が決まると、ここに自動でカードが起票されます。'},
-        {id:uid(),type:'text',text:'左端の「あなた待ち」＝ボールがあなたにある＝作業が止まっているサイン。片づいたらチェックで完了に。'},
-        {id:uid(),type:'todo',text:'各カードは「絞り込み」でアプリ別に見られます',checked:false},
-        {id:uid(),type:'todo',text:'長押しドラッグで列を移動できます',checked:false},
-      ]},
-    {id:uid(),title:'例）ボール：作り直しの方針を確認して再開したい',status:'waiting',priority:'high',due:null,tags:['app_ball'],source:'claude',created:now,updated:now,
-      body:[{id:uid(),type:'text',text:'（これはサンプルカードです）Claudeが「あなたの確認が要る」と判断すると、こんな風に何を確認してほしいかを書いて起票します。'}]},
-    {id:uid(),title:'例）ゆずわり：精算の丸め方をどうするか決める',status:'todo',priority:'mid',due:null,tags:['app_yuzuwari'],source:'claude',created:now,updated:now,body:[]},
-    {id:uid(),title:'例）たすくノート：連携アップデートを実装中（Claude作業中）',status:'doing',priority:null,due:null,tags:['app_tasknote'],source:'claude',created:now,updated:now,body:[]},
-  ];
 }
 
 /* ============================================================
@@ -496,18 +459,14 @@ function renderSync(){
    テーマ
    ============================================================ */
 const mq = window.matchMedia('(prefers-color-scheme: dark)');
+// 端末の明るさの設定に合わせる（切り替えボタンは 2026-09 にやめた）
 function applyTheme(){
-  const t = db.ui.theme || 'auto';
-  const resolved = t==='auto' ? (mq.matches?'dark':'light') : t;
+  const resolved = mq.matches?'dark':'light';
   document.documentElement.setAttribute('data-theme', resolved);
   const tcMeta=document.querySelector('meta[name="theme-color"]');
   if(tcMeta) tcMeta.setAttribute('content', resolved==='dark' ? '#191919' : '#ffffff');
-  const btn=$('#themeBtn');
-  const ic = t==='auto'?IC.auto : t==='dark'?IC.moon : IC.sun;
-  btn.innerHTML = svg(ic, 1.9);
-  btn.title = t==='auto'?'テーマ: 自動':t==='dark'?'テーマ: ダーク':'テーマ: ライト';
 }
-mq.addEventListener && mq.addEventListener('change',()=>{ if((db.ui.theme||'auto')==='auto') applyTheme(); });
+mq.addEventListener && mq.addEventListener('change',applyTheme);
 
 /* ============================================================
    ヘルパー
@@ -539,10 +498,8 @@ function dueClass(iso, sid){
 const PRI_LABEL={high:'高',mid:'中',low:'低'};
 
 function waitingColId(){ return db.columns.some(c=>c.id==='waiting') ? 'waiting' : firstOpenCol(); }
-function daysSince(ts){ return Math.floor((Date.now()-ts)/86400000); }
 function dueDelta(iso){ if(!iso) return null; const dt=new Date(iso+'T00:00:00'); const t=new Date(); t.setHours(0,0,0,0); return Math.round((dt-t)/86400000); }
 function isOverdue(t){ if(!t.due||isDoneStatus(t.status)) return false; return dueDelta(t.due)<0; }
-function stallDays(t){ if(isDoneStatus(t.status)) return 0; const d=daysSince(t.updated||t.created||Date.now()); return d>=3?d:0; }
 
 // 並びは固定（2026-09）：期限が近い順（過ぎたものが先頭・期限なしは後ろ）→ 同じなら最近動いた順。完了は最近動いた順だけ
 function sortTasks(list, done){
@@ -574,17 +531,10 @@ function visibleTasks(){
 /* ============================================================
    チップHTML
    ============================================================ */
-function checklistProgress(t){
-  const todos=(t.body||[]).filter(b=>b.type==='todo');
-  if(!todos.length) return null;
-  return {done:todos.filter(b=>b.checked).length, total:todos.length};
-}
 function metaChips(t){
   let h='';
   if(t.priority) h+=`<span class="pri ${t.priority}"><span class="pd"></span>${PRI_LABEL[t.priority]}</span>`;
   if(t.due){ const dc=dueClass(t.due,t.status); h+=`<span class="due ${dc}">${svg(IC.clock,2)}${fmtDue(t.due)}</span>`; }
-  const sd=stallDays(t); if(sd) h+=`<span class="stall">${svg(IC.clock,2)}${sd}日</span>`;
-  const cp=checklistProgress(t); if(cp) h+=`<span class="prog ${cp.done===cp.total?'full':''}">${svg(IC.check,3)}${cp.done}/${cp.total}</span>`;
   t.tags.forEach(id=>{ const tg=tagById(id); if(tg) h+=`<span class="tagchip" style="${tagStyle(tg.color)}">${esc(tg.name)}</span>`; });
   return h;
 }
@@ -926,7 +876,6 @@ $('#pageDelete').onclick=()=>{
   $('#delNo').onclick=closePop;
 };
 $('#scrim').onclick=()=>{ closePop(); };
-$('#themeBtn').onclick=()=>{ const order=['auto','light','dark']; const cur=db.ui.theme||'auto'; db.ui.theme=order[(order.indexOf(cur)+1)%3]; applyTheme(); save(); };
 let searchT=null;
 $('#searchInput').addEventListener('input',e=>{ searchQ=e.target.value; clearTimeout(searchT); searchT=setTimeout(()=>{ renderView(); },160); });
 // 画面に戻ってきたら読み直す（開きっぱなしの古い画面から上書きしないため）
@@ -935,7 +884,6 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadRemo
 /* 起動 */
 function boot(){
   loadLocal();
-  if(!localStorage.getItem(KEY)){ db=defaultDB(); db.tasks=seedTasks(); localStorage.setItem(KEY,JSON.stringify(db)); }
   normalize();
   applyTheme();
   renderAll();
