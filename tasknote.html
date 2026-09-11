@@ -626,6 +626,8 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const sb = (window.supabase && window.supabase.createClient) ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 const STATE_TABLE='tasknote_state', STATE_ID='kodai';
 let online=null, lastPushed=null, saveTimer=null;
+// remoteLoaded＝この端末がクラウドの最新を一度でも読めたか／pendingRemote＝詳細を開いている間に届いたクラウドの中身
+let remoteLoaded=false, pendingRemote=null;
 
 function normalize(){
   if(!db.columns || !db.columns.length) db.columns = defaultDB().columns;
@@ -654,9 +656,12 @@ function normalize(){
 }
 function loadLocal(){ try{ const s=localStorage.getItem(KEY); if(s){ db=Object.assign(defaultDB(), JSON.parse(s)); } }catch(e){} }
 function save(){
+  adoptPending();
   normalize();
   localStorage.setItem(KEY, JSON.stringify(db));
   if(!sb) return;
+  // クラウドの最新をまだ読めていない端末からは送らない（古い中身で丸ごと上書きしないため）
+  if(!remoteLoaded){ loadRemote(); return; }
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
     const payload=JSON.stringify(db); lastPushed=payload;
@@ -672,11 +677,9 @@ async function loadRemote(){
   try{
     const {data,error}=await sb.from(STATE_TABLE).select('state').eq('id',STATE_ID).maybeSingle();
     if(error){ online=false; renderSync(); return; }
-    online=true;
+    online=true; remoteLoaded=true;
     if(data && data.state && typeof data.state==='object'){
-      db=Object.assign(defaultDB(), data.state); normalize();
-      localStorage.setItem(KEY, JSON.stringify(db));
-      renderAll();
+      applyRemote(data.state);
     }else{
       if(db.tasks.length) save();   // ローカルを種として送る
     }
@@ -689,14 +692,28 @@ function subscribeRealtime(){
     .on('postgres_changes',{event:'*',schema:'public',table:STATE_TABLE,filter:'id=eq.'+STATE_ID},(payload)=>{
       const incoming=JSON.stringify((payload.new&&payload.new.state)||{});
       if(incoming===lastPushed) return;
-      if(payload.new && payload.new.state){
-        // 編集中のページは邪魔しない
-        if(sheetOpen && curTask){ return; }
-        db=Object.assign(defaultDB(), payload.new.state); normalize();
-        localStorage.setItem(KEY, JSON.stringify(db));
-        renderAll();
-      }
+      if(payload.new && payload.new.state) applyRemote(payload.new.state);
     }).subscribe();
+}
+// クラウドの中身を取り込む。詳細を開いている間は差し替えず、取っておいて保存・閉じるときに取り込む
+function applyRemote(state){
+  if(sheetOpen && curTask){ pendingRemote=state; return; }
+  db=Object.assign(defaultDB(), state); normalize();
+  localStorage.setItem(KEY, JSON.stringify(db));
+  renderAll();
+}
+// 取っておいたクラウドの中身を db にする。この端末で直したカードだけは手元の版を差し込む
+function adoptPending(){
+  if(!pendingRemote) return;
+  const state=pendingRemote; pendingRemote=null;
+  const mine=curTask;
+  db=Object.assign(defaultDB(), state); normalize();
+  if(mine && !mine._new){
+    const i=db.tasks.findIndex(t=>t.id===mine.id);
+    if(pageDirty){ if(i>=0) db.tasks[i]=mine; else db.tasks.push(mine); }
+    else if(i>=0) curTask=db.tasks[i];
+  }
+  localStorage.setItem(KEY, JSON.stringify(db));
 }
 function renderSync(){
   const chip=$('#syncChip'), txt=$('#syncText');
@@ -1435,14 +1452,14 @@ function moveTaskTo(taskId, targetCol, targetIndex){
 /* ============================================================
    詳細ページ（ブロックエディタ）
    ============================================================ */
-let curTask=null, sheetOpen=false;
+let curTask=null, sheetOpen=false, pageDirty=false;   // pageDirty＝詳細でこのカードを直したか
 function openTask(id){
   if(id){ curTask=db.tasks.find(t=>t.id===id); if(!curTask) return; }
   else{
     const now=Date.now();
     curTask={id:uid(),title:'',status:defaultOpenCol(),priority:null,due:null,tags:db.ui.filterTag?[db.ui.filterTag]:[],body:[],created:now,updated:now,_new:true};
   }
-  sheetOpen=true;
+  sheetOpen=true; pageDirty=false;
   renderPage();
   renderArchiveBtn();
   $('#sheet').classList.add('show');
@@ -1457,10 +1474,12 @@ function commitNewIfNeeded(){
   if(curTask && curTask._new){
     const hasContent = curTask.title.trim() || curTask.body.some(b=>b.text&&b.text.trim());
     if(hasContent){ delete curTask._new; db.tasks.push(curTask); save(); }
-  }else if(curTask){ save(); }
+  }else if(curTask && pageDirty){ save(); }   // 開いただけで閉じたら保存しない（古い中身で上書きしないため）
+  pageDirty=false;
 }
 function closeSheet(){
   commitNewIfNeeded();
+  adoptPending();
   $('#sheet').classList.remove('show');
   sheetOpen=false;
   setTimeout(()=>{ curTask=null; renderView(); },200);
@@ -1494,7 +1513,7 @@ function renderPage(){
   if(!t.body.length) t.body.push({id:uid(),type:'text',text:''});
   renderBlocks();
 }
-function touch(){ curTask.updated=Date.now(); if(!curTask._new) save(); else localStorage.setItem(KEY, JSON.stringify(db)); }
+function touch(){ curTask.updated=Date.now(); pageDirty=true; if(!curTask._new) save(); else localStorage.setItem(KEY, JSON.stringify(db)); }
 
 function propRow(icon,label,valHTML,onclick){
   const row=document.createElement('div'); row.className='prop';
@@ -1756,12 +1775,13 @@ $('#pageArchive').onclick=()=>{
   t.archived = was ? undefined : true;
   if(!t.archived) delete t.archived;
   t.updated=Date.now();
-  commitNewIfNeeded(); save();
+  pageDirty=true; commitNewIfNeeded(); adoptPending();
   $('#sheet').classList.remove('show'); sheetOpen=false;
   setTimeout(()=>{ curTask=null; renderView(); renderFilterNote(); },200);
   showUndo(was?'アーカイブから戻しました':'アーカイブしました', ()=>{
-    if(was) t.archived=true; else delete t.archived;
-    t.updated=Date.now(); save(); renderView(); renderFilterNote();
+    const x=db.tasks.find(k=>k.id===t.id); if(!x) return;   // その間にクラウドから差し替わっていても、id で引き直す
+    if(was) x.archived=true; else delete x.archived;
+    x.updated=Date.now(); save(); renderView(); renderFilterNote();
   });
 };
 $('#pageDelete').onclick=()=>{
@@ -1770,7 +1790,7 @@ $('#pageDelete').onclick=()=>{
     <div class="ps-item ps-danger" id="delYes"><div class="ic">${svg(IC.x,2)}</div>削除する</div>
     <div class="ps-item" id="delNo"><div class="ic">${svg('<path d="M15 18l-6-6 6-6"/>',2)}</div>キャンセル</div></div>`;
   openPop(html);
-  $('#delYes').onclick=()=>{ closePop(); const id=curTask.id; db.tasks=db.tasks.filter(t=>t.id!==id); save(); $('#sheet').classList.remove('show'); sheetOpen=false; setTimeout(()=>{curTask=null;renderView();},200); toast('削除しました'); };
+  $('#delYes').onclick=()=>{ closePop(); adoptPending(); const id=curTask.id; db.tasks=db.tasks.filter(t=>t.id!==id); save(); $('#sheet').classList.remove('show'); sheetOpen=false; setTimeout(()=>{curTask=null;renderView();},200); toast('削除しました'); };
   $('#delNo').onclick=closePop;
 };
 $('#scrim').onclick=()=>{ closePop(); };
@@ -1781,6 +1801,8 @@ let searchT=null;
 $('#searchInput').addEventListener('input',e=>{ db.ui.search=e.target.value; clearTimeout(searchT); searchT=setTimeout(()=>{ renderView(); },160); });
 document.addEventListener('pointerdown',e=>{ if(slashOpen && !e.target.closest('#slash') && !e.target.closest('.blk-input')) hideSlash(); },true);
 window.addEventListener('resize',()=>{ if(slashOpen) hideSlash(); });
+// 画面に戻ってきたら読み直す（開きっぱなしの古い画面から上書きしないため）
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadRemote(); });
 
 /* 起動 */
 function boot(){
