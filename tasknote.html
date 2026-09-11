@@ -328,10 +328,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input id="searchInput" placeholder="検索" autocomplete="off">
       </div>
-      <button class="tb-btn" id="sortBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M7 20l-3-3M7 4l3 3M14 7h7M14 12h5M14 17h3"/></svg>
-        <span id="sortLabel">並べ替え</span>
-      </button>
       <button class="tb-btn" id="filterBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
         絞り込み
@@ -393,8 +389,6 @@ const IC = {
   status:'<circle cx="12" cy="12" r="8"/>',
   flag:'<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5l3 2"/>',
-  sparkle:'<path d="M12 3l1.7 5.1a2 2 0 001.2 1.2L20 11l-5.1 1.7a2 2 0 00-1.2 1.2L12 19l-1.7-5.1a2 2 0 00-1.2-1.2L4 11l5.1-1.7a2 2 0 001.2-1.2z"/>',
-  history:'<path d="M3.5 12a8.5 8.5 0 108.5-8.5A8.5 8.5 0 004.6 8M3.5 4v4h4"/><path d="M12 8.5V12l2.5 1.8"/>',
   tag:'<path d="M3 11.5V5a2 2 0 012-2h6.5L21 12.5 12.5 21z"/><circle cx="7.5" cy="7.5" r="1.4"/>',
   text:'<path d="M5 7h14M9 7v12M15 7v6"/>',
   h1:'<path d="M4 6v12M12 6v12M4 12h8M17 8.5l2.5-1.5V18"/>',
@@ -472,7 +466,6 @@ function normalize(){
   if(!Array.isArray(db.tasks)) db.tasks=[];
   if(!db.projects || typeof db.projects!=='object' || Array.isArray(db.projects)) db.projects={};
   if(!db.ui) db.ui={view:'board',theme:'auto'};
-  if(!('sort' in db.ui)) db.ui.sort='manual';
   if(!('quickFilter' in db.ui) || db.ui.quickFilter==='duesoon') db.ui.quickFilter=null;   // 「期限間近」は 2026-09 に廃止
   if(!('showArchived' in db.ui)) db.ui.showArchived=false;
   const colIds = db.columns.map(c=>c.id);
@@ -614,21 +607,12 @@ function isOverdue(t){ if(!t.due||isDoneStatus(t.status)) return false; return d
 function stallDays(t){ if(isDoneStatus(t.status)) return 0; const d=daysSince(t.updated||t.created||Date.now()); return d>=3?d:0; }
 function replyLabel(t){ if(!t.reply) return ''; const d=t.reply.decision; return d==='approve'?'承認':d==='reject'?'却下':d==='later'?'あとで':(t.reply.text?'返信':''); }
 
-const PRI_RANK={high:0,mid:1,low:2};
-function sortTasks(list){
-  const s=db.ui.sort||'manual';
-  if(s==='manual') return list;
-  const arr=list.slice();
-  if(s==='due'){
-    arr.sort((a,b)=>{ const da=a.due?dueDelta(a.due):Infinity, dbb=b.due?dueDelta(b.due):Infinity; return da-dbb; });
-  }else if(s==='priority'){
-    arr.sort((a,b)=>{ const pa=a.priority in PRI_RANK?PRI_RANK[a.priority]:3, pb=b.priority in PRI_RANK?PRI_RANK[b.priority]:3; return pa-pb; });
-  }else if(s==='newest'){
-    arr.sort((a,b)=>(b.created||0)-(a.created||0));
-  }else if(s==='recent'){
-    arr.sort((a,b)=>((b.updated||b.created||0)-(a.updated||a.created||0)));
-  }
-  return arr;
+// 並びは固定（2026-09）：期限が近い順（過ぎたものが先頭・期限なしは後ろ）→ 同じなら最近動いた順。完了は最近動いた順だけ
+function sortTasks(list, done){
+  const due=t=>t.due?dueDelta(t.due):Infinity;
+  const upd=t=>t.updated||t.created||0;
+  if(done) return list.slice().sort((a,b)=>upd(b)-upd(a));
+  return list.slice().sort((a,b)=>(due(a)-due(b)) || (upd(b)-upd(a)));
 }
 
 /* アーカイブ＝「一旦しまった」カード。既定ではどのビューにも出さず、集計にも数えない。
@@ -702,9 +686,6 @@ function renderView(){
   root.className='view';
   document.body.classList.toggle('arcmode', !!db.ui.showArchived);
   renderSummary();
-  const s=db.ui.sort||'manual';
-  $('#sortLabel').textContent = s==='due'?'期限順':s==='priority'?'優先度順':s==='newest'?'新しい順':s==='recent'?'最近動かした順':'並べ替え';
-  $('#sortBtn').classList.toggle('active', s!=='manual');
   if(db.ui.showArchived && !archivedCount()){
     root.innerHTML=`<div class="empty"><div class="e-emoji">🗃️</div>
       <div class="e-txt">アーカイブは空です。<br>詳細ページの箱アイコンで、いま追わないカードをここへしまえます。</div></div>`;
@@ -737,7 +718,7 @@ function renderList(root){
   if(!db.ui.showArchived && !liveTasks().length){ root.innerHTML=emptyHTML(); bindEmpty(root); return; }
   const wrap=document.createElement('div'); wrap.className='list';
   db.columns.forEach(col=>{
-    const list=sortTasks(tasks.filter(t=>t.status===col.id));
+    const list=sortTasks(tasks.filter(t=>t.status===col.id), col.done);
     const cs=db.ui.collapsed||{};
     const collapsed=(col.id in cs) ? cs[col.id] : !!col.done;   // 完了は、開いたことがなければ畳んでおく
     const g=document.createElement('div'); g.className='lgroup'+(collapsed?' collapsed':'');
@@ -1178,14 +1159,6 @@ function openFilter(){
   $$('#popContent [data-q]').forEach(el=>el.onclick=()=>{ db.ui.quickFilter=(db.ui.quickFilter===el.dataset.q)?null:el.dataset.q; save(); closePop(); renderView(); renderFilterNote(); });
   $$('#popContent [data-arc]').forEach(el=>el.onclick=()=>{ db.ui.showArchived=!db.ui.showArchived; save(); closePop(); renderView(); renderFilterNote(); });
 }
-function openSort(){
-  const cur=db.ui.sort||'manual';
-  const opts=[['manual','手動（ドラッグ順）',IC.list],['recent','最近動かした順',IC.history],['newest','新しい順',IC.sparkle],['due','期限が近い順',IC.clock],['priority','優先度が高い順',IC.flag]];
-  let html=`<div class="ps-title">並べ替え</div><div class="ps-list">`;
-  opts.forEach(([v,l,ic])=>{ html+=`<div class="ps-item ${cur===v?'on':''}" data-sort="${v}"><div class="ic">${svg(ic,2)}</div>${l}<span class="chk">${svg(IC.check,2.4)}</span></div>`; });
-  html+=`</div>`; openPop(html);
-  $$('#popContent [data-sort]').forEach(el=>el.onclick=()=>{ db.ui.sort=el.dataset.sort; save(); closePop(); renderView(); });
-}
 
 /* ============================================================
    イベント配線
@@ -1219,7 +1192,6 @@ $('#pageDelete').onclick=()=>{
 $('#scrim').onclick=()=>{ closePop(); };
 $('#themeBtn').onclick=()=>{ const order=['auto','light','dark']; const cur=db.ui.theme||'auto'; db.ui.theme=order[(order.indexOf(cur)+1)%3]; applyTheme(); save(); };
 $('#filterBtn').onclick=openFilter;
-$('#sortBtn').onclick=openSort;
 let searchT=null;
 $('#searchInput').addEventListener('input',e=>{ db.ui.search=e.target.value; clearTimeout(searchT); searchT=setTimeout(()=>{ renderView(); },160); });
 document.addEventListener('pointerdown',e=>{ if(slashOpen && !e.target.closest('#slash') && !e.target.closest('.blk-input')) hideSlash(); },true);
