@@ -636,8 +636,11 @@
   /* 大見出し・検索・札は中身と一緒に流す（Apple と同じで、めくると上に消える） */
   #fscroll{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
     padding:0 12px calc(24px + env(safe-area-inset-bottom))}
-  #fbig{font-size:26px;font-weight:800;letter-spacing:.01em;margin:10px 4px 12px;
+  /* 大見出しは「潜ったフォルダの名前」と「検索」のときだけ出る。
+     下の余白は検索欄側に持たせてあるので、ここは上だけ（消えても詰まらない） */
+  #fbig{font-size:26px;font-weight:800;letter-spacing:.01em;margin:10px 4px 0;
     color:var(--fg);overflow-wrap:anywhere}
+  #fbig[hidden]{display:none}
   /* 引っぱって更新。高さは指に合わせて JS が動かすので、ここで動きを付けない
      （transition を入れると指から遅れて付いてくる＝重く感じる）。
      離せる位置まで来たら矢印が立ち上がって色が付く＝字を置かずに伝える */
@@ -646,7 +649,7 @@
   #fpull svg{transform:rotate(0deg);transition:transform .12s cubic-bezier(.2,0,0,1)}
   #fpull.ready{color:#5c9cf5}
   #fpull.ready svg{transform:rotate(180deg)}
-  .fsearch{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px;
+  .fsearch{margin-top:12px;display:flex;align-items:center;gap:8px;height:44px;padding:0 10px;
     background:#1a1d24;border:1px solid var(--line);border-radius:11px}
   .fsearch svg{flex:0 0 auto;color:var(--dim)}
   /* 16px 未満にすると iOS が画面ごと拡大する（打った瞬間に一覧が見えなくなる） */
@@ -4589,8 +4592,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (fQuery) title = '検索';
     else if (fMode === 'browse') title = fDir ? fBase(fDir) : '制作物';
     else title = '最近';
-    fBarTitle.textContent = title;
-    fBig.textContent = title;
+    // ⚠️ 「最近」「制作物」は**出さない**（2026-09-12 本人の指示）。
+    //    札に「最近／フォルダ」と書いてあり、開いた場所もそこしか無いので、
+    //    同じ字が画面の上に二度出るだけだった。**潜ったフォルダの名前と
+    //    検索は残す**＝そちらは「いまどこを見ているか」の唯一の手がかり
+    var plain = !fQuery && (fMode === 'recent' || !fDir);
+    fBig.hidden = plain;
+    fBig.textContent = plain ? '' : title;
+    fBarTitle.textContent = plain ? '' : title;
     // 押したらどうなるかを絵にする（いまの状態ではなく、切り替わる先を出す）
     fViewBtn.innerHTML = fView === 'grid' ? IC_LIST : IC_GRID;
     // 札は「一番上にいて、さがしていないとき」だけ。潜ったら場所を示すほうが大事
