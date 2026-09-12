@@ -1186,29 +1186,134 @@ function within(promise, ms, label) {
 const SKIP_DIR = /^(\.git|node_modules|\.next|dist|build|\.venv|__pycache__)$/;
 const PREVIEW_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;
 
-// 見せられるファイルを新しい順に集める（非同期・深さ2まで）
-async function listPreviewables(limit = 200) {
+// ------------------------------------------------------------------ 「最近」
+//
+// 置き場ぜんぶを新しい順に集める。2026-09-12 に作り直した。
+//
+// ⚠️ 前は深さ2までしか見ておらず、**1,339件のうち828件（62%）が最初から
+//    出てこなかった**（実測）。とくに `11_やりとり出力/Instagram運用` の360件は
+//    丸ごと不在で、直近7日に作った506件のうち304件が「最近」に現れなかった。
+//    ＝「作ったのに出ない」の正体はここ。深さを広げるかわりに締め切りを持たせる。
+//
+// ⚠️ 締め切りは walk 自身に持たせる。呼び手の `within` は**待つのをやめるだけ**で
+//    探索は裏で回り続け、押し直すたびに1本増えていた（README「まだ直していない」の1件目）。
+//    走っている探索が1本あるあいだは、次の人はそれに相乗りする（下の recentRunning）。
+//
+// ⚠️ 見せられない形式（mp4・pptx・py など）も**隠さない**。フォルダを辿る画面は
+//    前から隠していないので、最近だけ隠すと同じ置き場が2つの顔を持つことになる。
+//    開けるかどうかは open で返し、画面は薄く出す。
+const RECENT_DEPTH = 6;              // 実測の最深は5階層。1段だけ余裕を持たせる
+const RECENT_BUDGET_MS = 3500;       // これを過ぎたら打ち切って、集まったぶんを返す
+const RECENT_MAX = 20000;
+const RECENT_TTL_MS = 45000;         // 集めた結果を手元に置く時間（引っぱって更新で無視）
+const RECENT_FANOUT = 8;             // 同時に readdir するフォルダの数
+
+let recentCache = { at: 0, list: null, partial: false };
+let recentRunning = null;
+
+// 幅優先で集める。深さ優先にすると、途中で締め切りが来たとき
+// 「最初の枝だけ深く、あとは空」という偏った結果になる
+async function scanRecent(deadline) {
   const out = [];
-  async function walk(dir, depth) {
-    if (depth > 2 || out.length > 2000) return;
-    let entries;
-    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch (e) { return; }
-    for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (!SKIP_DIR.test(e.name)) await walk(full, depth + 1);
-      } else if (PREVIEW_EXT.test(e.name)) {
+  let queue = [{ dir: PREVIEW_ROOT, depth: 0 }];
+  let partial = false;
+  while (queue.length) {
+    if (Date.now() > deadline || out.length >= RECENT_MAX) { partial = true; break; }
+    const batch = queue.splice(0, RECENT_FANOUT);
+    const next = [];
+    await Promise.all(batch.map(async (job) => {
+      let entries;
+      try { entries = await fsp.readdir(job.dir, { withFileTypes: true }); } catch (e) { return; }
+      await Promise.all(entries.map(async (e) => {
+        if (e.name.startsWith('.')) return;
+        const full = path.join(job.dir, e.name);
+        if (e.isDirectory()) {
+          if (!SKIP_DIR.test(e.name) && job.depth < RECENT_DEPTH) {
+            next.push({ dir: full, depth: job.depth + 1 });
+          }
+          return;
+        }
         try {
           const st = await fsp.stat(full);
-          out.push({ rel: path.relative(PREVIEW_ROOT, full), mtime: st.mtimeMs, size: st.size });
+          out.push({
+            rel: path.relative(PREVIEW_ROOT, full), name: e.name,
+            mtime: st.mtimeMs, size: st.size, open: PREVIEW_EXT.test(e.name),
+          });
         } catch (e2) { /* 読めないものは飛ばす */ }
-      }
-    }
+      }));
+    }));
+    queue = queue.concat(next);
   }
-  await walk(PREVIEW_ROOT, 0);
   out.sort((a, b) => b.mtime - a.mtime);
-  return out.slice(0, limit);
+  return { list: out, partial };
+}
+
+async function recentFiles(fresh) {
+  if (!fresh && recentCache.list && Date.now() - recentCache.at < RECENT_TTL_MS) return recentCache;
+  if (recentRunning) return recentRunning;      // 走っている1本に相乗りする
+  recentRunning = (async () => {
+    try {
+      const r = await scanRecent(Date.now() + RECENT_BUDGET_MS);
+      recentCache = { at: Date.now(), list: r.list, partial: r.partial };
+      return recentCache;
+    } finally { recentRunning = null; }
+  })();
+  return recentRunning;
+}
+
+// 一度に書き出したかたまりは1行にまとめる。
+// ⚠️ 2026-09-12 実測：120件のうち**57件が9/6の色違いアイコン1回ぶん**で埋まり、
+//    遡れるのが6日ぶんしかなかった。まとめないかぎり枠は何度でも食いつぶされる。
+const CLUMP_MIN = 3;                       // これ以上並んだらまとめる
+const CLUMP_GAP_MS = 10 * 60 * 1000;       // 隣との時刻差がこれ以内なら同じ書き出し
+
+function relParent(rel) { const i = rel.lastIndexOf('/'); return i < 0 ? '' : rel.slice(0, i); }
+function relBase(rel) { return rel.split('/').pop(); }
+
+// ⚠️ 「並びの上で連続しているもの」だけを束ねると、ほとんど束ならない。
+//    同じ13:11に作った お返事カードの4点（card.json / img1.png / card.html / card.png）の
+//    あいだに、別フォルダの文面が1件挟まるだけで切れてしまう（2026-09-12 実測）。
+//    そこで**フォルダごとに「開いているかたまり」を持ち**、時刻が10分以上あいたら閉じる。
+function fileRow(f) {
+  return { name: f.name, rel: f.rel, dir: false, mtime: f.mtime, size: f.size, open: f.open };
+}
+
+// ⚠️ かたまりに**ならなかった**ものは、元の位置のまま出す。先に組んでから展開すると
+//    「15:35 → 15:34 → 15:35」と時刻が前後して、新しい順という約束が崩れた（実測）。
+//    だから2周する＝1周目でかたまりを決め、2周目で新しい順に並べながら差し替える。
+function clumpRecent(list, limit) {
+  const open = new Map();     // フォルダ → いま開いているかたまり
+  const owner = new WeakMap();  // ファイル → 属するかたまり（写しを汚さない）
+  for (const f of list) {
+    const par = relParent(f.rel);
+    // 置き場の直下にじかに置かれたものは、まとめる先のフォルダが無いので束ねない
+    if (!par) continue;
+    const g = open.get(par);
+    if (g && g.last - f.mtime <= CLUMP_GAP_MS) {
+      g.items++; g.last = f.mtime; owner.set(f, g);
+      if (!g.shot && THUMBABLE_RE.test(f.name)) g.shot = f;
+      continue;
+    }
+    const ng = { par, items: 1, mtime: f.mtime, last: f.mtime };
+    if (THUMBABLE_RE.test(f.name)) ng.shot = f;
+    open.set(par, ng);
+    owner.set(f, ng);
+  }
+  const rows = [];
+  const done = new Set();
+  for (const f of list) {
+    if (rows.length >= limit) break;
+    const g = owner.get(f);
+    if (!g || g.items < CLUMP_MIN) { rows.push(fileRow(f)); continue; }
+    if (done.has(g)) continue;                  // かたまりの2件目から先は出さない
+    done.add(g);
+    const row = { name: relBase(g.par), rel: g.par, dir: true, clump: g.items, mtime: g.mtime };
+    // 中の絵を1枚だけ代表に出す。フォルダの印だけだと、35枚のスクショも
+    // 3つの下ごしらえも同じ青い四角になって、見分けがつかない
+    if (g.shot) { row.shot = g.shot.rel; row.shotAt = g.shot.mtime; }
+    rows.push(row);
+  }
+  return rows;
 }
 
 // iCloud が読めないとき、「許可が切れた」のか「ただ遅い」のかを見分ける。
@@ -1915,12 +2020,17 @@ const server = http.createServer(async (req, res) => {
           if (!r) return json(res, 404, { error: 'そのフォルダはありません' });
           return json(res, 200, { root: PREVIEW_ROOT, mode: 'browse', dir: r.dir, entries: r.entries });
         }
-        const files = (await within(listPreviewables(400), 4000, 'iCloud の読み込み')).slice(0, 120);
-        const entries = files.map((f) => ({
-          name: f.rel.split('/').pop(), rel: f.rel, dir: false,
-          mtime: f.mtime, size: f.size, open: true,
-        }));
-        return json(res, 200, { root: PREVIEW_ROOT, mode: 'recent', files, entries });
+        // ?fresh=1 … 引っぱって更新。手元の写しを捨てて集め直す
+        const r = await within(recentFiles(url.searchParams.has('fresh')),
+          RECENT_BUDGET_MS + 2500, 'iCloud の読み込み');
+        const entries = clumpRecent(r.list, 150);
+        // files は古い画面（端末に写しが残っている版）のための置き土産
+        const files = entries.filter((e) => !e.dir)
+          .map((e) => ({ rel: e.rel, mtime: e.mtime, size: e.size }));
+        return json(res, 200, {
+          root: PREVIEW_ROOT, mode: 'recent', files, entries,
+          partial: r.partial, total: r.list.length,
+        });
       } catch (e) {
         // ⚠️ 「読み込めませんでした」で終わらせない。ここで見分けて、
         //    何をすればいいかまで返す（2026-09-04 の30分をもう一度やらないため）

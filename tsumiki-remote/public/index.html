@@ -638,6 +638,14 @@
     padding:0 12px calc(24px + env(safe-area-inset-bottom))}
   #fbig{font-size:26px;font-weight:800;letter-spacing:.01em;margin:10px 4px 12px;
     color:var(--fg);overflow-wrap:anywhere}
+  /* 引っぱって更新。高さは指に合わせて JS が動かすので、ここで動きを付けない
+     （transition を入れると指から遅れて付いてくる＝重く感じる）。
+     離せる位置まで来たら矢印が立ち上がって色が付く＝字を置かずに伝える */
+  #fpull{height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    color:var(--dim)}
+  #fpull svg{transform:rotate(0deg);transition:transform .12s cubic-bezier(.2,0,0,1)}
+  #fpull.ready{color:#5c9cf5}
+  #fpull.ready svg{transform:rotate(180deg)}
   .fsearch{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px;
     background:#1a1d24;border:1px solid var(--line);border-radius:11px}
   .fsearch svg{flex:0 0 auto;color:var(--dim)}
@@ -1040,6 +1048,13 @@
     <button id="fview" aria-label="表示を変える" title="表示を変える"></button>
   </div>
   <div id="fscroll">
+    <!-- 引っぱって更新。引いたぶんだけ背が伸びる（字は置かない＝矢印1つで分かる） -->
+    <div id="fpull" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" focusable="false">
+        <path d="M12 5.2v13.6M6.6 13.4 12 18.8l5.4-5.4" fill="none" stroke="currentColor"
+          stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    </div>
     <h1 id="fbig">制作物</h1>
     <div class="fsearch">
       <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
@@ -4150,7 +4165,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (!s) return;
     openSheet('許可の範囲');
 
-    // 見出しは1行（2026-09-12）。いまの段は項目の右端に「今これ」と出るので、
+    // 見出しは1行（2026-09-12）。いまの段は項目の右端に `now` と出るので、
     // ここでは言わない。⚠️ 返事待ちで変えられないことだけは、押す前に言う
     var head = document.createElement('div');
     head.className = 'sheethead';
@@ -4163,7 +4178,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       var now = m.key === s.perm;
       sheetItem(m.name, m.label, function () { closeSheet(); if (!now) doPerm(name, m); },
         { on: now, icon: m.icon, iconCls: now ? 'ok' : 'claude',
-          val: now ? '今これ' : '' });
+          val: now ? 'now' : '' });
     });
   }
 
@@ -4494,6 +4509,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var fSeg = document.getElementById('fseg');
   var fQInput = document.getElementById('fq');
   var fQClear = document.getElementById('fqclear');
+  var fPull = document.getElementById('fpull');
   var filesToast = document.getElementById('filestoast');
 
   var fMode = 'recent';   // 'recent' | 'browse'
@@ -4616,7 +4632,26 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return d;
   }
 
+  // 「最近」には日付の見出しが立つので、時刻だけを出す（日付を二度書かない）
+  function fClock(ms) {
+    var d = new Date(ms), p = function (x) { return ('0' + x).slice(-2); };
+    return p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function fWhenOf(e) {
+    if (!e.mtime) return '';
+    return (fMode === 'recent' && !fQuery) ? fClock(e.mtime) : fmtWhen(e.mtime);
+  }
+
   function fSubOf(e) {
+    // 一度に書き出したかたまり。
+    // ⚠️ ここに場所の名前まで足すと、幅375で「お返事カード_お声がけ_2026-09-12 ・ まとめ…」と
+    //    肝心の件数が切れた（2026-09-12 実測）。**件数と時刻だけ**にする。
+    //    中身は代表の絵で分かり、場所は押せば分かる
+    if (e.clump) {
+      var w2 = fWhenOf(e);
+      return 'まとめて' + e.clump + '件' + (w2 ? ' ・ ' + w2 : '');
+    }
     if (e.dir) return typeof e.count === 'number' ? e.count + ' 件' : '';
     var bits = [];
     // 新しい順・さがすの一覧では「どこに入っているか」がいちばん知りたい。
@@ -4627,16 +4662,42 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       var par = fParent(e.rel);
       bits.push(par ? fBase(par) : '制作物');
     }
-    if (e.mtime) bits.push(fmtWhen(e.mtime));
+    var w = fWhenOf(e);
+    if (w) bits.push(w);
     if (e.size) bits.push(fmtSize(e.size));
     return bits.join(' ・ ');
+  }
+
+  // 日付の見出し。今日・昨日は言葉で、それより前は曜日を添える
+  // （「9/10（水）」＝出先で「あの水曜のやつ」と思い出す手がかりになる）
+  var FWEEK = ['日', '月', '火', '水', '木', '金', '土'];
+
+  function fDayLabel(ms) {
+    if (!ms) return '日付なし';
+    var d = new Date(ms), now = new Date();
+    var a = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var b = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var diff = Math.round((a - b) / 86400000);
+    if (diff === 0) return '今日';
+    if (diff === 1) return '昨日';
+    var head = d.getFullYear() !== now.getFullYear() ? d.getFullYear() + '/' : '';
+    return head + (d.getMonth() + 1) + '/' + d.getDate() + '（' + FWEEK[d.getDay()] + '）';
   }
 
   // 一覧に出す小さな写し。合言葉はクッキーで通す（URL には載せない＝
   // /preview/ のときと同じ理由）。?v= は元の絵の更新時刻で、描き直したら
   // URL が変わる＝端末に残った古い写しを見せない
   function thumbUrl(e) {
-    return previewPath(e.rel) + '?thumb=1&v=' + encodeURIComponent(Math.round(e.mtime || 0));
+    // かたまりの行は、中の代表の絵を出す（e.shot）。無ければフォルダの印のまま
+    var rel = e.shot || e.rel;
+    var at = e.shot ? e.shotAt : e.mtime;
+    return previewPath(rel) + '?thumb=1&v=' + encodeURIComponent(Math.round(at || 0));
+  }
+
+  // この行に絵を出すか。ふつうのファイルは中身が絵のとき、
+  // かたまりは中に絵が1枚でもあるとき
+  function fHasShot(e, kind) {
+    return fCookieOk && ((e.clump && e.shot) || (kind === 'img' && e.open && !e.dir));
   }
 
   // 先に必ず取りに行くサムネイルの数。一覧を描くたびに戻す
@@ -4649,7 +4710,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var kind = e.dir ? 'folder' : fKind(e.name);
     b.innerHTML = FIC[kind];                               // 絵はこちらが持っている定数だけ
     // png・jpg などは中身を小さく出す。取りに行けなかったら種類の印のまま
-    if (kind === 'img' && e.open && fCookieOk) {
+    if (fHasShot(e, kind)) {
       var box = b.querySelector('.ficon');
       var im = document.createElement('img');
       // 先頭のひとかたまりは必ず取りに行き、残りは画面に入ってから（lazy）。
@@ -4704,16 +4765,19 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     b.className = 'fcell' + (!e.dir && !e.open ? ' dim' : '');
     var kind = e.dir ? 'folder' : fKind(e.name);
     var box = document.createElement('span');
-    box.className = 'fcicon' + (e.dir ? ' plain' : '');
+    // かたまりの枡は中の絵を出すので、フォルダでも板に載せる（絵に縁が要る）
+    var shot = fHasShot(e, kind);
+    box.className = 'fcicon' + (e.dir && !shot ? ' plain' : '');
     box.innerHTML = FIC[kind].replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '');
     box.classList.add(e.dir ? 'ic-folder' : ('ic-' + kind));
-    if (kind === 'img' && e.open && fCookieOk) {
+    if (shot) {
       var im = document.createElement('img');
       im.loading = fEager > 0 ? 'eager' : 'lazy';
       fEager--;
       im.decoding = 'async';
       im.alt = '';
       im.onerror = function () {
+        if (e.dir) box.classList.add('plain');   // 絵が来なければフォルダの姿に戻す
         box.innerHTML = FIC[kind].replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '');
       };
       box.innerHTML = '';
@@ -4725,10 +4789,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     n.className = 'fcname';
     n.textContent = e.name;
     b.appendChild(n);
-    if (e.dir && typeof e.count === 'number') {
+    if (e.clump || (e.dir && typeof e.count === 'number')) {
       var c = document.createElement('span');
       c.className = 'fcsub';
-      c.textContent = e.count + ' 件';
+      c.textContent = e.clump ? ('まとめて' + e.clump + '件') : (e.count + ' 件');
       b.appendChild(c);
     }
     b.onclick = function () {
@@ -4767,6 +4831,18 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       fList.appendChild(fGroup(dirs));
       fList.appendChild(fSection('ファイル'));
       fList.appendChild(fGroup(files));
+    } else if (fMode === 'recent' && !fQuery) {
+      // 日付で区切る。10日ぶんが一続きに流れていると、どこまでが今日なのか読めない
+      var label = null, bucket = [];
+      var flush = function () { if (bucket.length) fList.appendChild(fGroup(bucket)); bucket = []; };
+      entries.forEach(function (e) {
+        var lab = fDayLabel(e.mtime || 0);
+        if (lab !== label) { flush(); fList.appendChild(fSection(lab)); label = lab; }
+        bucket.push(e);
+      });
+      flush();
+      // 締め切りで打ち切ったときだけ、そう言う（黙って減らさない）
+      if (fPartial) fList.appendChild(fNote('iCloud が重く、途中までしか見ていません'));
     } else {
       fList.appendChild(fGroup(entries));
     }
@@ -4791,17 +4867,21 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    描く（一覧そのものは動く）。1回もらえば以降は使い回される
   var fCookieOk = false;
 
-  function fLoad() {
+  var fPartial = false;
+
+  // fresh … 引っぱって更新・札をもう一度押したとき。サーバの手元の写しを捨てさせる
+  function fLoad(fresh) {
     var seq = ++fSeq;
     fChrome();
     fList.innerHTML = '';
     fList.appendChild(fNote('読み込み中…'));
     var qs = fQuery ? '?q=' + encodeURIComponent(fQuery)
-      : (fMode === 'browse' ? '?dir=' + encodeURIComponent(fDir) : '');
+      : (fMode === 'browse' ? '?dir=' + encodeURIComponent(fDir) : (fresh ? '?fresh=1' : ''));
     var hello = ensurePreviewCookie().then(function () { fCookieOk = true; },
                                            function () { fCookieOk = false; });
     Promise.all([api('/api/files' + qs), hello]).then(function (r) {
       if (seq !== fSeq) return;          // そのあいだに別の場所へ移っていたら捨てる
+      fPartial = !!r[0].partial;
       fPaint(r[0].entries || []);
     }).catch(function (e) {
       if (seq !== fSeq) return;
@@ -4877,11 +4957,49 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   Array.prototype.forEach.call(fSeg.querySelectorAll('button'), function (b) {
     b.onclick = function () {
       var seg = b.getAttribute('data-seg');
-      if (seg === fMode && !fDir && !fQuery) return;
+      // 同じ札をもう一度押したら取り直す。前は何も起きず、
+      // 開いたまま新しいものを作っても、閉じて開き直すまで出てこなかった
+      if (seg === fMode && !fDir && !fQuery) { fWantTop = 0; fLoad(true); return; }
       fMode = seg; fDir = ''; fWantTop = 0;
       fLoad();
     };
   });
+
+  // ------------------------------------------------ 引っぱって更新
+  //
+  // ⚠️ touchmove は passive:false で取る（`preventDefault` を呼ぶため）。
+  //    呼ばないと iOS のゴム（overscroll）と二重に動いて、指の下で画面が跳ねる。
+  var PULL_MAX = 88, PULL_FIRE = 56;
+  var pulling = false, pullFrom = 0, pullNow = 0;
+
+  function setPull(y) {
+    pullNow = y;
+    fPull.style.height = Math.round(y) + 'px';
+    fPull.classList.toggle('ready', y >= PULL_FIRE);
+  }
+
+  fScroll.addEventListener('touchstart', function (e) {
+    pulling = (fScroll.scrollTop <= 0 && e.touches.length === 1);
+    if (pulling) { pullFrom = e.touches[0].clientY; setPull(0); }
+  }, { passive: true });
+
+  fScroll.addEventListener('touchmove', function (e) {
+    if (!pulling) return;
+    var dy = e.touches[0].clientY - pullFrom;
+    if (dy <= 0 || fScroll.scrollTop > 0) { pulling = false; setPull(0); return; }
+    e.preventDefault();
+    setPull(Math.min(dy * 0.5, PULL_MAX));     // 半分だけ動かす＝指より重く、止まりも早い
+  }, { passive: false });
+
+  function pullEnd() {
+    if (!pulling) return;
+    pulling = false;
+    var fire = pullNow >= PULL_FIRE;
+    setPull(0);
+    if (fire) fLoad(true);
+  }
+  fScroll.addEventListener('touchend', pullEnd, { passive: true });
+  fScroll.addEventListener('touchcancel', pullEnd, { passive: true });
 
   var ftoastTimer = null;
 
