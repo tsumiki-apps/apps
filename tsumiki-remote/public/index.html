@@ -472,17 +472,33 @@
      押したときだけ開く形にはしない（開く形だと、書いたことを忘れる）。
      ⚠️ ここに打った字は席に届かない＝Claude は読まない。Mac 側に保存するので、
      iPhone で書いたものが Mac のブラウザでもそのまま見える。
-     字は16px。これより小さいと iOS が触った瞬間に画面ごと拡大して、戻すのに
-     二本指が要る。高さは空でも書いても26pxのまま＝入力欄の位置が動かない。
+
+     ⚠️ **ふだん出ている札と、押している間だけ出る入力欄の2枚**でできている（2026-09-12）。
+     見えている字は席の題名と同じ大きさにしたい（本人の指示）が、入力欄の字を16px未満に
+     すると iOS が触った瞬間に画面ごと拡大する。1枚で両方は満たせないので、
+     **読むとき＝札（バーと同じ大きさ）／打つとき＝入力欄（16px）**に分けた。
+     入力欄は出した時点で既に16pxなので、拡大は最初から起きない。
+     箱の寸法は2枚で同じ＝入れ替わってもバーの高さも幅も動かない。
      いちばん狭い320pxでも76pxは残す（題名のほうが先に切られる＝題名は…で済む） */
-  #dest #dmemo{
-    flex:1 1 auto;min-width:76px;height:26px;box-sizing:border-box;
+  #dest .memobox{
+    /* ⚠️ flex-basis は 0（auto にしない）。auto だと「中身のぶんの幅」から伸び縮みが
+       始まるので、**札と入力欄で幅が変わる**（入力欄は中身が空でも既定で20文字ぶんの
+       幅を持っている）。実測で 158.9px と 173.5px＝押した瞬間に箱が横に伸びていた */
+    flex:1 1 0;min-width:76px;height:26px;box-sizing:border-box;
     padding:0 8px 0 24px;border:1px solid var(--line);border-radius:8px;
     background-color:var(--panel);background-repeat:no-repeat;
     background-position:6px 50%;background-size:13px 13px;
     background-image:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22%238b93a1%22%20stroke-width=%221.9%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M4.5%2019.5h3.6L19.2%208.4a2.5%202.5%200%200%200-3.6-3.6L4.5%2015.9v3.6z%22/%3E%3Cpath%20d=%22M14.4%205.7l3.9%203.9%22/%3E%3C/svg%3E");
-    color:var(--fg);font-family:inherit;font-size:16px;line-height:24px;
+    color:var(--fg);font-family:inherit;line-height:24px;
   }
+  #dest .memobox[hidden]{display:none}
+  /* 読むときの札。font-size:inherit ＝ 送り先バーそのまま＝席の題名と同じ大きさ */
+  #dest #dmemotext{
+    font-size:inherit;text-align:left;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;-webkit-appearance:none;appearance:none;
+  }
+  /* 打つときの入力欄。16px は下げない（下げた瞬間に iOS の拡大が戻ってくる） */
+  #dest #dmemo{font-size:16px}
   #dest #dmemo:focus{outline:none;border-color:var(--dim)}
 
   #keys{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
@@ -890,7 +906,7 @@
     /* ⚠️ メモ欄の字はここでも小さくしない（16px未満＝触った瞬間に iOS が拡大する）。
        高さだけはキー行と揃えて44pxにする＝指で押せる大きさ。スマホの縦（ここに
        来ない幅）では26pxのまま：44pxにすると、キーボードの上の帯がそれだけで太る */
-    #dest #dmemo{height:44px;line-height:42px}
+    #dest .memobox{height:44px;line-height:42px}
     /* 指の当たり判定を Apple の最小値（44×44）まで広げる。数字の 1 は字が細いので、
        高さだけでなく幅にも下限を置く（見た目は変えず、押せる面積だけ広げる） */
     #keys button{min-height:44px;min-width:44px;padding:10px 16px;font-size:13px}
@@ -1011,8 +1027,9 @@
 <main><pre id="out">セッションを選んでください。</pre></main>
 
 <footer>
-  <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span><span class="dp" hidden></span><input
-    id="dmemo" type="text" maxlength="200" aria-label="この席のメモ"
+  <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span><span class="dp" hidden></span><button
+    type="button" id="dmemotext" class="memobox" aria-label="この席のメモ"></button><input
+    id="dmemo" class="memobox" type="text" maxlength="200" aria-label="この席のメモ" hidden
     autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"></div>
   <div id="keys">
     <button data-key="Escape">esc</button>
@@ -1069,7 +1086,7 @@
   <div id="viewertoast" class="vtoast" hidden></div>
 </div>
 
-<div id="files" hidden>
+<div id="files" role="region" aria-label="制作物" hidden>
   <div class="fbar">
     <button id="fback" aria-label="戻る"><span aria-hidden="true">‹</span><span class="lbl" id="fbacklabel"></span></button>
     <span id="fbartitle">制作物</span>
@@ -1698,6 +1715,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     destModel: document.querySelector('#dest .dm'),
     destPerm: document.querySelector('#dest .dp'),
     memo: document.getElementById('dmemo'),
+    memoText: document.getElementById('dmemotext'),
     gate: document.getElementById('gate'),
     tokenInput: document.getElementById('tokenInput'),
     tokenSave: document.getElementById('tokenSave'),
@@ -2384,13 +2402,31 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // （Claude は読まない）。保存先は Mac の ~/.tsumiki-remote/memos.json で、
   // 端末をまたいでも同じものが見える。
 
-  // いま見ている席のメモを欄に出す。
-  // ⚠️ 打っている最中は書き換えない。巡回（5秒ごと）で上書きすると、
+  // いま見ている席のメモを出す。
+  // ⚠️ 打っている最中は書き換えない。巡回（1.5秒ごと）で上書きすると、
   //    打った字がひとりでに消える＝いちばんやってはいけない壊れ方
   function syncMemo(name) {
     if (document.activeElement === el.memo) return;
-    var t = memos[name] || '';
-    if (el.memo.value !== t) el.memo.value = t;
+    el.memoText.textContent = memos[name] || '';
+  }
+
+  // 札を押したら入力欄に持ち替える。**この場で focus() まで済ませる**のが肝で、
+  // 指を離したあと（非同期）に呼ぶと iOS はキーボードを出してくれない
+  function openMemo() {
+    if (!current) return;
+    el.memo.value = memos[current] || '';
+    el.memoText.hidden = true;
+    el.memo.hidden = false;
+    el.memo.focus();
+    // 続きから書けるように、文字の最後にカーソルを置く（頭に戻ると打ち直しになる）
+    try { el.memo.setSelectionRange(el.memo.value.length, el.memo.value.length); } catch (e) {}
+  }
+
+  // 入力欄を畳んで札に戻す。保存は flushMemo が済ませている
+  function closeMemo() {
+    el.memo.hidden = true;
+    el.memoText.hidden = false;
+    syncMemo(current);
   }
 
   // 打つ手が止まってから送る。席を切り替える・欄から指を離すときは待たずに送る
@@ -2430,6 +2466,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   function select(name) {
     flushMemo();          // 前の席のメモを、切り替える前に送り切る
+    if (!el.memo.hidden) closeMemo();   // 打ちかけの欄を、前の席のまま持ち越さない
     current = name;
     lastText = null;   // 別のセッションに切り替えたら描き直す
     wantWide = false;  // 幅の借りっぱなしを持ち越さない（切り替えた先はまず実測の幅で）
@@ -3783,12 +3820,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     memoPending[current] = el.memo.value;   // 打った瞬間に印をつける（下の巡回よけ）
     scheduleMemo();
   });
-  el.memo.addEventListener('blur', function () { flushMemo(); });
+  el.memoText.addEventListener('click', openMemo);
+  el.memo.addEventListener('blur', function () { flushMemo(); closeMemo(); });
   el.memo.addEventListener('keydown', function (e) {
     // ⏎ は「書けた」の合図＝キーボードを下げるだけ。変換中（229）は確定なので触らない
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     e.preventDefault();
-    el.memo.blur();
+    el.memo.blur();   // blur から flushMemo → closeMemo と進む
   });
 
   // 外付けキーボード（iPad の Magic Keyboard・Mac）だけの近道＝⌘Enter / Ctrl+Enter で送る。
@@ -4912,7 +4950,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (e.clump || (e.dir && typeof e.count === 'number')) {
       var c = document.createElement('span');
       c.className = 'fcsub';
-      c.textContent = e.clump ? ('まとめて' + e.clump + '件') : (e.count + ' 件');
+      // 時刻まで出す＝「リール動画／まとめて5件」が2枚並んでも見分けられる
+      c.textContent = e.clump ? ('まとめて' + e.clump + '件' + (fWhenOf(e) ? ' ・ ' + fWhenOf(e) : ''))
+        : (e.count + ' 件');
       b.appendChild(c);
     }
     b.onclick = function () {
@@ -4961,8 +5001,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         bucket.push(e);
       });
       flush();
-      // 締め切りで打ち切ったときだけ、そう言う（黙って減らさない）
-      if (fPartial) fList.appendChild(fNote('iCloud が重く、途中までしか見ていません'));
+      // 打ち切ったときだけ、そう言う（黙って減らさない）。
+      // 深すぎて見なかったぶんは、iCloud の重さと言い分ける＝直し方が違う
+      if (fDeep) fList.appendChild(fNote(fDeep + ' 件は奥にありすぎて出していません。\nフォルダから辿れます'));
+      else if (fPartial) fList.appendChild(fNote('iCloud が重く、途中までしか見ていません'));
     } else {
       fList.appendChild(fGroup(entries));
     }
@@ -4987,7 +5029,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    描く（一覧そのものは動く）。1回もらえば以降は使い回される
   var fCookieOk = false;
 
-  var fPartial = false;
+  var fPartial = false, fDeep = 0;
 
   // fresh … 引っぱって更新・札をもう一度押したとき。サーバの手元の写しを捨てさせる
   function fLoad(fresh) {
@@ -5002,6 +5044,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     Promise.all([api('/api/files' + qs), hello]).then(function (r) {
       if (seq !== fSeq) return;          // そのあいだに別の場所へ移っていたら捨てる
       fPartial = !!r[0].partial;
+      fDeep = r[0].deep || 0;
       fPaint(r[0].entries || []);
     }).catch(function (e) {
       if (seq !== fSeq) return;
@@ -5090,7 +5133,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // ⚠️ touchmove は passive:false で取る（`preventDefault` を呼ぶため）。
   //    呼ばないと iOS のゴム（overscroll）と二重に動いて、指の下で画面が跳ねる。
   var PULL_MAX = 88, PULL_FIRE = 56;
-  var pulling = false, pullFrom = 0, pullNow = 0;
+  var pulling = false, pullFrom = 0, pullFromX = 0, pullNow = 0;
 
   function setPull(y) {
     pullNow = y;
@@ -5100,13 +5143,17 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   fScroll.addEventListener('touchstart', function (e) {
     pulling = (fScroll.scrollTop <= 0 && e.touches.length === 1);
-    if (pulling) { pullFrom = e.touches[0].clientY; setPull(0); }
+    if (pulling) { pullFrom = e.touches[0].clientY; pullFromX = e.touches[0].clientX; setPull(0); }
   }, { passive: true });
 
   fScroll.addEventListener('touchmove', function (e) {
     if (!pulling) return;
     var dy = e.touches[0].clientY - pullFrom;
-    if (dy <= 0 || fScroll.scrollTop > 0) { pulling = false; setPull(0); return; }
+    var dx = e.touches[0].clientX - pullFromX;
+    // 横に流れた指では起動しない（端のスワイプや横の動きと喧嘩する）
+    if (dy <= 0 || Math.abs(dx) > Math.abs(dy) || fScroll.scrollTop > 0) {
+      pulling = false; setPull(0); return;
+    }
     e.preventDefault();
     setPull(Math.min(dy * 0.5, PULL_MAX));     // 半分だけ動かす＝指より重く、止まりも早い
   }, { passive: false });
@@ -5116,7 +5163,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     pulling = false;
     var fire = pullNow >= PULL_FIRE;
     setPull(0);
-    if (fire) fLoad(true);
+    // ⚠️ 積んだ位置を捨ててから取り直す。残したままだと、フォルダから戻ったあとに
+    //    引っぱると**また元の深さへ飛ぶ**（2026-09-12 点検で実測）
+    if (fire) { fWantTop = 0; fLoad(true); }
   }
   fScroll.addEventListener('touchend', pullEnd, { passive: true });
   fScroll.addEventListener('touchcancel', pullEnd, { passive: true });
@@ -5147,7 +5196,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       try { history.pushState({ tsumikiFiles: 1 }, ''); fPushed = true; } catch (e) {}
     }
     fWantTop = 0;
-    fLoad();     // fMode / fDir は前に見ていた場所のまま＝続きから見られる
+    // ⚠️ 開いた1回目は必ず取り直す。サーバの写しは45秒もつので、
+    //    書き出した直後に開くと「作ったのに出ない」がここで復活する
+    fLoad(true);   // fMode / fDir は前に見ていた場所のまま＝続きから見られる
   }
 
   function closeFiles() {
