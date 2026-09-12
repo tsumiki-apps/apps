@@ -600,6 +600,53 @@ function cleanLabel(v) {
     .slice(0, LABEL_MAX);
 }
 
+// ------------------------------------------------ 席ごとの短いメモ
+//
+// 会話の途中で出てくる短い言葉（あとで見る番号・言い直したい一言）を、画面を離れずに
+// 書き留めておく場所。**tmux には何も送らない**＝Claude はこのメモを読まない
+// （つみきリモートの中だけで見えればよい、という決め。2026-09-12）。
+// 端末の localStorage ではなく Mac 側に置く理由：iPhone で書いたものを Mac の
+// ブラウザでもそのまま見たい／Safari のデータを消しても消えないようにしたい。
+// ⚠️ 中身はログに出さない。人が自由に打つ場所＝お客様の名前が入りうる
+//    （/api/send・/api/rename と同じ扱い）。
+const MEMO_FILE = path.join(CONF_DIR, 'memos.json');
+const MEMO_MAX = 200;    // 1件の長さ（字）。送り先バーの1行に収まる範囲で足りる
+const MEMO_KEEP = 100;   // 残す席の数。畳んだ席のぶんが永久に積もらないための蓋
+let memos = {};          // { 席の名前: { text, at } }
+
+// メモに使ってよい形にそろえる。改行は潰す（1行の欄なので、入れても見えない）
+function cleanMemo(v) {
+  return String(v == null ? '' : v)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MEMO_MAX);
+}
+
+function memoLoad() {
+  try {
+    const o = JSON.parse(fs.readFileSync(MEMO_FILE, 'utf8'));
+    if (!o || typeof o !== 'object') return;
+    for (const k of Object.keys(o)) {
+      const t = cleanMemo(o[k] && o[k].text);
+      if (t) memos[k] = { text: t, at: Number(o[k].at) || 0 };
+    }
+  } catch (e) { /* 無ければ無いでよい（初回・壊れていたときは白紙から） */ }
+}
+
+function memoSave() {
+  // 新しい順に MEMO_KEEP 件だけ残す。席を畳んでもメモは消しに行かない
+  // （畳んだあとで「何を書いたか」を見たいことがある）ので、ここで頭を押さえる
+  const old = Object.keys(memos).sort((a, b) => (memos[b].at || 0) - (memos[a].at || 0)).slice(MEMO_KEEP);
+  for (const n of old) delete memos[n];
+  try {
+    const tmp = MEMO_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(memos), { mode: 0o600 });
+    fs.renameSync(tmp, MEMO_FILE);   // 書きかけを読ませない
+  } catch (e) { /* 残せなかった回は諦める（画面側が次の巡回でもう一度送ってくる） */ }
+}
+memoLoad();
+
 async function listSessions() {
   // 名札は**いちばん最後**に置く。中身は人が打つ自由な字なので、万一 SEP が
   // 混じっても、後ろを全部つなぎ直せば前の列（名前・モデル）は無事でいられる
@@ -1767,9 +1814,13 @@ const server = http.createServer(async (req, res) => {
             : { label: s.label, title: s.label || base.auto || base.title };
           return Object.assign({}, base, fresh, { stale: true });
         })));
+      // メモは**いま並んでいる席のぶんだけ**乗せる（全部だと巡回のたびに
+      // 畳んだ席のぶんまで運ぶことになる）。値は文字だけ＝画面側は .text を見ない
+      const memoOut = {};
+      for (const st of out) if (memos[st.name]) memoOut[st.name] = memos[st.name].text;
       return json(res, 200, {
         sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
-        battery: batterySnapshot(), auth: authSnapshot(),
+        battery: batterySnapshot(), auth: authSnapshot(), memos: memoOut,
         version: currentVersion(), now: Date.now(),
       });
     }
@@ -1934,6 +1985,21 @@ const server = http.createServer(async (req, res) => {
     //    変えると、開きっぱなしのスマホが古い名前を呼び続けて「押しても効かない」になる。
     //    見た目だけ変えたい、が本当にしたいことなので、別の場所（TITLE_OPT）に置く。
     // 空文字を送ると名札を外す＝Claude Code の自動題名に戻る
+    // 席ごとの短いメモ。**tmux には触らない**（この席に何も送らない）。
+    // 空の字で送られてきたら「消した」＝その席のメモを落とす
+    if (p === '/api/memo' && req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name || '');
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      const text = cleanMemo(body.text);
+      // 中身はログに残さない（/api/send・/api/rename と同じ考え）
+      console.log(`memo ${name} ${text ? text.length + '文字' : '消した'}`);
+      if (text) memos[name] = { text, at: Date.now() };
+      else delete memos[name];
+      memoSave();
+      return json(res, 200, { ok: true, text });
+    }
+
     if (p === '/api/rename' && req.method === 'POST') {
       const body = await readBody(req);
       const name = String(body.name || '');

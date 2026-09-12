@@ -466,6 +466,25 @@
   #dest .dp.plan{background:#131c25;color:var(--pause)}
   #dest .dp[hidden]{display:none}
 
+  /* 送り先バーの右の余白に置く「この席のメモ」（2026-09-12）。
+     会話の途中で出てくる短い言葉（あとで見る番号・言い直したい一言）を、
+     画面を離れずに書き留める場所。**常に出しておく**のがこの欄の全部の目的なので、
+     押したときだけ開く形にはしない（開く形だと、書いたことを忘れる）。
+     ⚠️ ここに打った字は席に届かない＝Claude は読まない。Mac 側に保存するので、
+     iPhone で書いたものが Mac のブラウザでもそのまま見える。
+     字は16px。これより小さいと iOS が触った瞬間に画面ごと拡大して、戻すのに
+     二本指が要る。高さは空でも書いても26pxのまま＝入力欄の位置が動かない。
+     いちばん狭い320pxでも76pxは残す（題名のほうが先に切られる＝題名は…で済む） */
+  #dest #dmemo{
+    flex:1 1 auto;min-width:76px;height:26px;box-sizing:border-box;
+    padding:0 8px 0 24px;border:1px solid var(--line);border-radius:8px;
+    background-color:var(--panel);background-repeat:no-repeat;
+    background-position:6px 50%;background-size:13px 13px;
+    background-image:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22%238b93a1%22%20stroke-width=%221.9%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M4.5%2019.5h3.6L19.2%208.4a2.5%202.5%200%200%200-3.6-3.6L4.5%2015.9v3.6z%22/%3E%3Cpath%20d=%22M14.4%205.7l3.9%203.9%22/%3E%3C/svg%3E");
+    color:var(--fg);font-family:inherit;font-size:16px;line-height:24px;
+  }
+  #dest #dmemo:focus{outline:none;border-color:var(--dim)}
+
   #keys{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
   #keys::-webkit-scrollbar{display:none}
   #keys button{
@@ -868,6 +887,10 @@
     #out .dopt{min-height:44px;padding:10px 12px}
     footer{padding:8px 14px max(8px, env(safe-area-inset-bottom))}
     #dest{font-size:12px}
+    /* ⚠️ メモ欄の字はここでも小さくしない（16px未満＝触った瞬間に iOS が拡大する）。
+       高さだけはキー行と揃えて44pxにする＝指で押せる大きさ。スマホの縦（ここに
+       来ない幅）では26pxのまま：44pxにすると、キーボードの上の帯がそれだけで太る */
+    #dest #dmemo{height:44px;line-height:42px}
     /* 指の当たり判定を Apple の最小値（44×44）まで広げる。数字の 1 は字が細いので、
        高さだけでなく幅にも下限を置く（見た目は変えず、押せる面積だけ広げる） */
     #keys button{min-height:44px;min-width:44px;padding:10px 16px;font-size:13px}
@@ -988,7 +1011,9 @@
 <main><pre id="out">セッションを選んでください。</pre></main>
 
 <footer>
-  <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span><span class="dp" hidden></span></div>
+  <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span><span class="dp" hidden></span><input
+    id="dmemo" type="text" maxlength="200" aria-label="この席のメモ"
+    autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"></div>
   <div id="keys">
     <button data-key="Escape">esc</button>
     <button id="khold">hold</button>
@@ -1672,6 +1697,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     destName: document.querySelector('#dest .dn'),
     destModel: document.querySelector('#dest .dm'),
     destPerm: document.querySelector('#dest .dp'),
+    memo: document.getElementById('dmemo'),
     gate: document.getElementById('gate'),
     tokenInput: document.getElementById('tokenInput'),
     tokenSave: document.getElementById('tokenSave'),
@@ -1689,6 +1715,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   };
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
+
+  // 席ごとの短いメモ（送り先バーの右の欄）。{ 席の名前: 文字 }。
+  // 正本は Mac 側（/api/memo）。ここは、打っている最中と届くまでの手元の写し
+  var memos = {};
+  // ⚠️ memoPending は「まだ Mac に届いていない字」。打った瞬間にここへ入れる（送る
+  //    ときではなく）。巡回（1.5秒ごと）は、ここに名前がある席のメモを触らない＝
+  //    打っている最中に返事が返ってきても、打つ前の字に戻されない
+  var memoPending = {};
+  var memoTimer = null;
+  var MEMO_WAIT_MS = 700;      // 打つ手が止まってから送るまで（1文字ごとに送らない）
   var sessions = [];
   var timer = null;
   var toastTimer = null;
@@ -2079,7 +2115,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       if (t) keep[s.name] = t.length > PANE_MAX ? t.slice(-PANE_MAX) : t;
     });
     return JSON.stringify({
-      at: Date.now(), sessions: sessions, current: current, usage: usage, panes: keep
+      at: Date.now(), sessions: sessions, current: current, usage: usage, panes: keep,
+      memos: memos
     });
   }
 
@@ -2148,6 +2185,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
     sessions = d.sessions;
     panes = d.panes || {};
+    // メモも写しから先に出す（つながる前の一瞬でも、書いたものが見えているように）
+    memos = d.memos || {};
     snapAt = d.at || 0;
     if (!sessions.some(function (s) { return s.name === current; })) {
       current = d.current || sessions[0].name;
@@ -2330,12 +2369,57 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       el.destPerm.textContent = curPerm ? curPerm.label : '';
       el.destPerm.className = 'dp' + (curPerm ? ' ' + curPerm.cls : '');
       el.destPerm.hidden = !curPerm;
+      syncMemo(cur.name);
     }
     // 札を作り直したので球も敷き直す（canvas は作り直しで白紙に戻る）
     syncOrbs();
     // 止める札の濃さは席の状態で決まる。状態は画面が動かなくても変わる
     // （5秒だまると作業中→待機）ので、画面を描き直したときだけでは足りない
     syncKeys();
+  }
+
+  // --------------------------------------- 席ごとのメモ
+  //
+  // 送り先バーの右にいつも出している1行。ここに打った字は **tmux に送らない**
+  // （Claude は読まない）。保存先は Mac の ~/.tsumiki-remote/memos.json で、
+  // 端末をまたいでも同じものが見える。
+
+  // いま見ている席のメモを欄に出す。
+  // ⚠️ 打っている最中は書き換えない。巡回（5秒ごと）で上書きすると、
+  //    打った字がひとりでに消える＝いちばんやってはいけない壊れ方
+  function syncMemo(name) {
+    if (document.activeElement === el.memo) return;
+    var t = memos[name] || '';
+    if (el.memo.value !== t) el.memo.value = t;
+  }
+
+  // 打つ手が止まってから送る。席を切り替える・欄から指を離すときは待たずに送る
+  function scheduleMemo() {
+    clearTimeout(memoTimer);
+    var name = current;
+    memoTimer = setTimeout(function () { sendMemo(name); }, MEMO_WAIT_MS);
+  }
+
+  function flushMemo() {
+    clearTimeout(memoTimer);
+    memoTimer = null;
+    if (current) sendMemo(current);
+  }
+
+  function sendMemo(name) {
+    if (!name || !memoPending.hasOwnProperty(name)) return;   // 送るものが無い
+    var text = memoPending[name];
+    api('/api/memo', { method: 'POST', body: JSON.stringify({ name: name, text: text }) })
+      .then(function () {
+        // 送っている間にもっと打たれていたら、届いたことにしない（次の回で送り直す）
+        if (memoPending[name] === text) delete memoPending[name];
+      })
+      .catch(function () { /* 届かないぶんは memoPending に残す＝巡回のたびに送り直す */ });
+  }
+
+  // 届かなかったぶんを送り直す（つながった回に呼ぶ）
+  function retryMemos() {
+    Object.keys(memoPending).forEach(function (name) { sendMemo(name); });
   }
 
   function escapeHtml(s) {
@@ -2345,6 +2429,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function select(name) {
+    flushMemo();          // 前の席のメモを、切り替える前に送り切る
     current = name;
     lastText = null;   // 別のセッションに切り替えたら描き直す
     wantWide = false;  // 幅の借りっぱなしを持ち越さない（切り替えた先はまず実測の幅で）
@@ -2495,6 +2580,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (Date.now() - newVersionAt < VER_SETTLE_MS) return;
     reloading = true;
     saveDraft();
+    flushMemo();
     toast('新しい版になりました。開き直します');
     clearInterval(timer);
     setTimeout(function () { location.reload(); }, 700);
@@ -2507,6 +2593,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       renderBatt(d.battery);
       renderAuth(d.auth);
       sessions = d.sessions;
+      // メモの正本は Mac 側。ただし**まだ送れていない手元の字**は上書きしない
+      // （打った直後に巡回が返ってくると、打つ前の字に戻ってしまう）
+      var gotMemos = d.memos || {};
+      sessions.forEach(function (s2) {
+        if (memoPending.hasOwnProperty(s2.name)) return;   // 打ちかけは触らない
+        memos[s2.name] = gotMemos[s2.name] || '';
+      });
+      retryMemos();
       if (!sessions.length) {
         current = '';
         lastText = null;
@@ -3681,6 +3775,22 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         : '送信できませんでした（' + e.message + '）', 3600);
     });
   };
+  // メモ欄。打つたびに手元の写しを直し、手が止まったら Mac に送る。
+  // ⚠️ この欄から席へは何も飛ばない（送信の↑とも、キー行の ⏎ とも別物）
+  el.memo.addEventListener('input', function () {
+    if (!current) return;
+    memos[current] = el.memo.value;
+    memoPending[current] = el.memo.value;   // 打った瞬間に印をつける（下の巡回よけ）
+    scheduleMemo();
+  });
+  el.memo.addEventListener('blur', function () { flushMemo(); });
+  el.memo.addEventListener('keydown', function (e) {
+    // ⏎ は「書けた」の合図＝キーボードを下げるだけ。変換中（229）は確定なので触らない
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    el.memo.blur();
+  });
+
   // 外付けキーボード（iPad の Magic Keyboard・Mac）だけの近道＝⌘Enter / Ctrl+Enter で送る。
   // Enter 単体は改行のまま（下のコメントのとおり、変換確定で飛んでいくため）。
   // 変換中（isComposing / keyCode 229）は何もしない＝確定の Enter と重ならない。
@@ -4462,6 +4572,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 「反応がおかしい」と感じたときに自分で試せる場所が要る
   document.getElementById('reload').onclick = function () {
     saveDraft();
+    flushMemo();
     location.reload();
   };
 
@@ -5419,10 +5530,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 出しても損はなく、つながっていないときだけ意味が出る
   restoreSnap();
 
-  // 閉じる・裏に回る直前に必ず1回残す。次に開いたときここから始まる
-  window.addEventListener('pagehide', function () { saveSnap(true); });
+  // 閉じる・裏に回る直前に必ず1回残す。次に開いたときここから始まる。
+  // メモも同じところで送り切る（打ってすぐアプリを畳んでも、待ち時間のぶんが消えない）
+  window.addEventListener('pagehide', function () { saveSnap(true); flushMemo(); });
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) saveSnap(true);
+    if (document.hidden) { saveSnap(true); flushMemo(); }
   });
 
   if (!token) gate(true);
