@@ -2379,19 +2379,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    作った席）は輪にバイパスが入っていないので切り替えられない。押したときに
   //    サーバーが「切り替えられません」と返してくるので、そのまま出す。
   var PERM = [
-    // 文字は日本語。漢字を普通に使い、説明は1行に収まる長さに詰める（2行になると
-    // 5つ目が 78dvh の外に出る）。「バイパス」は端末に出ている `bypass permissions`
-    // と目で結びつく語なので、そのまま残す（2026-09-12 本人の指示で英語から戻した）
-    { key: 'bypass', label: 'バイパス', name: 'バイパス', icon: 'fast',
-      sub: '確認せずに実行' },
-    { key: 'auto',   label: 'おまかせ', name: 'おまかせ', icon: 'sparkle',
-      sub: '危ないときだけ確認' },
-    { key: 'accept', label: '編集は自動', name: '編集は自動', icon: 'doccheck',
-      sub: 'コマンドだけ確認' },
-    { key: 'manual', label: '毎回確認', name: '毎回確認', icon: 'ask',
-      sub: '何をするにも確認' },
-    { key: 'plan',   label: '計画のみ', name: '計画のみ', icon: 'checklist',
-      sub: '調べて案を出すだけ' }
+    // 文字は日本語。漢字を普通に使う（2026-09-12 本人の指示で英語から戻した）。
+    //「バイパス」は端末に出ている `bypass permissions` と目で結びつく語なのでそのまま。
+    // **説明文は持たない**（2026-09-12）＝名前と絵で見分ける。
+    // 絵は ⏵⏵＝止まらずに進む／きらめき＝いい具合に／書類＋チェック＝書き換えは通す／
+    // ？＝毎回きく／手順の一覧＝案を出すだけ。何をする段かは名前そのものが言っている
+    { key: 'bypass', label: 'バイパス', name: 'バイパス', icon: 'fast' },
+    { key: 'auto',   label: 'おまかせ', name: 'おまかせ', icon: 'sparkle' },
+    { key: 'accept', label: '編集は自動', name: '編集は自動', icon: 'doccheck' },
+    { key: 'manual', label: '毎回確認', name: '毎回確認', icon: 'ask' },
+    { key: 'plan',   label: '計画のみ', name: '計画のみ', icon: 'checklist' }
   ];
   var PERM_BY = {};
   PERM.forEach(function (m) { PERM_BY[m.key] = m; });
@@ -4150,20 +4147,19 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (!s) return;
     openSheet('許可の範囲');
 
+    // 見出しは1行（2026-09-12）。いまの段は項目の右端に「今これ」と出るので、
+    // ここでは言わない。⚠️ 返事待ちで変えられないことだけは、押す前に言う
     var head = document.createElement('div');
     head.className = 'sheethead';
-    var pm = PERM_BY[s.perm];
-    head.textContent = name + ' が自分で決めてよい範囲。'
-      + (pm ? '今は「' + pm.label + '」です。' : '今の状態は読めていません。')
-      + (s.status === 'waiting' ? '\n⚠️ 返事を待っています。先に答えてから変えてください。' : '');
-    head.style.whiteSpace = 'pre-line';
+    head.textContent = name
+      + (s.status === 'waiting' ? ' ・ ⚠️ 返事待ち（いまは変えられません）' : '');
     sheetBody.appendChild(head);
 
     PERM.forEach(function (m) {
       var now = m.key === s.perm;
-      sheetItem(m.name, now ? '今これ・' + m.sub : m.sub,
-        function () { closeSheet(); if (!now) doPerm(name, m); },
-        { on: now, wrap: true, icon: m.icon, iconCls: now ? 'ok' : 'claude' });
+      sheetItem(m.name, '', function () { closeSheet(); if (!now) doPerm(name, m); },
+        { on: now, icon: m.icon, iconCls: now ? 'ok' : 'claude',
+          val: now ? '今これ' : '' });
     });
   }
 
