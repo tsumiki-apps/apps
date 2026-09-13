@@ -119,10 +119,10 @@
   svg.chart { width: 100%; height: auto; display: block; }
 
   /* milestones */
-  .ms-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .ms-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .ms { background: #fafafa; border-radius: 12px; padding: 14px; text-align: center; }
   .ms .when { font-size: 13px; color: var(--sub); }
-  .ms .asset { font-size: 22px; font-weight: 700; margin: 2px 0; }
+  .ms .asset { font-size: 22px; font-weight: 700; margin: 2px 0; overflow-wrap: anywhere; }
   .ms .asset.neg { color: var(--red); }
   .ms .diff { font-size: 12px; color: var(--green); }
 
@@ -206,6 +206,18 @@
   .pull:disabled { color: var(--sub); cursor: default; }
   .pull-info { font-size: 12px; color: var(--sub); margin-top: 8px; }
 
+  /* 固定費の内訳 */
+  .fixed-items .goal { padding: 6px 0; }
+  /* 狭い幅では名前を1段目、金額と削除を2段目に折り返す */
+  .fixed-items .goal-main { flex-wrap: wrap; row-gap: 6px; }
+  .fixed-items .goal input.g-name { flex: 1 1 96px; }
+  .fixed-items .amount-wrap { margin-left: auto; }
+  .fixed-items .goal input.g-amount { width: 104px; }
+  .fixed-items .goal .del { width: 44px; height: 44px; }
+  .fixed-items:empty { display: none; }
+  #addFixed { margin-top: 6px; }
+  .frow input.amount[readonly] { background: transparent; border-color: transparent; }
+
   @media (max-width: 460px) {
     .frow input.amount { width: 120px; }
     .res-big { font-size: 40px; }
@@ -241,12 +253,14 @@
       <span class="amount-wrap"><span class="yen">¥</span><input class="amount" id="currentSpend" type="text" inputmode="numeric" placeholder="0"></span>
     </div>
     <div class="frow">
-      <span class="lbl">その他の固定費<span class="hint">家賃・光熱費など（任意）</span></span>
-      <span class="amount-wrap"><span class="yen">¥</span><input class="amount" id="fixed" type="text" inputmode="numeric" placeholder="0"></span>
+      <span class="lbl">固定費<span class="hint" id="fixedHint">家賃・光熱費など</span></span>
+      <span class="amount-wrap"><span class="yen">¥</span><input class="amount" id="fixed" type="text" inputmode="numeric" placeholder="0" aria-label="固定費の合計"></span>
     </div>
+    <div class="fixed-items" id="fixedItems"></div>
+    <button class="btn-add" id="addFixed">＋ 固定費</button>
 
     <button class="pull" id="pullBtn">🔄 残高計算ページの「残り」と「クレカ支出」を取り込む</button>
-    <button class="pull" id="pullCredit">💳 明細マネージャーの実績から「今のクレカ支出」を取り込む</button>
+    <button class="pull" id="pullCredit">💳 明細マネージャーから「クレカ支出」と「固定費」を取り込む</button>
     <div class="pull-info" id="pullCreditInfo"></div>
   </div>
 
@@ -453,7 +467,64 @@
       (d.payments || []).forEach(function (p) { paid[p.loanId] = (paid[p.loanId] || 0) + (+p.amount || 0); });
       return (d.loans || []).reduce(function (s, l) { return s + Math.max(0, (+l.amount || 0) - (paid[l.id] || 0)); }, 0);
     }
-    return { local: local, getData: getData, cycles: cycles, unrecovered: unrecovered };
+    // 取り込み用の内訳。締め済みの直近3サイクルを、固定費（カテゴリで判定）・分割・年会費・それ以外（変動）に分ける
+    var FIXED_CAT = { "公共料金・通信": "通信・光熱", "サブスク": "サブスク", "Apple関連": "サブスク", "ジム・フィットネス": "ジム" };
+    var FIXED_ORDER = ["通信・光熱", "サブスク", "ジム"];
+    var ANNUAL_RE = /年会費/;
+    function kindOf(t, txs) {
+      var cat = String(t.category || ""), desc = String(t.description || "");
+      if (cat === "分割払い" || t.instBill === true || INST_BILL_RE.test(desc)) return "inst";
+      if (ANNUAL_RE.test(desc)) return "annual";
+      // 年会費と同じ期に単独で載る「消費税」は年会費の税
+      if (desc.trim() === "消費税" && txs.some(function (x) { return ANNUAL_RE.test(String(x.description || "")); })) return "annual";
+      return FIXED_CAT[cat] ? "fixed" : "var";
+    }
+    function breakdown(d) {
+      var cs = cycles(d);
+      if (!cs.length) return null;
+      var done = cs.filter(function (c) { return c.complete; });
+      var use = (done.length ? done : cs).slice(-3);
+      var instAdd = instByCycle(d), converted = instTxIds(d);
+      var fixed = {}, variable = 0, inst = 0;
+      use.forEach(function (c) {
+        var txs = (d.months[c.key] && d.months[c.key].transactions) || [];
+        txs.forEach(function (t) {
+          if (converted[t.id]) return;
+          var self = (+t.amount || 0) - loanTotalForTx(d, t.id);
+          var k = kindOf(t, txs);
+          if (k === "fixed") { var n = FIXED_CAT[String(t.category)]; fixed[n] = (fixed[n] || 0) + self; }
+          else if (k === "var") variable += self;
+          else if (k === "inst") inst += self;
+        });
+        inst += (instAdd[c.key] || 0);
+      });
+      // 年会費は直近12サイクルぶんを12で割って月割りにする
+      var last = use[use.length - 1].key, from = cycleAdd(last, -11), annual = 0;
+      Object.keys(d.months).forEach(function (k) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || k < from || k > last) return;
+        var txs = (d.months[k] && d.months[k].transactions) || [];
+        txs.forEach(function (t) {
+          if (!converted[t.id] && kindOf(t, txs) === "annual") annual += (+t.amount || 0) - loanTotalForTx(d, t.id);
+        });
+      });
+      // これから請求される分割（使ったサイクルより後の回）
+      var instLeft = 0;
+      (d.installments || []).forEach(function (p) {
+        var total = Math.max(0, (+p.principal || 0) + (+p.fee || 0));
+        var n = Math.max(1, Math.min(60, +p.count || 1));
+        var per = (+p.monthly > 0) ? +p.monthly : Math.ceil(total / n), rest = total;
+        for (var i = 0; i < n; i++) {
+          var amt = (i === n - 1) ? rest : Math.max(0, Math.min(per, rest));
+          if (cycleAdd(p.startCycle, i) > last) instLeft += amt;
+          rest -= amt;
+        }
+      });
+      var len = use.length, items = [];
+      FIXED_ORDER.forEach(function (n) { if (fixed[n] > 0) items.push({ name: n, amount: Math.round(fixed[n] / len) }); });
+      if (annual > 0) items.push({ name: "年会費", amount: Math.round(annual / 12) });
+      return { used: use, variable: Math.round(variable / len), items: items, instAvg: Math.round(inst / len), instLeft: instLeft };
+    }
+    return { local: local, getData: getData, cycles: cycles, unrecovered: unrecovered, breakdown: breakdown };
   })();
 
   /* --- MoneySync: money-balance-v1 + money-forecast-v1 をまとめて同期 --- */
@@ -593,7 +664,7 @@
   var KEY = "money-forecast-v1";
   var MONEY_KEY = "money-balance-v1";
 
-  var settings = { startAsset: 0, salary: 0, idealSpend: 0, currentSpend: 0, fixed: 0, months: 12, goals: [], wishlist: [] };
+  var settings = { startAsset: 0, salary: 0, idealSpend: 0, currentSpend: 0, fixed: 0, fixedItems: [], months: 12, goals: [], wishlist: [] };
   var seq = 1;
   function gid() { return "g" + (seq++) + "_" + Date.now().toString(36); }
 
@@ -603,6 +674,9 @@
     idealSpend: document.getElementById("idealSpend"),
     currentSpend: document.getElementById("currentSpend"),
     fixed: document.getElementById("fixed"),
+    fixedHint: document.getElementById("fixedHint"),
+    fixedItems: document.getElementById("fixedItems"),
+    addFixed: document.getElementById("addFixed"),
     months: document.getElementById("months"),
     monthsVal: document.getElementById("monthsVal"),
     pullBtn: document.getElementById("pullBtn"),
@@ -654,6 +728,16 @@
              amount: o ? toNum(o.amount) : 0 };
   }
   function makeGoal() { return { id: gid(), name: "", date: "", amount: 0 }; }
+  // 固定費の内訳。src="credit" は明細マネージャーから入れた行（次の取り込みで入れ替わる）
+  function normFixed(o) {
+    return { id: o && o.id ? String(o.id) : gid(),
+             name: o && typeof o.name === "string" ? o.name : "",
+             amount: o ? toNum(o.amount) : 0,
+             src: o && o.src === "credit" ? "credit" : "" };
+  }
+  function applyFixedSum() {
+    if (settings.fixedItems.length) settings.fixed = settings.fixedItems.reduce(function (a, x) { return a + toNum(x.amount); }, 0);
+  }
 
   // 有効な目標（金額>0 かつ 日付あり）を日付順で返す。m=残り月数(実数), mr=グラフ用整数月
   function validGoals() {
@@ -693,6 +777,8 @@
       settings.idealSpend = toNum(saved.idealSpend);
       settings.currentSpend = toNum(saved.currentSpend);
       settings.fixed = toNum(saved.fixed);
+      if (Array.isArray(saved.fixedItems)) settings.fixedItems = saved.fixedItems.map(normFixed);
+      applyFixedSum();
       settings.months = Math.min(60, Math.max(1, parseInt(saved.months, 10) || 12));
       if (Array.isArray(saved.goals)) settings.goals = saved.goals.map(normGoal);
       if (Array.isArray(saved.wishlist)) settings.wishlist = saved.wishlist.map(normWish);
@@ -712,6 +798,8 @@
     el.idealSpend.value = settings.idealSpend ? comma(settings.idealSpend) : "";
     el.currentSpend.value = settings.currentSpend ? comma(settings.currentSpend) : "";
     el.fixed.value = settings.fixed ? comma(settings.fixed) : "";
+    el.fixed.readOnly = settings.fixedItems.length > 0;
+    el.fixedHint.textContent = settings.fixedItems.length ? "内訳の合計" : "家賃・光熱費など";
     el.months.value = settings.months;
     el.monthsVal.textContent = settings.months;
   }
@@ -891,6 +979,63 @@
     buildGoals(); render(); save();
     var rows = el.goals.querySelectorAll(".goal");
     if (rows.length) { var inp = rows[rows.length - 1].querySelector(".g-name"); if (inp) inp.focus(); }
+  }
+
+  function fixedRowMarkup() {
+    return '<div class="goal-main">' +
+      '<input class="g-name" type="text" placeholder="例：家賃" aria-label="固定費の名前">' +
+      '<div class="amount-wrap"><span class="yen">¥</span>' +
+      '<input class="g-amount" type="text" inputmode="numeric" placeholder="0" aria-label="月の金額"></div>' +
+      '<button class="del" aria-label="削除">×</button>' +
+    '</div>';
+  }
+  function buildFixed() {
+    el.fixedItems.innerHTML = "";
+    settings.fixedItems.forEach(function (x) {
+      var row = document.createElement("div");
+      row.className = "goal";
+      row.setAttribute("data-id", x.id);
+      row.innerHTML = fixedRowMarkup();
+      row.querySelector(".g-name").value = x.name;
+      row.querySelector(".g-amount").value = x.amount ? comma(x.amount) : "";
+      el.fixedItems.appendChild(row);
+    });
+  }
+  function findFixed(id) {
+    for (var i = 0; i < settings.fixedItems.length; i++) if (settings.fixedItems[i].id === id) return settings.fixedItems[i];
+    return null;
+  }
+  function wireFixed() {
+    el.fixedItems.addEventListener("input", function (e) {
+      var row = e.target.closest(".goal"); if (!row) return;
+      var x = findFixed(row.getAttribute("data-id")); if (!x) return;
+      var t = e.target;
+      if (t.classList.contains("g-name")) x.name = t.value;
+      else if (t.classList.contains("g-amount")) {
+        var n = toNum(t.value); x.amount = n; t.value = n ? comma(n) : "";
+        try { t.setSelectionRange(t.value.length, t.value.length); } catch (z) {}
+      } else return;
+      x.src = "";   // 手で直した行は、次の取り込みで入れ替えない
+      applyFixedSum();
+      el.fixed.value = settings.fixed ? comma(settings.fixed) : "";
+      render(); save();
+    });
+    el.fixedItems.addEventListener("click", function (e) {
+      if (!e.target.closest(".del")) return;
+      var row = e.target.closest(".goal"); if (!row) return;
+      var id = row.getAttribute("data-id");
+      settings.fixedItems = settings.fixedItems.filter(function (x) { return x.id !== id; });
+      if (!settings.fixedItems.length) settings.fixed = 0;
+      applyFixedSum(); buildFixed(); syncInputs(); render(); save();
+    });
+  }
+  function addFixed() {
+    // 内訳が無いまま合計だけ入っていたら、その額を1行目として残す
+    if (!settings.fixedItems.length && settings.fixed > 0) settings.fixedItems.push(normFixed({ name: "その他", amount: settings.fixed }));
+    settings.fixedItems.push(normFixed({}));
+    applyFixedSum(); buildFixed(); syncInputs(); render(); save();
+    var rows = el.fixedItems.querySelectorAll(".goal");
+    if (rows.length) rows[rows.length - 1].querySelector(".g-name").focus();
   }
 
   function drawChart(start, saveIdeal, saveCurrent, N, goals) {
@@ -1111,6 +1256,7 @@
   load();
   syncInputs();
   buildGoals();
+  buildFixed();
   buildWishlist();
   render();
 
@@ -1121,6 +1267,8 @@
   wireAmount(el.fixed, "fixed");
   wireGoals();
   el.addGoal.addEventListener("click", addGoal);
+  wireFixed();
+  el.addFixed.addEventListener("click", addFixed);
   wireWishlist();
   el.addWish.addEventListener("click", addWish);
 
@@ -1138,18 +1286,8 @@
     syncInputs(); render(); save();
   });
 
-  // ---- クレジット明細マネージャーの実績から「今のクレカ支出」を取り込む（読み取りのみ） ----
-  // 締め済みサイクル（最大3つ）の「自分の実質支出」の平均を使う
-  function avgRecentSelf(d) {
-    if (!window.CreditLink) return null;
-    var cs = CreditLink.cycles(d);
-    if (!cs.length) return null;
-    var done = cs.filter(function (c) { return c.complete; });
-    var use = (done.length ? done : cs).slice(-3);
-    var sum = use.reduce(function (a, c) { return a + c.self; }, 0);
-    return { avg: Math.round(sum / use.length), used: use, partial: done.length === 0 };
-  }
-
+  // ---- クレジット明細マネージャーの実績から「クレカ支出」と「固定費」を取り込む（読み取りのみ） ----
+  // 締め済みの直近3サイクルの平均。固定費はカテゴリで分け、分割払いは一時的な支払いなので含めない
   if (el.pullCredit) el.pullCredit.addEventListener("click", function () {
     var orig = el.pullCredit.textContent;
     el.pullCredit.disabled = true;
@@ -1157,16 +1295,25 @@
     CreditLink.getData().then(function (d) {
       el.pullCredit.disabled = false;
       el.pullCredit.textContent = orig;
-      var r = d && avgRecentSelf(d);
+      var r = d && CreditLink.breakdown(d);
       if (!r) {
         alert("クレジット明細マネージャーのデータが見つかりませんでした。\n先に「クレジット明細マネージャー」でクレカ明細CSVを取り込んでください。");
         return;
       }
-      settings.currentSpend = r.avg;
-      syncInputs(); render(); save();
-      var detail = r.used.map(function (c) { return c.label + "：" + yen(c.self); }).join(" ／ ");
-      el.pullCreditInfo.textContent = (r.partial ? "進行中のサイクル" : "締め済みの直近" + r.used.length + "サイクル") +
-        "の「自分の実質支出」平均 " + yen(r.avg) + " を反映しました（" + detail + "）";
+      settings.currentSpend = r.variable;
+      // 手で入れた行は残し、明細から入れた行だけを入れ替える（同じ名前の手入力があればそちらを優先）
+      var manual = settings.fixedItems.filter(function (x) { return x.src !== "credit"; });
+      if (!settings.fixedItems.length && settings.fixed > 0) manual = [normFixed({ name: "その他", amount: settings.fixed })];
+      var names = {};
+      manual.forEach(function (x) { names[x.name] = true; });
+      settings.fixedItems = r.items
+        .filter(function (x) { return !names[x.name]; })
+        .map(function (x) { return normFixed({ name: x.name, amount: x.amount, src: "credit" }); })
+        .concat(manual);
+      applyFixedSum(); buildFixed(); syncInputs(); render(); save();
+      var from = r.used[0].label.split("〜")[0], to = r.used[r.used.length - 1].label.split("〜")[1];
+      el.pullCreditInfo.textContent = from + "〜" + to + "（" + r.used.length + "サイクル）の平均" +
+        (r.instLeft > 0 ? "・分割払いの残り " + yen(r.instLeft) + " は除外" : "");
     }).catch(function () {
       el.pullCredit.disabled = false;
       el.pullCredit.textContent = orig;
