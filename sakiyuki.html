@@ -1035,7 +1035,7 @@ button,input,textarea{font:inherit; color:inherit}
       <details class="tn-acc">
         <summary class="acc-sum"><svg class="ic" aria-hidden="true"><use href="#i-db"/></svg>データ</summary>
         <div class="bk">
-          <p class="hint"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-info"/></svg><span>この端末にだけ保存。ホーム画面に追加して使うと消えにくくなります</span></p>
+          <p class="hint"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-info"/></svg><span id="sync-note">この端末に保存</span></p>
           <button type="button" class="btn-quiet" id="bk-copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>控えをコピー</button>
           <textarea class="in ta" id="bk-text" rows="3" autocomplete="off" placeholder="控えを貼り付け" aria-label="控えを貼り付け"></textarea>
           <button type="button" class="btn-quiet" id="bk-load"><svg class="ic" aria-hidden="true"><use href="#i-paste"/></svg>貼り付けた控えで復元</button>
@@ -1048,6 +1048,7 @@ button,input,textarea{font:inherit; color:inherit}
   </main>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (function(){
 'use strict';
@@ -1209,7 +1210,8 @@ function load(){
   catch (e) { return blank(); }
 }
 var state = load();
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} if (SYNC) SYNC.touched(); }
+var SYNC = null;   /* クラウド同期。下の「クラウド同期」で入る */
 function hzIndex(){ return Math.max(0, HZ.findIndex(function(h){ return h.m === state.horizon; })); }
 
 function isActive(f, ym){
@@ -1866,10 +1868,85 @@ clearBtn.addEventListener('click', function(){
   bkMsg.textContent = '全部削除しました';
 });
 
+/* ================= クラウド同期 =================
+   Supabase の sakiyuki_state（id='kodai' の1行）に {updatedAt, data} を置く。資産予測（money_state）と同じ仕組み。
+   ・保存したら少し待って送る／開いたとき・画面に戻ったときに新しい方を取る／ほかの端末の変更はリアルタイムで受ける
+   ・一度も同期していない端末に別の中身があったら、クラウドの方を出し、元の中身は「元に戻す」と控えのキーに残す */
+SYNC = (function(){
+  var URL_ = 'https://okbjqtdirrathscctyvx.supabase.co';
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+  var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(URL_, ANON) : null;
+  var TABLE = 'sakiyuki_state', ID = 'kodai', META = 'sakiyuki-sync-meta-v1';
+  var timer = null, pending = false, lastPushed = '', subscribed = false;
+  var note = $('#sync-note');
+  function paint(on){ note.textContent = !sb ? 'この端末に保存' : on ? 'クラウドに同期' : 'オフライン（この端末に保存）'; }
+  function localT(){ try { return (JSON.parse(localStorage.getItem(META)) || {}).updatedAt || 0; } catch (e) { return 0; } }
+  function setT(t){ try { localStorage.setItem(META, JSON.stringify({updatedAt: t})); } catch (e) {} }
+  function push(){
+    if (!sb || !pending) return;
+    pending = false; clearTimeout(timer);
+    var body = {updatedAt: localT() || Date.now(), data: state};
+    lastPushed = JSON.stringify(body);
+    sb.from(TABLE).upsert({id: ID, state: body, updated_at: new Date().toISOString()})
+      .then(function(r){ if (r && r.error){ pending = true; paint(false); } else paint(true); },
+            function(){ pending = true; paint(false); });
+  }
+  function touched(){
+    setT(Date.now());
+    if (!sb) return;
+    pending = true; clearTimeout(timer); timer = setTimeout(push, 400);
+  }
+  function editing(){ var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); }
+  function apply(body){
+    state = clean(body.data);
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    setT(body.updatedAt || Date.now());
+    applyAll();
+  }
+  function pull(){
+    if (!sb){ paint(false); return; }
+    sb.from(TABLE).select('state').eq('id', ID).maybeSingle().then(function(res){
+      if (!res || res.error){ paint(false); return; }
+      paint(true);
+      var body = res.data && res.data.state;
+      var has = !!(body && body.data && typeof body.data === 'object');
+      var lt = localT(), rt = has ? (body.updatedAt || 0) : 0;
+      if (has && rt > lt){
+        if (pending) return;                                   /* 送る前の変更がある＝こちらを先に送る */
+        if (!lt && hasData() && JSON.stringify(clean(body.data)) !== JSON.stringify(state)){
+          try { localStorage.setItem(KEY + '-before-sync', JSON.stringify(state)); } catch (e) {}
+          remember();                                          /* 「元に戻す」でこの端末の中身に戻せる */
+          apply(body);
+          bkMsg.textContent = 'クラウドの内容を出しました。前の内容は「元に戻す」で戻せます';
+        } else apply(body);
+      } else if ((lt > rt) || (!has && hasData())){
+        if (!lt) setT(Date.now());
+        pending = true; push();
+      }
+      if (!subscribed){
+        subscribed = true;
+        sb.channel('sakiyuki-rt')
+          .on('postgres_changes', {event: '*', schema: 'public', table: TABLE, filter: 'id=eq.' + ID}, function(p){
+            var b = p.new && p.new.state;
+            if (!b || !b.data || JSON.stringify(b) === lastPushed) return;   /* 自分が送ったもの */
+            if ((b.updatedAt || 0) <= localT() || pending || editing()) return;
+            apply(b);
+          })
+          .subscribe();
+      }
+    }, function(){ paint(false); });
+  }
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') pull(); else push(); });
+  window.addEventListener('pagehide', push);
+  paint(false);
+  return {touched: touched, pull: pull};
+})();
+
 /* ================= 最初の描画（ここでは保存しない） ================= */
 fillAssets();
 renderLists();
 renderView();
+SYNC.pull();
 })();
 </script>
 <!-- tsumiki-back-button -->
