@@ -92,6 +92,8 @@
   .listhead .filters{margin-left:auto; display:flex; gap:6px;}
   .listhead .filters button{font-size:11px; font-weight:700; color:var(--sub); padding:5px 10px;
     border-radius:999px; background:var(--card); border:1px solid var(--line);}
+  .listhead .filters button,.rpresets button{position:relative;}
+  .listhead .filters button::after,.rpresets button::after{content:''; position:absolute; inset:-9px 0;}
   .listhead .filters button.on{color:var(--accent); border-color:var(--accent); background:rgba(59,147,255,.08);}
 
   .daygroup{font-size:11px; font-weight:700; color:var(--sub); margin:14px 4px 6px;}
@@ -171,8 +173,8 @@
   .sheetbtns .save{flex:1; background:var(--accent-2); color:var(--bg); padding:15px; border-radius:14px; font-weight:800; font-size:16px;}
   .sheetbtns .save:active{transform:scale(.97);}
   .delbtn{width:100%; text-align:center; color:var(--danger); font-weight:700; font-size:14px; padding:14px; margin-top:4px;}
-  .secbtn{width:100%; display:flex; align-items:center; gap:10px; text-align:left; background:var(--card);
-    border:1px solid var(--line); padding:15px; border-radius:14px; font-weight:700; font-size:15px; margin-top:10px;}
+  .secbtn{width:100%; min-height:60px; display:flex; align-items:center; gap:10px; text-align:left; background:var(--card);
+    border:1px solid var(--line); padding:13px 14px; border-radius:14px; font-weight:700; font-size:15px; margin-top:10px;}
   .secbtn .em{font-size:18px;}
   .secbtn small{display:block; font-weight:500; font-size:11.5px; color:var(--sub);}
   .hint{font-size:11px; color:var(--sub); text-align:center; margin-top:10px; line-height:1.7;}
@@ -198,7 +200,7 @@
   .stmtbox .sk.ng{color:var(--danger);}
 
   /* 期間ピッカー行 */
-  .prow{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line);
+  .prow{width:100%; min-height:60px; display:flex; align-items:center; gap:10px; text-align:left; background:var(--card); border:1px solid var(--line);
     border-radius:14px; padding:13px 14px; margin-bottom:8px;}
   .prow.on{border-color:var(--accent); background:rgba(59,147,255,.06);}
   .prow .pi{min-width:0; flex:1;}
@@ -221,7 +223,7 @@
 
   .toast{position:fixed; bottom:calc(env(safe-area-inset-bottom) + 100px); left:50%; transform:translateX(-50%) translateY(20px);
     background:#232a33; color:#fff; padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600;
-    z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; white-space:nowrap; max-width:88vw;}
+    z-index:200; opacity:0; transition:all .25s ease; pointer-events:none; white-space:nowrap; max-width:88vw; overflow:hidden; text-overflow:ellipsis;}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
 </style>
 </head>
@@ -268,7 +270,7 @@ const LS_KEY='futaricard_db_v1';
 // 請求書の画像に載せる振込先（設定でいつでも書き換え可・空行は無視）
 const BANK_DEFAULT=['三井住友銀行','オリーブBlue支店（支店番号 783）','普通 0833691','名義 タカハシコウダイ'];
 function defaultDB(){
-  const p=newPeriod(monthLabel(new Date()));
+  const d=new Date(), p=newPeriod(monthLabel(d), d.getFullYear()+'-'+pad(d.getMonth()+1));
   return { names:{kodai:'こうだい', yuzu:'ゆずは'}, defaultRatio:50, bank:BANK_DEFAULT.slice(), closeDay:31, payDay:26,
     periods:[p], current:p.id, updatedAt:0 };
 }
@@ -425,7 +427,7 @@ function dispName(it){
 /* ============ レンダリング ============ */
 function render(){
   const p=curPeriod();
-  document.getElementById('periodName').textContent=p.name;
+  document.getElementById('periodName').textContent=pname(p);
   document.getElementById('periodCnt').textContent=p.items.length?p.items.length+'件':'';
   document.getElementById('body').innerHTML = p.items.length? renderPeriod(p) : renderEmpty();
   bindBody(p);
@@ -446,7 +448,7 @@ function mixWarnHtml(p){
   const others=ys.filter(y=>y!==main);
   const cnt=p.items.filter(it=>{const y=ymOf(it.date); return y&&y!==main;}).length;
   return '<div class="mixbox"><div class="mt">⚠️ この期間に月のちがう明細が'+cnt+'件あります</div>'+
-    '<div class="ms">'+esc(p.name)+'（'+esc(ymJa(main))+'）の中に '+others.map(y=>esc(ymJa(y))).join('・')+' の明細が入っています。</div>'+
+    '<div class="ms">'+esc(pname(p))+'（'+esc(ymJa(main))+'）の中に '+others.map(y=>esc(ymJa(y))).join('・')+' の明細が入っています。</div>'+
     '<button id="mixFix">月ごとに分ける</button>'+
     '<button id="mixOk" class="ghost">このままでいい</button></div>';
 }
@@ -631,7 +633,7 @@ function openItem(p, existing){
     '</div>'+
     '<div class="field"><label>日付</label><input type="date" id="iDate" value="'+(normDate(it.date)||today())+'"></div>'+
     ((db.periods.length>1)?'<div class="field"><label>どの期間に入れる？</label><select id="iMove">'+
-      db.periods.map(x=>'<option value="'+x.id+'"'+(x.id===p.id?' selected':'')+'>'+esc(x.name)+'</option>').join('')+
+      db.periods.map(x=>'<option value="'+x.id+'"'+(x.id===p.id?' selected':'')+'>'+esc(pname(x))+'</option>').join('')+
     '</select><div class="rtnote" id="iMoveNote"></div></div>':'')+
     '<div class="sheetbtns"><button class="save" id="iSave">'+(existing?'保存':'追加する')+'</button></div>'+
     (existing?'<button class="delbtn" id="iDel">この明細を削除</button>':'')
@@ -647,8 +649,8 @@ function openItem(p, existing){
     if(toYm&&toYm!==ym){
       const better=findPeriodForYm(ym);
       note.className='rtnote warn';
-      note.textContent='⚠️ 日付は '+ymJa(ym)+' ですが、「'+to.name+'」は '+ymJa(toYm)+' の期間です。'+
-        (better&&better.id!==to.id?'\n「'+better.name+'」のほうが合っているかもしれません。':'');
+      note.textContent='⚠️ 日付は '+ymJa(ym)+' ですが、「'+pname(to)+'」は '+ymJa(toYm)+' の期間です。'+
+        (better&&better.id!==to.id?'\n「'+pname(better)+'」のほうが合っているかもしれません。':'');
     } else {
       note.className='rtnote';
       note.textContent=(existing?'えらび直して保存すると、その期間へ移せます。':'この期間に追加されます。');
@@ -720,7 +722,7 @@ function openItem(p, existing){
       const sel=ov.querySelector('#iMove');
       const into=(sel&&db.periods.find(x=>x.id===sel.value))||curPeriod();
       into.items.push(nit);
-      if(into.id!==db.current){ save(); closeSheet(); toast('「'+into.name+'」に追加しました ✓'); return; }
+      if(into.id!==db.current){ save(); closeSheet(); toast('「'+pname(into)+'」に追加しました ✓'); return; }
     }
     let moved=null;
     const mv=ov.querySelector('#iMove');
@@ -729,7 +731,7 @@ function openItem(p, existing){
       if(to&&!to.items.some(x=>x.id===existing.id)){
         p.items=p.items.filter(x=>x.id!==existing.id);
         to.items.push(existing);
-        moved=to.name;
+        moved=pname(to);
       }
     }
     save(); closeSheet(); toast(moved?('「'+moved+'」へ移しました ✓'):(existing?'保存しました':'追加しました ✓'));
@@ -747,13 +749,13 @@ function openPeriods(){
   const rows=db.periods.map(p=>{
     const c=calc(p);
     return '<button class="prow '+(p.id===db.current?'on':'')+'" data-id="'+p.id+'">'+
-      '<div class="pi"><div class="pnm">'+esc(p.name)+'</div>'+
+      '<div class="pi"><div class="pnm">'+esc(pname(p))+'</div>'+
         '<div class="pmt">'+p.items.length+'件・合計 '+yen(c.cardTotal)+(p.pay&&p.billed!=null?(csvSum(p)===p.billed?'・請求と一致 ✓':'・請求と差額あり ⚠️'):'')+'</div></div>'+
       '<span class="pv">'+esc(nm('kodai'))+' '+yen(c.kodai)+'</span></button>';
   }).join('');
   openSheet(
     '<h2>期間をえらぶ</h2>'+
-    '<div class="sd">1回のお支払いごとに明細をまとめます。CSVは<b>ファイル名（例：202609.csv）からお支払い日を読みとり、1つの期間に</b>入れます。ファイル名に年月が無いときは、明細の日付で月ごとにふりわけます（どちらも取り込む前に入れ先を確認できます）。</div>'+
+    '<div class="sd">1回のお支払い＝1つの期間</div>'+
     rows+
     '<button class="secbtn" id="newPeriod"><span class="em">＋</span><div>あたらしい期間をつくる<small>いまの期間はそのまま残ります</small></div></button>'
   );
@@ -764,19 +766,19 @@ function openNewPeriod(){
   const d=new Date(), thisYm=d.getFullYear()+'-'+pad(d.getMonth()+1);
   openSheet(
     '<h2>あたらしい期間</h2>'+
-    '<div class="field"><label>期間の名前</label><input type="text" id="npName" placeholder="例：1月分 / 2026年1月" value="'+esc(monthLabel(d))+'"></div>'+
+    '<div class="field"><label>期間の名前</label><input type="text" id="npName" placeholder="例：1月分 / 2026年1月" value="'+esc(payLabel(payOfYm(thisYm)))+'"></div>'+
     '<div class="field"><label>対象の月（CSVのふりわけ先になります）</label><input type="month" id="npYm" value="'+thisYm+'"></div>'+
     '<div class="sheetbtns"><button class="save" id="npSave">つくる</button></div>'
   );
   ov.querySelector('#npYm').onchange=e=>{
     const m=String(e.target.value||'').match(/^(\d{4})-(\d{2})$/); if(!m) return;
     const ni=ov.querySelector('#npName');
-    if(!ni.value.trim()||/^\d{1,2}月分$/.test(ni.value.trim())) ni.value=(+m[2])+'月分';
+    if(!ni.value.trim()||AUTO_NAME_RE.test(ni.value.trim())) ni.value=payLabel(payOfYm(m[1]+'-'+m[2]));
   };
   ov.querySelector('#npSave').onclick=()=>{
     const name=ov.querySelector('#npName').value.trim()||'名称未設定';
     const p=newPeriod(name, ov.querySelector('#npYm').value); db.periods.unshift(p); db.current=p.id; curFilter='all';
-    save(); closeSheet(); toast('「'+name+'」を作成しました ✓');
+    save(); closeSheet(); toast('「'+pname(p)+'」を作成しました ✓');
   };
   setTimeout(()=>{const i=ov.querySelector('#npName'); if(i)i.focus();},300);
 }
@@ -800,7 +802,7 @@ function openSettings(){
     '<div class="field"><label>振込先（請求書の画像に載ります・空欄にすると非表示）</label>'+
       '<textarea id="bankTa" rows="4" placeholder="例：〇〇銀行&#10;〇〇支店&#10;普通 1234567&#10;名義 ヤマダタロウ">'+esc(bankLines().join('\n'))+'</textarea></div>'+
     '<button class="secbtn" id="shareBtn"><span class="em">🔗</span><div>'+esc(nm('yuzu'))+'ちゃんと共有（別の端末）<small>同じ明細・仕分け・比率を2台でリアルタイム同期</small></div></button>'+
-    '<button class="secbtn" id="renameP"><span class="em">✏️</span><div>この期間の名前を変える<small>いま：'+esc(p.name)+'</small></div></button>'+
+    '<button class="secbtn" id="renameP"><span class="em">✏️</span><div>この期間の名前を変える<small>いま：'+esc(pname(p))+'</small></div></button>'+
     '<button class="secbtn" id="setShareAll"><span class="em">↩️</span><div>この期間を全部「共同」に戻す<small>個人・対象外の仕分けをリセット</small></div></button>'+
     (db.lastImport?'<button class="secbtn" id="undoImp"><span class="em">↺</span><div>前回のCSV取り込みを取り消す<small>'+esc(lastImportSummary())+'</small></div></button>':'')+
     '<button class="secbtn" id="exportBtn"><span class="em">⬇️</span><div>バックアップを書き出す<small>全期間をJSONファイルで保存</small></div></button>'+
@@ -829,7 +831,7 @@ function openSettings(){
   ov.querySelector('#restoreBtn').onclick=()=>document.getElementById('restoreInput').click();
   const dp=ov.querySelector('#delP');
   if(dp) dp.onclick=()=>{
-    if(confirm('「'+curPeriod().name+'」を削除しますか？\nこの期間の明細も消えます。')){
+    if(confirm('「'+pname(curPeriod())+'」を削除しますか？\nこの期間の明細も消えます。')){
       db.periods=db.periods.filter(x=>x.id!==db.current); db.current=db.periods[0].id; curFilter='all';
       commitNames(); save(); closeSheet(); toast('削除しました');
     }
@@ -843,7 +845,7 @@ function shareUrl(){
 function openShare(){
   const url=shareUrl();
   openSheet(
-    '<h2>🔗 ゆずちゃんと共有</h2>'+
+    '<h2>🔗 '+esc(nm('yuzu'))+'ちゃんと共有</h2>'+
     '<div class="sd">このアプリは、ひとつのデータをふたりで同期して使えます。下のリンクを <b>'+esc(nm('yuzu'))+'ちゃんの端末で開く</b>と、明細・仕分け・比率が<b>リアルタイムで両方に反映</b>されます（どちらが編集してもOK）。</div>'+
     '<div class="field"><label>共有リンク</label><input type="text" id="shareLink" value="'+esc(url)+'" readonly onclick="this.select()"></div>'+
     '<div class="sheetbtns"><button class="save" id="doShare">リンクを送る／コピー</button></div>'+
@@ -863,7 +865,7 @@ function openRename(){
   const p=curPeriod();
   openSheet(
     '<h2>期間の名前と対象の月</h2>'+
-    '<div class="field"><label>名前</label><input type="text" id="rnName" value="'+esc(p.name)+'"></div>'+
+    '<div class="field"><label>名前</label><input type="text" id="rnName" value="'+esc(pname(p))+'"></div>'+
     '<div class="field"><label>対象の月（CSVはこの月の明細がここに入ります）</label>'+
       '<input type="month" id="rnYm" value="'+esc(periodExplicitYm(p)||periodMainYm(p))+'">'+
       '<div class="hint" style="text-align:left;margin-top:6px">空にすると、名前から月を推測します。</div></div>'+
@@ -874,7 +876,8 @@ function openRename(){
   );
   ov.querySelector('#rnSave').onclick=()=>{
     const cp=curPeriod();
-    cp.name=ov.querySelector('#rnName').value.trim()||p.name;
+    const nv=ov.querySelector('#rnName').value.trim();
+    if(nv&&nv!==pname(cp)) cp.name=nv;
     const y=ov.querySelector('#rnYm').value;
     if(/^\d{4}-\d{2}$/.test(y)) cp.ym=y; else delete cp.ym;
     const pay=ov.querySelector('#rnPay').value;
@@ -901,7 +904,7 @@ function openBill(){
   billCanvas=buildBillCanvas(p);
   openSheet(
     '<h2>📄 請求書（画像）</h2>'+
-    '<div class="sd">'+esc(p.name)+'／'+esc(nm('yuzu'))+'さんへ '+yen(c.yuzu)+'</div>'+
+    '<div class="sd">'+esc(pname(p))+'／'+esc(nm('yuzu'))+'さんへ '+yen(c.yuzu)+'</div>'+
     '<img class="billimg" src="'+billCanvas.toDataURL('image/png')+'" alt="請求書">'+
     '<div class="hint" style="margin:10px 0 12px">この画像をそのまま送れます。「共有／保存」から LINE・メール・写真への保存ができます。</div>'+
     '<div class="sheetbtns"><button class="save" id="billShare">共有／保存</button></div>'
@@ -1007,7 +1010,7 @@ function buildBillCanvas(p){
   g.fillText(ellipsisText(g,nm('yuzu')+' さんへ',CW),ML,y+38); y+=titleH;
   const issued=today().replace(/-/g,'/');
   g.fillStyle=SUB; g.font=`400 20px ${FONT}`;
-  g.fillText(ellipsisText(g,p.name+' ／ 発行日 '+issued,CW),ML,y+20); y+=metaH+gap1;
+  g.fillText(ellipsisText(g,pname(p)+' ／ 発行日 '+issued,CW),ML,y+20); y+=metaH+gap1;
 
   g.fillStyle=SUB; g.font=`600 22px ${FONT}`; g.fillText('ご請求の内訳',ML,y+20);
   g.strokeStyle=LINE; g.lineWidth=1; g.beginPath(); g.moveTo(ML,y+34.5); g.lineTo(W-MR,y+34.5); g.stroke();
@@ -1247,6 +1250,17 @@ function useRangeOf(pay){
   return {from:ymd(from), to:ymd(to), ym:cy+'-'+pad(cm)};
 }
 function payLabel(pay){ return (+pay.slice(5,7))+'月'+(+pay.slice(8,10))+'日払い'; }
+// 締めの月 "2026-07" → そのお支払い日（翌月の支払日）
+function payOfYm(ym){ const y=+ym.slice(0,4), m=+ym.slice(5,7); return payDateOf(m===12?(y+1)+'-01':y+'-'+pad(m+1)); }
+// 画面に出す期間の名前。自動でついた名前（「7月分」「9月28日払い」）は、お支払い日の形にそろえる。自分でつけた名前はそのまま
+const AUTO_NAME_RE=/^(\d{1,2}月分|\d{1,2}月\d{1,2}日払い)$/;
+function pname(p){
+  if(!p) return '';
+  if(!AUTO_NAME_RE.test(p.name||'')) return p.name||'名称未設定';
+  if(p.pay) return payLabel(p.pay);
+  const ym=periodExplicitYm(p)||periodMainYm(p);
+  return ym?payLabel(payOfYm(ym)):p.name;
+}
 function payJa(pay){ const d=dOf(pay); return (d.getMonth()+1)+'月'+d.getDate()+'日（'+'日月火水木金土'[d.getDay()]+'）'; }
 function mdShort(s){ return (+s.slice(5,7))+'/'+(+s.slice(8,10)); }
 function payRouteJa(pay){ const rg=useRangeOf(pay); return pay.slice(0,4)+'年'+payLabel(pay)+'（利用 '+mdShort(rg.from)+'〜'+mdShort(rg.to)+'）'; }
@@ -1346,8 +1360,8 @@ function openRouteSheet(){
     const perNote=per.length?'<div class="hint" style="text-align:left;margin:-4px 0 8px">うち積立など '+per.length+'件・'+yen(per.reduce((a,b)=>a+b.amount,0))+' は「'+esc(nm('kodai'))+'個人」で入ります</div>':'';
     const billNote=(g.pay&&g.billed!=null)?'<div class="hint" style="text-align:left;margin:-4px 0 8px">カードの請求額 '+yen(g.billed)+(g.billed===sum?'（明細の合計と一致 ✓）':'（明細の合計は '+yen(sum)+'）')+'</div>':'';
     const opts=db.periods.map(x=>'<option value="'+x.id+'"'+(g.dest===x.id?' selected':'')+'>'+
-        (split&&x.id===R.srcId?'そのまま「'+esc(x.name)+'」に残す':'「'+esc(x.name)+'」に入れる')+'</option>').join('')+
-      '<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(g.pay?payLabel(g.pay):ymLabel(g.ym))+'」を新しくつくって入れる</option>'+
+        (split&&x.id===R.srcId?'そのまま「'+esc(pname(x))+'」に残す':'「'+esc(pname(x))+'」に入れる')+'</option>').join('')+
+      '<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(g.pay?payLabel(g.pay):(g.ym?payLabel(payOfYm(g.ym)):ymLabel(g.ym)))+'」を新しくつくって入れる</option>'+
       (split?'':'<option value="__skip__">取り込まない</option>');
     return '<div class="field"><label>'+esc(g.pay?payRouteJa(g.pay):ymJa(g.ym))+'　'+g.items.length+'件・'+yen(sum)+'</label>'+
       '<div class="hint" style="text-align:left;margin:-2px 0 8px">'+esc(sampleNames(g.items))+'</div>'+perNote+billNote+
@@ -1357,7 +1371,7 @@ function openRouteSheet(){
   openSheet(
     '<h2>'+(split?'月ごとに分ける':'どこに取り込む？')+'</h2>'+
     '<div class="sd">'+(split
-      ? '「'+esc(src?src.name:'')+'」には月のちがう明細が混ざっています。行き先をえらんでください。'
+      ? '「'+esc(pname(src))+'」には月のちがう明細が混ざっています。行き先をえらんでください。'
       : (gs.some(g=>g.pay)?'ファイル名からお支払い日を読みとり、1回のお支払いとしてまとめました。入れ先はここで変えられます。':'明細の日付を見て、月ごとに自動でふりわけました。入れ先はここで変えられます。'))+'</div>'+
     rows+
     '<div class="sheetbtns"><button class="save" id="rtGo">'+(split?'この内容で分ける':'この内容で取り込む')+'</button></div>'+
@@ -1375,11 +1389,11 @@ function openRouteSheet(){
         const otherCnt=to.items.filter(it=>ymOf(it.date)&&ymOf(it.date)!==g.ym).length;
         if(g.ym&&otherCnt&&!g.pay&&!(split&&to.id===R.srcId)){
           warn=true;
-          msgs.push('⚠️「'+to.name+'」には '+others.map(ymJa).join('・')+' の明細が'+otherCnt+'件あります（月が混ざります）');
+          msgs.push('⚠️「'+pname(to)+'」には '+others.map(ymJa).join('・')+' の明細が'+otherCnt+'件あります（月が混ざります）');
         }
         const d=routeDupCount(g);
         if(d) msgs.push('同じ明細が'+d+'件すでにあります（重複はスキップします）');
-        if(g.pay&&to.pay!==g.pay) msgs.push('「'+to.name+'」を「'+payLabel(g.pay)+'」のお支払いとして覚えます');
+        if(g.pay&&to.pay!==g.pay) msgs.push('「'+pname(to)+'」を「'+payLabel(g.pay)+'」のお支払いとして覚えます');
       }
       el.className='rtnote'+(warn?' warn':'');
       el.textContent=msgs.join('\n');
@@ -1411,7 +1425,7 @@ function runImport(){
     // お支払いの期間として覚える（取り消せるように、元の名前・お支払い日・請求額を控える）
     const meta=g.pay?{name:p.name, pay:p.pay, billed:p.billed}:null;
     if(g.pay){
-      if(/^(\d{1,2}月分|\d{1,2}月\d{1,2}日払い)$/.test(p.name)) p.name=payLabel(g.pay);   // 自分でつけた名前は変えない
+      if(AUTO_NAME_RE.test(p.name)) p.name=payLabel(g.pay);   // 自分でつけた名前は変えない
       p.pay=g.pay; if(g.billed!=null) p.billed=g.billed;
       if(!periodExplicitYm(p)) p.ym=g.ym;
     }
@@ -1421,8 +1435,8 @@ function runImport(){
     const ids=[]; dup+=dups.length;
     fresh.forEach(t=>{ p.items.push(t); ids.push(t.id); added++; });
     rememberYm(p);
-    log.entries.push({periodId:p.id, itemIds:ids, createdPeriod:created, name:p.name, meta:(created?null:meta)});
-    if(ids.length||created||metaHit){ parts.push(p.name+' '+ids.length+'件'); lastPid=p.id; }
+    log.entries.push({periodId:p.id, itemIds:ids, createdPeriod:created, name:pname(p), meta:(created?null:meta)});
+    if(ids.length||created||metaHit){ parts.push(pname(p)+' '+ids.length+'件'); lastPid=p.id; }
   });
   pendingRoute=null;
   if(!added && !metaChanged && !log.entries.some(e=>e.createdPeriod)){ closeSheet(); toast(dup?'すべて取り込み済みでした':'取り込むものがありませんでした'); return; }
@@ -1445,7 +1459,7 @@ function runSplit(){
     const have=new Set(p.items.map(x=>x.id));
     move.forEach(it=>{ if(!have.has(it.id)){ p.items.push(it); moved++; } });
     rememberYm(p);
-    parts.push(p.name+' '+move.length+'件');
+    parts.push(pname(p)+' '+move.length+'件');
   });
   delete src.mixOk; rememberYm(src);
   pendingRoute=null;
@@ -1465,7 +1479,7 @@ function undoLastImport(){
         if(e.meta.pay) p.pay=e.meta.pay; else delete p.pay;
         if(e.meta.billed!=null) p.billed=e.meta.billed; else delete p.billed; } }
   });
-  if(!db.periods.length) db.periods=[newPeriod(monthLabel(new Date()))];
+  if(!db.periods.length){ const d=new Date(); db.periods=[newPeriod(monthLabel(d), d.getFullYear()+'-'+pad(d.getMonth()+1))]; }
   if(!db.periods.find(p=>p.id===db.current)){ db.current=db.periods[0].id; curFilter='all'; }
   delete db.lastImport;
   save(); closeSheet(); toast('前回の取り込みを取り消しました');
