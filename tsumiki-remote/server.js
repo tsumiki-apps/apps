@@ -1371,11 +1371,11 @@ function clumpRecent(list, limit) {
     if (!par) continue;
     const g = open.get(par);
     if (g && g.day === dayKey(f.mtime)) {
-      g.items++; owner.set(f, g);
+      g.items++; owner.set(f, g); g.kids.push(fileRow(f));
       if (!g.shot && THUMBABLE_RE.test(f.name)) g.shot = f;
       continue;
     }
-    const ng = { par, items: 1, mtime: f.mtime, day: dayKey(f.mtime) };
+    const ng = { par, items: 1, mtime: f.mtime, day: dayKey(f.mtime), kids: [fileRow(f)] };
     if (THUMBABLE_RE.test(f.name)) ng.shot = f;
     open.set(par, ng);
     owner.set(f, ng);
@@ -1392,6 +1392,10 @@ function clumpRecent(list, limit) {
     // 中の絵を1枚だけ代表に出す。フォルダの印だけだと、35枚のスクショも
     // 3つの下ごしらえも同じ青い四角になって、見分けがつかない
     if (g.shot) { row.shot = g.shot.rel; row.shotAt = g.shot.mtime; }
+    // 押したら**このかたまりの中身だけ**を出す（2026-09-13）。フォルダに入るだけだと、
+    // 「Instagram運用／まとめて4件」を押しても37件の一覧（フォルダ17個が先）の
+    // 30行目あたりに4枚が埋もれ、「写真が開けない」に見えた
+    row.kids = g.kids;
     rows.push(row);
   }
   return rows;

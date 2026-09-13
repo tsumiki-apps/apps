@@ -4672,7 +4672,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var fPull = document.getElementById('fpull');
   var filesToast = document.getElementById('filestoast');
 
-  var fMode = 'recent';   // 'recent' | 'browse'
+  var fMode = 'recent';   // 'recent' | 'browse' | 'clump'
+  var fKids = null;       // 'clump' のとき＝押したかたまりの中身（取り直さずに並べる）
   var fDir = '';          // フォルダを辿っているときの居場所（置き場からの相対）
   var fQuery = '';        // 検索の文字。空でないあいだは fMode より優先
   var fSeq = 0;           // 取りに行った順番。古い返事で画面を書き換えない
@@ -4747,7 +4748,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 出先で読むものなので、英語だと一拍止まる）。ただし**フォルダ名と
     // ファイル名はそのまま**＝置き場の実物の名前を書き換えて見せない
     if (fQuery) title = '検索';
-    else if (fMode === 'browse') title = fDir ? fBase(fDir) : '制作物';
+    else if (fMode === 'browse' || fMode === 'clump') title = fDir ? fBase(fDir) : '制作物';
     else title = '最近';
     // ⚠️ 「最近」「制作物」は**出さない**（2026-09-12 本人の指示）。
     //    札に「最近／フォルダ」と書いてあり、開いた場所もそこしか無いので、
@@ -4764,7 +4765,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     Array.prototype.forEach.call(fSeg.querySelectorAll('button'), function (x) {
       x.classList.toggle('on', x.getAttribute('data-seg') === fMode);
     });
-    if (!fQuery && fMode === 'browse' && fDir) {
+    if (!fQuery && fMode === 'clump') {
+      fBackLabel.textContent = '最近';
+    } else if (!fQuery && fMode === 'browse' && fDir) {
       var par = fParent(fDir);
       fBackLabel.textContent = par ? fBase(par) : '制作物';
     } else if (fQuery) {
@@ -4806,7 +4809,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   function fWhenOf(e) {
     if (!e.mtime) return '';
-    return (fMode === 'recent' && !fQuery) ? fClock(e.mtime) : fmtWhen(e.mtime);
+    return ((fMode === 'recent' || fMode === 'clump') && !fQuery) ? fClock(e.mtime) : fmtWhen(e.mtime);
   }
 
   function fSubOf(e) {
@@ -4918,6 +4921,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       b.appendChild(c);
     }
     b.onclick = function () {
+      // かたまりは中身だけを出す。kids の無い古いサーバーならフォルダに入る
+      if (e.clump && e.kids) return fGo('clump', e.rel, e.kids);
       if (e.dir) return fGo('browse', e.rel);
       if (!e.open) return ftoast('この形式はここでは開けません');
       openPreview(e.rel);
@@ -4964,6 +4969,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       b.appendChild(c);
     }
     b.onclick = function () {
+      // かたまりは中身だけを出す。kids の無い古いサーバーならフォルダに入る
+      if (e.clump && e.kids) return fGo('clump', e.rel, e.kids);
       if (e.dir) return fGo('browse', e.rel);
       if (!e.open) return ftoast('この形式はここでは開けません');
       openPreview(e.rel);
@@ -4999,6 +5006,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       fList.appendChild(fGroup(dirs));
       fList.appendChild(fSection('ファイル'));
       fList.appendChild(fGroup(files));
+    } else if (fMode === 'clump' && !fQuery) {
+      // 同じ日のものだけなので、見出しは日付1本。最後に「フォルダ全体」への入口を置く
+      fList.appendChild(fSection(fDayLabel(files[0] ? files[0].mtime || 0 : 0)));
+      fList.appendChild(fGroup(files));
+      fList.appendChild(fSection('フォルダ'));
+      fList.appendChild(fGroup([{ name: fBase(fDir), rel: fDir, dir: true }]));
     } else if (fMode === 'recent' && !fQuery) {
       // 日付で区切る。10日ぶんが一続きに流れていると、どこまでが今日なのか読めない
       var label = null, bucket = [];
@@ -5043,6 +5056,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function fLoad(fresh) {
     var seq = ++fSeq;
     fChrome();
+    // かたまりの中身は押したときに手元にある。引っぱって更新でも同じものを並べ直す
+    if (fMode === 'clump' && !fQuery && fKids) {
+      var kids = fKids;
+      ensurePreviewCookie().then(function () { fCookieOk = true; }, function () { fCookieOk = false; })
+        .then(function () { if (seq === fSeq) fPaint(kids); });
+      return;
+    }
     fList.innerHTML = '';
     fList.appendChild(fNote('読み込み中…'));
     var qs = fQuery ? '?q=' + encodeURIComponent(fQuery)
@@ -5067,20 +5087,20 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // 居場所をひとまとめにして積む／戻す。履歴（端から引く動き）と数を合わせるので、
   // fStack に1つ積むときは history にも必ず1つ積む
-  function fSnap() { return { mode: fMode, dir: fDir, q: fQuery, top: fScroll.scrollTop }; }
+  function fSnap() { return { mode: fMode, dir: fDir, q: fQuery, kids: fKids, top: fScroll.scrollTop }; }
 
   function fRestore(s) {
-    fMode = s.mode; fDir = s.dir; fQuery = s.q;
+    fMode = s.mode; fDir = s.dir; fQuery = s.q; fKids = s.kids || null;
     fQInput.value = fQuery;
     fQClear.hidden = !fQuery;
     fWantTop = s.top;
     fLoad();
   }
 
-  function fGo(mode, dir) {
+  function fGo(mode, dir, kids) {
     fStack.push(fSnap());
     try { history.pushState({ tsumikiFiles: 1 }, ''); } catch (e) {}
-    fMode = mode; fDir = dir || ''; fQuery = '';
+    fMode = mode; fDir = dir || ''; fQuery = ''; fKids = kids || null;
     fQInput.value = '';
     fQClear.hidden = true;
     fWantTop = 0;
@@ -5131,7 +5151,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       // 同じ札をもう一度押したら取り直す。前は何も起きず、
       // 開いたまま新しいものを作っても、閉じて開き直すまで出てこなかった
       if (seg === fMode && !fDir && !fQuery) { fWantTop = 0; fLoad(true); return; }
-      fMode = seg; fDir = ''; fWantTop = 0;
+      fMode = seg; fDir = ''; fKids = null; fWantTop = 0;
       fLoad();
     };
   });
