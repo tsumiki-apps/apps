@@ -497,7 +497,23 @@ ts ip -4
 一切届かない（ルーターのポート開放も不要）。
 
 `https://…ts.net/` の名前で開きたい場合だけ、管理画面で HTTPS を有効にしたうえで
-`ts serve --bg 8787`。名前が要らなければ `http://<tailscale IP>:8787` で足りる。
+`ts serve --bg --https=443 http://127.0.0.1:8787`。名前が要らなければ `http://<tailscale IP>:8787` で足りる。
+
+**2026-09-15 に https も張った**（「選んでまとめて保存」の共有シートが https でしか開けないため）。
+今は **http（80）と https（443）の両方**が同じ 8787 を指している。http の道は消していない。
+
+- ⚠️ **管理画面は、Mac が入っているアカウントで開く。** 別の Google アカウントで入ると、
+  機器0台の空のネットワークが新しくでき、そこで HTTPS をオンにしても Mac には効かない（実際に踏んだ）。
+  どのアカウントかは `ts status --json` の `User` で分かる
+- ⚠️ **tailscaled に `--statedir` が要る。** `--state`（ファイル）だけで起動していると、
+  証明書をしまう場所が無く `tailscale cert` も `serve --https` も `500 no TailscaleVarRoot` で失敗する。
+  `launchagents/com.tsumiki.tailscaled.plist` に `--statedir=~/.tsumiki-remote/tailscaled-var` を足し、
+  入れ直すときは `launchctl bootout` → `bootstrap`（`kickstart` は起動オプションを読み直さない）
+- 証明書は Let's Encrypt。**機器の名前（`<Macの名前>.<tailnet>.ts.net`）は公開の記録に載り、消せない**
+  （管理画面の確認文にもそう出る）
+- iPhone では、http で開いたホーム画面のアプリとは**別のアプリ扱い**（出どころが違うので合言葉・下書きも別）。
+  「選んでまとめて保存」の保存ボタンが「https で開く」になっているので、そこから Safari で開いて
+  **ホーム画面に追加し直す**
 
 ### 4. iPhone 側
 
