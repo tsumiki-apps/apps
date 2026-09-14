@@ -768,6 +768,37 @@
   .ic-code{color:#e8a44c}
   .ic-txt{color:#98a2b3}
   .ic-etc{color:#5a6273}
+  /* 選んでまとめて保存（2026-09-14）。
+     行の左・枡の右上に丸を出す。押すと開くのではなく、丸が付く/外れる。
+     読み込み中は丸を薄くしておく＝保存を押せるようになるまでの目安 */
+  .fpick{flex:0 0 26px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  .fpick svg{display:block}
+  .fpick .o{fill:none;stroke:var(--dim);stroke-width:1.6}
+  .fpick .k{fill:none;stroke:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .picked .fpick .o{fill:var(--tap);stroke:var(--tap)}
+  .picked .fpick .k{stroke:var(--bg)}
+  .picked.loading .fpick{opacity:.5}
+  .fcell{position:relative}
+  .fcell .fpick{position:absolute;top:5px;right:5px}
+  .fcell .fpick .o{fill:var(--bg)}
+  .fcell.picked .fcicon{outline:2px solid var(--tap);outline-offset:-2px}
+  #fsel.on{color:var(--tap);font-weight:700}
+  #fselbar{flex:0 0 auto;display:flex;align-items:center;gap:8px;
+    padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line);background:var(--panel)}
+  #fselbar[hidden]{display:none}
+  #fselall{min-width:44px;min-height:44px;padding:0 8px;border:0;background:none;
+    color:var(--tap);display:flex;align-items:center;justify-content:center}
+  #fselall:active,#fsave:active{opacity:.6}
+  #fselcount{flex:1 1 auto;min-width:0;text-align:center;font-size:15px;font-weight:700;color:var(--fg)}
+  #fsave{flex:0 0 auto;min-width:104px;min-height:44px;padding:0 16px;border:0;border-radius:11px;
+    background:var(--tap);color:var(--bg);font:inherit;font-size:15px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  #fsave svg{display:block}
+  #fsave:disabled{opacity:.35}
+  #fsave.wait{background:var(--line);color:var(--fg)}
+  /* 知らせが下の帯に重ならないよう、選んでいるあいだは帯のぶん上げる */
+  #files.selecting .vtoast{bottom:calc(env(safe-area-inset-bottom) + 76px)}
   /* 広い画面（600〜）。行を画面いっぱいに引き伸ばすと、名前と日付が
      左右の端に離れて読みづらい。中央に寄せて、読める幅で止める。
      ブレイクポイントは家の決まりどおり 600 の1本だけ（900 は要らない＝
@@ -1098,6 +1129,7 @@
   <div class="fbar">
     <button id="fback" aria-label="戻る"><span aria-hidden="true">‹</span><span class="lbl" id="fbacklabel"></span></button>
     <span id="fbartitle">制作物</span>
+    <button id="fsel" aria-label="選択" title="選択"></button>
     <button id="fview" aria-label="表示を変える" title="表示を変える"></button>
   </div>
   <div id="fscroll">
@@ -1122,6 +1154,12 @@
       <button data-seg="browse">フォルダ</button>
     </div>
     <div id="flist"></div>
+  </div>
+  <!-- 選んでまとめて保存。選んでいるあいだだけ下に出る（2026-09-14） -->
+  <div id="fselbar" hidden>
+    <button id="fselall" aria-label="すべて選択" title="すべて選択"></button>
+    <span id="fselcount" aria-live="polite"></span>
+    <button id="fsave" disabled><span id="fsaveic" aria-hidden="true"></span><span id="fsavelbl">保存</span></button>
   </div>
   <div id="filestoast" class="vtoast" hidden></div>
 </div>
@@ -4760,6 +4798,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     fBarTitle.textContent = plain ? '' : title;
     // 押したらどうなるかを絵にする（いまの状態ではなく、切り替わる先を出す）
     fViewBtn.innerHTML = fView === 'grid' ? IC_LIST : IC_GRID;
+    // 選んでいるあいだは「完了」。Apple の「ファイル」と同じで、抜ける場所を字で示す
+    fSelBtn.innerHTML = fSelecting ? '完了' : IC_SELECT;
+    fSelBtn.classList.toggle('on', fSelecting);
     // 札は「一番上にいて、さがしていないとき」だけ。潜ったら場所を示すほうが大事
     fSeg.hidden = !!fQuery || !!fDir;
     Array.prototype.forEach.call(fSeg.querySelectorAll('button'), function (x) {
@@ -4900,6 +4941,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       //    （eager にすると即座に出たので、lazy の判定時期が原因だと確かめた）
       im.dataset.u = thumbUrl(e);
     }
+    if (fSelecting && fPickable(e)) { b.dataset.rel = e.rel; b.insertBefore(fPickMark(), b.firstChild); }
     var main = document.createElement('span');
     main.className = 'fmain';
     var n = document.createElement('span');
@@ -4921,6 +4963,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       b.appendChild(c);
     }
     b.onclick = function () {
+      // 選んでいるあいだは、開かずに丸を付け外しする（フォルダ・かたまりは今までどおり入る）
+      if (fSelecting && fPickable(e)) return togglePick(e);
       // かたまりは中身だけを出す。kids の無い古いサーバーならフォルダに入る
       if (e.clump && e.kids) return fGo('clump', e.rel, e.kids);
       if (e.dir) return fGo('browse', e.rel);
@@ -4956,6 +5000,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       box.appendChild(im);
     }
     b.appendChild(box);
+    if (fSelecting && fPickable(e)) { b.dataset.rel = e.rel; b.appendChild(fPickMark()); }
     var n = document.createElement('span');
     n.className = 'fcname';
     n.textContent = e.name;
@@ -4969,6 +5014,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       b.appendChild(c);
     }
     b.onclick = function () {
+      // 選んでいるあいだは、開かずに丸を付け外しする（フォルダ・かたまりは今までどおり入る）
+      if (fSelecting && fPickable(e)) return togglePick(e);
       // かたまりは中身だけを出す。kids の無い古いサーバーならフォルダに入る
       if (e.clump && e.kids) return fGo('clump', e.rel, e.kids);
       if (e.dir) return fGo('browse', e.rel);
@@ -5031,6 +5078,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
     fScroll.scrollTop = fWantTop || 0;
     fBarSync();
+    pickPaint();
     // 並べ終えてからサムネイルを頼む。ここまで来ていれば lazy が正しく効く＝
     // 画面に入っているぶんだけ取りに行く（120件を一度に引かない）
     Array.prototype.forEach.call(fList.querySelectorAll('img[data-u]'), function (im) {
@@ -5156,6 +5204,250 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     };
   });
 
+  // ------------------------------------------------ 選んでまとめて保存（2026-09-14）
+  //
+  // 右上の丸で選ぶ画面に切り替え、ファイルに丸を付けて下の「保存」を押す。
+  // iOS の共有シートが開き、画像・動画だけなら「◯枚の画像を保存」で写真に入る
+  // （ほかの形式が混ざると「ファイルに保存」になる）。
+  //
+  // ⚠️ 共有シートは**指で押した流れの中でしか開けない**（2026-08-31 実測）。
+  //    押してから取りに行くと流れが切れて iOS に断られるので、**丸を付けた時点で
+  //    取りに行っておき**、保存を押した瞬間は渡すだけにする。揃うまでは「3/5」と出す。
+  // ⚠️ 共有シートは **https でつないだときしか**使えない（http では navigator.share が無い）。
+  //    http で開いているときは、同じ名前の https へ Safari で開き直す入口にする。
+
+  var fSelBtn = document.getElementById('fsel');
+  var fSelBar = document.getElementById('fselbar');
+  var fSelAll = document.getElementById('fselall');
+  var fSelCount = document.getElementById('fselcount');
+  var fSave = document.getElementById('fsave');
+  var fSaveIc = document.getElementById('fsaveic');
+  var fSaveLbl = document.getElementById('fsavelbl');
+
+  var IC_SELECT = '<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" focusable="false">' +
+    '<circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.7"/>' +
+    '<path d="m8.3 12.2 2.6 2.6 4.9-5.1" fill="none" stroke="currentColor" stroke-width="1.7"' +
+    ' stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var IC_SELALL = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">' +
+    '<path d="M10.8 6.4h9.7M10.8 12h9.7M10.8 17.6h9.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>' +
+    '<path d="m3.4 6.3 1.5 1.5 2.7-2.8M3.4 11.9l1.5 1.5 2.7-2.8M3.4 17.5l1.5 1.5 2.7-2.8" fill="none"' +
+    ' stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var IC_SAVE = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" focusable="false">' +
+    '<path d="M12 4v10.4M7.7 10.2 12 14.5l4.3-4.3" fill="none" stroke="currentColor" stroke-width="2"' +
+    ' stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="M4.6 15.4v2.4a2.2 2.2 0 0 0 2.2 2.2h10.4a2.2 2.2 0 0 0 2.2-2.2v-2.4" fill="none"' +
+    ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var IC_OUT = '<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" focusable="false">' +
+    '<path d="M13.5 4.5h6v6M19.5 4.5l-8 8M17.5 14v3.5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2H10"' +
+    ' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  fSelAll.innerHTML = IC_SELALL;
+
+  var fSelecting = false;
+  var fPicked = new Map();        // rel → { name, size, file, ctl }。付けた順に並ぶ
+  var pickQueue = [];
+  var pickRunning = 0;
+  // 上限。iPhone のメモリに全部抱えるので、手元の感覚で止める（**実機の限界は未実測**）
+  var PICK_MAX = 50;
+  var PICK_MAX_BYTES = 500 * 1024 * 1024;
+  var PICK_PARALLEL = 3;          // 同時に取りに行く数（iCloud から降ろす Mac も詰まらせない）
+
+  // 共有シートに渡す種類。サーバーは mp4・heic を octet-stream で返すので、
+  // 名前から決める（種類が無いと iOS は「画像を保存」を出さない）
+  var SAVE_MIME = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+    heic: 'image/heic', heif: 'image/heif', mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/x-m4v',
+    pdf: 'application/pdf', txt: 'text/plain', md: 'text/plain', csv: 'text/csv',
+    html: 'text/html', htm: 'text/html', json: 'application/json', svg: 'image/svg+xml',
+  };
+
+  function saveType(name, fallback) {
+    var m = /\.([a-z0-9]+)$/i.exec(name);
+    return (m && SAVE_MIME[m[1].toLowerCase()]) || fallback || 'application/octet-stream';
+  }
+
+  // 選べるのはファイルだけ。フォルダとかたまりは押すと中に入る（中で選べる）
+  function fPickable(e) { return !e.dir && !e.clump; }
+
+  function fPickMark() {
+    var s = document.createElement('span');
+    s.className = 'fpick';
+    s.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">' +
+      '<circle class="o" cx="12" cy="12" r="9.2"/><path class="k" d="m7.9 12.3 2.8 2.8 5.5-5.7"/></svg>';
+    return s;
+  }
+
+  function canShareFiles() {
+    return !!(window.isSecureContext && navigator.share && navigator.canShare);
+  }
+
+  // http で開いているとき、同じ名前の https。名前が *.ts.net のときだけ作れる
+  // （IP で開いていると証明書の名前と合わない）
+  function secureUrl() {
+    if (location.protocol !== 'http:' || !/\.ts\.net$/i.test(location.hostname)) return '';
+    return 'https://' + location.hostname + '/?t=' + encodeURIComponent(token);
+  }
+
+  function pickBytes() {
+    var n = 0;
+    fPicked.forEach(function (it) { n += it.size || 0; });
+    return n;
+  }
+
+  function pickPump() {
+    // http では渡す先（共有シート）が無いので、取りに行っても使い道が無い
+    if (!canShareFiles()) return;
+    while (pickRunning < PICK_PARALLEL && pickQueue.length) {
+      var rel = pickQueue.shift();
+      var it = fPicked.get(rel);
+      if (!it || it.file) continue;       // そのあいだに外した
+      pickRunning++;
+      pickFetch(rel, it);
+    }
+  }
+
+  function pickFetch(rel, it) {
+    it.ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    fetch(previewUrl(rel), { credentials: 'same-origin', signal: it.ctl ? it.ctl.signal : undefined })
+      .then(function (r) {
+        if (r.status === 401) cookieReady = null;
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.blob();
+      })
+      .then(function (b) {
+        if (fPicked.get(rel) !== it) return;          // 外した・選び直した
+        it.file = new File([b], it.name, { type: saveType(it.name, b.type) });
+        it.size = b.size;
+      })
+      .catch(function () {
+        if (fPicked.get(rel) !== it) return;          // 外したので止めた＝知らせない
+        fPicked.delete(rel);
+        ftoast(it.name + ' を読めませんでした', 2600);
+      })
+      .then(function () {
+        it.ctl = null;
+        pickRunning--;
+        pickPaint();
+        pickPump();
+      });
+  }
+
+  function unpick(rel) {
+    var it = fPicked.get(rel);
+    if (!it) return;
+    fPicked.delete(rel);
+    if (it.ctl) { try { it.ctl.abort(); } catch (x) {} }
+  }
+
+  // 付けられたら true。上限で断ったら false
+  function pick(e) {
+    if (fPicked.has(e.rel)) return true;
+    if (fPicked.size >= PICK_MAX) { ftoast('一度に ' + PICK_MAX + ' 件まで', 2200); return false; }
+    if (pickBytes() + (e.size || 0) > PICK_MAX_BYTES) { ftoast('一度に 500MB まで', 2200); return false; }
+    fPicked.set(e.rel, { name: e.name, size: e.size || 0, file: null, ctl: null });
+    pickQueue.push(e.rel);
+    return true;
+  }
+
+  function togglePick(e) {
+    if (fPicked.has(e.rel)) unpick(e.rel);
+    else pick(e);
+    pickPump();
+    pickPaint();
+  }
+
+  // いま並んでいる中で選べるもの
+  function fPickables() { return (fLast || []).filter(fPickable); }
+
+  fSelAll.onclick = function () {
+    var list = fPickables();
+    if (!list.length) return;
+    var all = list.every(function (e) { return fPicked.has(e.rel); });
+    if (all) list.forEach(function (e) { unpick(e.rel); });
+    else list.some(function (e) { return !pick(e); });   // 上限に当たったらそこで止める
+    pickPump();
+    pickPaint();
+  };
+
+  // 丸・件数・保存ボタンを、並べ直さずに今の選び方へ合わせる
+  function pickPaint() {
+    if (!fSelecting) return;
+    var n = fPicked.size, ready = 0;
+    fPicked.forEach(function (it) { if (it.file) ready++; });
+    Array.prototype.forEach.call(fList.querySelectorAll('[data-rel]'), function (b) {
+      var it = fPicked.get(b.dataset.rel);
+      b.classList.toggle('picked', !!it);
+      b.classList.toggle('loading', !!it && !it.file);
+      b.setAttribute('aria-pressed', it ? 'true' : 'false');
+    });
+    fSelCount.textContent = n ? n + ' 件' : '';
+    var list = fPickables();
+    var all = list.length > 0 && list.every(function (e) { return fPicked.has(e.rel); });
+    fSelAll.setAttribute('aria-label', all ? 'すべて外す' : 'すべて選択');
+    fSelAll.classList.toggle('on', all);
+    var secure = canShareFiles();
+    var out = !secure && !!secureUrl();
+    fSave.disabled = !n;
+    fSave.classList.toggle('wait', secure && n > 0 && ready < n);
+    fSaveIc.innerHTML = out ? IC_OUT : IC_SAVE;
+    fSaveLbl.textContent = out ? 'https で開く' : (secure && n && ready < n ? ready + '/' + n : '保存');
+  }
+
+  function startSelecting() {
+    fSelecting = true;
+    filesEl.classList.add('selecting');
+    fSelBar.hidden = false;
+    fChrome();
+    if (fLast) { fWantTop = fScroll.scrollTop; fPaint(fLast); }
+  }
+
+  // 選ぶのをやめる。取りに行っている途中のものも止める
+  function endSelecting(repaint) {
+    Array.from(fPicked.keys()).forEach(unpick);
+    pickQueue = [];
+    var was = fSelecting;
+    fSelecting = false;
+    filesEl.classList.remove('selecting');
+    fSelBar.hidden = true;
+    if (!was || !repaint) return;
+    fChrome();
+    if (fLast) { fWantTop = fScroll.scrollTop; fPaint(fLast); }
+  }
+
+  fSelBtn.onclick = function () {
+    if (fSelecting) endSelecting(true);
+    else startSelecting();
+  };
+
+  fSave.onclick = function () {
+    var n = fPicked.size;
+    if (!n) return;
+    if (!canShareFiles()) {
+      var u = secureUrl();
+      if (!u) return ftoast('https で開くと保存できます', 2600);
+      // ホーム画面のアプリから別の名前へ移ると戻り道が無いので、Safari 側で開く
+      var a = document.createElement('a');
+      a.href = u;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    var files = [];
+    fPicked.forEach(function (it) { if (it.file) files.push(it.file); });
+    if (files.length < n) return ftoast('読み込み中 ' + files.length + '/' + n);
+    var data = { files: files };
+    if (!navigator.canShare(data)) return ftoast('この組み合わせは渡せません', 2600);
+    navigator.share(data).then(function () {
+      ftoast('完了しました');
+      endSelecting(true);
+    }, function (err) {
+      if (err && err.name === 'AbortError') return;   // 自分で閉じただけ
+      ftoast('保存の画面を開けませんでした', 2600);
+    });
+  };
+
   // ------------------------------------------------ 引っぱって更新
   //
   // ⚠️ touchmove は passive:false で取る（`preventDefault` を呼ぶため）。
@@ -5237,6 +5529,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     fQInput.value = '';
     fQClear.hidden = true;
     hideFToast();
+    endSelecting();
   }
 
   fBack.onclick = function () {
