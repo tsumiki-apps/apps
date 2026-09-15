@@ -281,7 +281,8 @@ textarea.in{min-height:116px; padding:12px 14px; line-height:1.6; resize:vertica
 .prow.on .pic{background:var(--surface)}
 .prow .pi{flex:1; min-width:0; display:grid}
 .prow .pnm{font-size:16px; font-weight:700; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.prow .pmt{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-mid); white-space:nowrap}
+.prow .pmt{display:flex; flex-wrap:wrap; align-items:center; gap:0 8px; font-size:13px; color:var(--ink-mid); line-height:1.5}
+.prow .pmt > span{white-space:nowrap}
 .prow .pv{flex:none; display:grid; justify-items:end; font-size:15px; font-weight:700; line-height:1.4}
 .prow .pv small{display:flex; align-items:center; gap:4px; font-size:12px; font-weight:500; color:var(--ink-mid); max-width:96px}
 .prow .pv small span:last-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -746,7 +747,11 @@ function periodPay(p){
 }
 function periodSubText(p){
   const pay=periodPay(p), bits=[];
-  if(pay){ const rg=useRangeOf(pay); bits.push('利用 '+mdShort(rg.from)+'〜'+mdShort(rg.to)); }
+  if(pay){
+    bits.push(payNote(pay));
+    const rg=useRangeOf(pay);
+    if(!(rg.from.slice(8)==='01'&&rg.to.slice(0,7)===rg.from.slice(0,7))) bits.push('利用 '+mdShort(rg.from)+'〜'+mdShort(rg.to));
+  }
   bits.push(p.items.length+'件');
   return bits.join('・');
 }
@@ -1083,7 +1088,7 @@ function openPeriods(){
       :'<span class="ngc">'+ic('alert','ic-sm')+'<span class="sr">請求と差額あり</span></span>'):'';
     return '<button type="button" class="prow '+(p.id===db.current?'on':'')+'" data-id="'+p.id+'"'+(p.id===db.current?' aria-current="true"':'')+'>'+
       '<span class="pic">'+ic('cal')+'</span>'+
-      '<span class="pi"><span class="pnm">'+esc(pname(p))+'</span><span class="pmt num">'+p.items.length+'件・'+yen(c.cardTotal)+chk+'</span></span>'+
+      '<span class="pi"><span class="pnm">'+esc(pname(p))+'</span><span class="pmt num">'+(periodPay(p)?'<span>'+esc(payNote(periodPay(p)))+'</span>':'')+'<span>'+p.items.length+'件・'+yen(c.cardTotal)+'</span>'+chk+'</span></span>'+
       '<span class="pv num"><small><span class="dot k"></span><span>'+esc(nm('kodai'))+'</span></small>'+yen(c.kodai)+'</span></button>';
   }).join('');
   openSheet(
@@ -1097,7 +1102,7 @@ function openNewPeriod(){
   const d=new Date(), thisYm=d.getFullYear()+'-'+pad(d.getMonth()+1);
   openSheet(
     sheetHead('plus','新しい期間')+
-    '<div class="field"><label class="fl" for="npName">'+ic('tag','ic-sm')+'名前</label><input class="in" type="text" id="npName" placeholder="例：1月分" value="'+esc(payLabel(payOfYm(thisYm)))+'"></div>'+
+    '<div class="field"><label class="fl" for="npName">'+ic('tag','ic-sm')+'名前</label><input class="in" type="text" id="npName" placeholder="例：1月分" value="'+esc(monthLabel(d))+'"></div>'+
     '<div class="field"><label class="fl" for="npYm">'+ic('cal','ic-sm')+'対象の月</label><input class="in" type="month" id="npYm" value="'+thisYm+'"></div>'+
     '<button class="btn primary wide" type="button" id="npSave">'+ic('check')+'作る</button>',
     true
@@ -1105,7 +1110,7 @@ function openNewPeriod(){
   ov.querySelector('#npYm').onchange=e=>{
     const m=String(e.target.value||'').match(/^(\d{4})-(\d{2})$/); if(!m) return;
     const ni=ov.querySelector('#npName');
-    if(!ni.value.trim()||AUTO_NAME_RE.test(ni.value.trim())) ni.value=payLabel(payOfYm(m[1]+'-'+m[2]));
+    if(!ni.value.trim()||AUTO_NAME_RE.test(ni.value.trim())) ni.value=(+m[2])+'月分';
   };
   ov.querySelector('#npSave').onclick=()=>{
     const name=ov.querySelector('#npName').value.trim()||'名称未設定';
@@ -1591,15 +1596,16 @@ function useRangeOf(pay){
 function payLabel(pay){ return (+pay.slice(5,7))+'月'+(+pay.slice(8,10))+'日払い'; }
 // 締めの月 "2026-07" → そのお支払い日（翌月の支払日）
 function payOfYm(ym){ const y=+ym.slice(0,4), m=+ym.slice(5,7); return payDateOf(m===12?(y+1)+'-01':y+'-'+pad(m+1)); }
-// 画面に出す期間の名前。自動でついた名前（「7月分」「9月28日払い」）は、お支払い日の形にそろえる。自分でつけた名前はそのまま
+// 画面に出す期間の名前。自動でついた名前（「7月分」「9月28日払い」）は「◯月分」＝使った月にそろえる。自分でつけた名前はそのまま
 const AUTO_NAME_RE=/^(\d{1,2}月分|\d{1,2}月\d{1,2}日払い)$/;
 function pname(p){
   if(!p) return '';
   if(!AUTO_NAME_RE.test(p.name||'')) return p.name||'名称未設定';
-  if(p.pay) return payLabel(p.pay);
-  const ym=periodExplicitYm(p)||periodMainYm(p);
-  return ym?payLabel(payOfYm(ym)):p.name;
+  const ym=p.pay?useRangeOf(p.pay).ym:(periodExplicitYm(p)||periodMainYm(p));
+  return ym?ymLabel(ym):p.name;
 }
+// 「9月28日払い予定」／お支払い日を過ぎていれば「8月26日払い」
+function payNote(pay){ return pay?payLabel(pay)+(pay>today()?'予定':''):''; }
 function payJa(pay){ const d=dOf(pay); return (d.getMonth()+1)+'月'+d.getDate()+'日（'+'日月火水木金土'[d.getDay()]+'）'; }
 function mdShort(s){ return (+s.slice(5,7))+'/'+(+s.slice(8,10)); }
 function payRouteJa(pay){ const rg=useRangeOf(pay); return pay.slice(0,4)+'年'+payLabel(pay)+'（利用 '+mdShort(rg.from)+'〜'+mdShort(rg.to)+'）'; }
@@ -1702,9 +1708,9 @@ function openRouteSheet(){
       :'<div class="rline warn">'+ic('alert','ic-sm')+'請求 '+yen(g.billed)+'／明細 '+yen(sum)+'</div>'):'';
     const opts=db.periods.map(x=>'<option value="'+x.id+'"'+(g.dest===x.id?' selected':'')+'>'+
         (split&&x.id===R.srcId?'そのまま「'+esc(pname(x))+'」':'「'+esc(pname(x))+'」に入れる')+'</option>').join('')+
-      '<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(g.pay?payLabel(g.pay):(g.ym?payLabel(payOfYm(g.ym)):ymLabel(g.ym)))+'」を新しく作る</option>'+
+      '<option value="__new__"'+(g.dest==='__new__'?' selected':'')+'>＋「'+esc(g.pay?ymLabel(useRangeOf(g.pay).ym):ymLabel(g.ym))+'」を新しく作る</option>'+
       (split?'':'<option value="__skip__">取り込まない</option>');
-    return '<div class="rcard"><div class="rtop">'+ic('cal','ic-sm')+'<b>'+esc(g.pay?payRouteJa(g.pay):ymJa(g.ym))+'</b><span class="num">'+g.items.length+'件・'+yen(sum)+'</span></div>'+
+    return '<div class="rcard"><div class="rtop">'+ic('cal','ic-sm')+'<b>'+esc(g.pay?ymLabel(useRangeOf(g.pay).ym)+'・'+payNote(g.pay):ymJa(g.ym))+'</b><span class="num">'+g.items.length+'件・'+yen(sum)+'</span></div>'+
       '<div class="rsample">'+esc(sampleNames(g.items))+'</div>'+billL+perL+
       '<div class="selbox"><select class="in rtdest" data-i="'+i+'" aria-label="入れ先">'+opts+'</select>'+ic('chev','ic-sm')+'</div>'+
       '<div class="note" id="rtNote'+i+'"></div></div>';
@@ -1731,7 +1737,7 @@ function openRouteSheet(){
       }
       const d=routeDupCount(g);
       if(d) msgs.push('重複 '+d+'件は除く');
-      if(g.pay&&to.pay!==g.pay) msgs.push(payLabel(g.pay)+'として保存');
+      if(g.pay&&to.pay!==g.pay) msgs.push(payNote(g.pay)+'として保存');
       if(!msgs.length) return;
       el.className='note'+(warn?' warn':'');
       el.innerHTML=ic(warn?'alert':'info','ic-sm')+'<span>'+msgs.map(esc).join('<br>')+'</span>';
