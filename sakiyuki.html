@@ -1417,9 +1417,12 @@ function deleteButton(host, label, onConfirm){
       can.setAttribute('d', 'M19 ' + top.toFixed(2) + 'v' + (20 - top).toFixed(2) + 'a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V' + top.toFixed(2));
     });
   }
-  /* 閉じているあいだは「削除する」を押せない・読み上げない（確認を飛ばして消せる入口にしない） */
+  /* 閉じているあいだは「削除する」を押せない・読み上げない（確認を飛ばして消せる入口にしない）
+     開くと幅が左へ伸び、指の下へ「削除する」が流れてくる。ダブルタップの2回目で消えないよう、開いてから400msは受け付けない */
+  var openedAt = 0;
   function setOpen(on){
     el.classList.toggle('open', on);
+    if (on) openedAt = Date.now();
     trig.setAttribute('aria-expanded', on ? 'true' : 'false');
     panel.inert = !on;
     if (on) panel.removeAttribute('aria-hidden'); else panel.setAttribute('aria-hidden', 'true');
@@ -1432,7 +1435,7 @@ function deleteButton(host, label, onConfirm){
   trig.addEventListener('click', function(){ setOpen(!el.classList.contains('open')); });
   el.querySelector('.no').addEventListener('click', function(){ setOpen(false); trig.focus(); });
   el.querySelector('.yes').addEventListener('click', function(){
-    if (!el.classList.contains('open')) return;
+    if (!el.classList.contains('open') || Date.now() - openedAt < 400) return;
     setOpen(false); onConfirm();
   });
   return {setLabel: setLabel};
