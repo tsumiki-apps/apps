@@ -6,7 +6,7 @@
 <link rel="apple-touch-icon" href="icons/icon-futaricard.png">
 <meta name="apple-mobile-web-app-title" content="ふたりカード">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>ふたりカード — 共同カードを比率でわける</title>
+<title>ふたりカード — 共同カードを比率で分ける</title>
 <meta name="color-scheme" content="light dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1118,7 +1118,7 @@ function openSettings(){
     sheetHead('gear','設定')+
     '<div class="grid2">'+
       '<div class="field"><label class="fl" for="nameK"><span class="dot k"></span>呼び名</label><input class="in" type="text" id="nameK" aria-label="1人目の呼び名" placeholder="あなた" value="'+esc(db.names.kodai)+'"></div>'+
-      '<div class="field"><label class="fl" for="nameY"><span class="dot y"></span>呼び名</label><input class="in" type="text" id="nameY" aria-label="2人目の呼び名" placeholder="あいて" value="'+esc(db.names.yuzu)+'"></div>'+
+      '<div class="field"><label class="fl" for="nameY"><span class="dot y"></span>呼び名</label><input class="in" type="text" id="nameY" aria-label="2人目の呼び名" placeholder="相手" value="'+esc(db.names.yuzu)+'"></div>'+
     '</div>'+
     '<div class="grid3">'+
       '<div class="field"><label class="fl" for="defR"><span class="dot k"></span>比率</label><div class="unitbox"><input class="in num" type="number" inputmode="numeric" id="defR" aria-label="'+esc(nm('kodai'))+'の取り分（この期間とこれから作る期間）" min="0" max="100" step="5" value="'+ratioOf(p)+'"><span class="unit">%</span></div></div>'+
@@ -1339,7 +1339,7 @@ function openShare(){
   ov.querySelector('#shareLink').onclick=e=>e.target.select();
   ov.querySelector('#doShare').onclick=async()=>{
     try{
-      if(navigator.share){ await navigator.share({title:'ふたりカード', text:'共同カードの精算をふたりで同期しよう', url}); return; }
+      if(navigator.share){ await navigator.share({title:'ふたりカード', text:'共同カードの精算を2人で同期しよう', url}); return; }
       await navigator.clipboard.writeText(url); toast('リンクをコピーしました');
     }catch(e){
       if(e&&e.name==='AbortError') return;
@@ -1377,7 +1377,7 @@ function openRename(){
 }
 
 /* ============ 請求書（画像）============
-   共同カードの引き落としは こうだい 側。ゆずちゃんの負担分（共同ぶん×比率＋個人ぶん）を
+   共同カードの引き落としは こうだい 側。ゆずちゃんの負担分（共同分×比率＋個人分）を
    1枚のPNGにして、LINE等でそのまま送れるようにする。Canvasに直接描くので外部ライブラリ不要。 */
 function bankLines(){ return (db.bank||[]).map(s=>String(s||'').trim()).filter(Boolean).slice(0,6); }
 // 手動で足した明細（光熱費など別カード払い）が1件でもある期間は「カード合計」と呼べない
@@ -1443,15 +1443,15 @@ function billModel(p){
     if(i===manDef.length-1) return yDefMan-acc;
     const v=it.amount-Math.round(it.amount*c.r/100); acc+=v; return v;
   });
-  const ratioNote=(it)=>yen(it.amount)+' を '+(it.ratio!=null?ratioLabel(it.ratio):'期間どおり '+ratioLabel(c.r))+' で分けた分';
+  const ratioNote=(it)=>yen(it.amount)+'を'+(it.ratio!=null?ratioLabel(it.ratio):'期間の比率'+ratioLabel(c.r))+'で分けた分';
 
   // 各ブロックの右の金額は「相手の負担額」で、足すとお支払い合計にぴったり一致する（①＋②＋③＝合計）
   const blocks=[];
   if(cardShare.length){
     const subs=[];
-    if(defCardSum!==0) subs.push('カードの共同 '+yen(defCardSum)+' を '+nm('kodai')+' '+c.r+'％ ／ '+nm('yuzu')+' '+(100-c.r)+'％ で分けた分');
+    if(defCardSum!==0) subs.push('カードの共同分'+yen(defCardSum)+'を、'+nm('kodai')+c.r+'％／'+nm('yuzu')+(100-c.r)+'％で分けた分');
     if(cardCustom.length) subs.push('分け方を個別に決めたもの');
-    blocks.push({label:'共同でつかった分（カード）',
+    blocks.push({label:'共同で使った分（カード）',
       amount:yDefCard+cardCustom.reduce((s,it)=>s+yOf(it),0), subs,
       items:cardCustom.map(it=>({date:it.date,name:dispName(it),amount:yOf(it),note:ratioNote(it)}))});
   }
@@ -1465,11 +1465,11 @@ function billModel(p){
   if(c.yRent){
     const rt=db.rent;
     blocks.push({label:'家賃', amount:c.yRent,
-      subs:['家賃 '+yen(c.rent)+' の半分'+(rt&&rt.minus?'から '+yen(rt.minus)+' を引いた分':'')], items:[]});
+      subs:['家賃'+yen(c.rent)+'の半分'+(rt&&rt.minus?'から'+yen(rt.minus)+'を引いた分':'')], items:[]});
   }
   if(c.yPer!==0){
     const per=p.items.filter(it=>it.tag==='yuzu').sort(byDate);
-    blocks.push({label:nm('yuzu')+' の個人ぶん', amount:c.yPer, subs:[],
+    blocks.push({label:nm('yuzu')+'の個人分', amount:c.yPer, subs:[],
       items:per.map(it=>({date:it.date,name:dispName(it),amount:it.amount,note:null}))});
   }
   // ①②③…と番号を振り、合計の見出しに「①＋②」と足し算を書いて対応を分かるようにする
@@ -1477,11 +1477,12 @@ function billModel(p){
   if(blocks.length>1) blocks.forEach((b,i)=>{ b.label=MARKS[i]+' '+b.label; });
   const totalLabel='お支払い合計'+(blocks.length>1?'（'+blocks.map((b,i)=>MARKS[i]).join('＋')+'）':'');
   // 合計の下に置く補足（1行が長いと切れるので分けて2行にする）
-  const totalSubs=[(hasManual(p)?'この期間の合計 ':'カード合計 ')+yen(c.cardTotal)+' のうち '+honor(nm('yuzu'))+'の負担分です'];
-  if(c.excl) totalSubs.push('（対象外の '+yen(c.excl)+' は計算から外しています）');
+  const totalSubs=[(hasManual(p)?'この期間の合計':'カード合計')+yen(c.cardTotal)+'のうち、'+honor(nm('yuzu'))+'の負担分です'];
+  if(c.excl) totalSubs.push('（対象外の'+yen(c.excl)+'は計算から外しています）');
   return {v:1, to:honor(nm('yuzu')), period:pname(p), issued:today(), blocks, totalLabel, total:Math.round(c.yuzu), totalSubs, bank:bankLines()};
 }
 function drawBill(m){
+  m=billModelNow(m);
   const S=2,W=720,ML=56,MR=56,CW=W-ML-MR;
   // 画像は相手の画面の明暗に関係なく、いつも昼の帳面の色で描く（DESIGN.md のライトの値）
   const ACCENT='#8a5a24',INK='#1d1a15',SUB='#666154',LINE='#e2ded4',PAPER='#f5f4f0',SURF='#fffefb';
@@ -1576,7 +1577,27 @@ function drawBill(m){
    db.bills = [{id, pid, at, kind:'confirm'|'manual', m:billModel}]（新しい順）。
    しまうのは中身だけ。同じ期間で中身（発行日をのぞく）が同じなら、二重に増やさない。 */
 const BILLS_MAX=120;
-function billSig(m){ const x=Object.assign({},m); delete x.issued; return JSON.stringify(x); }
+// 前の版で控えた請求書は「共同でつかった分」「◯◯ の個人ぶん」など、ひらがな・空白の多い書き方でしまってある。
+// 描くときと、同じ控えかを比べるときだけ今の書き方に読み替える（しまってある控えは書き換えない）
+function billTextNow(t){
+  return String(t==null?'':t)
+    .replace('共同でつかった分','共同で使った分')
+    .replace(/ の個人ぶん$/,'の個人分')
+    .replace(/^カードの共同 (-?¥[\d,]+) を (.+) (\d+)％ ／ (.+) (\d+)％ で分けた分$/,'カードの共同分$1を、$2$3％／$4$5％で分けた分')
+    .replace(/^(-?¥[\d,]+) を 期間どおり (\d+：\d+) で分けた分$/,'$1を期間の比率$2で分けた分')
+    .replace(/^(-?¥[\d,]+) を (\d+：\d+) で分けた分$/,'$1を$2で分けた分')
+    .replace(/^家賃 (-?¥[\d,]+) の半分(?:から (-?¥[\d,]+) を引いた分)?$/,(a,x,y)=>'家賃'+x+'の半分'+(y?'から'+y+'を引いた分':''))
+    .replace(/^(この期間の合計|カード合計) (-?¥[\d,]+) のうち /,'$1$2のうち、')
+    .replace(/^（対象外の (-?¥[\d,]+) は計算から外しています）$/,'（対象外の$1は計算から外しています）');
+}
+function billModelNow(m){
+  if(!m) return m;
+  return Object.assign({},m,{
+    blocks:(m.blocks||[]).map(b=>Object.assign({},b,{label:billTextNow(b.label), subs:(b.subs||[]).map(billTextNow),
+      items:(b.items||[]).map(it=>Object.assign({},it,{note:it.note==null?it.note:billTextNow(it.note)}))})),
+    totalSubs:(m.totalSubs||[]).map(billTextNow)});
+}
+function billSig(m){ const x=Object.assign({},billModelNow(m)); delete x.issued; return JSON.stringify(x); }
 function archiveBill(p, kind){
   const m=billModel(p);
   if(!(m.total>0)) return null;
@@ -1639,7 +1660,7 @@ function handleRestore(file){
   rd.onload=()=>{
     try{ const r=JSON.parse(rd.result);
       if(!r||!r.periods) throw 0;
-      if(!confirm('バックアップから復元しますか？\nいまのデータは置きかわります。')) return;
+      if(!confirm('バックアップから復元しますか？\n今のデータは置き換わります。')) return;
       db=migrate(r); save(); closeSheet(); toast('復元しました');
     }catch(e){ toast('ファイルを読めませんでした'); }
   };
@@ -1763,8 +1784,8 @@ function parseHeaderless(lines){
 /* ===== 取り込み先の自動ふりわけ ===== */
 // 明細の日付から「年月」を取り出す（"2026-08-13" → "2026-08"）
 function ymOf(dateStr){ const m=String(dateStr||'').match(/^(\d{4})-(\d{2})/); return m?m[1]+'-'+m[2]:''; }
-function ymLabel(ym){ return ym?(+ym.slice(5,7))+'月分':'日付不明ぶん'; }
-function ymJa(ym){ return ym?ym.slice(0,4)+'年'+(+ym.slice(5,7))+'月':'日付が読めなかったぶん'; }
+function ymLabel(ym){ return ym?(+ym.slice(5,7))+'月分':'日付不明分'; }
+function ymJa(ym){ return ym?ym.slice(0,4)+'年'+(+ym.slice(5,7))+'月':'日付が読めなかった分'; }
 
 /* ===== お支払い日（1回のお支払い＝1つの期間） ===== */
 function dOf(s){ return new Date(+s.slice(0,4), +s.slice(5,7)-1, +s.slice(8,10)); }
@@ -1906,7 +1927,7 @@ function routeDupCount(g){
 }
 function sampleNames(items){
   const ns=[...new Set(items.map(it=>dispName(it)).filter(Boolean))].slice(0,3);
-  return ns.join('・')+(items.length>ns.length?' ほか':'');
+  return ns.join('・')+(items.length>ns.length?' 他':'');
 }
 function openRouteSheet(){
   const R=pendingRoute, gs=R.groups, split=(R.mode==='split');
@@ -1995,7 +2016,7 @@ function runImport(){
     if(ids.length||created||metaHit){ parts.push(pname(p)+' '+ids.length+'件'); lastPid=p.id; }
   });
   pendingRoute=null;
-  if(!added && !metaChanged && !log.entries.some(e=>e.createdPeriod)){ closeSheet(); toast(dup?'すべて取り込み済みでした':'取り込むものがありませんでした'); return; }
+  if(!added && !metaChanged && !log.entries.some(e=>e.createdPeriod)){ closeSheet(); toast(dup?'全て取り込み済みでした':'取り込むものがありませんでした'); return; }
   db.lastImport=log;
   if(lastPid){ db.current=lastPid; curFilter='all'; }
   save(); closeSheet(); window.scrollTo(0,0);
