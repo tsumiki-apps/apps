@@ -27,8 +27,8 @@ refero styles の公開ページには、そのサイトの配色・余白・角
 - 取り直さずに作り直せる。`design_refs/_cache/<UUID>.html` が残っていれば通信ゼロ:
   `python3 refero_tokens.py design_refs/_cache/<UUID>.html --name <呼び名> --memo --out /dev/null --source-url "<もとのURL>"`
   （`--source-url` を付けないと出典が「手元のHTML」になる。手で書いた日本語要約は自動で引き継がれる）
-- 根拠: `~/つみき出力/refero-styles調査結果.md`（2026-09-04 実測）
-- 選べるブランド50件: `~/つみき出力/refero-styles一覧.md`
+- 根拠: `~/つみき出力/道具としらべ/単発まとめ/V1/メモ/refero-styles調査結果.md`（2026-09-04 実測）
+- 選べるブランド50件: `~/つみき出力/道具としらべ/単発まとめ/V1/メモ/refero-styles一覧.md`
 
 ## 手順
 
@@ -54,7 +54,7 @@ head -8 ~/制作物/design_refs/*.design.md
 ### 1. URLを受け取る
 
 `https://styles.refero.design/style/<UUID>` の形1本だけ。
-ブランド名だけ言われたら、まず `~/つみき出力/refero-styles一覧.md` から
+ブランド名だけ言われたら、まず `~/つみき出力/道具としらべ/単発まとめ/V1/メモ/refero-styles一覧.md` から
 UUIDを引く。一覧に無ければ**推測でUUIDを組み立てず**、
 「一覧に無いのでURLをください」と聞く。
 

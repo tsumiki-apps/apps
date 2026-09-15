@@ -14,7 +14,7 @@ caption_check.py — つみきIGのキャプション（投稿文）を、決ま
 
 決まりの正本:
     ~/.claude/skills/tsumiki-ig-post/SKILL.md の「キャプション」
-    ~/つみき出力/Instagram運用/つみきIG_キャプションのテンプレ_2026-09-11.md
+    ~/つみき出力/Instagram運用/つみきIG/V2/メモ/つみきIG_キャプションのテンプレ_2026-09-11.md
 
 ⚠️ このファイルは ~/制作物/skills/ に控えとして写る（PUBLIC）。実在の名前はここに書かず、--names で渡す。
 """
