@@ -1169,6 +1169,7 @@ function openSettings(){
       '<textarea class="in" id="bankTa" rows="4" placeholder="例：〇〇銀行&#10;〇〇支店&#10;普通 1234567&#10;名義 ヤマダタロウ">'+esc(bankLines().join('\n'))+'</textarea></div>'+
     '<div class="slist">'+
       srow('rentBtn','home','家賃',db.rent?esc(ymJa(db.rent.from))+'から・'+esc(nm('yuzu'))+' '+yen(rentYuzu(db.rent)):'なし')+
+      srow('billsBtn','receipt','請求書の控え',((db.bills||[]).length)+'枚')+
       srow('notifyBtn','bell','通知',deviceWho()?'この端末：'+esc(nm(deviceWho())):'未設定')+
       srow('shareBtn','link','共有',esc(nm('yuzu'))+'の端末と同期')+
       srow('renameP','pen','期間の編集',esc(pname(p)))+
@@ -1189,6 +1190,7 @@ function openSettings(){
   dayIn('#closeD','closeDay',31); dayIn('#payD','payDay',26);
   ov.querySelector('#defR').onchange=e=>{ let v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); db.defaultRatio=v; e.target.value=v; save({noRender:true}); };
   ov.querySelector('#bankTa').onchange=e=>{ db.bank=e.target.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,6); save({noRender:true}); };
+  ov.querySelector('#billsBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openBills,260); };
   ov.querySelector('#notifyBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openNotify,260); };
   ov.querySelector('#rentBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openRent,260); };
   ov.querySelector('#shareBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openShare,260); };
@@ -1267,6 +1269,7 @@ function confirmHtml(p){
 async function doConfirm(p){
   const y=Math.round(calc(p).yuzu), pay=periodPay(p);
   p.confirmed={at:nowMs(), yuzu:y};
+  archiveBill(p,'confirm');   // 確定した時点の請求書を控える
   save();
   const msg=pname(p)+'の請求が確定しました：'+yen(y)+(pay?'（'+payNote(pay)+'）':'');
   if(!sb){ toast('確定しました（通知なし）'); return; }
@@ -1415,52 +1418,45 @@ function hasManual(p){ return p.items.some(it=>it.src==='manual')||rentItemsOf(p
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 // 幅に収まらない文字列は末尾を「…」に詰める
 function ellipsisText(c,str,maxW){str=String(str||'');if(c.measureText(str).width<=maxW)return str;let s=str;while(s.length&&c.measureText(s+'…').width>maxW)s=s.slice(0,-1);return s+'…';}
-let billCanvas=null;
+let billCanvas=null, billFileName='futaricard.png';
 let billBusy=false;
 async function openBill(){
   const p=curPeriod(), c=calc(p);
   if(c.yuzu<=0){ toast(nm('yuzu')+'への請求はありません'); return; }
   if(billBusy) return; billBusy=true;
   const bb=document.getElementById('billBtn'); if(bb) bb.setAttribute('aria-busy','true');
-  // 画像に Zen Maru Gothic を焼くので、読み込みを少しだけ待つ（来なければ代わりの書体で描く）
-  try{ if(document.fonts&&document.fonts.load) await Promise.race([Promise.all(['400','700'].map(w=>document.fonts.load(w+' 20px "Zen Maru Gothic"'))), new Promise(r=>setTimeout(r,1500))]); }catch(e){}
+  await waitBillFont();
   billBusy=false; if(bb) bb.removeAttribute('aria-busy');
-  billCanvas=buildBillCanvas(p);
+  billCanvas=buildBillCanvas(p); billFileName='futaricard-'+today()+'.png';
   openSheet(
     sheetHead('receipt','請求書')+
     '<div class="billmeta"><span>'+esc(pname(p))+'</span><b class="num">'+yen(c.yuzu)+'</b></div>'+
     '<img class="billimg" src="'+billCanvas.toDataURL('image/png')+'" alt="'+esc(nm('yuzu'))+'への請求書">'+
-    '<button class="btn primary wide" type="button" id="billShare">'+ic('share')+'共有・保存</button>'
+    '<button class="btn primary wide" type="button" id="billShare">'+ic('share')+'共有・保存</button>'+
+    '<button class="btn quiet wide" type="button" id="billKeep">'+ic('download','ic-sm')+'控えに保存</button>'
   );
   ov.querySelector('#billShare').onclick=shareBill;
+  ov.querySelector('#billKeep').onclick=()=>{ const r=archiveBill(curPeriod(),'manual'); if(!r) return; if(r.added) save({noRender:true}); toast(r.added?'控えに保存しました':'同じ内容の控えがもうあります'); };
 }
 function shareBill(){
   const cv=billCanvas; if(!cv) return;
   cv.toBlob(async(blob)=>{
     if(!blob){ toast('画像の生成に失敗しました'); return; }
-    const file=new File([blob],'futaricard.png',{type:'image/png'});
+    const file=new File([blob],billFileName,{type:'image/png'});
     if(navigator.canShare&&navigator.canShare({files:[file]})){
       try{ await navigator.share({files:[file],title:'共同カードのご精算'}); return; }
       catch(e){ if(e&&e.name==='AbortError') return; }
     }
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download='futaricard-'+today()+'.png';
+    a.download=billFileName;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),1500);
   },'image/png');
 }
-function buildBillCanvas(p){
+function buildBillCanvas(p){ return drawBill(billModel(p)); }
+// 請求書の中身。控え（アーカイブ）にはこれだけをしまい、開くときに drawBill で描き直す（画像はしまわない）
+function billModel(p){
   const c=calc(p);
-  const S=2,W=720,ML=56,MR=56,CW=W-ML-MR;
-  // 画像は相手の画面の明暗に関係なく、いつも昼の帳面の色で描く（DESIGN.md のライトの値）
-  const ACCENT='#8a5a24',INK='#1d1a15',SUB='#666154',LINE='#e2ded4',PAPER='#f5f4f0',SURF='#fffefb';
-  const FONT="'Zen Maru Gothic','Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif";
-  const mc=document.createElement('canvas').getContext('2d');
-  const bank=bankLines();
-
-  // ブロックを先に組み立てて高さを決める。各ブロックの右の金額は「相手の負担額」で、
-  // 足すとお支払い合計にぴったり一致するようにする（①＋②＋③＝合計）
-  const rowH=46, subLH=27, itemH=38, noteH=26, blockPad=16;
   const byDate=(a,b)=>(a.date||'').localeCompare(b.date||'');
   const shareItems=p.items.filter(it=>(it.tag||'share')==='share');
   const cardShare=shareItems.filter(it=>it.src!=='manual').sort(byDate);
@@ -1480,13 +1476,14 @@ function buildBillCanvas(p){
     if(i===manDef.length-1) return yDefMan-acc;
     const v=it.amount-Math.round(it.amount*c.r/100); acc+=v; return v;
   });
-  const ratioNote=(it)=>yen(it.amount)+' を '+(it.ratio!=null?ratioLabel(it.ratio):'期間どおり '+ratioLabel(c.r))+' でわけた分';
+  const ratioNote=(it)=>yen(it.amount)+' を '+(it.ratio!=null?ratioLabel(it.ratio):'期間どおり '+ratioLabel(c.r))+' で分けた分';
 
+  // 各ブロックの右の金額は「相手の負担額」で、足すとお支払い合計にぴったり一致する（①＋②＋③＝合計）
   const blocks=[];
   if(cardShare.length){
     const subs=[];
-    if(defCardSum!==0) subs.push('カードの共同 '+yen(defCardSum)+' を '+nm('kodai')+' '+c.r+'％ ／ '+nm('yuzu')+' '+(100-c.r)+'％ でわけた分');
-    if(cardCustom.length) subs.push('わけかたを個別に決めたもの');
+    if(defCardSum!==0) subs.push('カードの共同 '+yen(defCardSum)+' を '+nm('kodai')+' '+c.r+'％ ／ '+nm('yuzu')+' '+(100-c.r)+'％ で分けた分');
+    if(cardCustom.length) subs.push('分け方を個別に決めたもの');
     blocks.push({label:'共同でつかった分（カード）',
       amount:yDefCard+cardCustom.reduce((s,it)=>s+yOf(it),0), subs,
       items:cardCustom.map(it=>({date:it.date,name:dispName(it),amount:yOf(it),note:ratioNote(it)}))});
@@ -1510,16 +1507,25 @@ function buildBillCanvas(p){
   }
   // ①②③…と番号を振り、合計の見出しに「①＋②」と足し算を書いて対応を分かるようにする
   const MARKS='①②③④⑤';
-  blocks.forEach((b,i)=>{
-    if(blocks.length>1) b.label=MARKS[i]+' '+b.label;
-    b.h=rowH+b.subs.length*subLH+b.items.reduce((s,it)=>s+itemH+(it.note?noteH:0),0)+blockPad;
-  });
+  if(blocks.length>1) blocks.forEach((b,i)=>{ b.label=MARKS[i]+' '+b.label; });
   const totalLabel='お支払い合計'+(blocks.length>1?'（'+blocks.map((b,i)=>MARKS[i]).join('＋')+'）':'');
-  const blocksH=blocks.reduce((s,b)=>s+b.h,0);
-
   // 合計の下に置く補足（1行が長いと切れるので分けて2行にする）
   const totalSubs=[(hasManual(p)?'この期間の合計 ':'カード合計 ')+yen(c.cardTotal)+' のうち '+honor(nm('yuzu'))+'の負担分です'];
   if(c.excl) totalSubs.push('（対象外の '+yen(c.excl)+' は計算から外しています）');
+  return {v:1, to:honor(nm('yuzu')), period:pname(p), issued:today(), blocks, totalLabel, total:Math.round(c.yuzu), totalSubs, bank:bankLines()};
+}
+function drawBill(m){
+  const S=2,W=720,ML=56,MR=56,CW=W-ML-MR;
+  // 画像は相手の画面の明暗に関係なく、いつも昼の帳面の色で描く（DESIGN.md のライトの値）
+  const ACCENT='#8a5a24',INK='#1d1a15',SUB='#666154',LINE='#e2ded4',PAPER='#f5f4f0',SURF='#fffefb';
+  const FONT="'Zen Maru Gothic','Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif";
+  const mc=document.createElement('canvas').getContext('2d');
+  const blocks=(m.blocks||[]).map(b=>Object.assign({},b,{subs:b.subs||[],items:b.items||[]}));
+  const bank=m.bank||[], totalSubs=m.totalSubs||[];
+
+  const rowH=46, subLH=27, itemH=38, noteH=26, blockPad=16;
+  blocks.forEach(b=>{ b.h=rowH+b.subs.length*subLH+b.items.reduce((s,it)=>s+itemH+(it.note?noteH:0),0)+blockPad; });
+  const blocksH=blocks.reduce((s,b)=>s+b.h,0);
 
   const topPad=56,eyebrowH=30,titleH=54,metaH=34,gap1=24,secH=40,afterBlocks=12,
         totalH=76,totalSubLH=28,gap2=28,gap3=22,footH=28,botPad=48;
@@ -1536,10 +1542,9 @@ function buildBillCanvas(p){
   g.textAlign='left'; g.fillStyle=SUB; g.font=`600 22px ${FONT}`;
   g.fillText('共同カードのご精算',ML,y+20); y+=eyebrowH;
   g.fillStyle=INK; g.font=`700 38px ${FONT}`;
-  g.fillText(ellipsisText(g,honor(nm('yuzu'))+'へ',CW),ML,y+38); y+=titleH;
-  const issued=today().replace(/-/g,'/');
+  g.fillText(ellipsisText(g,m.to+'へ',CW),ML,y+38); y+=titleH;
   g.fillStyle=SUB; g.font=`400 20px ${FONT}`;
-  g.fillText(ellipsisText(g,pname(p)+' ／ 発行日 '+issued,CW),ML,y+20); y+=metaH+gap1;
+  g.fillText(ellipsisText(g,m.period+' ／ 発行日 '+String(m.issued||'').replace(/-/g,'/'),CW),ML,y+20); y+=metaH+gap1;
 
   g.fillStyle=SUB; g.font=`600 22px ${FONT}`; g.fillText('ご請求の内訳',ML,y+20);
   g.strokeStyle=LINE; g.lineWidth=1; g.beginPath(); g.moveTo(ML,y+34.5); g.lineTo(W-MR,y+34.5); g.stroke();
@@ -1563,7 +1568,7 @@ function buildBillCanvas(p){
       g.textAlign='right'; g.font=`600 21px ${FONT}`;
       g.fillText(yen(it.amount),W-MR,sy);
       sy+=itemH;
-      if(it.note){ // 元の金額とわけかたを1行下に小さく添える
+      if(it.note){ // 元の金額と分け方を1行下に小さく添える
         g.textAlign='left'; g.fillStyle=SUB; g.font=`400 18px ${FONT}`;
         g.fillText(ellipsisText(g,it.note,CW-DATE_W-8),ML+8+DATE_W,sy-10);
         sy+=noteH;
@@ -1575,8 +1580,8 @@ function buildBillCanvas(p){
   y+=afterBlocks;
 
   g.textAlign='left'; g.fillStyle=INK; g.font=`700 24px ${FONT}`;
-  g.fillText(ellipsisText(g,totalLabel,CW-230),ML,y+38);
-  g.textAlign='right'; g.fillStyle=ACCENT; g.font=`800 42px ${FONT}`; g.fillText(yen(c.yuzu),W-MR,y+44);
+  g.fillText(ellipsisText(g,m.totalLabel||'お支払い合計',CW-230),ML,y+38);
+  g.textAlign='right'; g.fillStyle=ACCENT; g.font=`800 42px ${FONT}`; g.fillText(yen(m.total),W-MR,y+44);
   y+=totalH;
   g.textAlign='left'; g.fillStyle=SUB; g.font=`400 19px ${FONT}`;
   let ty=y+18;
@@ -1598,6 +1603,61 @@ function buildBillCanvas(p){
 
   g.textAlign='center'; g.fillStyle=SUB; g.font=`400 18px ${FONT}`; g.fillText('ふたりカード',W/2,y+18);
   return cv;
+}
+
+/* ============ 請求書の控え（アーカイブ） ============
+   db.bills = [{id, pid, at, kind:'confirm'|'manual', m:billModel}]（新しい順）。
+   しまうのは中身だけ。同じ期間で中身（発行日をのぞく）が同じなら、二重に増やさない。 */
+const BILLS_MAX=120;
+function billSig(m){ const x=Object.assign({},m); delete x.issued; return JSON.stringify(x); }
+function archiveBill(p, kind){
+  const m=billModel(p);
+  if(!(m.total>0)) return null;
+  db.bills=Array.isArray(db.bills)?db.bills:[];
+  const same=db.bills.find(b=>b.pid===p.id&&billSig(b.m)===billSig(m));
+  if(same){ if(kind==='confirm'&&same.kind!=='confirm'){ same.kind='confirm'; same.at=nowMs(); } return {entry:same, added:false}; }
+  const entry={id:uid(), pid:p.id, at:nowMs(), kind, m};
+  db.bills.unshift(entry);
+  if(db.bills.length>BILLS_MAX) db.bills.length=BILLS_MAX;
+  return {entry, added:true};
+}
+async function waitBillFont(){
+  // 画像に Zen Maru Gothic を焼くので、読み込みを少しだけ待つ（来なければ代わりの書体で描く）
+  try{ if(document.fonts&&document.fonts.load) await Promise.race([Promise.all(['400','700'].map(w=>document.fonts.load(w+' 20px "Zen Maru Gothic"'))), new Promise(r=>setTimeout(r,1500))]); }catch(e){}
+}
+function openBills(){
+  const list=Array.isArray(db.bills)?db.bills:[];
+  const latest={};   // 期間ごとにいちばん新しい控え
+  list.forEach(b=>{ if(!latest[b.pid]) latest[b.pid]=b.id; });
+  openSheet(
+    sheetHead('receipt','請求書の控え')+
+    (list.length? list.map(b=>'<button type="button" class="prow" data-bill="'+b.id+'">'+
+        '<span class="pic">'+ic('receipt')+'</span>'+
+        '<span class="pi"><span class="pnm">'+esc(b.m.period)+'</span>'+
+          '<span class="pmt num"><span>'+esc(mdShort(b.m.issued))+' 発行</span>'+(b.kind==='confirm'?'<span class="okc">'+ic('check','ic-sm')+'確定</span>':'')+
+          (latest[b.pid]!==b.id?'<span>前の版</span>':'')+'</span></span>'+
+        '<span class="pv num"><small><span class="dot y"></span><span>'+esc(b.m.to)+'</span></small>'+yen(b.m.total)+'</span></button>').join('')
+      : '<div class="none">'+ic('receipt')+'<span>なし</span></div>')
+  );
+  ov.querySelectorAll('[data-bill]').forEach(el=>el.onclick=()=>{ const id=el.dataset.bill; closeSheet(); setTimeout(()=>openArchivedBill(id),260); });
+}
+async function openArchivedBill(id){
+  const b=(db.bills||[]).find(x=>x.id===id); if(!b) return;
+  await waitBillFont();
+  billCanvas=drawBill(b.m); billFileName='futaricard-'+(b.m.issued||today())+'.png';
+  openSheet(
+    sheetHead('receipt','請求書の控え')+
+    '<div class="billmeta"><span>'+esc(b.m.period)+' ・ '+esc(mdShort(b.m.issued))+' 発行</span><b class="num">'+yen(b.m.total)+'</b></div>'+
+    '<img class="billimg" src="'+billCanvas.toDataURL('image/png')+'" alt="'+esc(b.m.to)+'への請求書（控え）">'+
+    '<button class="btn primary wide" type="button" id="billShare">'+ic('share')+'共有・保存</button>'+
+    '<button class="btn quiet wide" type="button" id="billBack">'+ic('list','ic-sm')+'一覧</button>'+
+    '<div class="delrow"><span class="dl">'+ic('trash','ic-sm')+'この控えを削除</span><span id="billDelHost"></span></div>'
+  );
+  ov.querySelector('#billShare').onclick=shareBill;
+  ov.querySelector('#billBack').onclick=()=>{ closeSheet(); setTimeout(openBills,260); };
+  deleteButton(ov.querySelector('#billDelHost'), b.m.period+'の控え', ()=>{
+    db.bills=(db.bills||[]).filter(x=>x.id!==id); save(); closeSheet(); toast('控えを削除しました'); setTimeout(openBills,260);
+  });
 }
 
 /* ============ バックアップ ============ */
