@@ -112,6 +112,7 @@ input,select,textarea{font-size:16px}
 .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; margin-top:12px; box-shadow:var(--shadow); min-width:0}
 @media (max-width:600px){ .card{padding:16px} }
 .lab{display:flex; align-items:center; gap:6px; color:var(--ink-mid); font-size:14px}
+.lab .lr{margin-left:auto; font-size:13px}
 .hero{font-size:34px; font-weight:700; line-height:1.5; margin-top:2px}
 @media (max-width:600px){ .hero{font-size:30px} }
 .counter{display:inline-flex; align-items:baseline; font-variant-numeric:tabular-nums; letter-spacing:.01em}
@@ -134,18 +135,6 @@ input,select,textarea{font-size:16px}
 .bd{display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:13px; color:var(--ink-mid)}
 .bd span{display:inline-flex; align-items:center; gap:6px; white-space:nowrap}
 .bd b{color:var(--ink); font-weight:700}
-
-/* ---- 比率 ---- */
-.ratio .rt{display:flex; align-items:center; gap:6px; color:var(--ink-mid); font-size:14px}
-.ratio .rr{margin-left:auto; display:inline-flex; align-items:center; gap:6px; color:var(--ink); font-size:18px; font-weight:700}
-.ratio .rr i{font-style:normal; color:var(--ghost); font-weight:500}
-.rslide{margin-top:4px}
-/* 見た目の溝は8px、指で触れる高さは44px（input 自体を44pxにして、溝は track で描く） */
-.rslide input[type=range]{display:block; width:100%; height:44px; margin:0; -webkit-appearance:none; appearance:none; background:transparent; outline-offset:2px; cursor:pointer}
-.rslide input[type=range]::-webkit-slider-runnable-track{height:8px; border-radius:999px; background:linear-gradient(to right, var(--kodai) 0, var(--kodai) var(--p,50%), var(--yuzu) var(--p,50%), var(--yuzu) 100%)}
-.rslide input[type=range]::-moz-range-track{height:8px; border-radius:999px; background:linear-gradient(to right, var(--kodai) 0, var(--kodai) var(--p,50%), var(--yuzu) var(--p,50%), var(--yuzu) 100%)}
-.rslide input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:28px; height:28px; margin-top:-10px; border-radius:999px; background:var(--surface); border:1px solid var(--line-2); box-shadow:var(--shadow-sm)}
-.rslide input[type=range]::-moz-range-thumb{width:28px; height:28px; border-radius:999px; background:var(--surface); border:1px solid var(--line-2); box-shadow:var(--shadow-sm)}
 
 /* ---- えらぶボタンの並び ---- */
 .seg{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px}
@@ -810,12 +799,11 @@ function stmtHtml(p){
   return '<div class="banner warn">'+ic('alert')+'<span class="bt">明細が請求 <b class="num">'+yen(p.billed)+'</b> より<small class="num">明細 '+csv.length+'件・'+yen(sum)+'</small>'+dup+'</span><b class="num">'+yen(Math.abs(diff))+(diff>0?' 多い':' 少ない')+'</b></div>';
 }
 function sbHtml(share,per,rent){ return '<span>共同 '+yen(share)+'</span>'+(per?'<span>＋個人 '+yen(per)+'</span>':'')+(rent?'<span>＋家賃 '+yen(rent)+'</span>':''); }
-function rrHtml(r){ return '<span class="dot k"></span>'+r+'<i>:</i>'+(100-r)+'<span class="dot y"></span>'; }
 function renderPeriod(p){
   const c=calc(p), r=c.r;
   let h='<div class="pgrid"><div class="col-summary">'+mixWarnHtml(p)+stmtHtml(p)+confirmHtml(p)+
   '<section class="card" aria-label="合計と分け方">'+
-    '<div class="lab">'+ic('card','ic-sm')+(hasManual(p)?'合計（手動込み）':'合計')+'</div>'+
+    '<div class="lab">'+ic('card','ic-sm')+(hasManual(p)?'合計（手動込み）':'合計')+'<span class="lr num">比率 '+ratioLabel(r)+'</span></div>'+
     '<div class="hero"><span class="counter" data-cnt="total"></span></div>'+
     '<div class="split">'+
       '<div class="pc k"><div class="nm"><span class="dot k"></span><span>'+esc(nm('kodai'))+'</span></div><div class="vl"><span class="counter" data-cnt="kodai"></span></div><div class="sb num">'+sbHtml(c.kShare,c.kPer,c.kRent)+'</div></div>'+
@@ -827,12 +815,6 @@ function renderPeriod(p){
       (c.rent?'<span>'+ic('home','ic-sm')+'家賃 <b>'+yen(c.rent)+'</b></span>':'')+
       (c.excl?'<span><span class="dot x"></span>対象外 <b>'+yen(c.excl)+'</b></span>':'')+
     '</div>'+
-  '</section>'+
-  '<section class="card ratio">'+
-    '<div class="rt">'+ic('scale','ic-sm')+'<span>比率</span><span class="rr num" id="rr">'+rrHtml(r)+'</span></div>'+
-    '<div class="rslide" style="--p:'+r+'%"><input type="range" id="ratio" min="0" max="100" step="5" value="'+r+'" aria-label="'+esc(nm('kodai'))+'の取り分" aria-valuetext="'+esc(nm('kodai'))+' '+r+'％、'+esc(nm('yuzu'))+' '+(100-r)+'％"></div>'+
-    '<div class="seg small" id="rpresets">'+[50,60,70].map(v=>'<button type="button" data-v="'+v+'" class="'+(r===v?'on':'')+'" aria-pressed="'+(r===v)+'">'+v+'：'+(100-v)+'</button>').join('')+'</div>'+
-    (customRatioItems(p).length?'<div class="note">'+ic('info','ic-sm')+'<span>個別 '+customRatioItems(p).length+'件は固定</span></div>':'')+
   '</section>'+
   '<button class="btn-quiet" type="button" id="billBtn">'+ic('receipt')+esc(nm('yuzu'))+'へ請求書</button>';
 
@@ -881,17 +863,6 @@ function bindBody(p){
     cntPrev[k]=vals[k];
   });
   cntPeriod=p.id;
-  const ratio=document.getElementById('ratio');
-  if(ratio){
-    ratio.oninput=e=>{ const v=+e.target.value; e.target.parentElement.style.setProperty('--p',v+'%');
-      document.querySelectorAll('#rpresets button').forEach(b=>{ b.classList.toggle('on',+b.dataset.v===v); b.setAttribute('aria-pressed',+b.dataset.v===v); });
-      e.target.setAttribute('aria-valuetext', nm('kodai')+' '+v+'％、'+nm('yuzu')+' '+(100-v)+'％');
-      document.getElementById('rr').innerHTML=rrHtml(v);
-      liveSplit(p,v);
-    };
-    ratio.onchange=e=>{ curPeriod().ratio=+e.target.value; save(); };
-  }
-  document.querySelectorAll('#rpresets button').forEach(b=>b.onclick=()=>{ curPeriod().ratio=+b.dataset.v; save(); });
   const bb=document.getElementById('billBtn'); if(bb) bb.onclick=openBill;
   const cfb=document.getElementById('confirmBtn'); if(cfb) armed(cfb, ()=>doConfirm(p));
   const fh=document.getElementById('filters');
@@ -901,17 +872,6 @@ function bindBody(p){
   });
   bindEntries(p);
 }
-// スライダー操作中の即時プレビュー（保存はしない）。個別のわけかたを設定した明細はそのまま。
-function liveSplit(p,v){
-  const c=calc(p,v);
-  const k=Math.round(c.kodai), y=Math.round(c.yuzu);
-  if(CNT.kodai){ CNT.kodai.set(k,false); cntPrev.kodai=k; }
-  if(CNT.yuzu){ CNT.yuzu.set(y,false); cntPrev.yuzu=y; }
-  const sk=document.querySelector('.pc.k .sb'), sy=document.querySelector('.pc.y .sb');
-  if(sk) sk.innerHTML=sbHtml(c.kShare,c.kPer,c.kRent);
-  if(sy) sy.innerHTML=sbHtml(c.yShare,c.yPer,c.yRent);
-}
-
 /* ============ 日付ヘルパ ============ */
 function pad(n){return String(n).padStart(2,'0');}
 function today(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
@@ -1161,7 +1121,7 @@ function openSettings(){
       '<div class="field"><label class="fl" for="nameY"><span class="dot y"></span>呼び名</label><input class="in" type="text" id="nameY" aria-label="2人目の呼び名" placeholder="あいて" value="'+esc(db.names.yuzu)+'"></div>'+
     '</div>'+
     '<div class="grid3">'+
-      '<div class="field"><label class="fl" for="defR"><span class="dot k"></span>比率</label><div class="unitbox"><input class="in num" type="number" inputmode="numeric" id="defR" aria-label="'+esc(nm('kodai'))+'の取り分（既定）" min="0" max="100" step="5" value="'+db.defaultRatio+'"><span class="unit">%</span></div></div>'+
+      '<div class="field"><label class="fl" for="defR"><span class="dot k"></span>比率</label><div class="unitbox"><input class="in num" type="number" inputmode="numeric" id="defR" aria-label="'+esc(nm('kodai'))+'の取り分（この期間とこれから作る期間）" min="0" max="100" step="5" value="'+ratioOf(p)+'"><span class="unit">%</span></div></div>'+
       '<div class="field"><label class="fl" for="closeD">'+ic('cal','ic-sm')+'締め</label><div class="unitbox"><input class="in num" type="number" inputmode="numeric" id="closeD" min="1" max="31" value="'+db.closeDay+'"><span class="unit">日</span></div></div>'+
       '<div class="field"><label class="fl" for="payD">'+ic('yen','ic-sm')+'支払</label><div class="unitbox"><input class="in num" type="number" inputmode="numeric" id="payD" min="1" max="31" value="'+db.payDay+'"><span class="unit">日</span></div></div>'+
     '</div>'+
@@ -1188,7 +1148,14 @@ function openSettings(){
   }
   const dayIn=(id,key,def)=>{ ov.querySelector(id).onchange=e=>{ const n=Math.round(+e.target.value); const v=(n>=1&&n<=31)?n:def; db[key]=v; e.target.value=v; save({noRender:true}); }; };
   dayIn('#closeD','closeDay',31); dayIn('#payD','payDay',26);
-  ov.querySelector('#defR').onchange=e=>{ let v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); db.defaultRatio=v; e.target.value=v; save({noRender:true}); };
+  ov.querySelector('#defR').onchange=e=>{
+    const v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); e.target.value=v;
+    // ほかの期間で、自分の比率を持たず既定に従っているものは、今の値で固定する（過去の額が勝手に変わらないように）
+    const cur=curPeriod(), old=db.defaultRatio;
+    db.periods.forEach(x=>{ if(x!==cur&&x.ratio==null) x.ratio=old; });
+    db.defaultRatio=v; cur.ratio=v;
+    save();
+  };
   ov.querySelector('#bankTa').onchange=e=>{ db.bank=e.target.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,6); save({noRender:true}); };
   ov.querySelector('#billsBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openBills,260); };
   ov.querySelector('#notifyBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openNotify,260); };
