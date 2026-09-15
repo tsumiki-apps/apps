@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-waribiki.png">
+<meta name="apple-mobile-web-app-title" content="割引電卓">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="color-scheme" content="light dark">
+<title>割引電卓</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* 色・書体・角丸・影・動きの正本は ~/制作物/DESIGN.md。ここで色を発明しない。 */
+:root{
+  --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5;
+  --ink:#1d1a15; --ink-mid:#5b554a; --ink-soft:#666154; --ghost:#887f70;
+  --line:#e2ded4; --line-2:#d8d3c7;
+  --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
+  --good-ink:#416845; --good-wash:#dde9dd;
+  --warn-ink:#974624;
+  --fill:var(--accent-2); --on-fill:var(--paper);
+  --radius:20px;
+  --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
+  --scrim:rgba(29,26,21,.42);
+  --ease:cubic-bezier(0.2,0,0,1);
+  /* 保存する画像は、端末がダークでも昼の帳面で描く（友達に送る紙なので） */
+  --img-paper:#f5f4f0; --img-surface:#fffefb; --img-ink:#1d1a15; --img-mid:#5b554a; --img-soft:#666154;
+  --img-line:#e2ded4; --img-line-2:#d8d3c7; --img-accent-2:#8a5a24; --img-accent-wash:#f0e4d1;
+  --img-good-ink:#416845; --img-good-wash:#dde9dd;
+  /* 回る数字の上下を溶かすマスク（Rare UI「くるくる回る数字」・MIT。色ではなく不透明度だけ） */
+  --fade:linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,.5) 11%, rgba(0,0,0,1) 22%, rgba(0,0,0,1) 78%, rgba(0,0,0,.5) 89%, rgba(0,0,0,0) 100%);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#0f0d07; --surface:#211d14; --surface-2:#2b2619;
+    --ink:#efe8da; --ink-mid:#a89e8b; --ink-soft:#9f988a; --ghost:#9f988a;
+    --line:#36301f; --line-2:#443d2b;
+    --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+    --good-ink:#7fae82; --good-wash:#23301f;
+    --warn-ink:#d9825a;
+    --fill:#d59a4d; --on-fill:#1d1a15;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+    --scrim:rgba(15,13,7,.62);
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; min-height:100dvh; background:var(--paper); color:var(--ink);
+  font-family:'Zen Maru Gothic',"Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+  font-size:16px; line-height:1.7; -webkit-font-smoothing:antialiased;
+  padding:env(safe-area-inset-top) 16px calc(40px + env(safe-area-inset-bottom));
+}
+button,input,output{font:inherit; color:inherit}
+button{-webkit-tap-highlight-color:transparent}
+[hidden]{display:none !important}
+.sr{position:absolute; left:0; top:0; width:1px; height:1px; margin:-1px; padding:0; border:0; clip-path:inset(50%); white-space:nowrap}
+.ic{width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:12px}
+.num{font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap}
+
+.wrap{max-width:1080px; margin:0 auto}
+
+/* ---- 見出し ---- */
+.top{display:flex; align-items:center; gap:10px; padding:20px 0 16px}
+.logo{width:30px; height:34px; flex:none; color:var(--ink)}
+.top h1{margin:0; font-size:24px; font-weight:700; line-height:1.35; letter-spacing:.04em}
+
+/* ---- 段組み ---- */
+.layout{display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:start}
+.stack{display:grid; gap:16px; min-width:0}
+@media (min-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px}
+}
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow); min-width:0}
+@media (max-width:600px){ .card{padding:16px} }
+.head{display:flex; align-items:center; gap:10px; margin:0 0 8px; min-height:44px}
+.head h2{margin:0; font-size:18px; font-weight:700; line-height:1.4; display:flex; align-items:center; gap:8px; flex:1 0 auto; white-space:nowrap}
+.head:has(.del.open) .chip{display:none}
+.head h2 .ic{color:var(--ink-mid)}
+
+/* ---- 割引率 ---- */
+.rate{display:flex; align-items:center; gap:12px}
+.rate-ic{width:48px; height:48px; flex:none; border-radius:14px; display:grid; place-items:center; background:var(--accent-wash); color:var(--accent-2)}
+.rate-ic .ic{width:24px; height:24px; stroke-width:2}
+.rate-field{
+  flex:1; min-width:0; display:flex; align-items:baseline; gap:6px; padding:4px 16px; min-height:64px;
+  border:1px solid var(--line-2); border-radius:12px; background:var(--surface); cursor:text;
+  transition:border-color .12s var(--ease), box-shadow .12s var(--ease);
+}
+.rate-field:focus-within{border-color:var(--accent)}
+.rate-field input{
+  flex:1; min-width:0; width:100%; border:0; background:none; outline:none; padding:0;
+  font-size:clamp(30px, 10vw, 40px); font-weight:700; line-height:56px; text-align:right; font-variant-numeric:tabular-nums;
+}
+.rate-field input::placeholder{color:var(--ink-soft); font-weight:400}
+.rate-field .unit{font-size:22px; font-weight:700; color:var(--ink-mid)}
+.rate-field .off{font-size:14px; font-weight:700; color:var(--ink-mid); letter-spacing:.06em}
+
+/* ---- 製品の行 ---- */
+.items{list-style:none; margin:0; padding:0}
+.item{
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:12px 0;
+  border-top:1px solid var(--line); transition:opacity .12s var(--ease), transform .12s var(--ease);
+}
+.item:first-child{border-top:0; padding-top:4px}
+.item.gone{opacity:0; transform:translateX(12px)}
+.line{grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0}
+.field{
+  display:flex; align-items:center; gap:6px; min-height:48px; padding:0 14px; min-width:0;
+  border:1px solid var(--line-2); border-radius:12px; background:var(--surface); cursor:text;
+  transition:border-color .12s var(--ease);
+}
+.field:focus-within{border-color:var(--accent)}
+.field input{flex:1; min-width:0; width:100%; border:0; background:none; outline:none; font-size:16px; padding:10px 0}
+.field input::placeholder{color:var(--ink-soft)}
+.field.price{flex:1 1 9.5em}
+.res{display:flex; align-items:center; gap:8px; margin-left:auto; flex:none}
+.field.price input{text-align:right; font-variant-numeric:tabular-nums; font-size:17px}
+.yen{color:var(--ink-mid); font-weight:700}
+.arrow{color:var(--ghost); width:18px; height:18px}
+.after{
+  min-width:5.5em; font-size:19px; font-weight:700; line-height:1.3;
+  font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap
+}
+.after.none{color:var(--ghost); font-weight:400}
+
+.add{width:100%; margin-top:8px}
+
+/* ---- その場で確かめる削除（Rare UI「Delete button」・MIT。見た目30px の丸を44pxで包む） ---- */
+.del{
+  display:inline-flex; align-items:center; height:48px; width:44px; flex:none; overflow:hidden;
+  border-radius:12px; background:transparent;
+  transition:width .2s var(--ease), background-color .2s var(--ease);
+}
+.del.open{width:132px; background:var(--surface-2)}
+.del-trigger{width:44px; height:48px; flex:none; border:0; background:none; padding:0; display:grid; place-items:center; cursor:pointer; color:var(--ink-mid)}
+.del-trigger svg{overflow:visible}
+/* transform-box:view-box が無いと、回転の軸が図形自身の箱になってずれる */
+.del-lid{transform-box:view-box; transform-origin:3px 6px; transition:transform .2s var(--ease)}
+.del.open .del-lid{transform:rotate(-35deg)}
+.del-panel{display:flex; align-items:center}
+.del-circle{
+  width:44px; height:44px; border:0; background:none; padding:0; display:grid; place-items:center; cursor:pointer; color:var(--ink-mid);
+  opacity:0; transform:scale(.9); pointer-events:none; transition:opacity .2s var(--ease), transform .2s var(--ease);
+}
+.del-circle i{width:30px; height:30px; border-radius:999px; background:var(--surface); display:grid; place-items:center; transition:transform .12s var(--ease)}
+.del-circle:active i{transform:scale(.84)}
+.del-circle.yes{color:var(--warn-ink)}
+.del-circle .ic{width:14px; height:14px; stroke-width:3}
+.del.open .del-circle{opacity:1; transform:none; pointer-events:auto}
+.del.open .del-circle:nth-child(1){transition-delay:.03s}
+.del.open .del-circle:nth-child(2){transition-delay:.07s}
+
+/* ---- 一覧 ---- */
+.chip{display:inline-flex; align-items:center; min-height:32px; padding:0 12px; border-radius:999px; background:var(--accent-wash); color:var(--accent-2); font-size:14px; font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums}
+.tablewrap{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -4px; padding:0 4px}
+table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
+th{font-size:13px; font-weight:500; color:var(--ink-mid); text-align:left; padding:6px 0 8px; border-bottom:1px solid var(--line-2)}
+th + th, td + td{padding-left:12px}
+td{padding:12px 0; border-bottom:1px solid var(--line); vertical-align:top; line-height:1.5}
+th{white-space:nowrap}
+td.nm{overflow-wrap:anywhere; font-weight:500; min-width:7em}      /* 値段が9桁でも製品名が1字ずつ縦に並ばないよう、足りない幅は横にスクロール */
+td.nm.untitled{color:var(--ink-soft); font-weight:400}
+td.o{color:var(--ink-mid)}
+td.a{font-weight:700}
+tfoot td{border-bottom:0; padding-top:14px; font-weight:700; vertical-align:middle}
+tfoot td.o{font-weight:400}
+tfoot td.a{font-size:22px; color:var(--accent-2)}
+.sum-row td{border-top:2px solid var(--line-2)}
+.diff{display:flex; justify-content:flex-end; margin-top:8px}
+.diff .pill{display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:0 12px; border-radius:999px; background:var(--good-wash); color:var(--good-ink); font-size:14px; font-weight:700; font-variant-numeric:tabular-nums}
+.diff .pill .ic{width:16px; height:16px; stroke-width:2.2}
+.shot{width:100%; margin-top:16px}
+
+.counter{display:inline-flex; justify-content:flex-end}
+.counter .win{display:block; height:1.5em; overflow:hidden; clip-path:inset(0); -webkit-mask-image:var(--fade); mask-image:var(--fade)}
+.counter .col{display:block; transition:transform .24s var(--ease)}
+.counter .col span, .counter .st{display:block; height:1.5em; line-height:1.5em; text-align:center}
+
+/* ---- 空の画面 ---- */
+.empty{display:grid; justify-items:center; gap:8px; padding:8px 0 4px}
+.illust{width:min(100%,180px); height:auto; fill:none; stroke:var(--ink-mid); stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+.illust .soft{fill:var(--accent-wash); stroke:none}
+
+/* ---- 送り先 ---- */
+.tpl{margin:0; padding:12px 14px; border-radius:12px; background:var(--surface-2); color:var(--ink-mid); font:inherit; font-size:14px; line-height:1.8; white-space:pre-wrap}
+.copy .ic-done{display:none}
+.copy.done .ic-copy{display:none}
+.copy.done .ic-done{display:block}
+
+/* ---- ボタン ---- */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 20px;
+  border:0; border-radius:12px; font-size:15px; font-weight:700; cursor:pointer; white-space:nowrap;
+  transition:transform .12s var(--ease), opacity .12s var(--ease);
+}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.45; cursor:default; transform:none}
+.btn.fill{background:var(--fill); color:var(--on-fill); min-height:52px; font-size:16px}
+.btn.quiet{background:var(--surface-2); color:var(--ink)}
+.iconbtn{
+  width:44px; height:44px; flex:none; display:grid; place-items:center; padding:0;
+  border:0; border-radius:12px; background:none; color:var(--ink-mid); cursor:pointer;
+  transition:background-color .12s var(--ease), transform .12s var(--ease);
+}
+.iconbtn:active{transform:scale(.94); background:var(--surface-2)}
+
+/* ---- 画像のシート ---- */
+dialog.sheet{
+  border:0; padding:0; width:100%; max-width:min(560px, calc(100% - 32px)); max-height:92dvh;
+  background:var(--surface); color:var(--ink); border-radius:var(--radius); box-shadow:var(--shadow);
+  overflow:auto; overscroll-behavior:contain;
+}
+dialog.sheet::backdrop{background:var(--scrim)}
+dialog.sheet[open]{animation:rise .2s var(--ease)}
+@keyframes rise{from{opacity:0; transform:translateY(16px)}}
+.sheet-body{padding:8px 20px 20px}
+@media (max-width:600px){
+  dialog.sheet{max-width:100%; margin:auto 0 0; border-radius:var(--radius) var(--radius) 0 0}
+  .sheet-body{padding:8px 16px calc(20px + env(safe-area-inset-bottom))}
+}
+.shot-box{display:grid; place-items:center; padding:12px; border-radius:12px; background:var(--surface-2)}
+.shot-box img{display:block; max-width:100%; max-height:58dvh; width:auto; height:auto; border-radius:8px}
+.sheet .btn.fill{width:100%; margin-top:16px}
+
+.toast{
+  position:fixed; left:50%; top:auto; right:auto; z-index:2000; bottom:calc(env(safe-area-inset-bottom) + 24px); margin:0; border:0; overflow:visible;
+  max-width:min(92vw,420px); padding:10px 18px; border-radius:999px; text-align:center; line-height:1.5;
+  background:var(--ink); color:var(--paper); font-size:15px; font-weight:700;
+  transform:translate(-50%,12px); opacity:0; pointer-events:none; transition:transform .2s var(--ease), opacity .2s var(--ease);
+}
+.toast.on{transform:translate(-50%,0); opacity:1}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:0s !important; transition-delay:0s !important; animation-duration:0s !important; animation-iteration-count:1 !important}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-logo" viewBox="25 17 50 66"><g stroke-width="4.5"><rect x="28" y="20" width="44" height="60" rx="8"/><rect x="36" y="29" width="28" height="12" rx="3"/><circle cx="41" cy="55" r="3.5"/><circle cx="59" cy="70" r="3.5"/><path d="M60 52L40 73"/></g></symbol>
+    <symbol id="i-percent" viewBox="0 0 24 24"><path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></symbol>
+    <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 10V6.5a3 3 0 0 1 6 0V10"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" stroke-width="2.6"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 15.5l-5-5L6 20"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M3.5 7.5L12 3.5l8.5 4v9L12 20.5l-8.5-4z"/><path d="M3.5 7.5L12 11.5l8.5-4"/><path d="M12 11.5v9"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5.5 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header class="top">
+    <svg class="logo ic" aria-hidden="true"><use href="#i-logo"/></svg>
+    <h1>割引電卓</h1>
+  </header>
+
+  <div class="layout">
+    <div class="stack">
+      <section class="card">
+        <div class="rate">
+          <span class="rate-ic" aria-hidden="true"><svg class="ic"><use href="#i-percent"/></svg></span>
+          <label class="rate-field" id="rate-field">
+            <span class="sr">割引率</span>
+            <input id="rate" type="text" inputmode="decimal" placeholder="0" autocomplete="off" enterkeyhint="done">
+            <span class="unit" aria-hidden="true">%</span><span class="off" aria-hidden="true">OFF</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="head"><h2><svg class="ic" aria-hidden="true"><use href="#i-bag"/></svg>製品</h2></div>
+        <ul class="items" id="items"></ul>
+        <div class="empty" id="items-empty" hidden>
+          <svg class="illust" viewBox="0 0 160 90" aria-hidden="true">
+            <rect class="soft" x="50" y="30" width="60" height="52" rx="8"/>
+            <path d="M46 34h68l-5 50H51z"/><path d="M66 38V28a14 14 0 0 1 28 0v10"/>
+            <path d="M20 26l2.5 6.5 6.5 2.5-6.5 2.5L20 44l-2.5-6.5L11 35l6.5-2.5zM140 12l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>
+          </svg>
+        </div>
+        <button class="btn quiet add" id="plus-row" type="button"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>製品</button>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="card">
+        <div class="head">
+          <h2><svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>一覧</h2>
+          <span class="chip" id="rate-chip">0% OFF</span>
+          <span id="del-all-host"></span>
+        </div>
+        <div class="tablewrap" id="table-wrap">
+          <table>
+            <thead><tr><th scope="col">製品</th><th scope="col" class="num">元の値段</th><th scope="col" class="num">割引後</th></tr></thead>
+            <tbody id="rows"></tbody>
+            <tfoot><tr class="sum-row"><td>合計</td><td class="o num" id="sum-o"></td><td class="a num"><span class="counter" id="sum-a" aria-hidden="true"></span><span class="sr" id="sum-a-sr"></span></td></tr></tfoot>
+          </table>
+          <div class="diff" id="diff"><span class="pill"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg><span id="diff-v"></span></span></div>
+        </div>
+        <div class="empty" id="table-empty" hidden>
+          <svg class="illust" viewBox="0 0 160 90" aria-hidden="true">
+            <rect class="soft" x="56" y="14" width="48" height="66" rx="6"/>
+            <path d="M52 10h56v74l-7-5-7 5-7-5-7 5-7-5-7 5-7-5-7 5z"/><path d="M64 28h32M64 42h32M64 56h18"/>
+          </svg>
+        </div>
+        <button class="btn fill shot" id="shot" type="button" disabled><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>画像</button>
+      </section>
+
+      <section class="card">
+        <div class="head">
+          <h2><svg class="ic" aria-hidden="true"><use href="#i-box"/></svg>送り先</h2>
+          <button class="btn quiet copy" id="copy" type="button">
+            <svg class="ic ic-copy" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ic-done" aria-hidden="true"><use href="#i-check"/></svg>コピー
+          </button>
+        </div>
+        <pre class="tpl" id="tpl"></pre>
+      </section>
+    </div>
+  </div>
+</div>
+
+<dialog class="sheet" id="img-sheet" aria-labelledby="img-h">
+  <div class="sheet-body">
+    <div class="head">
+      <h2 id="img-h"><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>画像</h2>
+      <button class="iconbtn" id="img-close" type="button" aria-label="閉じる"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="shot-box"><img id="img-preview" alt="割引の計算表"></div>
+    <button class="btn fill" id="img-save" type="button"><svg class="ic" aria-hidden="true"><use href="#i-down"/></svg>保存</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" popover="manual"></div>
+
+<script>
+/* ================= 設定 ================= */
+/* 動作確認は「_テスト」の複製で行い、本物とは別の置き場に書く（本物のデータを汚さない） */
+var KEY = decodeURIComponent(location.pathname).indexOf('_テスト') >= 0 ? 'waribiki_テスト.v1' : 'waribiki.v1';
+var TPL = '【姓】\n【名】\n【郵便番号】\n【都道府県】\n【市町村区】\n【番地など】\n【アパート名、部屋名】';
+var MAX_DIGITS = 9;
+var FONT = '"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif';
+
+/* ================= 状態 ================= */
+function uid(){ return Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
+function newItem(){ return {id:uid(), name:'', price:null}; }
+function load(){
+  try {
+    var s = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (s && Array.isArray(s.items)){
+      return {
+        rate: typeof s.rate === 'string' ? s.rate : '',
+        items: s.items.filter(function(it){ return it && typeof it.id === 'string'; }).map(function(it){
+          var p = typeof it.price === 'number' && isFinite(it.price) && it.price >= 0 ? Math.floor(it.price) : null;
+          return {id:it.id, name:typeof it.name === 'string' ? it.name : '', price:p};
+        })
+      };
+    }
+  } catch (e) {}
+  return {rate:'', items:[]};
+}
+var state = load();
+/* 空なら入力の行を1つ出しておく（画面の上だけ。何か入れるまで保存しない） */
+if (!state.items.length) state.items.push(newItem());
+
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(state)); }
+  catch (e) { toast('端末の容量が足りません'); }
+}
+
+/* ================= 計算 ================= */
+function toHalf(t){ return String(t).normalize('NFKC'); }
+function cleanRate(t){                                               /* 数字と小数点1つ・小数は2桁まで */
+  t = toHalf(t).replace(/[^\d.]/g, '');
+  var i = t.indexOf('.');
+  if (i >= 0) t = t.slice(0, i + 1) + t.slice(i + 1).replace(/\./g, '').slice(0, 2);
+  return t.slice(0, 6);
+}
+function rateBp(){                                                   /* 割引率を 1/100 % の整数で（12.5% → 1250） */
+  var n = parseFloat(state.rate);
+  if (!isFinite(n) || n < 0) n = 0;
+  return Math.round(Math.min(n, 100) * 100);
+}
+function rateLabel(){ var bp = rateBp(); return (bp % 100 ? (bp / 100).toFixed(bp % 10 ? 2 : 1) : String(bp / 100)) + '%'; }
+function disc(price, bp){ return Math.floor(price * (10000 - bp) / 10000); }   /* 1円未満は切り捨て */
+function fmt(n){ return n.toLocaleString('ja-JP'); }
+function yen(n){ return '¥' + fmt(n); }
+function priced(){ return state.items.filter(function(it){ return it.price != null; }); }
+function totals(){
+  var bp = rateBp(), o = 0, a = 0;
+  priced().forEach(function(it){ o += it.price; a += disc(it.price, bp); });
+  return {o:o, a:a};
+}
+
+/* ================= 部品 ================= */
+function $(q){ return document.querySelector(q); }
+function esc(t){ return String(t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+var toastTimer = null;
+function toast(t){
+  var el = $('#toast'); el.textContent = t;
+  if (el.showPopover){                                               /* シートより上に出す（dialog は最上層にいるので z-index では勝てない） */
+    try { if (el.matches(':popover-open')) el.hidePopover(); el.showPopover(); } catch (e) {}
+  }
+  requestAnimationFrame(function(){ el.classList.add('on'); });
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){
+    el.classList.remove('on');
+    toastTimer = setTimeout(function(){ if (el.hidePopover) try { el.hidePopover(); } catch (e) {} }, 220);
+  }, 1800);
+}
+
+function delButton(label){
+  return '<span class="del">' +
+    '<button class="del-trigger" type="button" aria-label="' + esc(label) + '" aria-expanded="false">' +
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+        '<g class="del-lid"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></g>' +
+        '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>' +
+    '<span class="del-panel" inert>' +
+      '<button class="del-circle yes" type="button" aria-label="消す" tabindex="-1"><i><svg class="ic"><use href="#i-check"/></svg></i></button>' +
+      '<button class="del-circle no" type="button" aria-label="やめる" tabindex="-1"><i><svg class="ic"><use href="#i-x"/></svg></i></button>' +
+    '</span></span>';
+}
+function setDelOpen(del, o){
+  del.classList.toggle('open', o);
+  del.querySelector('.del-trigger').setAttribute('aria-expanded', o);
+  del.querySelector('.del-panel').inert = !o;
+  del.querySelectorAll('.del-circle').forEach(function(b){ b.tabIndex = o ? 0 : -1; });
+}
+/* 押すとフタが開いて ✓✕ が出る。✓ のときだけ onYes を呼ぶ */
+function handleDel(e, del, onYes){
+  if (e.target.closest('.del-trigger')){ setDelOpen(del, !del.classList.contains('open')); return true; }
+  if (e.target.closest('.no')){ setDelOpen(del, false); return true; }
+  if (e.target.closest('.yes')){ setDelOpen(del, false); onYes(); return true; }
+  return false;
+}
+
+/* 合計の数字（Rare UI「くるくる回る数字」の考え方・MIT）。桁の柱が回り、¥ と , は止まっている */
+function setCounter(el, n){
+  var s = yen(n), shape = s.replace(/\d/g, 'd');
+  if (el.dataset.shape !== shape){
+    el.innerHTML = s.split('').map(function(ch){
+      if (!/\d/.test(ch)) return '<span class="st">' + ch + '</span>';
+      return '<span class="win"><span class="col">' + '0123456789'.split('').map(function(d){ return '<span>' + d + '</span>'; }).join('') + '</span></span>';
+    }).join('');
+    el.dataset.shape = shape;
+    el.offsetHeight;                                                 /* 作った直後の位置を確定させてから回す */
+  }
+  var cols = el.querySelectorAll('.col'), digits = s.replace(/\D/g, '');
+  Array.prototype.forEach.call(cols, function(col, i){ col.style.transform = 'translateY(' + (-1.5 * +digits[i]) + 'em)'; });
+}
+
+/* ================= 描画 ================= */
+function shownPrice(it){ return it.price == null ? '' : fmt(it.price); }
+function group(digits){ return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function itemRow(it){
+  return '<li class="item" data-id="' + esc(it.id) + '">' +
+    '<label class="field name"><span class="sr">製品名</span>' +
+      '<input type="text" data-k="name" value="' + esc(it.name) + '" placeholder="製品名" maxlength="80" autocomplete="off" enterkeyhint="next"></label>' +
+    delButton('この製品を削除') +
+    '<div class="line">' +
+      '<label class="field price"><span class="yen" aria-hidden="true">¥</span><span class="sr">元の値段</span>' +
+        '<input type="text" inputmode="numeric" data-k="price" value="' + shownPrice(it) + '" data-prev="' + shownPrice(it) + '" placeholder="元の値段" autocomplete="off" enterkeyhint="done"></label>' +
+      '<span class="res"><svg class="ic arrow" aria-hidden="true"><use href="#i-arrow"/></svg>' +
+      '<span class="after"></span></span>' +
+    '</div></li>';
+}
+function renderItems(){
+  $('#items').innerHTML = state.items.map(itemRow).join('');
+  $('#items-empty').hidden = state.items.length > 0;
+  renderAfters();
+}
+function renderAfters(){
+  var bp = rateBp();
+  Array.prototype.forEach.call($('#items').children, function(li){
+    var it = find(li.dataset.id), out = li.querySelector('.after');
+    if (!it) return;
+    if (it.price == null){ out.textContent = '—'; out.classList.add('none'); }
+    else { out.textContent = yen(disc(it.price, bp)); out.classList.remove('none'); }
+  });
+}
+function renderSummary(){
+  var bp = rateBp(), list = priced(), t = totals();
+  $('#rate-chip').textContent = rateLabel() + ' OFF';
+  $('#rows').innerHTML = list.map(function(it, i){
+    var nm = it.name.trim();
+    return '<tr><td class="nm' + (nm ? '' : ' untitled') + '">' + esc(nm || '製品') + '</td>' +
+      '<td class="o num">' + yen(it.price) + '</td><td class="a num">' + yen(disc(it.price, bp)) + '</td></tr>';
+  }).join('');
+  var has = list.length > 0;
+  $('#table-wrap').hidden = !has;
+  $('#table-empty').hidden = has;
+  $('#del-all-host').hidden = !has;
+  $('#shot').disabled = !has;
+  $('#sum-o').textContent = yen(t.o);
+  setCounter($('#sum-a'), t.a);
+  $('#sum-a-sr').textContent = yen(t.a);
+  $('#diff').hidden = t.o - t.a <= 0;
+  $('#diff-v').textContent = yen(t.o - t.a);
+}
+function find(id){ for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) return state.items[i]; return null; }
+
+/* ================= 操作 ================= */
+var rateInput = $('#rate');
+rateInput.value = state.rate;
+rateInput.addEventListener('input', function(e){
+  if (e.isComposing) return;                                         /* 変換中は書き換えない（文字が二重になる） */
+  var v = cleanRate(rateInput.value);
+  if (parseFloat(v) > 100) v = '100';                                /* 100%より上は無い */
+  if (v !== rateInput.value) rateInput.value = v;
+  state.rate = v;
+  save(); renderAfters(); renderSummary();
+});
+rateInput.addEventListener('compositionend', function(){ rateInput.dispatchEvent(new Event('input')); });
+
+$('#items').addEventListener('input', function(e){
+  if (e.isComposing) return;
+  var inp = e.target, li = inp.closest('.item'), it = li && find(li.dataset.id);
+  if (!it) return;
+  if (inp.dataset.k === 'name'){
+    it.name = inp.value.slice(0, 80);
+  } else if (inp.dataset.k === 'price'){
+    var raw = toHalf(inp.value), caret = inp.selectionStart || 0;
+    var caretDigits = raw.slice(0, caret).replace(/\D/g, '').length;
+    var digits = raw.split('.')[0].replace(/\D/g, '');               /* 「1,234.56」を貼ったら小数は捨てる */
+    if (digits.length > MAX_DIGITS){                                 /* 9桁を超える分は受け付けず、前の値に戻す */
+      inp.value = inp.dataset.prev || '';
+      var back = Math.max(0, caret - 1);
+      try { inp.setSelectionRange(back, back); } catch (err) {}
+      return;
+    }
+    it.price = digits ? +digits : null;
+    var shown = group(digits);                                       /* 打っている間は先頭の0も残す（100,000 の1を消して2を打つと 200,000） */
+    if (shown !== inp.value){                                        /* 3桁ごとの , を付け、カーソルは同じ桁の後ろに戻す */
+      inp.value = shown;
+      var pos = 0, seen = 0;
+      while (pos < shown.length && seen < Math.min(caretDigits, digits.length)){ if (/\d/.test(shown[pos])) seen++; pos++; }
+      try { inp.setSelectionRange(pos, pos); } catch (err) {}
+    }
+    inp.dataset.prev = shown;
+    renderAfters();
+  }
+  save(); renderSummary();
+});
+$('#items').addEventListener('compositionend', function(e){ e.target.dispatchEvent(new Event('input', {bubbles:true})); });
+$('#items').addEventListener('focusout', function(e){                /* 欄を離れたら先頭の0を整える */
+  var inp = e.target, li = inp.closest && inp.closest('.item'), it = li && find(li.dataset.id);
+  if (!it || inp.dataset.k !== 'price') return;
+  inp.value = inp.dataset.prev = shownPrice(it);
+});
+$('#items').addEventListener('click', function(e){
+  var del = e.target.closest('.del'), li = e.target.closest('.item');
+  if (!del || !li) return;
+  handleDel(e, del, function(){
+    li.classList.add('gone');
+    setTimeout(function(){
+      state.items = state.items.filter(function(it){ return it.id !== li.dataset.id; });
+      save(); renderItems(); renderSummary();
+    }, 140);
+  });
+});
+$('#plus-row').addEventListener('click', function(){
+  var it = newItem();
+  state.items.push(it);
+  save(); renderItems(); renderSummary();
+  var inp = $('#items').lastElementChild.querySelector('input');
+  inp.focus();
+});
+
+$('#del-all-host').innerHTML = delButton('全部の製品を削除');
+$('#del-all-host').addEventListener('click', function(e){
+  var del = e.target.closest('.del');
+  if (!del) return;
+  handleDel(e, del, function(){
+    state.items = [newItem()];
+    save(); renderItems(); renderSummary();
+    toast('削除しました');
+  });
+});
+
+/* ---- 送り先の型をコピー ---- */
+$('#tpl').textContent = TPL;
+function copyText(t){
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t).catch(function(){ return legacyCopy(t); });
+  return legacyCopy(t);
+}
+function legacyCopy(t){                                              /* 古い書き方（clipboard が断られたとき用） */
+  return new Promise(function(ok, ng){
+    var ta = document.createElement('textarea');
+    ta.value = t; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'; ta.style.fontSize = '16px';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+    var done = false; try { done = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    done ? ok() : ng();
+  });
+}
+var copyTimer = null;
+$('#copy').addEventListener('click', function(){
+  var b = this;
+  copyText(TPL).then(function(){
+    b.classList.add('done'); toast('コピーしました');
+    clearTimeout(copyTimer); copyTimer = setTimeout(function(){ b.classList.remove('done'); }, 1400);
+  }, function(){ toast('コピーできませんでした'); });
+});
+
+/* ================= 画像 ================= */
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function fontsReady(){
+  if (!document.fonts || !document.fonts.load) return Promise.resolve();
+  var sample = '割引後合計製品元の値段差額OFF¥0123456789,%';
+  var p = Promise.all(['400', '500', '700'].map(function(w){ return document.fonts.load(w + ' 40px "Zen Maru Gothic"', sample); }));
+  return Promise.race([p, new Promise(function(r){ setTimeout(r, 1500); })]).catch(function(){});
+}
+function rr(ctx, x, y, w, h, r){                                     /* 角丸の四角（古い Safari に roundRect が無いので自前） */
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function wrap(ctx, text, maxW){                                      /* 英数字は語のまま、それ以外は1字ずつ詰めて折り返す */
+  var NO_HEAD = 'ー、。，．・：；？！）」』】〕ぁぃぅぇぉっゃゅょァィゥェォッャュョ)]},.';
+  var toks = text.match(/[A-Za-z0-9][A-Za-z0-9.\-]*|\s+|./gu) || [];
+  var lines = [], cur = '';
+  function fits(t){ return ctx.measureText(t).width <= maxW; }
+  toks.forEach(function(tk){
+    if (fits(cur + tk)){ cur += tk; return; }
+    if (/^\s+$/.test(tk)){ if (cur) lines.push(cur); cur = ''; return; }
+    if (!fits(tk)){                                                  /* 1語で入りきらない英数字だけは1字ずつ */
+      Array.from(tk).forEach(function(ch){ if (cur && !fits(cur + ch)){ lines.push(cur); cur = ch; } else cur += ch; });
+      return;
+    }
+    var chars = Array.from(cur);
+    if (NO_HEAD.indexOf(tk) >= 0 && chars.length > 1){               /* 行頭に来てはいけない字は、前の1字を連れて次の行へ */
+      var last = chars.pop(); lines.push(chars.join('')); cur = last + tk; return;
+    }
+    if (cur) lines.push(cur.replace(/\s+$/, ''));
+    cur = tk;
+  });
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
+function drawImage(){
+  var C = {
+    paper:cssVar('--img-paper'), surface:cssVar('--img-surface'), ink:cssVar('--img-ink'), mid:cssVar('--img-mid'),
+    soft:cssVar('--img-soft'), line:cssVar('--img-line'), line2:cssVar('--img-line-2'),
+    acc:cssVar('--img-accent-2'), wash:cssVar('--img-accent-wash'), good:cssVar('--img-good-ink'), goodWash:cssVar('--img-good-wash')
+  };
+  var bp = rateBp(), list = priced(), t = totals();
+  var W = 1080, PAD = 48, CP = 52, X = PAD + CP, INNER = W - 2 * X, GAP = 32;
+  var F = function(w, px){ return w + ' ' + px + 'px ' + FONT; };
+  var cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+
+  /* 1. 寸法を測る */
+  var rows = list.map(function(it){
+    var nm = it.name.trim();
+    return {nm:nm || '製品', untitled:!nm, o:yen(it.price), a:yen(disc(it.price, bp))};
+  });
+  var sumO = yen(t.o), sumA = yen(t.a), diff = t.o - t.a;
+  ctx.font = F(400, 34); var wO = ctx.measureText('元の値段').width;
+  rows.forEach(function(r){ wO = Math.max(wO, ctx.measureText(r.o).width); }); wO = Math.max(wO, ctx.measureText(sumO).width);
+  ctx.font = F(700, 38); var wA = ctx.measureText('割引後').width;
+  rows.forEach(function(r){ wA = Math.max(wA, ctx.measureText(r.a).width); });
+  ctx.font = F(700, 50); wA = Math.max(wA, ctx.measureText(sumA).width);
+  var colN = INNER - wO - wA - 2 * GAP;
+  var LH = 54, RP = 26;
+  ctx.font = F(500, 38);
+  rows.forEach(function(r){ r.lines = wrap(ctx, r.nm, colN); r.h = r.lines.length * LH + RP * 2; });
+
+  var HEAD = 96, COLH = 70, SUM = 110, DIFF = diff > 0 ? 90 : 20;
+  var cardH = CP + HEAD + COLH + rows.reduce(function(s, r){ return s + r.h; }, 0) + SUM + DIFF + CP;
+  cv.width = W; cv.height = PAD * 2 + cardH;
+
+  /* 2. 描く */
+  ctx.fillStyle = C.paper; ctx.fillRect(0, 0, cv.width, cv.height);
+  rr(ctx, PAD, PAD, W - PAD * 2, cardH, 40); ctx.fillStyle = C.surface; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = C.line; ctx.stroke();
+
+  var y = PAD + CP, colO = X + INNER - wA - GAP, colA = X + INNER;
+  ctx.textBaseline = 'middle';
+  /* 割引率の札と日付 */
+  var chip = rateLabel() + ' OFF';
+  ctx.font = F(700, 36); var cw = ctx.measureText(chip).width + 56;
+  rr(ctx, X, y + 4, cw, 68, 34); ctx.fillStyle = C.wash; ctx.fill();
+  ctx.fillStyle = C.acc; ctx.textAlign = 'left'; ctx.fillText(chip, X + 28, y + 39);
+  var d = new Date(), ds = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');
+  ctx.font = F(400, 30); ctx.fillStyle = C.soft; ctx.textAlign = 'right'; ctx.fillText(ds, colA, y + 39);
+  y += HEAD;
+
+  /* 列の見出し */
+  ctx.font = F(500, 30); ctx.fillStyle = C.mid;
+  ctx.textAlign = 'left'; ctx.fillText('製品', X, y + COLH / 2 - 4);
+  ctx.textAlign = 'right'; ctx.fillText('元の値段', colO, y + COLH / 2 - 4); ctx.fillText('割引後', colA, y + COLH / 2 - 4);
+  y += COLH;
+  ctx.fillStyle = C.line2; ctx.fillRect(X, y - 2, INNER, 2);
+
+  /* 行 */
+  rows.forEach(function(r, i){
+    var mid1 = y + RP + LH / 2;
+    ctx.textAlign = 'left'; ctx.font = F(r.untitled ? 400 : 500, 38); ctx.fillStyle = r.untitled ? C.soft : C.ink;
+    r.lines.forEach(function(l, k){ ctx.fillText(l, X, mid1 + k * LH); });
+    ctx.textAlign = 'right';
+    ctx.font = F(400, 34); ctx.fillStyle = C.mid; ctx.fillText(r.o, colO, mid1);
+    ctx.font = F(700, 38); ctx.fillStyle = C.ink; ctx.fillText(r.a, colA, mid1);
+    y += r.h;
+    if (i < rows.length - 1){ ctx.fillStyle = C.line; ctx.fillRect(X, y - 1, INNER, 2); }
+  });
+
+  /* 合計 */
+  ctx.fillStyle = C.line2; ctx.fillRect(X, y, INNER, 4);
+  var sy = y + SUM / 2 + 4;
+  ctx.textAlign = 'left'; ctx.font = F(700, 38); ctx.fillStyle = C.ink; ctx.fillText('合計', X, sy);
+  ctx.textAlign = 'right'; ctx.font = F(400, 34); ctx.fillStyle = C.mid; ctx.fillText(sumO, colO, sy);
+  ctx.font = F(700, 50); ctx.fillStyle = C.acc; ctx.fillText(sumA, colA, sy);
+  y += SUM;
+
+  /* 差額 */
+  if (diff > 0){
+    var ds2 = '差額 −' + yen(diff);
+    ctx.font = F(700, 32); var pw = ctx.measureText(ds2).width + 48;
+    rr(ctx, colA - pw, y + 10, pw, 60, 30); ctx.fillStyle = C.goodWash; ctx.fill();
+    ctx.fillStyle = C.good; ctx.textAlign = 'right'; ctx.fillText(ds2, colA - 24, y + 41);
+  }
+
+  return new Promise(function(res, rej){ cv.toBlob(function(b){ cv.width = cv.height = 0; b ? res(b) : rej(new Error('toBlob')); }, 'image/png'); });
+}
+
+var shotFile = null, shotUrl = null;
+$('#shot').addEventListener('click', function(){
+  var b = this;
+  b.disabled = true;
+  fontsReady().then(drawImage).then(function(blob){
+    if (shotUrl) URL.revokeObjectURL(shotUrl);
+    shotUrl = URL.createObjectURL(blob);
+    try { shotFile = new File([blob], '割引計算.png', {type:'image/png'}); } catch (e) { shotFile = null; }
+    $('#img-preview').src = shotUrl;
+    var dlg = $('#img-sheet');
+    if (!dlg.open) dlg.showModal();
+  }).catch(function(){ toast('画像にできませんでした'); })
+    .then(function(){ b.disabled = priced().length === 0; });
+});
+/* 保存は「押したその場で」共有シートを開く（iPhone は時間が空くと共有を許さないので、画像は先に作っておく） */
+var sharing = false;
+$('#img-save').addEventListener('click', function(){
+  if (sharing) return;                                               /* 共有シートが開いている間の2回目は無視する */
+  if (shotFile && navigator.canShare && navigator.canShare({files:[shotFile]})){
+    sharing = true;
+    navigator.share({files:[shotFile]}).catch(function(e){
+      if (e && e.name !== 'AbortError') toast('保存できませんでした');
+    }).then(function(){ sharing = false; });
+  } else {
+    download();
+  }
+});
+function download(){
+  if (!shotUrl) return;
+  var a = document.createElement('a');
+  a.href = shotUrl; a.download = '割引計算.png';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+$('#img-close').addEventListener('click', function(){ $('#img-sheet').close(); });
+$('#img-sheet').addEventListener('click', function(e){ if (e.target === this) this.close(); });
+
+/* ================= 最初の描画（ここでは保存しない） ================= */
+renderItems();
+renderSummary();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
