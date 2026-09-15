@@ -98,6 +98,9 @@ input,select,textarea{font-size:16px}
 .banner > b{flex:none; font-weight:700}
 .banner.good{background:var(--good-wash); color:var(--good-ink)}
 .banner.warn{background:var(--warn-wash); color:var(--warn-ink)}
+.banner.plain{background:var(--surface-2); color:var(--ink-mid)}
+.banner .bchip{flex:none; min-height:44px; padding:0 14px; border-radius:999px; background:var(--surface); color:inherit; font-size:14px; font-weight:700}
+.banner .bchip.armed{background:var(--warn-ink); color:var(--paper)}
 .mix{margin-top:12px; padding:12px 14px; border-radius:var(--r-md); background:var(--warn-wash); color:var(--warn-ink)}
 .mix .mt{display:flex; align-items:center; gap:10px; font-weight:700; font-size:15px}
 .mix .ms{font-size:13px; margin:2px 0 0 30px}
@@ -172,6 +175,8 @@ input,select,textarea{font-size:16px}
 .btn.wide{width:100%; margin-top:8px}
 .btn-quiet{width:100%; min-height:52px; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:12px; border-radius:var(--r-md); background:var(--surface); border:1px solid var(--line); color:var(--ink); font-size:16px; font-weight:700; box-shadow:var(--shadow-sm)}
 .btn-quiet:active{background:var(--surface-2)}
+.btn-quiet .st{display:inline} .btn-quiet .st b{font-weight:700}
+.btn-quiet.armed{background:var(--warn-wash); color:var(--warn-ink); border-color:transparent}
 .btn-quiet[aria-busy="true"]{color:var(--ink-soft)}
 
 /* ---- 明細 ---- */
@@ -394,6 +399,7 @@ button.srow:active{background:var(--surface-2)}
   <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></symbol>
   <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0"/><path d="M12 19.5h.01"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
 </defs></svg>
 <div class="wrap">
   <header class="top">
@@ -805,7 +811,7 @@ function sbHtml(share,per,rent){ return '<span>共同 '+yen(share)+'</span>'+(pe
 function rrHtml(r){ return '<span class="dot k"></span>'+r+'<i>:</i>'+(100-r)+'<span class="dot y"></span>'; }
 function renderPeriod(p){
   const c=calc(p), r=c.r;
-  let h='<div class="pgrid"><div class="col-summary">'+mixWarnHtml(p)+stmtHtml(p)+
+  let h='<div class="pgrid"><div class="col-summary">'+mixWarnHtml(p)+stmtHtml(p)+confirmHtml(p)+
   '<section class="card" aria-label="合計と分け方">'+
     '<div class="lab">'+ic('card','ic-sm')+(hasManual(p)?'合計（手動込み）':'合計')+'</div>'+
     '<div class="hero"><span class="counter" data-cnt="total"></span></div>'+
@@ -885,6 +891,7 @@ function bindBody(p){
   }
   document.querySelectorAll('#rpresets button').forEach(b=>b.onclick=()=>{ curPeriod().ratio=+b.dataset.v; save(); });
   const bb=document.getElementById('billBtn'); if(bb) bb.onclick=openBill;
+  const cfb=document.getElementById('confirmBtn'); if(cfb) armed(cfb, ()=>doConfirm(p));
   const fh=document.getElementById('filters');
   if(fh) gooeyTabs(fh, ['全部','共同',nm('kodai'),nm('yuzu'),'対象外'], Math.max(0,FILTER_KEYS.indexOf(curFilter)), i=>{
     curFilter=FILTER_KEYS[i];
@@ -1160,6 +1167,7 @@ function openSettings(){
       '<textarea class="in" id="bankTa" rows="4" placeholder="例：〇〇銀行&#10;〇〇支店&#10;普通 1234567&#10;名義 ヤマダタロウ">'+esc(bankLines().join('\n'))+'</textarea></div>'+
     '<div class="slist">'+
       srow('rentBtn','home','家賃',db.rent?esc(ymJa(db.rent.from))+'から・'+esc(nm('yuzu'))+' '+yen(rentYuzu(db.rent)):'なし')+
+      srow('notifyBtn','bell','通知',deviceWho()?'この端末：'+esc(nm(deviceWho())):'未設定')+
       srow('shareBtn','link','共有',esc(nm('yuzu'))+'の端末と同期')+
       srow('renameP','pen','期間の編集',esc(pname(p)))+
       srow('setShareAll','users','全部を共同に','')+
@@ -1179,6 +1187,7 @@ function openSettings(){
   dayIn('#closeD','closeDay',31); dayIn('#payD','payDay',26);
   ov.querySelector('#defR').onchange=e=>{ let v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); db.defaultRatio=v; e.target.value=v; save({noRender:true}); };
   ov.querySelector('#bankTa').onchange=e=>{ db.bank=e.target.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,6); save({noRender:true}); };
+  ov.querySelector('#notifyBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openNotify,260); };
   ov.querySelector('#rentBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openRent,260); };
   ov.querySelector('#shareBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openShare,260); };
   ov.querySelector('#renameP').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openRename,260); };
@@ -1193,6 +1202,117 @@ function openSettings(){
     commitNames(); save(); closeSheet(); toast('削除しました');
   });
 }
+/* ============ 請求の確定と通知（Web Push） ============
+   ・毎月12日 8:00 に「CSVを読み込む日」を こうだい の端末へ（Supabase の cron → futaricard-notify）
+   ・こうだい が「確定して知らせる」を押すと、ゆずは の端末へ「◯月分の請求が確定しました」
+   ・この端末が誰か（kodai / yuzu）は端末ごと（localStorage）。同期データには入れない */
+const VAPID_PUBLIC='BOp-K1Eif_TEF21_2O_oGWuE23r2ppFzl6b1hafxV0i_1VktjXRRWnTj3vAmG_GXzaVx-HcRwQsfBoljV-_lmdk';   // cooking / tsugi と共通の公開鍵
+const WHO_KEY='futaricard_who';
+const SW_SCOPE='./futaricard.html';   // 同じフォルダの cooking-sw / tsugi-sw の登録を上書きしないよう、範囲をこのページに絞る
+function deviceWho(){ try{ const w=localStorage.getItem(WHO_KEY); return (w==='kodai'||w==='yuzu')?w:''; }catch(e){ return ''; } }
+function setDeviceWho(w){ try{ localStorage.setItem(WHO_KEY,w); }catch(e){} }
+let swReg=null;
+if(sb&&'serviceWorker' in navigator){ navigator.serviceWorker.register('futaricard-sw.js',{scope:SW_SCOPE}).then(r=>{swReg=r;}).catch(()=>{}); }
+function isStandalone(){ return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true; }
+function isIOS(){ return /iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1); }
+function urlB64ToUint8Array(b64){
+  const pad='='.repeat((4-b64.length%4)%4), raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from(raw, c=>c.charCodeAt(0));
+}
+async function pushStatus(){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)) return (isIOS()&&!isStandalone())?'ios-browser':'unsupported';
+  if(!sb) return 'unsupported';
+  if(Notification.permission==='denied') return 'denied';
+  try{
+    const reg=swReg||await navigator.serviceWorker.getRegistration(SW_SCOPE);
+    const sub=reg&&await reg.pushManager.getSubscription();
+    return (sub&&Notification.permission==='granted')?'on':'off';
+  }catch(e){ return 'off'; }
+}
+async function enablePush(){
+  const who=deviceWho(); if(!who) throw 'who';
+  // 許可のお願いは、押した操作の中で最初に呼ぶ（iPhone はそうしないと出ない）
+  if(Notification.permission!=='granted'){ const r=await Notification.requestPermission(); if(r!=='granted') throw 'denied'; }
+  const reg=swReg||(swReg=await navigator.serviceWorker.register('futaricard-sw.js',{scope:SW_SCOPE}));
+  if(!reg.active) await new Promise(res=>{
+    const w=reg.installing||reg.waiting; if(!w) return res();
+    w.addEventListener('statechange',()=>{ if(w.state==='activated') res(); });
+    setTimeout(res,5000);
+  });
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlB64ToUint8Array(VAPID_PUBLIC)});
+  const j=sub.toJSON();
+  const {error}=await sb.from('futaricard_subs').upsert({endpoint:sub.endpoint, who, p256dh:j.keys.p256dh, auth:j.keys.auth, created_at:Date.now()},{onConflict:'endpoint'});
+  if(error) throw error;
+}
+async function callNotify(payload){
+  const r=await fetch(SUPABASE_URL+'/functions/v1/futaricard-notify',{method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON}, body:JSON.stringify(payload)});
+  return r.json();
+}
+// 期間の上に出す「確定」の帯とボタン
+function confirmHtml(p){
+  const who=deviceWho(), c=calc(p), y=Math.round(c.yuzu), cf=p.confirmed;
+  if(cf){
+    const changed=cf.yuzu!==y;
+    return '<div class="banner '+(changed?'warn':'good')+'">'+ic(changed?'alert':'check')+
+      '<span class="bt">確定 '+mdShort(ymd(new Date(cf.at)))+'・<b class="num">'+yen(cf.yuzu)+'</b>'+(changed?'<small class="num">今は '+yen(y)+'</small>':'')+'</span>'+
+      (changed&&who!=='yuzu'?'<button type="button" class="bchip" id="confirmBtn"><span class="st"><b>確定し直す</b></span></button>':'')+'</div>';
+  }
+  if(who==='yuzu'||y<=0||!periodPay(p)) return '';
+  return '<button type="button" class="btn-quiet" id="confirmBtn">'+ic('bell')+'<span class="st"><b>確定して'+esc(nm('yuzu'))+'に知らせる</b></span></button>';
+}
+async function doConfirm(p){
+  const y=Math.round(calc(p).yuzu), pay=periodPay(p);
+  p.confirmed={at:nowMs(), yuzu:y};
+  save();
+  const msg=pname(p)+'の請求が確定しました：'+yen(y)+(pay?'（'+payNote(pay)+'）':'');
+  if(!sb){ toast('確定しました（通知なし）'); return; }
+  try{
+    const r=await callNotify({kind:'confirm', actor:'kodai', body:msg});
+    toast(r&&r.sent?nm('yuzu')+'に知らせました':'確定しました（'+nm('yuzu')+'の端末が未登録）');
+  }catch(e){ toast('確定しました（通知は送れませんでした）'); }
+}
+function openNotify(){
+  const WHAT={kodai:[ 'cal','毎月12日 8:00・CSVを読み込む日' ], yuzu:[ 'receipt','請求が確定したとき' ]};
+  openSheet(
+    sheetHead('bell','通知')+
+    '<div class="field"><div class="fl">'+ic('device','ic-sm')+'この端末</div><div class="seg" id="nfWho">'+
+      ['kodai','yuzu'].map(w=>'<button type="button" data-v="'+w+'" class="'+(w==='kodai'?'k':'y')+'"><span class="dot '+(w==='kodai'?'k':'y')+'"></span>'+esc(nm(w))+'</button>').join('')+
+    '</div><div class="note" id="nfWhat"></div></div>'+
+    '<div class="banner plain" id="nfState" role="status"></div>'+
+    '<button class="btn primary wide" type="button" id="nfOn">'+ic('bell')+'オンにする</button>'+
+    '<button class="btn quiet wide" type="button" id="nfTest">'+ic('check','ic-sm')+'テスト通知</button>'
+  );
+  const syncWho=()=>{
+    const who=deviceWho();
+    ov.querySelectorAll('#nfWho button').forEach(b=>{ const on=b.dataset.v===who; b.classList.toggle('on',on); b.setAttribute('aria-pressed',on?'true':'false'); });
+    const w=WHAT[who]; ov.querySelector('#nfWhat').innerHTML=w?ic(w[0],'ic-sm')+'<span>'+w[1]+'</span>':'';
+  };
+  const refresh=async()=>{
+    const st=await pushStatus(), el=ov.querySelector('#nfState'); if(!el) return;
+    const m={on:['good','check','オン'], off:['plain','bell','オフ'], denied:['warn','alert','設定アプリで通知を許可してください'],
+      'ios-browser':['warn','info','ホーム画面に追加したアプリから開いてください'], unsupported:['warn','alert','この画面では通知を使えません']}[st];
+    el.className='banner '+m[0]; el.innerHTML=ic(m[1])+'<span class="bt">'+m[2]+'</span>';
+    ov.querySelector('#nfOn').hidden=!(st==='off'||st==='denied');
+    ov.querySelector('#nfTest').hidden=(st!=='on');
+  };
+  ov.querySelectorAll('#nfWho button').forEach(b=>b.onclick=async()=>{
+    setDeviceWho(b.dataset.v); syncWho(); render();
+    if(await pushStatus()==='on'){ try{ await enablePush(); toast('届け先を「'+nm(b.dataset.v)+'」にしました'); }catch(e){} }
+  });
+  ov.querySelector('#nfOn').onclick=()=>{
+    if(!deviceWho()){ toast('この端末を選んでください'); return; }
+    enablePush().then(()=>{ toast('通知をオンにしました'); refresh(); })
+      .catch(e=>{ toast(e==='denied'?'通知が許可されませんでした':'オンにできませんでした'); refresh(); });
+  };
+  ov.querySelector('#nfTest').onclick=async()=>{
+    try{ const r=await callNotify({kind:'test', actor:deviceWho()}); toast(r&&r.sent?'この端末に送りました':'届け先が見つかりません'); }
+    catch(e){ toast('送れませんでした'); }
+  };
+  syncWho(); refresh();
+}
+
 /* ============ 家賃 ============ */
 function openRent(){
   const rt=db.rent||{};
