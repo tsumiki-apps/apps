@@ -439,7 +439,7 @@ const LS_KEY='futaricard_db_v1';
 const BANK_DEFAULT=['三井住友銀行','オリーブBlue支店（支店番号 783）','普通 0833691','名義 タカハシコウダイ'];
 function defaultDB(){
   const d=new Date(), p=newPeriod(monthLabel(d), d.getFullYear()+'-'+pad(d.getMonth()+1));
-  return { names:{kodai:'こうだい', yuzu:'ゆずは'}, defaultRatio:50, bank:BANK_DEFAULT.slice(), closeDay:31, payDay:26,
+  return { names:{kodai:'こうだい', yuzu:'ゆずちゃん'}, defaultRatio:50, bank:BANK_DEFAULT.slice(), closeDay:31, payDay:26,
     periods:[p], current:p.id, updatedAt:0 };
 }
 function newPeriod(name,ym){ const p={id:uid(), name, items:[], ratio:null, createdAt:nowMs()}; if(/^\d{4}-\d{2}$/.test(ym||'')) p.ym=ym; return p; }
@@ -450,8 +450,8 @@ function load(){
 }
 function migrate(r){
   if(r.defaultRatio==null)r.defaultRatio=50;
-  if(!r.names)r.names={kodai:'こうだい',yuzu:'ゆずは'};
-  if(r.names.yuzu==='ゆず')r.names.yuzu='ゆずは'; // 旧デフォルト名を正式名に自動更新
+  if(!r.names)r.names={kodai:'こうだい',yuzu:'ゆずちゃん'};
+  if(r.names.yuzu==='ゆず')r.names.yuzu='ゆずちゃん'; // 旧デフォルト名を今の呼び名に自動更新
   if(!Array.isArray(r.bank))r.bank=BANK_DEFAULT.slice();
   if(r.closeDay==null)r.closeDay=31;   // 締め日（31＝末日）。三井住友は 月末締め・翌月26日払い が既定
   if(r.payDay==null)r.payDay=26;
@@ -558,6 +558,8 @@ function customRatioItems(p){ return p.items.filter(it=>(it.tag||'share')==='sha
 function ratioLabel(r){ return r+'：'+(100-r); }
 function yen(n){const s=n<0?'-':''; return s+'¥'+Math.abs(Math.round(n)).toLocaleString('ja-JP');}
 function nm(id){return db.names[id]||id;}
+// 請求書などで「◯◯さん」と呼ぶとき。呼び名がもう「ちゃん・さん・くん・様」で終わっていれば重ねない
+function honor(n){ return /(ちゃん|さん|くん|様)$/.test(n)?n:n+' さん'; }
 
 /* ===== 明細名を見やすく整形（表示専用・元の明細descは常に保持） ===== */
 // 全角英数字→半角
@@ -1180,7 +1182,7 @@ function openSettings(){
   ov.querySelector('#nameK').onchange=commitNames; ov.querySelector('#nameY').onchange=commitNames;
   function commitNames(){
     db.names.kodai=ov.querySelector('#nameK').value.trim()||'こうだい';
-    db.names.yuzu=ov.querySelector('#nameY').value.trim()||'ゆずは';
+    db.names.yuzu=ov.querySelector('#nameY').value.trim()||'ゆずちゃん';
     save({noRender:true});
   }
   const dayIn=(id,key,def)=>{ ov.querySelector(id).onchange=e=>{ const n=Math.round(+e.target.value); const v=(n>=1&&n<=31)?n:def; db[key]=v; e.target.value=v; save({noRender:true}); }; };
@@ -1204,7 +1206,7 @@ function openSettings(){
 }
 /* ============ 請求の確定と通知（Web Push） ============
    ・毎月12日 8:00 に「CSVを読み込む日」を こうだい の端末へ（Supabase の cron → futaricard-notify）
-   ・こうだい が「確定して知らせる」を押すと、ゆずは の端末へ「◯月分の請求が確定しました」
+   ・こうだい が「確定して知らせる」を押すと、ゆずちゃん の端末へ「◯月分の請求が確定しました」
    ・この端末が誰か（kodai / yuzu）は端末ごと（localStorage）。同期データには入れない */
 const VAPID_PUBLIC='BOp-K1Eif_TEF21_2O_oGWuE23r2ppFzl6b1hafxV0i_1VktjXRRWnTj3vAmG_GXzaVx-HcRwQsfBoljV-_lmdk';   // cooking / tsugi と共通の公開鍵
 const WHO_KEY='futaricard_who';
@@ -1405,7 +1407,7 @@ function openRename(){
 }
 
 /* ============ 請求書（画像）============
-   共同カードの引き落としは こうだい 側。ゆずはの負担分（共同ぶん×比率＋個人ぶん）を
+   共同カードの引き落としは こうだい 側。ゆずちゃんの負担分（共同ぶん×比率＋個人ぶん）を
    1枚のPNGにして、LINE等でそのまま送れるようにする。Canvasに直接描くので外部ライブラリ不要。 */
 function bankLines(){ return (db.bank||[]).map(s=>String(s||'').trim()).filter(Boolean).slice(0,6); }
 // 手動で足した明細（光熱費など別カード払い）が1件でもある期間は「カード合計」と呼べない
@@ -1516,7 +1518,7 @@ function buildBillCanvas(p){
   const blocksH=blocks.reduce((s,b)=>s+b.h,0);
 
   // 合計の下に置く補足（1行が長いと切れるので分けて2行にする）
-  const totalSubs=[(hasManual(p)?'この期間の合計 ':'カード合計 ')+yen(c.cardTotal)+' のうち '+nm('yuzu')+' さんの負担分です'];
+  const totalSubs=[(hasManual(p)?'この期間の合計 ':'カード合計 ')+yen(c.cardTotal)+' のうち '+honor(nm('yuzu'))+'の負担分です'];
   if(c.excl) totalSubs.push('（対象外の '+yen(c.excl)+' は計算から外しています）');
 
   const topPad=56,eyebrowH=30,titleH=54,metaH=34,gap1=24,secH=40,afterBlocks=12,
@@ -1534,7 +1536,7 @@ function buildBillCanvas(p){
   g.textAlign='left'; g.fillStyle=SUB; g.font=`600 22px ${FONT}`;
   g.fillText('共同カードのご精算',ML,y+20); y+=eyebrowH;
   g.fillStyle=INK; g.font=`700 38px ${FONT}`;
-  g.fillText(ellipsisText(g,nm('yuzu')+' さんへ',CW),ML,y+38); y+=titleH;
+  g.fillText(ellipsisText(g,honor(nm('yuzu'))+'へ',CW),ML,y+38); y+=titleH;
   const issued=today().replace(/-/g,'/');
   g.fillStyle=SUB; g.font=`400 20px ${FONT}`;
   g.fillText(ellipsisText(g,pname(p)+' ／ 発行日 '+issued,CW),ML,y+20); y+=metaH+gap1;
