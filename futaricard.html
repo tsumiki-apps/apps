@@ -515,9 +515,10 @@ function ratioOf(p){ return (p.ratio==null?db.defaultRatio:p.ratio); } // こう
 // overrideR はスライダー操作中のプレビュー用（保存せずに期間の比率だけ差し替える）
 function calc(p,overrideR){
   const r=(overrideR==null?ratioOf(p):overrideR);
-  let share=0, defShare=0, kPer=0, yPer=0, excl=0, kShare=0, yShare=0;
-  p.items.forEach(it=>{
+  let share=0, defShare=0, kPer=0, yPer=0, excl=0, kShare=0, yShare=0, rent=0, kRent=0, yRent=0;
+  allItems(p).forEach(it=>{
     const a=it.amount;
+    if(it.src==='rent'){ rent+=a; yRent+=it.yAmt; kRent+=a-it.yAmt; return; }   // 家賃は決まった額で分ける（比率に関係しない）
     if(it.tag==='kodai') kPer+=a;
     else if(it.tag==='yuzu') yPer+=a;
     else if(it.tag==='excl') excl+=a;
@@ -529,10 +530,23 @@ function calc(p,overrideR){
   });
   const kDef=Math.round(defShare*r/100);
   kShare+=kDef; yShare+=defShare-kDef;
-  const kodai=kShare+kPer;
-  const yuzu=yShare+yPer;
-  return {share, defShare, kPer, yPer, excl, r, kShare, yShare, kodai, yuzu, cardTotal:kodai+yuzu};
+  const kodai=kShare+kPer+kRent;
+  const yuzu=yShare+yPer+yRent;
+  return {share, defShare, kPer, yPer, excl, r, kShare, yShare, rent, kRent, yRent, kodai, yuzu, cardTotal:kodai+yuzu};
 }
+/* ===== 家賃（設定の「開始の月」から、使った月が同じ期間に毎月1行） =====
+   明細として保存はしない。計算のたびに作るので、二重にならず、設定を直せば全部の月に効く。 */
+function rentYuzu(rt){ return Math.max(0, Math.min(rt.total, Math.round(rt.total/2)-(rt.minus||0))); }
+function periodUseYm(p){ return p.pay?useRangeOf(p.pay).ym:(periodExplicitYm(p)||periodMainYm(p)); }
+function rentItemsOf(p){
+  const rt=db.rent;
+  if(!rt||!(rt.total>0)||!/^\d{4}-\d{2}$/.test(rt.from||'')) return [];
+  const ym=periodUseYm(p);
+  if(!ym||ym<rt.from) return [];
+  if(db.periods.find(x=>periodUseYm(x)===ym)!==p) return [];   // 同じ月の期間が2つあっても、家賃は先頭の1つにだけ
+  return [{id:'rent_'+ym, src:'rent', date:ym+'-01', desc:'家賃', amount:rt.total, tag:'share', yAmt:rentYuzu(rt)}];
+}
+function allItems(p){ return p.items.concat(rentItemsOf(p)); }
 // 個別のわけかたを設定した共同明細（画像や注意書きで使う）
 function customRatioItems(p){ return p.items.filter(it=>(it.tag||'share')==='share'&&it.ratio!=null); }
 function ratioLabel(r){ return r+'：'+(100-r); }
@@ -736,7 +750,7 @@ function render(){
   const p=curPeriod();
   document.getElementById('periodName').textContent=pname(p);
   document.getElementById('periodSub').textContent=periodSubText(p);
-  document.getElementById('body').innerHTML = p.items.length? renderPeriod(p) : renderEmpty();
+  document.getElementById('body').innerHTML = allItems(p).length? renderPeriod(p) : renderEmpty();
   bindBody(p);
 }
 // お支払い日（覚えていなければ自動の名前から推した日）
@@ -752,7 +766,7 @@ function periodSubText(p){
     const rg=useRangeOf(pay);
     if(!(rg.from.slice(8)==='01'&&rg.to.slice(0,7)===rg.from.slice(0,7))) bits.push('利用 '+mdShort(rg.from)+'〜'+mdShort(rg.to));
   }
-  bits.push(p.items.length+'件');
+  bits.push(allItems(p).length+'件');
   return bits.join('・');
 }
 function renderEmpty(){
@@ -787,7 +801,7 @@ function stmtHtml(p){
   }
   return '<div class="banner warn">'+ic('alert')+'<span class="bt">明細が請求 <b class="num">'+yen(p.billed)+'</b> より<small class="num">明細 '+csv.length+'件・'+yen(sum)+'</small>'+dup+'</span><b class="num">'+yen(Math.abs(diff))+(diff>0?' 多い':' 少ない')+'</b></div>';
 }
-function sbHtml(share,per){ return '<span>共同 '+yen(share)+'</span>'+(per?'<span>＋個人 '+yen(per)+'</span>':''); }
+function sbHtml(share,per,rent){ return '<span>共同 '+yen(share)+'</span>'+(per?'<span>＋個人 '+yen(per)+'</span>':'')+(rent?'<span>＋家賃 '+yen(rent)+'</span>':''); }
 function rrHtml(r){ return '<span class="dot k"></span>'+r+'<i>:</i>'+(100-r)+'<span class="dot y"></span>'; }
 function renderPeriod(p){
   const c=calc(p), r=c.r;
@@ -796,12 +810,13 @@ function renderPeriod(p){
     '<div class="lab">'+ic('card','ic-sm')+(hasManual(p)?'合計（手動込み）':'合計')+'</div>'+
     '<div class="hero"><span class="counter" data-cnt="total"></span></div>'+
     '<div class="split">'+
-      '<div class="pc k"><div class="nm"><span class="dot k"></span><span>'+esc(nm('kodai'))+'</span></div><div class="vl"><span class="counter" data-cnt="kodai"></span></div><div class="sb num">'+sbHtml(c.kShare,c.kPer)+'</div></div>'+
-      '<div class="pc y"><div class="nm"><span class="dot y"></span><span>'+esc(nm('yuzu'))+'</span></div><div class="vl"><span class="counter" data-cnt="yuzu"></span></div><div class="sb num">'+sbHtml(c.yShare,c.yPer)+'</div></div>'+
+      '<div class="pc k"><div class="nm"><span class="dot k"></span><span>'+esc(nm('kodai'))+'</span></div><div class="vl"><span class="counter" data-cnt="kodai"></span></div><div class="sb num">'+sbHtml(c.kShare,c.kPer,c.kRent)+'</div></div>'+
+      '<div class="pc y"><div class="nm"><span class="dot y"></span><span>'+esc(nm('yuzu'))+'</span></div><div class="vl"><span class="counter" data-cnt="yuzu"></span></div><div class="sb num">'+sbHtml(c.yShare,c.yPer,c.yRent)+'</div></div>'+
     '</div>'+
     '<div class="bd num"><span><span class="dot"></span>共同 <b>'+yen(c.share)+'</b></span>'+
       (c.kPer?'<span><span class="dot k"></span>個人 <b>'+yen(c.kPer)+'</b></span>':'')+
       (c.yPer?'<span><span class="dot y"></span>個人 <b>'+yen(c.yPer)+'</b></span>':'')+
+      (c.rent?'<span>'+ic('home','ic-sm')+'家賃 <b>'+yen(c.rent)+'</b></span>':'')+
       (c.excl?'<span><span class="dot x"></span>対象外 <b>'+yen(c.excl)+'</b></span>':'')+
     '</div>'+
   '</section>'+
@@ -813,12 +828,12 @@ function renderPeriod(p){
   '</section>'+
   '<button class="btn-quiet" type="button" id="billBtn">'+ic('receipt')+esc(nm('yuzu'))+'へ請求書</button>';
 
-  h+='</div><div class="col-list"><div class="listhead"><h2>'+ic('list')+'明細</h2><span class="num">'+p.items.length+'件</span></div>'+
+  h+='</div><div class="col-list"><div class="listhead"><h2>'+ic('list')+'明細</h2><span class="num">'+allItems(p).length+'件</span></div>'+
     '<div class="gnav" id="filters"></div><div id="entries" role="tabpanel">'+entriesHtml(p)+'</div></div></div>';
   return h;
 }
 function entriesHtml(p){
-  let items=[...p.items].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.id>a.id?1:-1));
+  let items=allItems(p).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.id>a.id?1:-1));
   if(curFilter!=='all') items=items.filter(it=>(it.tag||'share')===curFilter);
   if(!items.length) return '<div class="none">'+ic('list')+'<span>なし</span></div>';
   let h='', last=null;
@@ -827,8 +842,9 @@ function entriesHtml(p){
     const tag=it.tag||'share';
     const av={share:'<span class="av">'+ic('users','ic-sm')+'</span>', kodai:'<span class="av k">'+esc(initial(nm('kodai')))+'</span>',
       yuzu:'<span class="av y">'+esc(initial(nm('yuzu')))+'</span>', excl:'<span class="av x">'+ic('ban','ic-sm')+'</span>'}[tag];
-    const word={share:'共同',kodai:nm('kodai'),yuzu:nm('yuzu'),excl:'対象外'}[tag];
-    h+='<button type="button" class="entry '+(tag==='excl'?'excl':'')+'" data-id="'+it.id+'">'+av+
+    let word={share:'共同',kodai:nm('kodai'),yuzu:nm('yuzu'),excl:'対象外'}[tag], avH=av;
+    if(it.src==='rent'){ avH='<span class="av">'+ic('home','ic-sm')+'</span>'; word='毎月・'+nm('yuzu')+' '+yen(it.yAmt); }
+    h+='<button type="button" class="entry '+(tag==='excl'?'excl':'')+'" data-id="'+it.id+'">'+avH+
       '<span class="info"><span class="ti">'+esc(dispName(it)||'（無題）')+'</span>'+
         '<span class="me">'+esc(word)+(tag==='share'&&it.ratio!=null?' '+ratioLabel(it.ratio):'')+(it.src==='manual'?ic('pen','ic-sm')+'<span class="sr">手動</span>':'')+'</span></span>'+
       '<span class="amt num '+(it.amount<0?'minus':'')+'">'+yen(it.amount)+'</span></button>';
@@ -836,7 +852,10 @@ function entriesHtml(p){
   return h+'</div>';
 }
 function bindEntries(p){
-  document.querySelectorAll('#entries .entry').forEach(el=>el.onclick=()=>openItem(p, p.items.find(x=>x.id===el.dataset.id)));
+  document.querySelectorAll('#entries .entry').forEach(el=>el.onclick=()=>{
+    if(el.dataset.id.indexOf('rent_')===0) return openRent();   // 家賃の行は設定から直す
+    openItem(p, p.items.find(x=>x.id===el.dataset.id));
+  });
 }
 // 回る数字：同じ期間で値が変わったときだけ回す（期間を切り替えたら、そのまま出す）
 const CNT={}; let cntPeriod=null; const cntPrev={};
@@ -845,7 +864,7 @@ function bindBody(p){
   const mf=document.getElementById('mixFix'); if(mf) mf.onclick=()=>openSplitSheet(p);
   const mo=document.getElementById('mixOk');
   if(mo) mo.onclick=()=>{ curPeriod().mixOk=periodYms(curPeriod()).join(','); save(); toast('このままにします'); };
-  if(!p.items.length){ cntPeriod=p.id; Object.keys(cntPrev).forEach(k=>delete cntPrev[k]); return; }
+  if(!allItems(p).length){ cntPeriod=p.id; Object.keys(cntPrev).forEach(k=>delete cntPrev[k]); return; }
   const c=calc(p), vals={total:Math.round(c.cardTotal), kodai:Math.round(c.kodai), yuzu:Math.round(c.yuzu)};
   document.querySelectorAll('[data-cnt]').forEach(h=>{
     const k=h.dataset.cnt, cn=counter(h); CNT[k]=cn;
@@ -880,8 +899,8 @@ function liveSplit(p,v){
   if(CNT.kodai){ CNT.kodai.set(k,false); cntPrev.kodai=k; }
   if(CNT.yuzu){ CNT.yuzu.set(y,false); cntPrev.yuzu=y; }
   const sk=document.querySelector('.pc.k .sb'), sy=document.querySelector('.pc.y .sb');
-  if(sk) sk.innerHTML=sbHtml(c.kShare,c.kPer);
-  if(sy) sy.innerHTML=sbHtml(c.yShare,c.yPer);
+  if(sk) sk.innerHTML=sbHtml(c.kShare,c.kPer,c.kRent);
+  if(sy) sy.innerHTML=sbHtml(c.yShare,c.yPer,c.yRent);
 }
 
 /* ============ 日付ヘルパ ============ */
@@ -1088,7 +1107,7 @@ function openPeriods(){
       :'<span class="ngc">'+ic('alert','ic-sm')+'<span class="sr">請求と差額あり</span></span>'):'';
     return '<button type="button" class="prow '+(p.id===db.current?'on':'')+'" data-id="'+p.id+'"'+(p.id===db.current?' aria-current="true"':'')+'>'+
       '<span class="pic">'+ic('cal')+'</span>'+
-      '<span class="pi"><span class="pnm">'+esc(pname(p))+'</span><span class="pmt num">'+(periodPay(p)?'<span>'+esc(payNote(periodPay(p)))+'</span>':'')+'<span>'+p.items.length+'件・'+yen(c.cardTotal)+'</span>'+chk+'</span></span>'+
+      '<span class="pi"><span class="pnm">'+esc(pname(p))+'</span><span class="pmt num">'+(periodPay(p)?'<span>'+esc(payNote(periodPay(p)))+'</span>':'')+'<span>'+allItems(p).length+'件・'+yen(c.cardTotal)+'</span>'+chk+'</span></span>'+
       '<span class="pv num"><small><span class="dot k"></span><span>'+esc(nm('kodai'))+'</span></small>'+yen(c.kodai)+'</span></button>';
   }).join('');
   openSheet(
@@ -1140,6 +1159,7 @@ function openSettings(){
     '<div class="field"><label class="fl" for="bankTa">'+ic('bank','ic-sm')+'振込先</label>'+
       '<textarea class="in" id="bankTa" rows="4" placeholder="例：〇〇銀行&#10;〇〇支店&#10;普通 1234567&#10;名義 ヤマダタロウ">'+esc(bankLines().join('\n'))+'</textarea></div>'+
     '<div class="slist">'+
+      srow('rentBtn','home','家賃',db.rent?esc(ymJa(db.rent.from))+'から・'+esc(nm('yuzu'))+' '+yen(rentYuzu(db.rent)):'なし')+
       srow('shareBtn','link','共有',esc(nm('yuzu'))+'の端末と同期')+
       srow('renameP','pen','期間の編集',esc(pname(p)))+
       srow('setShareAll','users','全部を共同に','')+
@@ -1159,6 +1179,7 @@ function openSettings(){
   dayIn('#closeD','closeDay',31); dayIn('#payD','payDay',26);
   ov.querySelector('#defR').onchange=e=>{ let v=Math.max(0,Math.min(100,Math.round(+e.target.value||0))); db.defaultRatio=v; e.target.value=v; save({noRender:true}); };
   ov.querySelector('#bankTa').onchange=e=>{ db.bank=e.target.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,6); save({noRender:true}); };
+  ov.querySelector('#rentBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openRent,260); };
   ov.querySelector('#shareBtn').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openShare,260); };
   ov.querySelector('#renameP').onclick=()=>{ commitNames(); closeSheet(); setTimeout(openRename,260); };
   armed(ov.querySelector('#setShareAll'), ()=>{ curPeriod().items.forEach(it=>it.tag='share'); commitNames(); save(); closeSheet(); toast('共同に戻しました'); });
@@ -1172,6 +1193,43 @@ function openSettings(){
     commitNames(); save(); closeSheet(); toast('削除しました');
   });
 }
+/* ============ 家賃 ============ */
+function openRent(){
+  const rt=db.rent||{};
+  openSheet(
+    sheetHead('home','家賃')+
+    '<div class="field"><label class="fl" for="rentTotal">'+ic('yen','ic-sm')+'合計（毎月）</label>'+
+      '<div class="yenbox"><input class="in num" type="number" inputmode="numeric" id="rentTotal" placeholder="0" value="'+(rt.total||'')+'"><span class="u">¥</span></div></div>'+
+    '<div class="grid2">'+
+      '<div class="field"><label class="fl" for="rentMinus"><span class="dot y"></span>半分から引く</label>'+
+        '<div class="yenbox"><input class="in num" type="number" inputmode="numeric" id="rentMinus" placeholder="0" value="'+(rt.minus||'')+'" aria-label="'+esc(nm('yuzu'))+'の負担：半分から引く額"><span class="u">¥</span></div></div>'+
+      '<div class="field"><label class="fl" for="rentFrom">'+ic('cal','ic-sm')+'開始の月</label><input class="in" type="month" id="rentFrom" value="'+esc(rt.from||'')+'"></div>'+
+    '</div>'+
+    '<div class="split" id="rentPrev" aria-live="polite"></div>'+
+    '<button class="btn primary wide" type="button" id="rentSave">'+ic('check')+'保存</button>'+
+    (db.rent?'<div class="delrow"><span class="dl">'+ic('trash','ic-sm')+'家賃をやめる</span><span id="rentDelHost"></span></div>':''),
+    true
+  );
+  const val=()=>({ total:Math.round(+ov.querySelector('#rentTotal').value||0), minus:Math.round(+ov.querySelector('#rentMinus').value||0), from:ov.querySelector('#rentFrom').value });
+  const prev=()=>{
+    const v=val(), y=v.total>0?rentYuzu(v):0, k=v.total>0?v.total-y:0;
+    ov.querySelector('#rentPrev').innerHTML=
+      '<div class="pc k"><div class="nm"><span class="dot k"></span><span>'+esc(nm('kodai'))+'</span></div><div class="vl num">'+yen(k)+'</div></div>'+
+      '<div class="pc y"><div class="nm"><span class="dot y"></span><span>'+esc(nm('yuzu'))+'</span></div><div class="vl num">'+yen(y)+'</div></div>';
+  };
+  ['#rentTotal','#rentMinus'].forEach(id=>ov.querySelector(id).addEventListener('input',prev));
+  prev();
+  ov.querySelector('#rentSave').onclick=()=>{
+    const v=val();
+    if(!(v.total>0)){ toast('合計を入れてください'); return; }
+    if(!/^\d{4}-\d{2}$/.test(v.from)){ toast('開始の月を入れてください'); return; }
+    db.rent={total:v.total, minus:Math.max(0,v.minus), from:v.from};
+    save(); closeSheet(); toast('家賃を保存しました');
+  };
+  const dh=ov.querySelector('#rentDelHost');
+  if(dh) deleteButton(dh, '家賃', ()=>{ delete db.rent; save(); closeSheet(); toast('家賃をやめました'); });
+}
+
 /* ============ 共有（同じデータを2台で同期） ============ */
 function shareUrl(){
   // 本番URL（このページ自身）。localhostでもpathnameで正しいパスになる
@@ -1231,7 +1289,7 @@ function openRename(){
    1枚のPNGにして、LINE等でそのまま送れるようにする。Canvasに直接描くので外部ライブラリ不要。 */
 function bankLines(){ return (db.bank||[]).map(s=>String(s||'').trim()).filter(Boolean).slice(0,6); }
 // 手動で足した明細（光熱費など別カード払い）が1件でもある期間は「カード合計」と呼べない
-function hasManual(p){ return p.items.some(it=>it.src==='manual'); }
+function hasManual(p){ return p.items.some(it=>it.src==='manual')||rentItemsOf(p).length>0; }
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 // 幅に収まらない文字列は末尾を「…」に詰める
 function ellipsisText(c,str,maxW){str=String(str||'');if(c.measureText(str).width<=maxW)return str;let s=str;while(s.length&&c.measureText(s+'…').width>maxW)s=s.slice(0,-1);return s+'…';}
@@ -1317,6 +1375,11 @@ function buildBillCanvas(p){
       subs:['カードに載らない光熱費などをこちらに足しています'],
       items:manShare.map(it=>({date:it.date,name:dispName(it),
         amount:(it.ratio!=null?yOf(it):manDefY[manDef.indexOf(it)]), note:ratioNote(it)}))});
+  }
+  if(c.yRent){
+    const rt=db.rent;
+    blocks.push({label:'家賃', amount:c.yRent,
+      subs:['家賃 '+yen(c.rent)+' の半分'+(rt&&rt.minus?'から '+yen(rt.minus)+' を引いた分':'')], items:[]});
   }
   if(c.yPer!==0){
     const per=p.items.filter(it=>it.tag==='yuzu').sort(byDate);
