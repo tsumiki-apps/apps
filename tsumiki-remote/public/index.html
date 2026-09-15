@@ -761,6 +761,10 @@
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .fcell.dim .fcname{color:var(--dim)}
   .fcsub{font-size:10px;color:var(--dim)}
+  /* 版のフォルダのうち、いちばん新しいもの（2026-09-15）。字は1語だけ */
+  .fbadge{flex:0 0 auto;font-size:11px;font-weight:700;line-height:1;color:var(--bg);
+    background:var(--accent);border-radius:999px;padding:4px 8px}
+  .fcell .fbadge{margin-top:-2px}
   /* 種類ごとの色。フォルダだけ塗り、あとは線画にする＝一覧が青い点で読める */
   .ic-folder{color:var(--tap)}
   .ic-img{color:#2ec4a6}
@@ -4779,6 +4783,48 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function fParent(rel) { var i = rel.lastIndexOf('/'); return i < 0 ? '' : rel.slice(0, i); }
   function fBase(rel) { return rel.split('/').pop(); }
 
+  // 版と種類のフォルダ（2026-09-15）。置き場は tsumiki_out.py が
+  //   <プロジェクト>/<成果物>/V<番号>/<種類>/<ファイル>
+  // の形で作る。「画像」「V2」だけでは何のことか分からないので、
+  // 一覧に出すときは「ストーリー_募集 V2 ・ 画像」と読める名前に組み立てる
+  var F_VER_RE = /^[Vv](\d+)$/;
+  var F_KINDS = { '画像': 1, '書類': 1, '動画・音声': 1, 'メモ': 1, 'データ': 1 };
+
+  function fLabel(rel) {
+    if (!rel) return '制作物';
+    var p = rel.split('/'), n = p.length, last = p[n - 1];
+    if (F_KINDS[last] && n >= 3 && F_VER_RE.test(p[n - 2])) {
+      return p[n - 3] + ' ' + p[n - 2].toUpperCase() + ' ・ ' + last;
+    }
+    if (F_VER_RE.test(last) && n >= 2) return p[n - 2] + ' ' + last.toUpperCase();
+    return last;
+  }
+
+  // フォルダを辿っているときは、上の題に場所が出ているので素の名前でよい。
+  // 「最近」「検索」「まとめて◯件」では場所が見えないので組み立てた名前にする
+  function fRowName(e) {
+    if (e.dir && (e.clump || fQuery || fMode === 'recent' || fMode === 'clump')) return fLabel(e.rel);
+    return e.name;
+  }
+
+  // 版のフォルダは新しい順（V10 が V9 より上）。いちばん上に「最新」の札。
+  // 名前順のままだと V10 が V1 と V2 のあいだに入り、最新がどれか分からない
+  function fOrderVersions(list) {
+    var vs = list.filter(function (e) { return e.dir && F_VER_RE.test(e.name); });
+    if (!vs.length) return list;
+    var num = function (e) { return +F_VER_RE.exec(e.name)[1]; };
+    vs.sort(function (a, b) { return num(b) - num(a); });
+    vs.forEach(function (e, i) { e.latest = i === 0; });
+    return vs.concat(list.filter(function (e) { return !(e.dir && F_VER_RE.test(e.name)); }));
+  }
+
+  function fBadge() {
+    var s = document.createElement('span');
+    s.className = 'fbadge';
+    s.textContent = '最新';
+    return s;
+  }
+
   // 上の帯・大見出し・札の出しわけ。どの状態からでもここ1か所で決まるようにする
   function fChrome() {
     var title;
@@ -4786,7 +4832,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 出先で読むものなので、英語だと一拍止まる）。ただし**フォルダ名と
     // ファイル名はそのまま**＝置き場の実物の名前を書き換えて見せない
     if (fQuery) title = '検索';
-    else if (fMode === 'browse' || fMode === 'clump') title = fDir ? fBase(fDir) : '制作物';
+    else if (fMode === 'browse' || fMode === 'clump') title = fDir ? fLabel(fDir) : '制作物';
     else title = '最近';
     // ⚠️ 「最近」「制作物」は**出さない**（2026-09-12 本人の指示）。
     //    札に「最近／フォルダ」と書いてあり、開いた場所もそこしか無いので、
@@ -4810,7 +4856,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       fBackLabel.textContent = '最近';
     } else if (!fQuery && fMode === 'browse' && fDir) {
       var par = fParent(fDir);
-      fBackLabel.textContent = par ? fBase(par) : '制作物';
+      fBackLabel.textContent = par ? fLabel(par) : '制作物';
     } else if (fQuery) {
       fBackLabel.textContent = '戻る';
     } else {
@@ -4870,7 +4916,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // すぐ上のフォルダ名だけで「どこの話か」は十分わかる
     if (fQuery || fMode === 'recent') {
       var par = fParent(e.rel);
-      bits.push(par ? fBase(par) : '制作物');
+      bits.push(par ? fLabel(par) : '制作物');
     }
     var w = fWhenOf(e);
     if (w) bits.push(w);
@@ -4946,7 +4992,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     main.className = 'fmain';
     var n = document.createElement('span');
     n.className = 'fname';
-    n.textContent = e.name;                                 // 名前は必ず textContent
+    n.textContent = fRowName(e);                            // 名前は必ず textContent
     main.appendChild(n);
     var sub = fSubOf(e);
     if (sub) {
@@ -4956,6 +5002,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       main.appendChild(s2);
     }
     b.appendChild(main);
+    if (e.latest) b.appendChild(fBadge());
     if (e.dir) {
       var c = document.createElement('span');
       c.className = 'fchev';
@@ -5003,8 +5050,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (fSelecting && fPickable(e)) { b.dataset.rel = e.rel; b.appendChild(fPickMark()); }
     var n = document.createElement('span');
     n.className = 'fcname';
-    n.textContent = e.name;
+    n.textContent = fRowName(e);
     b.appendChild(n);
+    if (e.latest) b.appendChild(fBadge());
     if (e.clump || (e.dir && typeof e.count === 'number')) {
       var c = document.createElement('span');
       c.className = 'fcsub';
@@ -5038,6 +5086,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function fPaint(entries) {
+    if (fMode === 'browse' && !fQuery) entries = fOrderVersions(entries);
     fLast = entries;
     fEager = FIRST_THUMBS;
     fList.innerHTML = '';
