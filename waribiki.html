@@ -83,9 +83,10 @@ button{-webkit-tap-highlight-color:transparent}
 .head h2 .ic{color:var(--ink-mid)}
 
 /* ---- 割引率 ---- */
-.rate{display:flex; align-items:center; gap:12px}
-.rate-ic{width:48px; height:48px; flex:none; border-radius:14px; display:grid; place-items:center; background:var(--accent-wash); color:var(--accent-2)}
+.rate-top{display:flex; align-items:center; gap:12px}
+.rate-ic{position:relative; width:48px; height:48px; flex:none; border-radius:14px; display:grid; place-items:center; background:var(--accent-wash); color:var(--accent-2)}
 .rate-ic .ic{width:24px; height:24px; stroke-width:2}
+.badge{position:absolute; top:-6px; right:-6px; min-width:22px; height:22px; padding:0 6px; border-radius:999px; background:var(--ink); color:var(--paper); font-size:12px; font-weight:700; line-height:22px; text-align:center; font-variant-numeric:tabular-nums; box-shadow:0 0 0 2px var(--surface)}
 .rate-field{
   flex:1; min-width:0; display:flex; align-items:baseline; gap:6px; padding:4px 16px; min-height:64px;
   border:1px solid var(--line-2); border-radius:12px; background:var(--surface); cursor:text;
@@ -108,7 +109,7 @@ button{-webkit-tap-highlight-color:transparent}
 }
 .item:first-child{border-top:0; padding-top:4px}
 .item.gone{opacity:0; transform:translateX(12px)}
-.line{grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0}
+.line{grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0}
 .field{
   display:flex; align-items:center; gap:6px; min-height:48px; padding:0 14px; min-width:0;
   border:1px solid var(--line-2); border-radius:12px; background:var(--surface); cursor:text;
@@ -117,13 +118,20 @@ button{-webkit-tap-highlight-color:transparent}
 .field:focus-within{border-color:var(--accent)}
 .field input{flex:1; min-width:0; width:100%; border:0; background:none; outline:none; font-size:16px; padding:10px 0}
 .field input::placeholder{color:var(--ink-soft)}
-.field.price{flex:1 1 9.5em}
-.res{display:flex; align-items:center; gap:8px; margin-left:auto; flex:none}
+.field.price{flex:1 1 6.5em}
+/* 製品ごとの割引率：空なら上の率に従う（薄い字）。入れると黄土の洗い色になる */
+.field.rate{flex:0 0 4.8em; padding:0 10px; gap:2px}
+.field.rate input{text-align:right; font-variant-numeric:tabular-nums; font-size:16px}
+.field.rate .pct{color:var(--ink-soft)}
+.field.rate.own{background:var(--accent-wash); border-color:var(--accent-wash)}
+.field.rate.own input, .field.rate.own .pct{color:var(--accent-2); font-weight:700}
+.field.rate.own:focus-within{border-color:var(--accent)}
+.res{display:flex; align-items:center; gap:4px; margin-left:auto; flex:none}
 .field.price input{text-align:right; font-variant-numeric:tabular-nums; font-size:17px}
 .yen{color:var(--ink-mid); font-weight:700}
-.arrow{color:var(--ghost); width:18px; height:18px}
+.arrow{color:var(--ghost); width:16px; height:16px}
 .after{
-  min-width:5.5em; font-size:19px; font-weight:700; line-height:1.3;
+  min-width:4.6em; font-size:18px; font-weight:700; line-height:1.3;
   font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap
 }
 .after.none{color:var(--ghost); font-weight:400}
@@ -166,6 +174,9 @@ th{white-space:nowrap}
 td.nm{overflow-wrap:anywhere; font-weight:500; min-width:7em}      /* 値段が9桁でも製品名が1字ずつ縦に並ばないよう、足りない幅は横にスクロール */
 td.nm.untitled{color:var(--ink-soft); font-weight:400}
 td.o{color:var(--ink-mid)}
+/* 率がばらばらのときだけ、製品名の横に率の札（列を増やすと狭い幅で割引後が切れるため） */
+.rpill{display:inline-block; margin-left:6px; padding:0 8px; border-radius:999px; background:var(--accent-wash); color:var(--accent-2); font-size:13px; font-weight:700; line-height:22px; white-space:nowrap; vertical-align:1px; font-variant-numeric:tabular-nums}
+@media (max-width:600px){ .rpill{display:block; width:fit-content; margin:4px 0 0} }   /* 狭い幅では名前の下に置き、表の幅を広げない */
 td.a{font-weight:700}
 tfoot td{border-bottom:0; padding-top:14px; font-weight:700; vertical-align:middle}
 tfoot td.o{font-weight:400}
@@ -268,8 +279,8 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
   <div class="layout">
     <div class="stack">
       <section class="card">
-        <div class="rate">
-          <span class="rate-ic" aria-hidden="true"><svg class="ic"><use href="#i-percent"/></svg></span>
+        <div class="rate-top">
+          <span class="rate-ic"><svg class="ic" aria-hidden="true"><use href="#i-percent"/></svg><span class="badge" id="own-count" hidden></span></span>
           <label class="rate-field" id="rate-field">
             <span class="sr">割引率</span>
             <input id="rate" type="text" inputmode="decimal" placeholder="0" autocomplete="off" enterkeyhint="done">
@@ -352,7 +363,7 @@ var FONT = '"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-s
 
 /* ================= 状態 ================= */
 function uid(){ return Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
-function newItem(){ return {id:uid(), name:'', price:null}; }
+function newItem(){ return {id:uid(), name:'', price:null, rate:''}; }
 function load(){
   try {
     var s = JSON.parse(localStorage.getItem(KEY) || 'null');
@@ -361,7 +372,7 @@ function load(){
         rate: typeof s.rate === 'string' ? s.rate : '',
         items: s.items.filter(function(it){ return it && typeof it.id === 'string'; }).map(function(it){
           var p = typeof it.price === 'number' && isFinite(it.price) && it.price >= 0 ? Math.floor(it.price) : null;
-          return {id:it.id, name:typeof it.name === 'string' ? it.name : '', price:p};
+          return {id:it.id, name:typeof it.name === 'string' ? it.name : '', price:p, rate:typeof it.rate === 'string' ? cleanRate(it.rate) : ''};
         })
       };
     }
@@ -385,19 +396,24 @@ function cleanRate(t){                                               /* 数字�
   if (i >= 0) t = t.slice(0, i + 1) + t.slice(i + 1).replace(/\./g, '').slice(0, 2);
   return t.slice(0, 6);
 }
-function rateBp(){                                                   /* 割引率を 1/100 % の整数で（12.5% → 1250） */
-  var n = parseFloat(state.rate);
+function bpOf(t){                                                    /* 割引率を 1/100 % の整数で（12.5% → 1250） */
+  var n = parseFloat(t);
   if (!isFinite(n) || n < 0) n = 0;
   return Math.round(Math.min(n, 100) * 100);
 }
-function rateLabel(){ var bp = rateBp(); return (bp % 100 ? (bp / 100).toFixed(bp % 10 ? 2 : 1) : String(bp / 100)) + '%'; }
+function rateBp(){ return bpOf(state.rate); }
+function normRate(v){ return /\d/.test(v || '') ? String(Math.round(parseFloat(v) * 100) / 100) : ''; }
+function hasOwn(it){ return /\d/.test(it.rate || ''); }
+function itemBp(it){ return hasOwn(it) ? bpOf(it.rate) : rateBp(); }   /* 製品に率が無ければ上の率 */
+function isMixed(list){ return list.some(function(it){ return itemBp(it) !== itemBp(list[0]); }); }
+function rateLabel(bp){ return (bp % 100 ? (bp / 100).toFixed(bp % 10 ? 2 : 1) : String(bp / 100)) + '%'; }
 function disc(price, bp){ return Math.floor(price * (10000 - bp) / 10000); }   /* 1円未満は切り捨て */
 function fmt(n){ return n.toLocaleString('ja-JP'); }
 function yen(n){ return '¥' + fmt(n); }
 function priced(){ return state.items.filter(function(it){ return it.price != null; }); }
 function totals(){
-  var bp = rateBp(), o = 0, a = 0;
-  priced().forEach(function(it){ o += it.price; a += disc(it.price, bp); });
+  var o = 0, a = 0;
+  priced().forEach(function(it){ o += it.price; a += disc(it.price, itemBp(it)); });
   return {o:o, a:a};
 }
 
@@ -470,6 +486,9 @@ function itemRow(it){
     '<div class="line">' +
       '<label class="field price"><span class="yen" aria-hidden="true">¥</span><span class="sr">元の値段</span>' +
         '<input type="text" inputmode="numeric" data-k="price" value="' + shownPrice(it) + '" data-prev="' + shownPrice(it) + '" placeholder="元の値段" autocomplete="off" enterkeyhint="done"></label>' +
+      '<label class="field rate' + (hasOwn(it) ? ' own' : '') + '"><span class="sr">この製品の割引率</span>' +
+        '<input type="text" inputmode="decimal" data-k="rate" value="' + esc(it.rate || '') + '" placeholder="' + esc(state.rate || '0') + '" autocomplete="off" enterkeyhint="done">' +
+        '<span class="pct" aria-hidden="true">%</span></label>' +
       '<span class="res"><svg class="ic arrow" aria-hidden="true"><use href="#i-arrow"/></svg>' +
       '<span class="after"></span></span>' +
     '</div></li>';
@@ -480,20 +499,26 @@ function renderItems(){
   renderAfters();
 }
 function renderAfters(){
-  var bp = rateBp();
+  var own = state.items.filter(hasOwn).length, badge = $('#own-count');
+  badge.hidden = own === 0;
+  badge.innerHTML = '<span class="sr">製品ごとの率 </span>' + own;
   Array.prototype.forEach.call($('#items').children, function(li){
-    var it = find(li.dataset.id), out = li.querySelector('.after');
+    var it = find(li.dataset.id), out = li.querySelector('.after'), ri = li.querySelector('[data-k=rate]');
     if (!it) return;
+    ri.placeholder = state.rate || '0';                              /* 空の欄には上の率を薄く見せる */
+    ri.setAttribute('aria-label', (it.name.trim() || '製品') + 'の割引率');
+    ri.parentNode.classList.toggle('own', hasOwn(it));
     if (it.price == null){ out.textContent = '—'; out.classList.add('none'); }
-    else { out.textContent = yen(disc(it.price, bp)); out.classList.remove('none'); }
+    else { out.textContent = yen(disc(it.price, itemBp(it))); out.classList.remove('none'); }
   });
 }
 function renderSummary(){
-  var bp = rateBp(), list = priced(), t = totals();
-  $('#rate-chip').textContent = rateLabel() + ' OFF';
-  $('#rows').innerHTML = list.map(function(it, i){
-    var nm = it.name.trim();
-    return '<tr><td class="nm' + (nm ? '' : ' untitled') + '">' + esc(nm || '製品') + '</td>' +
+  var list = priced(), t = totals(), mixed = isMixed(list);
+  $('#rate-chip').textContent = rateLabel(list.length ? itemBp(list[0]) : rateBp()) + ' OFF';
+  $('#rate-chip').hidden = mixed;                                    /* 率がばらばらなら、上の札はやめて製品名の横に札を出す */
+  $('#rows').innerHTML = list.map(function(it){
+    var nm = it.name.trim(), bp = itemBp(it);
+    return '<tr><td class="nm' + (nm ? '' : ' untitled') + '">' + esc(nm || '製品') + (mixed ? '<span class="sr">、割引 </span><span class="rpill">' + rateLabel(bp) + '</span>' : '') + '</td>' +
       '<td class="o num">' + yen(it.price) + '</td><td class="a num">' + yen(disc(it.price, bp)) + '</td></tr>';
   }).join('');
   var has = list.length > 0;
@@ -518,6 +543,12 @@ rateInput.addEventListener('input', function(e){
   if (parseFloat(v) > 100) v = '100';                                /* 100%より上は無い */
   if (v !== rateInput.value) rateInput.value = v;
   state.rate = v;
+  save(); renderAfters(); renderSummary();
+});
+rateInput.addEventListener('blur', function(){
+  var v = normRate(state.rate);
+  if (v === state.rate) return;
+  state.rate = rateInput.value = v;
   save(); renderAfters(); renderSummary();
 });
 rateInput.addEventListener('compositionend', function(){ rateInput.dispatchEvent(new Event('input')); });
@@ -548,14 +579,24 @@ $('#items').addEventListener('input', function(e){
     }
     inp.dataset.prev = shown;
     renderAfters();
+  } else if (inp.dataset.k === 'rate'){
+    var rv = cleanRate(inp.value);
+    if (parseFloat(rv) > 100) rv = '100';
+    if (rv !== inp.value) inp.value = rv;
+    it.rate = rv;
+    renderAfters();
   }
   save(); renderSummary();
 });
 $('#items').addEventListener('compositionend', function(e){ e.target.dispatchEvent(new Event('input', {bubbles:true})); });
 $('#items').addEventListener('focusout', function(e){                /* 欄を離れたら先頭の0を整える */
   var inp = e.target, li = inp.closest && inp.closest('.item'), it = li && find(li.dataset.id);
-  if (!it || inp.dataset.k !== 'price') return;
-  inp.value = inp.dataset.prev = shownPrice(it);
+  if (!it) return;
+  if (inp.dataset.k === 'price'){ inp.value = inp.dataset.prev = shownPrice(it); return; }
+  if (inp.dataset.k === 'rate' && normRate(it.rate) !== it.rate){
+    it.rate = inp.value = normRate(it.rate);
+    save(); renderAfters(); renderSummary();
+  }
 });
 $('#items').addEventListener('click', function(e){
   var del = e.target.closest('.del'), li = e.target.closest('.item');
@@ -655,15 +696,17 @@ function drawImage(){
     soft:cssVar('--img-soft'), line:cssVar('--img-line'), line2:cssVar('--img-line-2'),
     acc:cssVar('--img-accent-2'), wash:cssVar('--img-accent-wash'), good:cssVar('--img-good-ink'), goodWash:cssVar('--img-good-wash')
   };
-  var bp = rateBp(), list = priced(), t = totals();
-  var W = 1080, PAD = 48, CP = 52, X = PAD + CP, INNER = W - 2 * X, GAP = 32;
+  var list = priced(), t = totals(), mixed = isMixed(list);
+  if (!list.length) return Promise.reject(new Error('empty'));
+  var W = 1080, PAD = 48, CP = 52, X = PAD + CP, INNER = W - 2 * X, GAP = mixed ? 24 : 32;
   var F = function(w, px){ return w + ' ' + px + 'px ' + FONT; };
   var cv = document.createElement('canvas'), ctx = cv.getContext('2d');
 
   /* 1. 寸法を測る */
   var rows = list.map(function(it){
     var nm = it.name.trim();
-    return {nm:nm || '製品', untitled:!nm, o:yen(it.price), a:yen(disc(it.price, bp))};
+    var bp = itemBp(it);
+    return {nm:nm || '製品', untitled:!nm, r:rateLabel(bp), o:yen(it.price), a:yen(disc(it.price, bp))};
   });
   var sumO = yen(t.o), sumA = yen(t.a), diff = t.o - t.a;
   ctx.font = F(400, 34); var wO = ctx.measureText('元の値段').width;
@@ -671,7 +714,9 @@ function drawImage(){
   ctx.font = F(700, 38); var wA = ctx.measureText('割引後').width;
   rows.forEach(function(r){ wA = Math.max(wA, ctx.measureText(r.a).width); });
   ctx.font = F(700, 50); wA = Math.max(wA, ctx.measureText(sumA).width);
-  var colN = INNER - wO - wA - 2 * GAP;
+  var wR = 0;
+  if (mixed){ ctx.font = F(700, 32); wR = ctx.measureText('割引').width; rows.forEach(function(r){ wR = Math.max(wR, ctx.measureText(r.r).width); }); }
+  var colN = INNER - wO - wA - 2 * GAP - (mixed ? wR + GAP : 0);
   var LH = 54, RP = 26;
   ctx.font = F(500, 38);
   rows.forEach(function(r){ r.lines = wrap(ctx, r.nm, colN); r.h = r.lines.length * LH + RP * 2; });
@@ -685,13 +730,15 @@ function drawImage(){
   rr(ctx, PAD, PAD, W - PAD * 2, cardH, 40); ctx.fillStyle = C.surface; ctx.fill();
   ctx.lineWidth = 2; ctx.strokeStyle = C.line; ctx.stroke();
 
-  var y = PAD + CP, colO = X + INNER - wA - GAP, colA = X + INNER;
+  var y = PAD + CP, colO = X + INNER - wA - GAP, colA = X + INNER, colR = colO - wO - GAP;
   ctx.textBaseline = 'middle';
   /* 割引率の札と日付 */
-  var chip = rateLabel() + ' OFF';
-  ctx.font = F(700, 36); var cw = ctx.measureText(chip).width + 56;
-  rr(ctx, X, y + 4, cw, 68, 34); ctx.fillStyle = C.wash; ctx.fill();
-  ctx.fillStyle = C.acc; ctx.textAlign = 'left'; ctx.fillText(chip, X + 28, y + 39);
+  if (!mixed){                                                         /* 率がばらばらなら札は出さず、列で見せる */
+    var chip = rateLabel(itemBp(list[0])) + ' OFF';
+    ctx.font = F(700, 36); var cw = ctx.measureText(chip).width + 56;
+    rr(ctx, X, y + 4, cw, 68, 34); ctx.fillStyle = C.wash; ctx.fill();
+    ctx.fillStyle = C.acc; ctx.textAlign = 'left'; ctx.fillText(chip, X + 28, y + 39);
+  }
   var d = new Date(), ds = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');
   ctx.font = F(400, 30); ctx.fillStyle = C.soft; ctx.textAlign = 'right'; ctx.fillText(ds, colA, y + 39);
   y += HEAD;
@@ -699,7 +746,9 @@ function drawImage(){
   /* 列の見出し */
   ctx.font = F(500, 30); ctx.fillStyle = C.mid;
   ctx.textAlign = 'left'; ctx.fillText('製品', X, y + COLH / 2 - 4);
-  ctx.textAlign = 'right'; ctx.fillText('元の値段', colO, y + COLH / 2 - 4); ctx.fillText('割引後', colA, y + COLH / 2 - 4);
+  ctx.textAlign = 'right';
+  if (mixed) ctx.fillText('割引', colR, y + COLH / 2 - 4);
+  ctx.fillText('元の値段', colO, y + COLH / 2 - 4); ctx.fillText('割引後', colA, y + COLH / 2 - 4);
   y += COLH;
   ctx.fillStyle = C.line2; ctx.fillRect(X, y - 2, INNER, 2);
 
@@ -709,6 +758,7 @@ function drawImage(){
     ctx.textAlign = 'left'; ctx.font = F(r.untitled ? 400 : 500, 38); ctx.fillStyle = r.untitled ? C.soft : C.ink;
     r.lines.forEach(function(l, k){ ctx.fillText(l, X, mid1 + k * LH); });
     ctx.textAlign = 'right';
+    if (mixed){ ctx.font = F(700, 32); ctx.fillStyle = C.acc; ctx.fillText(r.r, colR, mid1); }
     ctx.font = F(400, 34); ctx.fillStyle = C.mid; ctx.fillText(r.o, colO, mid1);
     ctx.font = F(700, 38); ctx.fillStyle = C.ink; ctx.fillText(r.a, colA, mid1);
     y += r.h;
