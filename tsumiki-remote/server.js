@@ -866,6 +866,99 @@ async function captureHistory(name, lines) {
   return r.ok ? r.out.replace(/\s+$/, '') : null;
 }
 
+// ------------------------------------- 入力欄に出ている「次の指示の下書き」
+//
+// Claude Code は返答のあと、**入力欄が空のときだけ**「次はこう言うのでは」という
+// 下書きを出す。これはプレースホルダとして描かれていて、字は薄い（dim）。
+// 本体（v2.1.273）の描画は `renderedPlaceholder = dim(候補)`、
+// 受け入れは Tab か → の1手（入力欄に入るだけで、送信はされない）。
+//
+// ⚠️ ここがこの機能のいちばん危ないところ:
+//    「薄い候補」と「本人が Mac で打ちかけて置いていった文」は、字面がまったく同じ。
+//    色を捨てて撮る（capture-pane -p）と見分けが付かず、帯を押した拍子に
+//    **打ちかけの文を勝手に送ってしまう**。なので色つき（-e）で撮り直して、
+//    薄さ（SGR 2）が掛かっているときだけ候補とみなす。
+//    読めない・迷ったときは「候補なし」に倒す（帯を出さない＝何も起きない）。
+const SUG_MAX = 300;
+const RE_ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
+const RE_RULE = /^\s*[─━]{10,}\s*$/;               // 入力欄を挟む2本の罫線
+const RE_PROMPT = /^❯\s(.*)$/;
+// ⚠️ `❯` の後ろは**ノーブレークスペース（U+00A0）**。ふつうの空白で書いた当てはめは
+//    いつまでも外れる（実測・2026-09-16。Mac の画面から数字を読むときの罠と同じ）。
+//    ついでに \s にも入らないので、先に普通の空白へ均す。
+function stripAnsi(s) { return String(s).replace(RE_ANSI, '').replace(/ /g, ' '); }
+
+// その行に「薄い字」（SGR 2）が掛かっているか。
+// ⚠️ 文字列の当てはめ（/\x1b\[2m/ など）で済ませない。2か所で足をすくわれる:
+//   ・tmux は色をまとめ直して書き出す＝`ESC[2m` ではなく **`ESC[0;2m`** で出てくる（実測）
+//   ・`ESC[38;5;2m` は「256色の2番（緑）」であって薄さではない。緩い当てはめだと
+//     これを薄さと読み、**本人の打ちかけを候補と勘違いして送ってしまう**
+// なので数字を1つずつ読み、拡張色（38/48）が食う数字は飛ばして数える。
+function hasDim(s) {
+  const re = /\x1b\[([0-9;]*)m/g;
+  let m;
+  while ((m = re.exec(String(s))) !== null) {
+    const ps = m[1].split(';');
+    for (let i = 0; i < ps.length; i++) {
+      const v = ps[i] === '' ? 0 : Number(ps[i]);
+      if (v === 38 || v === 48) {              // 38;5;n（256色）／38;2;r;g;b（24bit）
+        if (ps[i + 1] === '5') i += 2;
+        else if (ps[i + 1] === '2') i += 4;
+        continue;
+      }
+      if (v === 2) return true;
+    }
+  }
+  return false;
+}
+
+// 画面の下にある入力欄（罫線2本に挟まれた帯）の行番号。見つからなければ null。
+// ⚠️ 「❯ で始まる行」を下から探す作りにしない。履歴に残っている**自分の発言**も
+//    `❯ …` で始まるので、入力欄が空のときに古い発言を拾ってしまう（2026-09-16）。
+function inputBox(lines) {
+  let bottom = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (RE_RULE.test(stripAnsi(lines[i]))) { bottom = i; break; }
+  }
+  if (bottom < 1) return null;
+  let top = -1;
+  for (let i = bottom - 1; i >= 0; i--) {
+    if (RE_RULE.test(stripAnsi(lines[i]))) { top = i; break; }
+  }
+  if (top < 0 || bottom - top < 2) return null;
+  return { top, bottom };
+}
+
+async function readSuggestion(name, screenText) {
+  if (!NAME_RE.test(name)) return null;
+  // まず色なしの写し（もう撮ってある）で当たりを付ける。入力欄が空なら撮り直さない
+  // ＝ふだんの1.5秒ごとの巡回に tmux を1本も足さない
+  // ⚠️ 末尾の空行を先に落とす。画面は下に空行を抱えていることがあり、
+  //    そのまま20行だけ見ると入力欄が窓から外れる（実測・2026-09-16）
+  const flat = String(screenText || '').replace(/\s+$/, '').split('\n').slice(-20);
+  const box0 = inputBox(flat);
+  if (!box0) return null;
+  const m0 = RE_PROMPT.exec(stripAnsi(flat[box0.top + 1] || ''));
+  if (!m0 || !m0[1].trim()) return null;
+  const r = await tmux(['capture-pane', '-e', '-p', '-t', '=' + name + ':', '-S', '-20']);
+  if (!r.ok) return null;
+  const raw = r.out.split('\n');
+  const box = inputBox(raw);
+  if (!box) return null;
+  const first = raw[box.top + 1] || '';
+  const m = RE_PROMPT.exec(stripAnsi(first));
+  if (!m || !m[1].trim()) return null;
+  if (!hasDim(first)) return null;                  // 薄くない＝本人の打ちかけ。触らない
+  let text = m[1];
+  for (let j = box.top + 2; j < box.bottom; j++) {  // 折り返した続き（薄いあいだだけ）
+    const next = stripAnsi(raw[j]).trim();
+    if (!next || !hasDim(raw[j])) break;
+    text += next;
+  }
+  text = text.trim();
+  return text ? text.slice(0, SUG_MAX) : null;
+}
+
 // ------------------------------------------------------- 状態の判定ロジック
 
 // 「返答待ち」= エージェントが許可や選択を求めて止まっている画面の特徴
@@ -1391,16 +1484,15 @@ async function recentFiles(fresh) {
 //    だから**実際にできたものだけ**を残す＝置くのをやめた分の幽霊を出さない。
 const MADE_FILE = path.join(CONF_DIR, 'made.jsonl');
 
-async function pinnedSince(since, limit) {
+// 印を新しい順に読む（重複なし）。stat はしない＝ここは字を読むだけ。
+async function pinnedRows(limit) {
   let text = '';
   try { text = await within(fsp.readFile(MADE_FILE, 'utf8'), 1500, '印の控え'); }
   catch (e) { return []; }                       // まだ1件も無い＝ふつうのこと
   const lines = text.split('\n');
   const seen = new Set();
   const rows = [];
-  // 新しい順に見る。全部を stat すると置き場を何百回も叩くので、
-  // 見るのは出す数の3倍まで（その中に since より新しいものが無ければ、それ以上古い側にも無い）
-  for (let i = lines.length - 1; i >= 0 && rows.length < limit * 3; i--) {
+  for (let i = lines.length - 1; i >= 0 && rows.length < limit; i--) {
     const s = lines[i].trim();
     if (!s) continue;
     let o;
@@ -1412,21 +1504,53 @@ async function pinnedSince(since, limit) {
     seen.add(rel);
     rows.push({ rel, at: Number(o.at) || 0 });
   }
-  const out = [];
-  await Promise.all(rows.map(async (r) => {
+  return rows;
+}
+
+// 画面に出ている「名前」を、開ける場所に変える。
+//
+// 履歴の中の `使い方.png` を押して開くための照合（2026-09-16）。
+// **パスではなく名前で引く**のは、端末が51桁しかなく、長いパスは4行に割れたうえ
+// `… +2 lines` で省略され、右から別の字が割り込むため（実測）。名前なら1行に収まる。
+//
+// ⚠️ ここで iCloud を舐めない。画面を描くたびに呼ばれる口なので、探索を起こすと
+//    巡回のたびに置き場を叩くことになる。手元にある2つだけで答える：
+//      ① 「最近」の写し（recentCache。無ければ使わない）
+//      ② 印（made.jsonl）。写しが届いていないものはこちらで拾う（stat 1回）
+// 同じ名前が何本もあるときは**いちばん新しいもの**を返す。
+const LOOKUP_PINS = 400;
+
+async function lookupNames(names) {
+  // 索引がまだ無い／古いときは、裏で集め直しておく。
+  // ⚠️ **待たない。** ここで探索の3.5秒を待つと、名前が光るまで画面が止まって見える。
+  //    温まったかどうかは warming で返し、画面側はその回の「無かった」を覚えない
+  //    ＝温まったころにもう一度聞いてくる（recentFiles は相乗りするので二重には走らない）
+  const warming = !recentCache.list;
+  recentFiles(false).catch(() => {});
+  const want = new Set(names);
+  const best = new Map();                        // 名前 → {rel, mtime}
+  const take = (rel, mtime) => {
+    const base = rel.split('/').pop();
+    if (!want.has(base)) return;
+    if (!PREVIEW_EXT.test(base)) return;         // ここで開けない形式は光らせない
+    const cur = best.get(base);
+    if (!cur || mtime > cur.mtime) best.set(base, { rel, mtime });
+  };
+  if (recentCache.list) for (const f of recentCache.list) take(f.rel, f.mtime);
+  const pins = await pinnedRows(LOOKUP_PINS);
+  await Promise.all(pins.map(async (r) => {
+    const base = r.rel.split('/').pop();
+    if (!want.has(base) || !PREVIEW_EXT.test(base) || best.has(base)) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
-      if (!st.isFile()) return;
-      // 印を付けた時刻か、できあがった時刻。**どちらかが席の誕生より後なら出す**
-      // （席を作る直前に置き場を聞いて、作り終えたのは席ができた後、という順があるため）
-      if (r.at <= since && st.mtimeMs <= since) return;
-      out.push({ rel: r.rel, name: path.basename(r.rel), mtime: st.mtimeMs,
-                 size: st.size, open: PREVIEW_EXT.test(r.rel), pin: true });
-    } catch (e) { /* まだ無い・読めないものは出さない */ }
+      if (st.isFile()) best.set(base, { rel: r.rel, mtime: st.mtimeMs });
+    } catch (e) { /* もう無い・読めないものは光らせない */ }
   }));
-  out.sort((a, b) => b.mtime - a.mtime);
-  return out.slice(0, limit);
+  const out = {};
+  for (const [k, v] of best) out[k] = v.rel;
+  return { found: out, warming };
 }
+
 // 一度に書き出したかたまりは1行にまとめる。
 // ⚠️ 2026-09-12 実測：120件のうち**57件が9/6の色違いアイコン1回ぶん**で埋まり、
 //    遡れるのが6日ぶんしかなかった。まとめないかぎり枠は何度でも食いつぶされる。
@@ -1973,7 +2097,9 @@ const server = http.createServer(async (req, res) => {
         const text = await captureHistory(name, lines);
         if (text === null) return null;
         const { status, quietMs } = judge(name, (await captureScreenShared(name)) || '');
-        return { name, text, status, quietMs };
+        // 入力欄に出ている候補（薄い字の下書き）。無ければ null
+        const sug = await readSuggestion(name, text);
+        return { name, text, status, quietMs, sug };
       })();
       let got;
       try { got = await within(body, PANE_MS, '画面の読み取り'); }
@@ -2249,54 +2375,25 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // この席が始まってから、置き場に新しくできたもの（＝「さっき作ったもの」の帯）。
+    // 画面に出ている「名前」を、開ける場所に変える口。
     //
-    // 出先から「さっき作ったあれを見せて」に行き着くまで、これまでは
-    // ⋯ → 制作物を見る → 何段も下りる、だった。作ったものは席の画面の
-    // すぐそこに出しておく（2026-09-16）。
+    // 履歴を遡って `使い方.png` を見つけたとき、その字を押せば開く。そのための照合。
+    // 画面側は**まだ知らない名前だけ**をまとめて聞いてくる（同じ名前を二度聞かない）。
     //
-    // ⚠️ 集めるのは `/api/files` とまったく同じ `recentFiles`。**写しを共有する**ので、
-    //    帯のために iCloud をもう一度舐めることはない。ここで独自に走らせると、
-    //    45秒ごとに2本が iCloud を叩く形になり、上の「相乗り」の工夫が無駄になる。
-    // ⚠️ どの席が作ったかは**分からない**。分かるのは時刻だけなので、同じ時間に
-    //    別の席が書き出したものも混ざる。帯は「新しい順の上から数件」だけを出す
-    //    ＝混ざっても埋もれない形にしてある（画面側の limit）。
-    if (p === '/api/made' && req.method === 'GET') {
-      const since = Number(url.searchParams.get('since')) || 0;
-      const limit = Math.max(1, Math.min(30, Number(url.searchParams.get('limit')) || 12));
-      if (!since) return json(res, 400, { error: 'since が要ります' });
-      // 印のあるもの（つみきの道具が置いたもの）を先に取る。こちらは stat だけなので、
-      // 下の探索がこけても・途中までしか回らなくても必ず出る＝**枠の取り合いでは印が勝つ**。
-      // ⚠️ ただし**並べ替えは最後にまとめてやる**。印を先頭に固めると、帯の中で
-      //    時刻が 16:25 → 16:26 → … と前後して「新しい順」の約束が崩れる
-      //    （2026-09-16 実測で見つけた。印の値打ちは「必ず出ること」であって順番ではない）
-      const items = await pinnedSince(since, limit).catch(() => []);
-      const have = new Set(items.map((i) => i.rel));
-      let total = items.length;
-      const byNew = (a, b) => b.mtime - a.mtime;
+    // ⚠️ この口は iCloud を舐めない（lookupNames の注を見ること）。
+    if (p === '/api/lookup' && req.method === 'GET') {
+      const names = String(url.searchParams.get('names') || '')
+        .split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 200);
+      if (!names.length) return json(res, 200, { found: {} });
       try {
-        const r = await within(recentFiles(url.searchParams.has('fresh')),
-          RECENT_BUDGET_MS + 2500, 'iCloud の読み込み');
-        for (const f of r.list) {           // 新しい順に並んでいる
-          if (f.mtime <= since) break;      // それより古いものは以降ぜんぶ古い
-          if (have.has(f.rel)) continue;    // 印で出したものを二度出さない
-          total++;
-          if (items.length < limit) {
-            items.push({ rel: f.rel, name: f.name, mtime: f.mtime, size: f.size,
-                         open: f.open, pin: false });
-          }
-        }
-        items.sort(byNew);
-        return json(res, 200, { items, total, partial: r.partial });
+        const r = await within(lookupNames(names), 4000, '名前の照合');
+        return json(res, 200, r);
       } catch (e) {
-        // ⚠️ 帯は「出ないだけ」で済ませる。見に行っていないものの失敗を毎回
-        //    知らせると、席の画面が赤い字で埋まる。原因が要るときは
-        //    「制作物を見る」を開けば、あちらがちゃんと見分けて教えてくれる。
-        // 探索がこけても**印のぶんは出す**（ここが案2を足した意味）
-        items.sort(byNew);
-        return json(res, 200, { items, total, stale: true });
+        // 照らし合わせられなかった回は「見つからない」と同じ。字はそのまま出る
+        return json(res, 200, { found: {}, stale: true });
       }
     }
+
     // 画像やPDFを Mac に置く。Claude Code はファイルそのものを受け取れないが、
     // 「ファイルの場所」を渡せば読める。置いた場所を返して、入力欄に差し込む。
     // ⚠️ 中身は base64（元の約1.34倍）で届く。読み取りの上限はそのぶん多く要る
