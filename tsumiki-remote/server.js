@@ -683,6 +683,15 @@ function memoOf(name, created) {
 
 memoLoad();
 
+// 札の並び＝**作った時刻の新しい順**（左が新しい・右が古い）。2026-09-16
+// tmux の list-sessions は**名前順**で返す。名前は空いている番号を使い回す
+// （work2 を畳んだあとに作ると、また work2）ので、名前順のままだと新しい席が
+// 古い席のあいだに割り込む。同じ秒に作った席は番号の大きいほうを新しいとみなす
+function newestFirst(list) {
+  const num = (s) => Number(String(s.name).replace(/^\D+/, '')) || 0;
+  return list.slice().sort((a, b) => (b.created || 0) - (a.created || 0) || num(b) - num(a));
+}
+
 async function listSessions() {
   // 名札は**いちばん最後**に置く。中身は人が打つ自由な字なので、万一 SEP が
   // 混じっても、後ろを全部つなぎ直せば前の列（名前・モデル）は無事でいられる
@@ -707,7 +716,7 @@ async function listSessions() {
   for (const s of sessions) {
     if (s.hold) pausedSeat.add(s.name); else pausedSeat.delete(s.name);
   }
-  return { ok: true, sessions };
+  return { ok: true, sessions: newestFirst(sessions) };
 }
 
 // そのセッションについて「何が動いているか」「題名」「どこ」を1回で取る。
@@ -2052,7 +2061,7 @@ const server = http.createServer(async (req, res) => {
       // ここで空の配列を返すと、画面が「まだ作業場所がありません」に化けてしまう
       const listed = await within(listSessions(), LIST_MS, 'tmux の一覧').catch(() => null);
       const sessions = listed ? listed.sessions
-        : Array.from(lastSeat.values()).map((r) => ({ name: r.name, window: r.window, activity: 0, model: r.model }));
+        : newestFirst(Array.from(lastSeat.values()).map((r) => ({ name: r.name, window: r.window, activity: 0, model: r.model, created: r.created })));
       // ⚠️ 席ごとを**同時に**調べる（2026-09-02）。それまでは席の数だけ直列に
       // tmux を起こしていて、1回に 1+2N 本（席5つで11本）。1本の天井は5秒で、
       // 全体の締め切りは無かった。Mac が重いと /api/state だけで3〜20秒かかり、

@@ -528,6 +528,10 @@
      「色がついている＝いまそういう状態」と読めてしまい、印の意味が2つになる。
      2つは**同じ場所に交代で出す**＝いま出ているほうが「次にできること」 */
   #keys #khold,#keys #kunhold{padding-left:14px;padding-right:14px}
+  /* 定型文の札（画面の絵）。押すと入力欄に決まった文を入れるだけ＝送らない（2026-09-16）。
+     高さは文字の札と揃える（絵は 16px。12px の字＋上下 7px と同じ背丈になる） */
+  #keys #kperm{padding:5px 10px;line-height:0}
+  #keys #kperm svg{width:18px;height:18px}
   /* 添えた画像の札。以前は Mac 側の保存先パス（70文字ほど）を文字として入力欄に
      流し込んでいたが、1行の入力欄がそれだけで埋まり、本文を打ち直そうとタップすると
      カーソルがパスの中に落ちる → Backspace で末尾が欠け、送っても Claude 側では
@@ -1110,6 +1114,9 @@
     id="dmemo" class="memobox" type="text" maxlength="200" aria-label="この席のメモ" hidden
     autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"></div>
   <div id="keys">
+    <button id="kperm" aria-label="画面操作の許可を入力欄に入れる"><svg viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect
+      x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg></button>
     <button data-key="Escape">esc</button>
     <button id="khold">hold</button>
     <button id="kunhold" hidden>unhold</button>
@@ -1797,6 +1804,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     kgo: document.getElementById('kgo'),
     sug: document.getElementById('sug'),
     sugText: document.querySelector('#sug .sgt'),
+    kperm: document.getElementById('kperm'),
     khold: document.getElementById('khold'),
     kunhold: document.getElementById('kunhold'),
     dest: document.getElementById('dest'),
@@ -4211,6 +4219,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     el.kunhold.hidden = st !== 'paused';
   }
 
+  var PERM_TEXT = '画面操作許可\nClaude in chrome許可';
+
   el.keys.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
@@ -4219,6 +4229,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       var go = p && p.querySelector('[data-go]');
       if (!go) return toast('いまは「決定」を押す場面ではありません');
       return askMove(p, go);
+    }
+    // 定型文の札。よく打つ許可の一言を**入力欄に入れるだけ**で、送らない
+    // （書き足してから送れるように）。書きかけがあれば改行してその下に足す
+    if (b === el.kperm) {
+      var draft = el.cmd.value;
+      el.cmd.value = draft + (draft && !/\n$/.test(draft) ? '\n' : '') + PERM_TEXT;
+      autoGrow();
+      renderSug();
+      return;
     }
     // 中断の札（hold / unhold）。**tmux には何も送らない**。変わるのはタブの縁の色だけ。
     // 止めるのも続けるのも自分でやる＝これは「この席は置いてある」と自分に見せる付箋。
