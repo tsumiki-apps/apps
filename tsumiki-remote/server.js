@@ -1632,15 +1632,20 @@ function sentPathRel(p) {
 
 async function resolvePaths(paths) {
   const found = {};
+  let stale = false;
   await Promise.all(paths.map(async (p) => {
     const rel = sentPathRel(p);
     if (!rel) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, rel)), 1200, 'iCloud');
       if (st.isFile()) found[p] = { rel, mtime: st.mtimeMs };
-    } catch (e) { /* もう無い・読めない */ }
+    } catch (e) {
+      // ⚠️ 時間切れは「無い」ではない。stale を返して、画面が「無かった」を覚えないようにする
+      //    （覚えると、iCloud が遅かっただけのファイルが60秒光らない＝反証役の指摘）
+      if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) stale = true;
+    }
   }));
-  return { found };
+  return { found, stale };
 }
 
 // 一度に書き出したかたまりは1行にまとめる。

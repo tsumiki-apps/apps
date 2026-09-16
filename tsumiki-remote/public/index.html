@@ -3470,7 +3470,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     for (var i = 0; i + 1 < lines.length; i++) {
       var head = lines[i];
       if (!head || /\s$/.test(head)) continue;            // 行末が空白＝途中で切れていない
-      // 続きの行を繋ぐ。parts[n] = {at: 繋いだ字の中の位置, pad: 字下げ, len: 長さ}
+      // 続きの行を1行ずつ繋ぎ、**繋ぐたびに照合する**。parts[n] = {at: 繋いだ字の中の位置, pad, len}
+      // ⚠️ 先に4行ぶん繋いでから照合すると、名前の直後に次の行の頭が付く
+      //    （`メモ.md` ＋ `2つ目は…` → `メモ.md2つ目は`）。拡張子の後ろに英数字が続くと
+      //    RE_FILE が合わず、2行なら光っていた名前が光らなくなった（反証役が実測）。
+      //    capture-pane は行末の空白を落とすので「空白で終わる行で止める」はほぼ効かない
       var joined = head, parts = [{ line: i, at: 0, pad: 0, len: head.length }];
       for (var n = i + 1; n < lines.length && parts.length < FILE_WRAP_MAX; n++) {
         var pad = /^\s*/.exec(lines[n])[0].length;
@@ -3479,24 +3483,24 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         if (!body || RE_NOT_WRAP.test(body)) break;
         parts.push({ line: n, at: joined.length, pad: pad, len: body.length });
         joined += body;
-        if (/\s$/.test(body)) break;                      // この行で切れている
-      }
-      if (parts.length < 2) continue;
-      var m;
-      RE_FILE.lastIndex = 0;
-      while ((m = RE_FILE.exec(joined))) {
-        var a = m.index, b = a + m[0].length;
-        // 始まりがこの行・終わりが次の行より先＝またいでいる（始まりの行でだけ拾う＝二重にしない）
-        if (a >= head.length || b <= head.length) continue;
-        if (!fileHit(m[0])) { fileAskLater(m[0]); continue; }
-        parts.forEach(function (pt) {
-          var from = Math.max(a, pt.at), to = Math.min(b, pt.at + pt.len);
-          if (from >= to) return;
-          var src = lines[pt.line];
-          var ii = pt.pad + from - pt.at, jj = pt.pad + to - pt.at;
-          (out[pt.line] = out[pt.line] || []).push(
-            { i: ii, j: jj, s: src.slice(ii, jj), k: 'file', fn: m[0] });
-        });
+        var m, got = false;
+        RE_FILE.lastIndex = 0;
+        while ((m = RE_FILE.exec(joined))) {
+          var a = m.index, b = a + m[0].length;
+          // 始まりがこの行・終わりが今足した行＝またいでいる（手前の行で終わるものは前の周で拾った）
+          if (a >= head.length || b <= joined.length - body.length) continue;
+          got = true;
+          if (!fileHit(m[0])) { fileAskLater(m[0]); continue; }
+          parts.forEach(function (pt) {
+            var from = Math.max(a, pt.at), to = Math.min(b, pt.at + pt.len);
+            if (from >= to) return;
+            var src = lines[pt.line];
+            var ii = pt.pad + from - pt.at, jj = pt.pad + to - pt.at;
+            (out[pt.line] = out[pt.line] || []).push(
+              { i: ii, j: jj, s: src.slice(ii, jj), k: 'file', fn: m[0] });
+          });
+        }
+        if (got || /\s$/.test(body)) break;              // 名前ができた／この行で切れている
       }
     }
     return out;
@@ -3516,9 +3520,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 左の札と右の大きさを外せば**パスが丸ごと戻る**。パスで引けば1つに決まる
   // ＝同じ名前の取り違えも、選ぶシートも起きない。枠の**どの行を押しても**開く。
   // ⚠️ 右の大きさは、字が詰まると空白なしで付く（`アプリにKB)`・実測）。
-  var RE_SENT_HEAD = /^(\s*›\s+)([~\/].*?)\s*\((\d[\d.]*)(\s*[KMG]?B\))?\s*$/;
-  var RE_SENT_TAG = /^(\s*\[[a-z]+\])(.*)$/;
-  var RE_SENT_UNIT = /\s*[KMG]?B\)\s*$/;
+  // ⚠️ 端末が広いときは形が少し違う：`›` の後ろの空白が1つ多く、`[image] ` の後ろに空白が入り、
+  //    大きさは `(214.3K` ／ `B)` と単位の途中で割れる（反証役が履歴から戻した形）。
+  //    札は `[image]` 以外（PDF など）も来うるので、英字なら何でも受ける
+  var RE_SENT_HEAD = /^(\s*›\s+)([~\/].*?)\s*\((\d[\d.]*)(\s*[KMG]?B?)(\))?\s*$/;
+  var RE_SENT_TAG = /^(\s*\[[A-Za-z]+\]\s*)(.*)$/;
+  var RE_SENT_UNIT = /\s*[KMG]?B?\)\s*$/;
+  var PATH_IDX_MAX = 500;      // 覚えておくパスの数。超えたら全部忘れて聞き直す
   var RE_SENT_EXT = /\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json)$/i;
   var pathIdx = {};            // パス → {rel: 置き場の中の場所 または null, at}
   var pathAsking = {};
@@ -3532,10 +3540,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       if (!hm) continue;
       var tm = RE_SENT_TAG.exec(lines[i + 1]);
       if (!tm) continue;
-      var col = hm[1].length;                     // パスが始まる桁（`›` の行と `[image]` の行でそろう）
+      var col = Math.min(hm[1].length, tm[1].length);   // パスが始まる桁（続きの行はここより深い）
       var segs = [{ line: i, at: col, s: hm[2] }];
       var rest = tm[2];
-      if (!hm[4]) rest = rest.replace(RE_SENT_UNIT, '');   // 大きさの単位が2行目に回っている
+      if (!hm[5]) rest = rest.replace(RE_SENT_UNIT, '');   // 閉じ括弧が2行目に回っている
       rest = rest.replace(/\s+$/, '');
       if (rest) segs.push({ line: i + 1, at: tm[1].length, s: rest });
       var n = i + 2;
@@ -3567,8 +3575,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   function pathFlush() {
     pathTimer = null;
-    var paths = Object.keys(pathPend).slice(0, 20);   // サーバーも20で切る。溢れた分は次の便へ
+    // 数（サーバーは20で切る）と長さの両方で区切り、溢れた分は次の便へ（fileFlush と同じ）
+    var all = Object.keys(pathPend), paths = [], bytes = 0;
+    for (var q = 0; q < all.length && paths.length < 20; q++) {
+      var nb = encodeURIComponent(all[q]).length + 3;
+      if (paths.length && bytes + nb > FILE_ASK_BYTES) break;
+      bytes += nb;
+      paths.push(all[q]);
+    }
     if (!paths.length) return;
+    if (Object.keys(pathIdx).length > PATH_IDX_MAX) pathIdx = {};
     paths.forEach(function (p) { delete pathPend[p]; pathAsking[p] = 1; });
     if (Object.keys(pathPend).length) pathTimer = setTimeout(pathFlush, 350);
     api('/api/resolve?paths=' + encodeURIComponent(paths.join('\n')), null, 8000)
@@ -3594,7 +3610,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .then(function (d) {
         var h = d && d.found && d.found[p];
         if (!h) {
-          if (!(d && d.stale)) pathIdx[p] = { rel: null, at: Date.now() };
+          if (d && d.stale) return toast('まだ読めません。少し待ってもう一度');
+          pathIdx[p] = { rel: null, at: Date.now() };
           return toast('見つかりません');
         }
         pathIdx[p] = { rel: h.rel, at: Date.now() };
@@ -3660,7 +3677,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (extra) for (var e = 0; e < extra.length; e++) hits.push(extra[e]);
     // 前から順に。同じところから始まっていたら長い方を採る（URL の中の
     // 大文字の並びを合言葉と読みちがえる、といった重なりをここで捨てる）
-    hits.sort(function (a, b) { return a.i - b.i || b.j - a.j; });
+    // 同じ範囲なら「送ったファイル」の枠の札（path あり＝1つに決まる）を採る。
+    // ⚠️ extra は後ろに足されるので、順番に頼ると名前の札が勝っていた（反証役が実測）
+    hits.sort(function (a, b) { return a.i - b.i || b.j - a.j || (b.path ? 1 : 0) - (a.path ? 1 : 0); });
     var out = [], end = 0;
     hits.forEach(function (h) { if (h.i >= end) { out.push(h); end = h.j; } });
     return out;
@@ -3895,7 +3914,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var lines = joinUrlWraps(text.split('\n'), cols);
     var splitFiles = fileSplitHits(lines);         // 折り返しで割れた名前
     var sent = sentFileHits(lines);                // 「送ったファイル」の枠（パスで引く）
-    // 枠を先に入れる＝同じ範囲なら枠のほう（パスで1つに決まる）が採られる
+    // 同じ範囲なら枠のほう（パスで1つに決まる）が採られる（findTargets の並べ替え）
     Object.keys(sent).forEach(function (k) { splitFiles[k] = sent[k].concat(splitFiles[k] || []); });
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
