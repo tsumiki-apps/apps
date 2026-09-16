@@ -2198,6 +2198,42 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // この席が始まってから、置き場に新しくできたもの（＝「さっき作ったもの」の帯）。
+    //
+    // 出先から「さっき作ったあれを見せて」に行き着くまで、これまでは
+    // ⋯ → 制作物を見る → 何段も下りる、だった。作ったものは席の画面の
+    // すぐそこに出しておく（2026-09-16）。
+    //
+    // ⚠️ 集めるのは `/api/files` とまったく同じ `recentFiles`。**写しを共有する**ので、
+    //    帯のために iCloud をもう一度舐めることはない。ここで独自に走らせると、
+    //    45秒ごとに2本が iCloud を叩く形になり、上の「相乗り」の工夫が無駄になる。
+    // ⚠️ どの席が作ったかは**分からない**。分かるのは時刻だけなので、同じ時間に
+    //    別の席が書き出したものも混ざる。帯は「新しい順の上から数件」だけを出す
+    //    ＝混ざっても埋もれない形にしてある（画面側の limit）。
+    if (p === '/api/made' && req.method === 'GET') {
+      const since = Number(url.searchParams.get('since')) || 0;
+      const limit = Math.max(1, Math.min(30, Number(url.searchParams.get('limit')) || 12));
+      if (!since) return json(res, 400, { error: 'since が要ります' });
+      try {
+        const r = await within(recentFiles(url.searchParams.has('fresh')),
+          RECENT_BUDGET_MS + 2500, 'iCloud の読み込み');
+        const items = [];
+        let total = 0;
+        for (const f of r.list) {           // 新しい順に並んでいる
+          if (f.mtime <= since) break;      // それより古いものは以降ぜんぶ古い
+          total++;
+          if (items.length < limit) {
+            items.push({ rel: f.rel, name: f.name, mtime: f.mtime, size: f.size, open: f.open });
+          }
+        }
+        return json(res, 200, { items, total, partial: r.partial });
+      } catch (e) {
+        // ⚠️ 帯は「出ないだけ」で済ませる。見に行っていないものの失敗を毎回
+        //    知らせると、席の画面が赤い字で埋まる。原因が要るときは
+        //    「制作物を見る」を開けば、あちらがちゃんと見分けて教えてくれる
+        return json(res, 200, { items: [], total: 0, stale: true });
+      }
+    }
     // 画像やPDFを Mac に置く。Claude Code はファイルそのものを受け取れないが、
     // 「ファイルの場所」を渡せば読める。置いた場所を返して、入力欄に差し込む。
     // ⚠️ 中身は base64（元の約1.34倍）で届く。読み取りの上限はそのぶん多く要る
