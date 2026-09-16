@@ -3286,6 +3286,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //   （`[image] … (391.7 KB)` の行）。繋ぎ直しても元には戻らない。
   //
   // だから**パスではなく「名前」で引く**。`使い方.png` なら1行に収まる。
+  // （例外：「送ったファイル」の枠は形が決まっていて繋ぎ直せるので、パスで引く＝sentFileHits）
   // 名前をサーバーの索引（印＋「最近」の写し）と照らし、**見つかったものだけ光らせる**。
   // ＝コードの中の `server.js` のような字は光らない（押せるのに開かない、が起きない）。
   var fileIdx = {};            // 名前 → {hit: サーバーの答え または null, at: いつ調べたか}
@@ -3460,28 +3461,146 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    45桁で折り返しており、桁数（46〜51のどれか）との差で判定できなかった。
   //    **見分けるのをやめて、繋いで名前になるかどうかだけを見る。**
   //    札にするのは索引に在るものだけなので、偶然つながって別物が開くことはない。
+  // ⚠️ 2行までしか繋いでいなかった（2026-09-16）。長い名前は3行に割れ、
+  //    `つみきストー` ／ `リー_募集3_料金の目安_特典入り_2026` ／ `-09-15.png` が光らなかった。
+  //    そこで FILE_WRAP_MAX 行まで続けて繋ぎ、またいだ行ぜんぶに押せる字を置く。
+  var FILE_WRAP_MAX = 4;
   function fileSplitHits(lines) {
     var out = {};
     for (var i = 0; i + 1 < lines.length; i++) {
       var head = lines[i];
       if (!head || /\s$/.test(head)) continue;            // 行末が空白＝途中で切れていない
-      var pad = /^\s*/.exec(lines[i + 1])[0].length;
-      var body = lines[i + 1].slice(pad);
-      // 次の行が別のかたまりの始まり（⏺ ⎿ ❯ 罫線・箇条書き）なら、続きではない
-      if (!body || RE_NOT_WRAP.test(body)) continue;
-      var joined = head + body, m;
+      // 続きの行を繋ぐ。parts[n] = {at: 繋いだ字の中の位置, pad: 字下げ, len: 長さ}
+      var joined = head, parts = [{ line: i, at: 0, pad: 0, len: head.length }];
+      for (var n = i + 1; n < lines.length && parts.length < FILE_WRAP_MAX; n++) {
+        var pad = /^\s*/.exec(lines[n])[0].length;
+        var body = lines[n].slice(pad);
+        // 次の行が別のかたまりの始まり（⏺ ⎿ ❯ 罫線・箇条書き）なら、続きではない
+        if (!body || RE_NOT_WRAP.test(body)) break;
+        parts.push({ line: n, at: joined.length, pad: pad, len: body.length });
+        joined += body;
+        if (/\s$/.test(body)) break;                      // この行で切れている
+      }
+      if (parts.length < 2) continue;
+      var m;
       RE_FILE.lastIndex = 0;
       while ((m = RE_FILE.exec(joined))) {
         var a = m.index, b = a + m[0].length;
-        if (a >= head.length || b <= head.length) continue;   // またいでいない
+        // 始まりがこの行・終わりが次の行より先＝またいでいる（始まりの行でだけ拾う＝二重にしない）
+        if (a >= head.length || b <= head.length) continue;
         if (!fileHit(m[0])) { fileAskLater(m[0]); continue; }
-        (out[i] = out[i] || []).push(
-          { i: a, j: head.length, s: head.slice(a), k: 'file', fn: m[0] });
-        (out[i + 1] = out[i + 1] || []).push(
-          { i: pad, j: pad + (b - head.length), s: body.slice(0, b - head.length), k: 'file', fn: m[0] });
+        parts.forEach(function (pt) {
+          var from = Math.max(a, pt.at), to = Math.min(b, pt.at + pt.len);
+          if (from >= to) return;
+          var src = lines[pt.line];
+          var ii = pt.pad + from - pt.at, jj = pt.pad + to - pt.at;
+          (out[pt.line] = out[pt.line] || []).push(
+            { i: ii, j: jj, s: src.slice(ii, jj), k: 'file', fn: m[0] });
+        });
       }
     }
     return out;
+  }
+
+  // ------------------------------------ 「送ったファイル」の枠（2026-09-16）
+  //
+  // ファイルを送ると、端末には必ずこの形の枠が出る（実測）：
+  //
+  //     ␣␣›␣␣␣␣␣␣~/つみき出力/Instagram運用/つみきス␣(214.3
+  //     ␣␣[image]トーリー_募集/V2/画像/つみきストー␣KB)
+  //     ␣␣␣␣␣␣␣␣␣リー_募集3_料金の目安_特典入り_2026
+  //     ␣␣␣␣␣␣␣␣␣-09-15.png
+  //
+  // 名前が3行に割れ、行の頭に `[image]`、行末に大きさが割り込むので、名前で拾う仕組み
+  // （RE_FILE・fileSplitHits）では光らなかった。だがこの枠は**形が決まっている**ので、
+  // 左の札と右の大きさを外せば**パスが丸ごと戻る**。パスで引けば1つに決まる
+  // ＝同じ名前の取り違えも、選ぶシートも起きない。枠の**どの行を押しても**開く。
+  // ⚠️ 右の大きさは、字が詰まると空白なしで付く（`アプリにKB)`・実測）。
+  var RE_SENT_HEAD = /^(\s*›\s+)([~\/].*?)\s*\((\d[\d.]*)(\s*[KMG]?B\))?\s*$/;
+  var RE_SENT_TAG = /^(\s*\[[a-z]+\])(.*)$/;
+  var RE_SENT_UNIT = /\s*[KMG]?B\)\s*$/;
+  var RE_SENT_EXT = /\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json)$/i;
+  var pathIdx = {};            // パス → {rel: 置き場の中の場所 または null, at}
+  var pathAsking = {};
+  var pathPend = {};
+  var pathTimer = null;
+
+  function sentFileHits(lines) {
+    var out = {};
+    for (var i = 0; i + 1 < lines.length; i++) {
+      var hm = RE_SENT_HEAD.exec(lines[i]);
+      if (!hm) continue;
+      var tm = RE_SENT_TAG.exec(lines[i + 1]);
+      if (!tm) continue;
+      var col = hm[1].length;                     // パスが始まる桁（`›` の行と `[image]` の行でそろう）
+      var segs = [{ line: i, at: col, s: hm[2] }];
+      var rest = tm[2];
+      if (!hm[4]) rest = rest.replace(RE_SENT_UNIT, '');   // 大きさの単位が2行目に回っている
+      rest = rest.replace(/\s+$/, '');
+      if (rest) segs.push({ line: i + 1, at: tm[1].length, s: rest });
+      var n = i + 2;
+      for (; n < lines.length; n++) {
+        var pad = /^\s*/.exec(lines[n])[0].length;
+        var body = lines[n].slice(pad).replace(/\s+$/, '');
+        if (!body || pad < col) break;           // 空行・字下げが浅い＝枠の終わり
+        segs.push({ line: n, at: pad, s: body });
+      }
+      var full = segs.map(function (g) { return g.s; }).join('');
+      i = n - 1;
+      if (!RE_SENT_EXT.test(full)) continue;
+      var e = pathIdx[full];
+      if (!e || (!e.rel && Date.now() - e.at >= FILE_RETRY_MS)) { pathAskLater(full); continue; }
+      if (!e.rel) continue;
+      segs.forEach(function (g) {
+        (out[g.line] = out[g.line] || []).push(
+          { i: g.at, j: g.at + g.s.length, s: g.s, k: 'file', path: full });
+      });
+    }
+    return out;
+  }
+
+  function pathAskLater(p) {
+    if (pathAsking[p] || pathPend[p]) return;
+    pathPend[p] = 1;
+    if (!pathTimer) pathTimer = setTimeout(pathFlush, 350);
+  }
+
+  function pathFlush() {
+    pathTimer = null;
+    var paths = Object.keys(pathPend).slice(0, 20);   // サーバーも20で切る。溢れた分は次の便へ
+    if (!paths.length) return;
+    paths.forEach(function (p) { delete pathPend[p]; pathAsking[p] = 1; });
+    if (Object.keys(pathPend).length) pathTimer = setTimeout(pathFlush, 350);
+    api('/api/resolve?paths=' + encodeURIComponent(paths.join('\n')), null, 8000)
+      .then(function (d) {
+        var found = (d && d.found) || {};
+        var unsure = !!(d && d.stale);           // 時間切れの回は「無かった」を覚えない
+        var hit = false, now = Date.now();
+        paths.forEach(function (p) {
+          delete pathAsking[p];
+          if (found[p]) { pathIdx[p] = { rel: found[p].rel, at: now }; hit = true; }
+          else if (!unsure) pathIdx[p] = { rel: null, at: now };
+        });
+        if (hit) { fileRedrawWanted = true; fileRedraw(); }
+      })
+      .catch(function () {
+        paths.forEach(function (p) { delete pathAsking[p]; });
+      });
+  }
+
+  // 押したとき。光らせたあとで消された・動かされたかもしれないので、もう一度聞く
+  function pathOpen(p) {
+    api('/api/resolve?paths=' + encodeURIComponent(p), null, 8000)
+      .then(function (d) {
+        var h = d && d.found && d.found[p];
+        if (!h) {
+          if (!(d && d.stale)) pathIdx[p] = { rel: null, at: Date.now() };
+          return toast('見つかりません');
+        }
+        pathIdx[p] = { rel: h.rel, at: Date.now() };
+        openPreview(h.rel);
+      })
+      .catch(function (e) { toast('開けません: ' + e.message); });
   }
 
   function findTargets(text, extra) {
@@ -3565,9 +3684,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         fb.type = 'button';
         fb.className = 'fl';
         fb.textContent = h.s;
-        (function (name) {
-          fb.onclick = function () { fileOpen(name); };     // 閉じると履歴のここに戻る
-        })(h.fn || h.s);                                    // fn＝行またぎで割れる前の名前
+        (function (name, full) {
+          // 閉じると履歴のここに戻る。path＝「送ったファイル」の枠から繋いだパス（1つに決まる）
+          fb.onclick = function () { if (full) pathOpen(full); else fileOpen(name); };
+        })(h.fn || h.s, h.path);                            // fn＝行またぎで割れる前の名前
         parent.appendChild(fb);
         at = h.j;
         return;                                  // 写す札は付けない
@@ -3774,6 +3894,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var cols = paneCols || measureCols();
     var lines = joinUrlWraps(text.split('\n'), cols);
     var splitFiles = fileSplitHits(lines);         // 折り返しで割れた名前
+    var sent = sentFileHits(lines);                // 「送ったファイル」の枠（パスで引く）
+    // 枠を先に入れる＝同じ範囲なら枠のほう（パスで1つに決まる）が採られる
+    Object.keys(sent).forEach(function (k) { splitFiles[k] = sent[k].concat(splitFiles[k] || []); });
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
     var dlgs = [];

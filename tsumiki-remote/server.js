@@ -1601,6 +1601,48 @@ async function lookupNames(names) {
   return { found, warming };
 }
 
+// 「送ったファイル」の枠から繋ぎ直した**パスそのもの**を、置き場の中の場所に変える。
+//
+// ファイルを送ると、端末には必ず次の形の枠が出る（2026-09-16 実測）：
+//
+//     ›      ~/つみき出力/Instagram運用/つみきス (214.3
+//     [image]トーリー_募集/V2/画像/つみきストー KB)
+//            リー_募集3_料金の目安_特典入り_2026
+//            -09-15.png
+//
+// 左の `›` `[image]` と右の大きさを外せばパスが丸ごと戻る（画面側で繋ぐ）。
+// 名前で引く lookupNames と違って**1つに決まる**ので、同じ名前の取り違えが起きない。
+// ⚠️ 置き場（PREVIEW_ROOT）の外は、字が合っていても返さない。
+const RESOLVE_MAX = 20;
+
+function sentPathRel(p) {
+  let abs = String(p || '').trim();
+  if (abs.startsWith('~/')) abs = path.join(os.homedir(), abs.slice(2));
+  if (!path.isAbsolute(abs)) return null;
+  abs = path.normalize(abs);
+  // `~/つみき出力` は `11_やりとり出力` への近道（シンボリックリンク）。
+  // realpath は iCloud を触るので使わず、字の上で置き換える
+  const alias = path.join(os.homedir(), 'つみき出力') + path.sep;
+  if (abs.startsWith(alias)) abs = path.join(PREVIEW_OUT, abs.slice(alias.length));
+  if (!abs.startsWith(PREVIEW_ROOT + path.sep)) return null;
+  const rel = abs.slice(PREVIEW_ROOT.length + 1);
+  if (!rel || rel.split(path.sep).includes('..') || !PREVIEW_EXT.test(rel)) return null;
+  return rel;
+}
+
+async function resolvePaths(paths) {
+  const found = {};
+  await Promise.all(paths.map(async (p) => {
+    const rel = sentPathRel(p);
+    if (!rel) return;
+    try {
+      const st = await within(fsp.stat(path.join(PREVIEW_ROOT, rel)), 1200, 'iCloud');
+      if (st.isFile()) found[p] = { rel, mtime: st.mtimeMs };
+    } catch (e) { /* もう無い・読めない */ }
+  }));
+  return { found };
+}
+
 // 一度に書き出したかたまりは1行にまとめる。
 // ⚠️ 2026-09-12 実測：120件のうち**57件が9/6の色違いアイコン1回ぶん**で埋まり、
 //    遡れるのが6日ぶんしかなかった。まとめないかぎり枠は何度でも食いつぶされる。
@@ -2442,6 +2484,18 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, r);
       } catch (e) {
         // 照らし合わせられなかった回は「見つからない」と同じ。字はそのまま出る
+        return json(res, 200, { found: {}, stale: true });
+      }
+    }
+
+    // 「送ったファイル」の枠から繋ぎ直したパス → 置き場の中の場所
+    if (p === '/api/resolve' && req.method === 'GET') {
+      const paths = String(url.searchParams.get('paths') || '')
+        .split('\n').map((x) => x.trim()).filter(Boolean).slice(0, RESOLVE_MAX);
+      if (!paths.length) return json(res, 200, { found: {} });
+      try {
+        return json(res, 200, await within(resolvePaths(paths), 4000, 'パスの照合'));
+      } catch (e) {
         return json(res, 200, { found: {}, stale: true });
       }
     }
