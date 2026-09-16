@@ -27,6 +27,13 @@
   --scrim:rgba(29,26,21,.42);
   --ease:cubic-bezier(0.2,0,0,1);
   /* 回る数字の上下を溶かすマスク（色ではなく不透明度だけを使う） */
+  /* 予定ごとの色（50色）。小さな丸と印にだけ使い、文字を乗せない（DESIGN.md「顔料は細い印に」）。
+     OKLab で、それまでに選んだ色からいちばん遠い色を順に拾った（最小の差 0.065・紙の地に 3:1 以上）。番号の若い色ほど互いに遠い */
+  --c0:#a96a19; --c1:#183d9c; --c2:#996fda; --c3:#850344; --c4:#0e5715; --c5:#0ca084; --c6:#606881; --c7:#d35985; --c8:#088fe3; --c9:#753597;
+  --c10:#673c14; --c11:#317d01; --c12:#b33738; --c13:#9c808d; --c14:#344b5b; --c15:#3862c4; --c16:#719901; --c17:#a33a82; --c18:#794560; --c19:#6d6c32;
+  --c20:#d85f3e; --c21:#0c665a; --c22:#4c94ac; --c23:#938b50; --c24:#658273; --c25:#015c95; --c26:#9d60a2; --c27:#915848; --c28:#8a0700; --c29:#4d3781;
+  --c30:#6e59a7; --c31:#73176f; --c32:#4e45ad; --c33:#63563e; --c34:#8b3e09; --c35:#498c4a; --c36:#b65a5f; --c37:#5f75c1; --c38:#565082; --c39:#b17a5e;
+  --c40:#5a3f47; --c41:#207582; --c42:#8682b7; --c43:#9d1f40; --c44:#0685b6; --c45:#c35ead; --c46:#424c34; --c47:#25a351; --c48:#717de8; --c49:#3f7755;
   --fade:linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,.5) 11%, rgba(0,0,0,1) 22%, rgba(0,0,0,1) 78%, rgba(0,0,0,.5) 89%, rgba(0,0,0,0) 100%);
 }
 @media (prefers-color-scheme:dark){
@@ -40,6 +47,11 @@
     --fill:#d59a4d; --on-fill:#1d1a15;
     --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
     --scrim:rgba(15,13,7,.62);
+    --c0:#f9b46c; --c1:#5987ec; --c2:#dbcafe; --c3:#d65c88; --c4:#5b9f5b; --c5:#74eece; --c6:#a7b0cb; --c7:#fec1d2; --c8:#b0daff; --c9:#bf7ee6;
+    --c10:#b0815a; --c11:#7bc85f; --c12:#ff8a84; --c13:#e9cad9; --c14:#7790a2; --c15:#89b0ff; --c16:#bae76b; --c17:#f485cd; --c18:#c48aa7; --c19:#b6b579;
+    --c20:#fec5b5; --c21:#62afa0; --c22:#98e1fa; --c23:#ded799; --c24:#aecdbc; --c25:#5aa5e4; --c26:#eba9f0; --c27:#df9f8e; --c28:#dc5f4e; --c29:#917dce;
+    --c30:#b5a2f6; --c31:#c063ba; --c32:#908ffe; --c33:#aa9d83; --c34:#da8659; --c35:#93d992; --c36:#feaaac; --c37:#aec2fe; --c38:#9b97ce; --c39:#ffc6a9;
+    --c40:#a2828b; --c41:#71bfcd; --c42:#d1cefe; --c43:#f06f84; --c44:#7ad0fe; --c45:#ffbbed; --c46:#869177; --c47:#7ef19b; --c48:#c9d2fe; --c49:#87c19c;
   }
 }
 *{box-sizing:border-box}
@@ -264,9 +276,10 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .cal-d.sel .n{background:var(--fill); color:var(--on-fill); box-shadow:none}
 .cal-d .cm{display:flex; align-items:center; gap:2px; height:14px; color:var(--accent-2)}
 .cal-d .cm .ic{width:12px; height:12px; stroke-width:2.2}
-/* 予定の丸：まだ＝淡い地に輪、できた＝塗り */
-.cal-d .cd{width:8px; height:8px; flex:none; border-radius:999px; background:var(--accent-wash); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
-.cal-d .cd.ok{background:var(--accent-2)}
+/* 予定の丸（予定ごとの色）：まだ＝淡い地に輪、できた＝塗り */
+.cal-d .cd{width:8px; height:8px; flex:none; border-radius:999px; background:color-mix(in oklab, var(--c, var(--accent-2)) 25%, var(--surface)); box-shadow:inset 0 0 0 1.5px var(--c, var(--accent-2))}
+.cal-d .cd.ok{background:var(--c, var(--accent-2))}
+.swatch{display:inline-block; width:10px; height:10px; margin-right:6px; border-radius:999px; background:var(--c, var(--accent-2)); vertical-align:.05em}
 .cal-d .cmore{font-size:9px; line-height:1; font-weight:700; color:var(--accent-2)}
 .cal-dh{display:flex; align-items:center; gap:10px; margin:0 0 12px; min-height:44px; padding-top:12px; border-top:1px solid var(--line)}
 .cal-dh h3{margin:0; flex:1; min-width:0; font-size:16px; font-weight:700}
@@ -416,7 +429,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 /* ================= つみ木 =================
    曜日ごとに「幸せなこと」を決めておく。今日の分は押すと「できた」の判子が付く。
    データ（1つの JSON）:
-     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), ymd?:'YYYY-MM-DD'(日付だけ・名前は day より後ろに並ぶものにする＝古い端末との突き合わせで新しい側が勝つ)} }
+     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ・名前は day より後ろに並ぶものにする＝古い端末との突き合わせで新しい側が勝つ)} }
      rain:  { 'YYYY-MM-DD': {on, upd} }          … その日は雨だったか（今日の傘ボタン）
      dels:  { id: 消した時刻 }                 … 消したものが他の端末から甦らないための印
      done:  { 'YYYY-MM-DD|id': {on, upd} }      … その日にできたか
@@ -431,6 +444,7 @@ var sb = (!TEST && window.supabase && window.supabase.createClient) ? window.sup
 var DAYS = ['月','火','水','木','金','土','日'];
 var RAIN = 7, ANNIV = 8, ONCE = 9;
 var KINDS = [{i:ONCE, ic:'date', nm:'日付'}, {i:RAIN, ic:'rain', nm:'雨の日'}, {i:ANNIV, ic:'gift', nm:'記念日'}];
+var TINTS = 50;        /* 予定ごとの色の数（CSS の --c0〜--c49） */
 var PRESETS = ['cafe','book','bath','music','sun','cake','leaf','moon','heart','game','film','bowl','rain','gift'];   /* 足すときは末尾に（色の割り当てがずれる） */
 var KEEP_DAYS = 70;    /* 「できた」の印はこの日数だけ残す */
 
@@ -449,6 +463,7 @@ function clean(s){
       : {k:'ic', ic: v.th && PRESETS.indexOf(v.th.ic) >= 0 ? v.th.ic : PRESETS[0]};
     out.items[id] = {id:id, day:day, name:v.name.slice(0, 24), th:th, ord:+v.ord || 0, upd:String(v.upd || '')};
     if (day === ANNIV && typeof v.md === 'string' && /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v.md)) out.items[id].md = v.md;
+    if (typeof v.zcol === 'number' && v.zcol % 1 === 0 && v.zcol >= 0 && v.zcol < TINTS) out.items[id].zcol = v.zcol;   /* 名前は upd・ymd より後ろに並ぶもの（古い端末との突き合わせで負けない） */
     if (day === ONCE && typeof v.ymd === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v.ymd)) out.items[id].ymd = v.ymd;
   });
   var d = s.dels && typeof s.dels === 'object' ? s.dels : {};
@@ -539,6 +554,24 @@ function itemsForDate(s, ymdStr, di){                               /* その日
     .concat(r && r.on ? itemsOf(s, RAIN) : [])
     .concat(itemsOf(s, ANNIV).filter(function(v){ return isAnniv(v.md, ymdStr); }))
     .concat(itemsOf(s, ONCE).filter(function(v){ return v.ymd === ymdStr; }));
+}
+/* 色番号。zcol を持つものはそれ、持たないもの（色を足す前に作ったもの）は、使われている数がいちばん少ない番号を ord 順に振る。
+   保存はしない＝起動時に書き込まない。どの端末でも同じデータなら同じ色になる */
+function leastTint(count){ var k = 0; for (var i = 1; i < TINTS; i++) if (count[i] < count[k]) k = i; return k; }
+function tintsOf(s){
+  var all = Object.keys(s.items).map(function(id){ return s.items[id]; })
+    .sort(function(x, y){ return x.ord - y.ord || (x.id < y.id ? -1 : 1); });
+  var out = {}, count = [];
+  for (var i = 0; i < TINTS; i++) count.push(0);
+  all.forEach(function(v){ if (v.zcol != null){ out[v.id] = v.zcol; count[v.zcol]++; } });
+  all.forEach(function(v){ if (out[v.id] == null){ var k = leastTint(count); out[v.id] = k; count[k]++; } });
+  return out;
+}
+function nextTint(s){                                               /* 新しく足すものの色 */
+  var t = tintsOf(s), count = [];
+  for (var i = 0; i < TINTS; i++) count.push(0);
+  Object.keys(t).forEach(function(id){ count[t[id]]++; });
+  return leastTint(count);
 }
 function weekScore(s, dt){                                          /* 今週できた数 / 1週間ぶんの数 */
   var dates = weekDates(dt), n = 0, total = 0;
@@ -652,7 +685,7 @@ function tilesHtml(list, key, can){                                /* can=false 
       thumb(v.th) +
       (kindOf(v.day) ? '<span class="mark" aria-hidden="true"><svg class="ic"><use href="#p-' + kindOf(v.day).ic + '"/></svg></span>' : '') +
       '<span class="stamp" aria-hidden="true"><i><svg class="ic"><use href="#i-check"/></svg></i></span>' +
-      '<span class="nm">' + esc(v.name) + '</span></button>';
+      '<span class="nm"><i class="swatch" aria-hidden="true"' + tint(v.id) + '></i>' + esc(v.name) + '</span></button>';
   }).join('') + '</div>';
 }
 function renderScore(){
@@ -683,7 +716,10 @@ function renderWeek(){
     '<hr class="sep">' + KINDS.map(function(k){ return row(k.i); }).join('');
 }
 
+var TINT = {};
+function tint(id){ return ' style="--c:var(--c' + (TINT[id] || 0) + ')"'; }
 function renderAll(){
+  TINT = tintsOf(state);
   renderToday();
   renderWeek();
   if ($('#day-sheet').open) renderDaySheet();
@@ -729,7 +765,9 @@ function renderCalGrid(){
     var rain = isRainy(key), anniv = list.some(function(v){ return v.day === ANNIV; });
     var MAX = rain ? 2 : 3, dots = '';                              /* 幅44pxに収まる数だけ並べ、残りは「+」 */
     list.slice(0, MAX).forEach(function(v, j){
-      dots += v.day === ANNIV ? '<svg class="ic"><use href="#p-gift"/></svg>' : '<i class="cd' + (ok[j] ? ' ok' : '') + '"></i>';
+      dots += v.day === ANNIV
+        ? '<svg class="ic"' + tint(v.id).replace('--c:var', 'color:var') + '><use href="#p-gift"/></svg>'
+        : '<i class="cd' + (ok[j] ? ' ok' : '') + '"' + tint(v.id) + '></i>';
     });
     if (list.length > MAX) dots += '<b class="cmore">+</b>';
     html += '<button class="cal-d' + (key === today ? ' today' : '') + (key === calSel ? ' sel' : '') + '" type="button" data-cal="' + key + '"' +
@@ -790,7 +828,7 @@ function renderDaySheet(){
   $('#day-h').textContent = dayName(i);
   $('#day-list').innerHTML = list.length ? list.map(function(v){
     return '<div class="item" data-id="' + esc(v.id) + '">' + thumb(v.th) +
-      '<span class="txt"><span class="nm">' + esc(v.name) + '</span>' + (whenLabel(v) ? '<span class="sub">' + whenLabel(v) + '</span>' : '') + '</span>' +
+      '<span class="txt"><span class="nm"><i class="swatch" aria-hidden="true"' + tint(v.id) + '></i>' + esc(v.name) + '</span>' + (whenLabel(v) ? '<span class="sub">' + whenLabel(v) + '</span>' : '') + '</span>' +
       '<span class="acts">' +
         '<button class="iconbtn" type="button" data-edit aria-label="' + esc(v.name) + 'を直す"><svg class="ic"><use href="#i-pen"/></svg></button>' +
         delButton(v.name) +
@@ -933,7 +971,8 @@ $('#edit-form').addEventListener('submit', function(e){
   var day = pickedDay(), t = nowISO();
   var old = draft.id && state.items[draft.id];
   var id = draft.id || uid();
-  state.items[id] = {id:id, day:day, name:name, th:draft.th, ord: old ? old.ord : Date.now(), upd:t};
+  var col = old ? (old.zcol != null ? old.zcol : tintsOf(state)[id]) : nextTint(state);
+  state.items[id] = {id:id, day:day, name:name, th:draft.th, ord: old ? old.ord : Date.now(), upd:t, zcol:col};
   if (day === ANNIV) state.items[id].md = $('#md').value.slice(5);
   if (day === ONCE) state.items[id].ymd = $('#md').value;
   save();
