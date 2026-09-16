@@ -3289,6 +3289,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var fileTimer = null;
   var FILE_RETRY_MS = 60000;   // 「無い」と分かった名前を、もう一度聞くまでの間
   var FILE_ASK_MAX = 200;      // 1便で聞く数（サーバーも200で切る。溢れた分は次の便へ）
+  var FILE_ASK_BYTES = 8000;   // 1便の名前の長さ（URL にしたとき）。サーバーの上限16KBの半分
   var FILE_IDX_MAX = 3000;     // 覚えておく名前の数。超えたら全部忘れて聞き直す
   var fileRedrawWanted = false;
   // 答えを待っている枠が、画面の下のほうにあるか（renderScreen が毎回書く）。
@@ -3342,9 +3343,18 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     fileTimer = null;
     var names = Object.keys(filePend);
     if (!names.length) return;
-    // 溢れた分は次の便に回す（サーバーは200で切るので、送っても答えが来ない）
-    var rest = names.slice(FILE_ASK_MAX);
-    names = names.slice(0, FILE_ASK_MAX);
+    // 溢れた分は次の便に回す。数（サーバーは200で切る）と**長さ**の両方で区切る。
+    // ⚠️ 長さも要る：和文に続けて書かれた名前は1件130バイトほどになり、200件だと
+    //    URL がサーバーの上限（16KB）を超えて 431 で返らない（反証役の指摘）
+    var take = 0, bytes = 0;
+    while (take < names.length && take < FILE_ASK_MAX) {
+      var b = encodeURIComponent(names[take]).length + 3;
+      if (take && bytes + b > FILE_ASK_BYTES) break;
+      bytes += b;
+      take++;
+    }
+    var rest = names.slice(take);
+    names = names.slice(0, take);
     filePend = {};
     rest.forEach(function (n) { filePend[n] = 1; });
     if (rest.length) fileTimer = setTimeout(fileFlush, 350);
