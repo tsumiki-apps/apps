@@ -1107,18 +1107,17 @@
     <button id="khold">hold</button>
     <button id="kunhold" hidden>unhold</button>
     <button data-key="Enter">⏎</button>
-    <button data-key="Up">↑</button>
-    <button data-key="Down">↓</button>
     <button data-key="Tab">tab</button>
     <button data-text="1" data-enter="1">1</button>
     <button data-text="2" data-enter="1">2</button>
     <button data-text="3" data-enter="1">3</button>
     <button data-text="4" data-enter="1">4</button>
-    <button data-text="5" data-enter="1">5</button>
     <button id="kgo" hidden>決定</button>
-    <button data-key="C-c">Ctrl-C</button>
-    <button data-key="C-d">Ctrl-D</button>
   </div>
+  <!-- 2026-09-16 に ↑ ↓ 5 Ctrl-C Ctrl-D を外した。35日分のログで押した回数がすべて0で、
+       Ctrl-D は押すと席が終わる側の札だったため（判断＝本人）。
+       ⚠️ ↑↓ の**キー送信そのもの**は残してある（選択パネルが出たときに sendKeys で使う）。
+       消したのはボタンだけ。戻すならこの行の上に <button data-key="Up">↑</button> を足す。 -->
   <div id="atts" hidden></div>
   <button type="button" id="sug" hidden aria-label="この候補を送る"><svg class="sgi" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
@@ -3327,26 +3326,32 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var RE_FILE = new RegExp(
     '[^\\s/\\\\:*?"<>|「」『』（）()【】\\[\\]、。，,]{1,60}'
     + '\\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json)(?![A-Za-z0-9])', 'g');
+  // 折り返しの続きではない行の頭（別のかたまりの始まり）
+  var RE_NOT_WRAP = /^[⏺⎿❯✻✽✶✳✢│┃╭╮╰╯├┤─━*+•]|^-\s/;
 
   // 行をまたいで割れた名前を拾う。
   //
-  // 端末は51桁しかないので、`打ち合わせメモ.md` くらいの長さでも行末にかかれば割れる。
+  // 端末は51桁ほどしかないので、`打ち合わせメモ.md` くらいの長さでも行末にかかれば割れる。
   // 割れたぶんが光らないと、**半分くらいの名前が開けない**ことになる。
   //
   // ⚠️ URL のようには**繋がない**（joinUrlWraps は行そのものを繋ぐ）。本文の途中で
   //    行を繋ぐと端末の見た目が変わってしまうため、ここは**表示はそのまま**にして、
   //    前の行の末尾と次の行の先頭を、それぞれ別々に押せる字にする
   //    ＝どちらを押しても同じものが開く。
-  function fileSplitHits(lines, cols) {
+  // ⚠️ 「行が幅いっぱいか」で折り返しを見分けようとして失敗した（2026-09-16）。
+  //    日本語は全角なので、次の1文字が入らずに折り返すと行末に余りが出る。実測では
+  //    45桁で折り返しており、桁数（46〜51のどれか）との差で判定できなかった。
+  //    **見分けるのをやめて、繋いで名前になるかどうかだけを見る。**
+  //    札にするのは索引に在るものだけなので、偶然つながって別物が開くことはない。
+  function fileSplitHits(lines) {
     var out = {};
-    if (!cols) return out;
-    var lim = wrapLimits(lines, cols);
     for (var i = 0; i + 1 < lines.length; i++) {
-      if (dispw(lines[i]) < lim[i] - 1) continue;          // 幅いっぱいでない＝折り返しではない
       var head = lines[i];
-      var pad = /^\s*/.exec(lines[i + 1])[0].length;       // 折り返し先の字下げは名前の一部ではない
+      if (!head || /\s$/.test(head)) continue;            // 行末が空白＝途中で切れていない
+      var pad = /^\s*/.exec(lines[i + 1])[0].length;
       var body = lines[i + 1].slice(pad);
-      if (!body) continue;
+      // 次の行が別のかたまりの始まり（⏺ ⎿ ❯ 罫線・箇条書き）なら、続きではない
+      if (!body || RE_NOT_WRAP.test(body)) continue;
       var joined = head + body, m;
       RE_FILE.lastIndex = 0;
       while ((m = RE_FILE.exec(joined))) {
@@ -3650,7 +3655,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // まだ分かっていない。そのときは今この場で測る（同じ端末・同じ幅なので前回と同じ値になる）
     var cols = paneCols || measureCols();
     var lines = joinUrlWraps(text.split('\n'), cols);
-    var splitFiles = fileSplitHits(lines, cols);   // 折り返しで割れた名前
+    var splitFiles = fileSplitHits(lines);         // 折り返しで割れた名前
     var frag = document.createDocumentFragment();
     var block = null, cls = '', prev = '';
     var dlgs = [];
