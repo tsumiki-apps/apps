@@ -260,7 +260,16 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .kind input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
 .kind:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
 .kind:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
-.field input[type="date"]{-webkit-appearance:none; appearance:none; min-height:44px; text-align:left}
+.field input[type="date"], .field input[type="time"]{-webkit-appearance:none; appearance:none; min-height:44px; text-align:left}
+/* 時間帯（なし・午前・午後・夜・時刻） */
+.tods{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin:0 0 16px}
+.tod{position:relative; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; min-height:44px; min-width:0; cursor:pointer; border-radius:999px; background:var(--surface-2); font-weight:700; font-size:15px; transition:background-color .12s var(--ease)}
+.tod .ic{width:18px; height:18px}
+@media (max-width:374px){ .tod .ic{display:none} }
+.tod input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
+.tod:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
+.tod:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
+.tile .when{font-size:13px; font-weight:700; line-height:1.4; color:var(--ink-mid); font-variant-numeric:tabular-nums}
 .foot{display:flex; gap:8px}
 .foot .btn.fill{flex:1}
 
@@ -310,6 +319,8 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3.5 8.5A2 2 0 0 1 5.5 6.5h2l1.5-2h6l1.5 2h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></symbol>
     <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-sunrise" viewBox="0 0 24 24"><path d="M6 16.5a6 6 0 0 1 12 0"/><path d="M3 16.5h18M12 4.5v3M4.9 9.4l1.4 1.4M19.1 9.4l-1.4 1.4M8 20h8"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-6.6 6.6a1.5 1.5 0 0 1-2.1 0z"/><circle cx="8" cy="8" r="1.3"/></symbol>
     <!-- 幸せなことの絵（サムネイルの代わり） -->
     <symbol id="p-cafe" viewBox="0 0 24 24"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3.5c-.7.8-.7 1.7 0 2.5M12 3.5c-.7.8-.7 1.7 0 2.5"/></symbol>
@@ -416,6 +427,11 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
       <svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg>
       <input type="date" id="md" aria-label="日付">
     </label>
+    <div class="tods" id="tods" role="radiogroup" aria-label="時間帯"></div>
+    <label class="field" id="tm-field" hidden>
+      <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
+      <input type="time" id="tm" step="300" aria-label="時刻">
+    </label>
     <div class="foot">
       <button class="btn fill" type="submit" id="save" disabled><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>保存</button>
     </div>
@@ -429,7 +445,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 /* ================= つみ木 =================
    曜日ごとに「幸せなこと」を決めておく。今日の分は押すと「できた」の判子が付く。
    データ（1つの JSON）:
-     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ・名前は day より後ろに並ぶものにする＝古い端末との突き合わせで新しい側が勝つ)} }
+     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ), tm?:'am'|'pm'|'nt'|'HH:MM'(時間帯・どの種類にも付けられる)} }
      rain:  { 'YYYY-MM-DD': {on, upd} }          … その日は雨だったか（今日の傘ボタン）
      dels:  { id: 消した時刻 }                 … 消したものが他の端末から甦らないための印
      done:  { 'YYYY-MM-DD|id': {on, upd} }      … その日にできたか
@@ -444,6 +460,7 @@ var sb = (!TEST && window.supabase && window.supabase.createClient) ? window.sup
 var DAYS = ['月','火','水','木','金','土','日'];
 var RAIN = 7, ANNIV = 8, ONCE = 9;
 var KINDS = [{i:ONCE, ic:'date', nm:'日付'}, {i:RAIN, ic:'rain', nm:'雨の日'}, {i:ANNIV, ic:'gift', nm:'記念日'}];
+var TODS = [{v:'', nm:'なし'}, {v:'am', ic:'i-sunrise', nm:'午前'}, {v:'pm', ic:'p-sun', nm:'午後'}, {v:'nt', ic:'p-moon', nm:'夜'}, {v:'at', ic:'i-clock', nm:'時刻'}];
 var TINTS = 50;        /* 予定ごとの色の数（CSS の --c0〜--c49） */
 var PRESETS = ['cafe','book','bath','music','sun','cake','leaf','moon','heart','game','film','bowl','rain','gift'];   /* 足すときは末尾に（色の割り当てがずれる） */
 var KEEP_DAYS = 70;    /* 「できた」の印はこの日数だけ残す */
@@ -463,8 +480,9 @@ function clean(s){
       : {k:'ic', ic: v.th && PRESETS.indexOf(v.th.ic) >= 0 ? v.th.ic : PRESETS[0]};
     out.items[id] = {id:id, day:day, name:v.name.slice(0, 24), th:th, ord:+v.ord || 0, upd:String(v.upd || '')};
     if (day === ANNIV && typeof v.md === 'string' && /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v.md)) out.items[id].md = v.md;
-    if (typeof v.zcol === 'number' && v.zcol % 1 === 0 && v.zcol >= 0 && v.zcol < TINTS) out.items[id].zcol = v.zcol;   /* 名前は upd・ymd より後ろに並ぶもの（古い端末との突き合わせで負けない） */
+    if (typeof v.zcol === 'number' && v.zcol % 1 === 0 && v.zcol >= 0 && v.zcol < TINTS) out.items[id].zcol = v.zcol;
     if (day === ONCE && typeof v.ymd === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v.ymd)) out.items[id].ymd = v.ymd;
+    if (typeof v.tm === 'string' && /^(am|pm|nt|([01]\d|2[0-3]):[0-5]\d)$/.test(v.tm)) out.items[id].tm = v.tm;
   });
   var d = s.dels && typeof s.dels === 'object' ? s.dels : {};
   Object.keys(d).forEach(function(id){ if (typeof d[id] === 'string') out.dels[id] = d[id]; });
@@ -485,12 +503,14 @@ function weekDates(dt){                                             /* その週
   return out;
 }
 /* merge(a, b)。どちらの順で呼んでも、どの端末の時計でも同じ結果になる。
-   ・同じ時刻で中身が違うときは中身の指紋の大きい方を採る（手元びいきだと2台で書き合いが止まらない）
+   ・同じ時刻で中身が違うときは、欄の多い方→中身の指紋の大きい方を採る（手元びいきだと2台で書き合いが止まらない）
    ・「できた」の印の70日は、データの中の一番新しい日付から数える（端末の時計で決めると境目で食い違う） */
 function newer(x, y){
   if (!x) return y;
   if (!y) return x;
   if (x.upd !== y.upd) return y.upd > x.upd ? y : x;
+  var kx = Object.keys(x).length, ky = Object.keys(y).length;       /* 同じ時刻なら欄の多い方＝古い端末が知らない欄（色・日付・時間帯）を落とした版に負けない */
+  if (kx !== ky) return ky > kx ? y : x;
   return sig(y) > sig(x) ? y : x;
 }
 function shiftYmd(ymdStr, days){
@@ -539,8 +559,12 @@ function itemsOf(s, day){
     .filter(function(v){ return v.day === day; })
     .sort(function(x, y){
       var a = day === ANNIV ? x.md || '99' : day === ONCE ? x.ymd || '9999' : '', b = day === ANNIV ? y.md || '99' : day === ONCE ? y.ymd || '9999' : '';
-      return (a !== b ? (a < b ? -1 : 1) : 0) || x.ord - y.ord || (x.id < y.id ? -1 : 1);
+      var p = todKey(x.tm), q = todKey(y.tm);
+      return (a !== b ? (a < b ? -1 : 1) : 0) || (p !== q ? (p < q ? -1 : 1) : 0) || x.ord - y.ord || (x.id < y.id ? -1 : 1);
     });
+}
+function todKey(tm){                                                /* 並べる順：午前(0時)→時刻→午後(12時)→時刻→夜(18時)→時刻→時間帯なし */
+  return tm === 'am' ? '00:00' : tm === 'pm' ? '12:00' : tm === 'nt' ? '18:00' : tm ? tm + ' ' : '99';
 }
 function isAnniv(md, ymdStr){                                       /* 2月29日の記念日は、うるう年でない年は2月28日に出す */
   if (!md) return false;
@@ -553,7 +577,8 @@ function itemsForDate(s, ymdStr, di){                               /* その日
   return itemsOf(s, di)
     .concat(r && r.on ? itemsOf(s, RAIN) : [])
     .concat(itemsOf(s, ANNIV).filter(function(v){ return isAnniv(v.md, ymdStr); }))
-    .concat(itemsOf(s, ONCE).filter(function(v){ return v.ymd === ymdStr; }));
+    .concat(itemsOf(s, ONCE).filter(function(v){ return v.ymd === ymdStr; }))
+    .sort(function(x, y){ var p = todKey(x.tm), q = todKey(y.tm); return p === q ? 0 : p < q ? -1 : 1; });   /* 時間帯の順（同じなら今までの並び） */
 }
 /* 色番号。zcol を持つものはそれ、持たないもの（色を足す前に作ったもの）は、使われている数がいちばん少ない番号を ord 順に振る。
    保存はしない＝起動時に書き込まない。どの端末でも同じデータなら同じ色になる */
@@ -611,7 +636,8 @@ function dateLabel(date){                                          /* 今年な�
   if (!date) return '';
   return (date.slice(0, 4) === String(new Date().getFullYear()) ? '' : +date.slice(0, 4) + '年') + mdLabel(date.slice(5));
 }
-function whenLabel(v){ return v.md ? mdLabel(v.md) : v.ymd ? dateLabel(v.ymd) : ''; }
+function todLabel(tm){ return tm === 'am' ? '午前' : tm === 'pm' ? '午後' : tm === 'nt' ? '夜' : tm ? String(+tm.slice(0, 2)) + tm.slice(2) : ''; }
+function whenLabel(v){ return [v.md ? mdLabel(v.md) : v.ymd ? dateLabel(v.ymd) : '', todLabel(v.tm)].filter(Boolean).join(' '); }
 function display(i){                                                /* 日付のものは、これからの分を先に・過ぎた分は新しい順で後ろに */
   var list = itemsOf(state, i);
   if (i !== ONCE) return list;
@@ -685,7 +711,8 @@ function tilesHtml(list, key, can){                                /* can=false 
       thumb(v.th) +
       (kindOf(v.day) ? '<span class="mark" aria-hidden="true"><svg class="ic"><use href="#p-' + kindOf(v.day).ic + '"/></svg></span>' : '') +
       '<span class="stamp" aria-hidden="true"><i><svg class="ic"><use href="#i-check"/></svg></i></span>' +
-      '<span class="nm"><i class="swatch" aria-hidden="true"' + tint(v.id) + '></i>' + esc(v.name) + '</span></button>';
+      '<span class="nm"><i class="swatch" aria-hidden="true"' + tint(v.id) + '></i>' + esc(v.name) + '</span>' +
+      (v.tm ? '<span class="when">' + todLabel(v.tm) + '</span>' : '') + '</button>';
   }).join('') + '</div>';
 }
 function renderScore(){
@@ -901,10 +928,15 @@ $('#kinds').innerHTML = KINDS.map(function(k){
   return '<label class="kind"><input type="radio" name="day" value="' + k.i + '" aria-label="' + k.nm + '">' +
     '<svg class="ic" aria-hidden="true"><use href="#p-' + k.ic + '"/></svg>' + k.nm + '</label>';
 }).join('');
+$('#tods').innerHTML = TODS.map(function(t){
+  return '<label class="tod"><input type="radio" name="tod" value="' + t.v + '" aria-label="' + t.nm + '">' +
+    (t.ic ? '<svg class="ic" aria-hidden="true"><use href="#' + t.ic + '"/></svg>' : '') + t.nm + '</label>';
+}).join('');
+function pickedTod(){ var c = $('#edit-form').querySelector('input[name="tod"]:checked'); return c ? c.value : ''; }
 function pickedDay(){ var c = $('#edit-form').querySelector('input[name="day"]:checked'); return c ? +c.value : openDay; }
 function needsDate(){ var d = pickedDay(); return d === ANNIV || d === ONCE; }
-function canSave(){ return !!$('#name').value.trim() && (!needsDate() || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)); }
-function paintKind(){ $('#md-field').hidden = !needsDate(); $('#save').disabled = !canSave(); }
+function canSave(){ return !!$('#name').value.trim() && (!needsDate() || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)) && (pickedTod() !== 'at' || /^\d{2}:\d{2}$/.test($('#tm').value)); }
+function paintKind(){ $('#md-field').hidden = !needsDate(); $('#tm-field').hidden = pickedTod() !== 'at'; $('#save').disabled = !canSave(); }
 
 function paintPreview(){
   var p = $('#preview');
@@ -924,6 +956,9 @@ function openEdit(id, day, date){
   var dd = v ? v.day : day;
   $('#edit-form').querySelectorAll('input[name="day"]').forEach(function(inp){ inp.checked = +inp.value === dd; });
   $('#md').value = v && v.md ? new Date().getFullYear() + '-' + v.md : v && v.ymd ? v.ymd : date || ymd(new Date());
+  var tm = v && v.tm || '', tv = /:/.test(tm) ? 'at' : tm;
+  $('#edit-form').querySelectorAll('input[name="tod"]').forEach(function(inp){ inp.checked = inp.value === tv; });
+  $('#tm').value = tv === 'at' ? tm : '';
   paintKind();
   paintPreview();
   $('#edit-sheet').showModal();
@@ -937,6 +972,12 @@ $('#days').addEventListener('change', paintKind);
 $('#kinds').addEventListener('change', paintKind);
 $('#md').addEventListener('input', paintKind);
 $('#md').addEventListener('change', paintKind);
+$('#tods').addEventListener('change', function(){
+  paintKind();
+  if (pickedTod() === 'at' && !$('#tm').value) setTimeout(function(){ $('#tm').focus(); }, 60);
+});
+$('#tm').addEventListener('input', paintKind);
+$('#tm').addEventListener('change', paintKind);
 $('#photo-btn').addEventListener('click', function(){ $('#photo').click(); });
 $('#preview').addEventListener('click', function(){ $('#photo').click(); });
 $('#photo').addEventListener('change', function(){
@@ -975,6 +1016,8 @@ $('#edit-form').addEventListener('submit', function(e){
   state.items[id] = {id:id, day:day, name:name, th:draft.th, ord: old ? old.ord : Date.now(), upd:t, zcol:col};
   if (day === ANNIV) state.items[id].md = $('#md').value.slice(5);
   if (day === ONCE) state.items[id].ymd = $('#md').value;
+  var tod = pickedTod();
+  if (tod) state.items[id].tm = tod === 'at' ? $('#tm').value.slice(0, 5) : tod;
   save();
   $('#edit-sheet').close();
   renderAll();
