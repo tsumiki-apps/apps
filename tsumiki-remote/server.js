@@ -629,7 +629,8 @@ function memoLoad() {
     if (!o || typeof o !== 'object') return;
     for (const k of Object.keys(o)) {
       const t = cleanMemo(o[k] && o[k].text);
-      if (t) memos[k] = { text: t, at: Number(o[k].at) || 0 };
+      if (t) memos[k] = { text: t, at: Number(o[k].at) || 0, born: Number(o[k].born) || 0,
+                          closed: !!(o[k] && o[k].closed) };
     }
   } catch (e) { /* 無ければ無いでよい（初回・壊れていたときは白紙から） */ }
 }
@@ -645,23 +646,61 @@ function memoSave() {
     fs.renameSync(tmp, MEMO_FILE);   // 書きかけを読ませない
   } catch (e) { /* 残せなかった回は諦める（画面側が次の巡回でもう一度送ってくる） */ }
 }
+// そのメモが「いま座っている席のもの」か。
+// ⚠️ 席の名前（work1〜9）は使い回される。席を畳んでもメモは消さない決めなので、
+//    名前だけで配ると **新しく作った席に前の住人のメモが出る**（2026-09-16 実証）。
+//    メモには書いた席の誕生時刻（born）を控えてあるので、違えば別の席＝出さない。
+//    born の無い古いメモは「書いた時刻が席の誕生より後か」で見る（席より前に
+//    書けたメモは無い＝前のものなら前の住人のもの）。
+//    created が 0＝誕生時刻が読めなかった周は、これまでどおり出す。
+//    打った字がひとりでに消えるほうが、事故として重い。
+// 席が畳まれた／同じ名前で作り直されたら、その名前のメモに「別の席になった」印を
+// 付ける。⚠️ 席の誕生時刻は**秒どまり**なので、消してすぐ作り直すと born が一致して
+// しまう（2026-09-16 実測：1秒以内に作り直したら前のメモが出た）。時刻に頼らない
+// 最後の関門がこれ。文字はファイルに残し、画面に出さないだけ
+function memoClose(name) {
+  const m = memos[name];
+  if (!m || m.closed) return;
+  m.closed = true;
+  memoSave();
+}
+
+// 席が生まれた時刻（UNIX秒）を席そのものに聞く。無い席・読めない席は 0。
+// 巡回の写し（lastSeat）に無いときだけ使う保険
+async function seatBorn(name) {
+  if (!NAME_RE.test(name)) return 0;
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', '#{session_created}']);
+  return r.ok ? Number(String(r.out).trim()) || 0 : 0;
+}
+
+function memoOf(name, created) {
+  const m = memos[name];
+  if (!m || m.closed) return null;
+  if (!created) return m.text;
+  if (m.born) return m.born === created ? m.text : null;
+  return m.at >= created * 1000 ? m.text : null;
+}
+
 memoLoad();
 
 async function listSessions() {
   // 名札は**いちばん最後**に置く。中身は人が打つ自由な字なので、万一 SEP が
   // 混じっても、後ろを全部つなぎ直せば前の列（名前・モデル）は無事でいられる
   const r = await tmux(['list-sessions', '-F',
-    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}${SEP}#{${HOLD_OPT}}${SEP}#{${TITLE_OPT}}`]);
+    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}${SEP}#{${HOLD_OPT}}${SEP}#{session_created}${SEP}#{${TITLE_OPT}}`]);
   if (!r.ok) return { ok: NO_SERVER_RE.test(r.err), sessions: [] };
   const sessions = r.out
     .split('\n')
     .filter(Boolean)
     .map((line) => {
       const cols = line.split(SEP);
-      const [name, window, activity, model, hold] = cols;
+      const [name, window, activity, model, hold, created] = cols;
       return { name, window, activity: Number(activity) || 0, model: (model || '').trim(),
                hold: String(hold || '').trim() === '1',
-               label: cleanLabel(cols.slice(5).join(SEP)) };
+               // 席が生まれた時刻（UNIX秒）。同じ名前で作り直した席を「別の席」と
+               // 見分ける印。メモの持ち越しを止めるのに使う（→ memoOf）
+               created: Number(created) || 0,
+               label: cleanLabel(cols.slice(6).join(SEP)) };
     });
   // 席に書いてあるほうが正本。メモリの札はその写しなので、一覧を取るたびに
   // 合わせ直す＝サーバーを入れ替えた直後の1回目で、札がひとりでに戻ってくる
@@ -770,6 +809,9 @@ async function seatState(s, deadline) {
   const label = cleanLabel(s.label);
   const row = {
     name: s.name, window: s.window, status, quietMs,
+    // 席が生まれた時刻。読めなかった周は前に読めた値を引き継ぐ（0 に落とすと
+    // メモの照合ができなくなり、持ち越しの見張りが1周だけ緩む）
+    created: s.created || (lastSeat.get(s.name) || {}).created || 0,
     kind: kindOf(info.cmd), command: info.cmd,
     // 札に出す名前。手で付けた名札があればそちらが勝つ
     title: label || auto,
@@ -812,6 +854,7 @@ function forgetScreen(name) {
 
 // 席そのものが無くなったときの後始末（前の住人の姿を新しい席に持ち越さない）
 function forgetSeat(name) {
+  memoClose(name);        // メモも「前の住人のもの」にする（消しはしない）
   forgetScreen(name);
   lastSeat.delete(name);
   pausedSeat.delete(name);
@@ -1855,7 +1898,10 @@ const server = http.createServer(async (req, res) => {
       // メモは**いま並んでいる席のぶんだけ**乗せる（全部だと巡回のたびに
       // 畳んだ席のぶんまで運ぶことになる）。値は文字だけ＝画面側は .text を見ない
       const memoOut = {};
-      for (const st of out) if (memos[st.name]) memoOut[st.name] = memos[st.name].text;
+      for (const st of out) {
+        const t = memoOf(st.name, st.created);
+        if (t) memoOut[st.name] = t;
+      }
       return json(res, 200, {
         sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
         battery: batterySnapshot(), auth: authSnapshot(), memos: memoOut,
@@ -2032,7 +2078,13 @@ const server = http.createServer(async (req, res) => {
       const text = cleanMemo(body.text);
       // 中身はログに残さない（/api/send・/api/rename と同じ考え）
       console.log(`memo ${name} ${text ? text.length + '文字' : '消した'}`);
-      if (text) memos[name] = { text, at: Date.now() };
+      // 誕生時刻は巡回で読めている写し（lastSeat）から引く。写しに無いときだけ
+      // 席そのものに1回聞く（畳まれた席あての送り直しなら 0 が返り、次に同じ名前で
+      // 生まれた席には出ない）。打ち終えたときにしか通らない口なので、ここで
+      // tmux を1本起こしても巡回の重さには効かない。読むだけ＝席には何も送らない
+      let born = (lastSeat.get(name) || {}).created || 0;
+      if (text && !born) born = await seatBorn(name);
+      if (text) memos[name] = { text, at: Date.now(), born };
       else delete memos[name];
       memoSave();
       return json(res, 200, { ok: true, text });
