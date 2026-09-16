@@ -243,8 +243,8 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .day input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
 .day:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
 .day:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
-.kinds{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:-12px 0 20px}
-.kind{position:relative; display:flex; align-items:center; justify-content:center; gap:6px; min-height:44px; min-width:0; cursor:pointer; border-radius:999px; background:var(--surface-2); font-weight:700; font-size:15px; transition:background-color .12s var(--ease)}
+.kinds{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:-12px 0 20px}
+.kind{position:relative; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; min-height:44px; min-width:0; cursor:pointer; border-radius:999px; background:var(--surface-2); font-weight:700; font-size:15px; transition:background-color .12s var(--ease)}
 .kind input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
 .kind:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
 .kind:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
@@ -264,7 +264,10 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .cal-d.sel .n{background:var(--fill); color:var(--on-fill); box-shadow:none}
 .cal-d .cm{display:flex; align-items:center; gap:2px; height:14px; color:var(--accent-2)}
 .cal-d .cm .ic{width:12px; height:12px; stroke-width:2.2}
-.cal-d .cd{width:6px; height:6px; border-radius:999px; background:var(--accent-2)}
+/* 予定の丸：まだ＝淡い地に輪、できた＝塗り */
+.cal-d .cd{width:8px; height:8px; flex:none; border-radius:999px; background:var(--accent-wash); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
+.cal-d .cd.ok{background:var(--accent-2)}
+.cal-d .cmore{font-size:9px; line-height:1; font-weight:700; color:var(--accent-2)}
 .cal-dh{display:flex; align-items:center; gap:10px; margin:0 0 12px; min-height:44px; padding-top:12px; border-top:1px solid var(--line)}
 .cal-dh h3{margin:0; flex:1; min-width:0; font-size:16px; font-weight:700}
 
@@ -309,6 +312,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     <symbol id="p-film" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9.5h18M3 14.5h18M8 5v4.5M16 5v4.5M8 14.5V19M16 14.5V19"/></symbol>
     <symbol id="p-rain" viewBox="0 0 24 24"><path d="M3 12.5a9 9 0 0 1 18 0z"/><path d="M12 3.5v-1M12 12.5v6a2 2 0 0 1-4 0"/></symbol>
     <symbol id="p-gift" viewBox="0 0 24 24"><rect x="3.5" y="8" width="17" height="4.5" rx="1"/><path d="M5 12.5V20h14v-7.5M12 8v12"/><path d="M12 8C10.5 5 7 4 6.5 6S9 8 12 8zM12 8c1.5-3 5-4 5.5-2S15 8 12 8z"/></symbol>
+    <symbol id="p-date" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M12 13.5v3.5"/></symbol>
     <symbol id="p-bowl" viewBox="0 0 24 24"><path d="M3 11.5h18a9 9 0 0 1-18 0z"/><path d="M8.5 20.5h7"/><path d="M13.5 3.5l-3.5 8M18 4.5l-5 7"/></symbol>
   </defs>
 </svg>
@@ -397,7 +401,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     <div class="kinds" id="kinds"></div>
     <label class="field" id="md-field" hidden>
       <svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg>
-      <input type="date" id="md" aria-label="記念日の日付">
+      <input type="date" id="md" aria-label="日付">
     </label>
     <div class="foot">
       <button class="btn fill" type="submit" id="save" disabled><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>保存</button>
@@ -412,7 +416,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 /* ================= つみ木 =================
    曜日ごとに「幸せなこと」を決めておく。今日の分は押すと「できた」の判子が付く。
    データ（1つの JSON）:
-     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ)} }
+     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), ymd?:'YYYY-MM-DD'(日付だけ・名前は day より後ろに並ぶものにする＝古い端末との突き合わせで新しい側が勝つ)} }
      rain:  { 'YYYY-MM-DD': {on, upd} }          … その日は雨だったか（今日の傘ボタン）
      dels:  { id: 消した時刻 }                 … 消したものが他の端末から甦らないための印
      done:  { 'YYYY-MM-DD|id': {on, upd} }      … その日にできたか
@@ -425,8 +429,8 @@ var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJl
 var sb = (!TEST && window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_ANON) : null;
 
 var DAYS = ['月','火','水','木','金','土','日'];
-var RAIN = 7, ANNIV = 8;
-var KINDS = [{i:RAIN, ic:'rain', nm:'雨の日'}, {i:ANNIV, ic:'gift', nm:'記念日'}];
+var RAIN = 7, ANNIV = 8, ONCE = 9;
+var KINDS = [{i:ONCE, ic:'date', nm:'日付'}, {i:RAIN, ic:'rain', nm:'雨の日'}, {i:ANNIV, ic:'gift', nm:'記念日'}];
 var PRESETS = ['cafe','book','bath','music','sun','cake','leaf','moon','heart','game','film','bowl','rain','gift'];   /* 足すときは末尾に（色の割り当てがずれる） */
 var KEEP_DAYS = 70;    /* 「できた」の印はこの日数だけ残す */
 
@@ -439,12 +443,13 @@ function clean(s){
   Object.keys(it).forEach(function(id){
     var v = it[id];
     if (!v || typeof v !== 'object' || typeof v.name !== 'string') return;
-    var day = Math.max(0, Math.min(ANNIV, parseInt(v.day, 10) || 0));
+    var day = Math.max(0, Math.min(ONCE, parseInt(v.day, 10) || 0));
     var th = v.th && v.th.k === 'img' && typeof v.th.src === 'string' && v.th.src.indexOf('data:image/') === 0
       ? {k:'img', src:v.th.src}
       : {k:'ic', ic: v.th && PRESETS.indexOf(v.th.ic) >= 0 ? v.th.ic : PRESETS[0]};
     out.items[id] = {id:id, day:day, name:v.name.slice(0, 24), th:th, ord:+v.ord || 0, upd:String(v.upd || '')};
     if (day === ANNIV && typeof v.md === 'string' && /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v.md)) out.items[id].md = v.md;
+    if (day === ONCE && typeof v.ymd === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v.ymd)) out.items[id].ymd = v.ymd;
   });
   var d = s.dels && typeof s.dels === 'object' ? s.dels : {};
   Object.keys(d).forEach(function(id){ if (typeof d[id] === 'string') out.dels[id] = d[id]; });
@@ -517,7 +522,10 @@ function sig(s){                                                    /* 中身の
 function itemsOf(s, day){
   return Object.keys(s.items).map(function(id){ return s.items[id]; })
     .filter(function(v){ return v.day === day; })
-    .sort(function(x, y){ return (day === ANNIV && (x.md || '99') !== (y.md || '99') ? ((x.md || '99') < (y.md || '99') ? -1 : 1) : 0) || x.ord - y.ord || (x.id < y.id ? -1 : 1); });
+    .sort(function(x, y){
+      var a = day === ANNIV ? x.md || '99' : day === ONCE ? x.ymd || '9999' : '', b = day === ANNIV ? y.md || '99' : day === ONCE ? y.ymd || '9999' : '';
+      return (a !== b ? (a < b ? -1 : 1) : 0) || x.ord - y.ord || (x.id < y.id ? -1 : 1);
+    });
 }
 function isAnniv(md, ymdStr){                                       /* 2月29日の記念日は、うるう年でない年は2月28日に出す */
   if (!md) return false;
@@ -529,7 +537,8 @@ function itemsForDate(s, ymdStr, di){                               /* その日
   var r = s.rain[ymdStr];
   return itemsOf(s, di)
     .concat(r && r.on ? itemsOf(s, RAIN) : [])
-    .concat(itemsOf(s, ANNIV).filter(function(v){ return isAnniv(v.md, ymdStr); }));
+    .concat(itemsOf(s, ANNIV).filter(function(v){ return isAnniv(v.md, ymdStr); }))
+    .concat(itemsOf(s, ONCE).filter(function(v){ return v.ymd === ymdStr; }));
 }
 function weekScore(s, dt){                                          /* 今週できた数 / 1週間ぶんの数 */
   var dates = weekDates(dt), n = 0, total = 0;
@@ -565,6 +574,18 @@ function kindOf(i){ return KINDS.filter(function(k){ return k.i === i; })[0]; }
 function dotInner(i){ var k = kindOf(i); return k ? '<svg class="ic" aria-hidden="true"><use href="#p-' + k.ic + '"/></svg>' : DAYS[i]; }
 function dayName(i){ var k = kindOf(i); return k ? k.nm : DAYS[i] + '曜'; }
 function isRainy(key){ var r = state.rain[key || ymd(new Date())]; return !!(r && r.on); }
+function dateLabel(date){                                          /* 今年なら月日だけ */
+  if (!date) return '';
+  return (date.slice(0, 4) === String(new Date().getFullYear()) ? '' : +date.slice(0, 4) + '年') + mdLabel(date.slice(5));
+}
+function whenLabel(v){ return v.md ? mdLabel(v.md) : v.ymd ? dateLabel(v.ymd) : ''; }
+function display(i){                                                /* 日付のものは、これからの分を先に・過ぎた分は新しい順で後ろに */
+  var list = itemsOf(state, i);
+  if (i !== ONCE) return list;
+  var t = ymd(new Date());
+  return list.filter(function(v){ return (v.ymd || '') >= t; }).concat(list.filter(function(v){ return (v.ymd || '') < t; }).reverse());
+}
+function hasOnceToday(){ var key = ymd(new Date()); return itemsOf(state, ONCE).some(function(v){ return v.ymd === key; }); }
 function hasAnnivToday(){ var key = ymd(new Date()); return itemsOf(state, ANNIV).some(function(v){ return isAnniv(v.md, key); }); }
 var toastTimer = null;
 function toast(t){
@@ -644,10 +665,10 @@ function renderScore(){
 
 function renderWeek(){
   var di = dayIndex(new Date());
-  var nowOf = {}; nowOf[di] = true; nowOf[RAIN] = isRainy(); nowOf[ANNIV] = hasAnnivToday();
-  function label(v){ return (v.md ? mdLabel(v.md) + ' ' : '') + v.name; }
+  var nowOf = {}; nowOf[di] = true; nowOf[RAIN] = isRainy(); nowOf[ANNIV] = hasAnnivToday(); nowOf[ONCE] = hasOnceToday();
+  function label(v){ var w = whenLabel(v); return (w ? w + ' ' : '') + v.name; }
   function row(i){
-    var list = itemsOf(state, i), shown = list.slice(0, 3), now = !!nowOf[i];
+    var list = display(i), shown = list.slice(0, 3), now = !!nowOf[i];
     var strip = list.length
       ? shown.map(function(v){ return thumb(v.th); }).join('') +
         (list.length > shown.length ? '<span class="more">+' + (list.length - shown.length) + '</span>' : '') +
@@ -703,14 +724,18 @@ function renderCalGrid(){
   for (var i = 0; i < lead; i++) html += '<span></span>';
   for (var d = 1; d <= days; d++){
     var dt = new Date(y, m, d), key = ymd(dt), list = itemsForDate(state, key, dayIndex(dt));
-    var n = list.filter(function(v){ var x = state.done[key + '|' + v.id]; return x && x.on; }).length;
+    var ok = list.map(function(v){ var x = state.done[key + '|' + v.id]; return !!(x && x.on); });
+    var n = ok.filter(Boolean).length;
     var rain = isRainy(key), anniv = list.some(function(v){ return v.day === ANNIV; });
+    var MAX = rain ? 2 : 3, dots = '';                              /* 幅44pxに収まる数だけ並べ、残りは「+」 */
+    list.slice(0, MAX).forEach(function(v, j){
+      dots += v.day === ANNIV ? '<svg class="ic"><use href="#p-gift"/></svg>' : '<i class="cd' + (ok[j] ? ' ok' : '') + '"></i>';
+    });
+    if (list.length > MAX) dots += '<b class="cmore">+</b>';
     html += '<button class="cal-d' + (key === today ? ' today' : '') + (key === calSel ? ' sel' : '') + '" type="button" data-cal="' + key + '"' +
-      ' aria-pressed="' + (key === calSel) + '" aria-label="' + (m + 1) + '月' + d + '日' + (n ? ' できた' + n + '個' : '') + (rain ? ' 雨' : '') + (anniv ? ' 記念日' : '') + '">' +
+      ' aria-pressed="' + (key === calSel) + '" aria-label="' + (m + 1) + '月' + d + '日' + (list.length ? ' 予定' + list.length + '個' : '') + (n ? ' できた' + n + '個' : '') + (rain ? ' 雨' : '') + (anniv ? ' 記念日' : '') + '">' +
       '<span class="n">' + d + '</span><span class="cm" aria-hidden="true">' +
-        (n ? '<i class="cd"></i>' : '') +
-        (rain ? '<svg class="ic"><use href="#p-rain"/></svg>' : '') +
-        (anniv ? '<svg class="ic"><use href="#p-gift"/></svg>' : '') +
+        (rain ? '<svg class="ic"><use href="#p-rain"/></svg>' : '') + dots +
       '</span></button>';
   }
   $('#cal').innerHTML = html;
@@ -722,6 +747,7 @@ function renderCalDay(){
     '<div class="cal-dh"><span class="dot" aria-hidden="true">' + DAYS[di] + '</span>' +
       '<h3>' + (+p[1]) + '月' + (+p[2]) + '日<span class="sr"> ' + DAYS[di] + '曜日</span></h3>' +
       '<button class="iconbtn rainbtn" type="button" data-rain="' + calSel + '" aria-pressed="' + rain + '" aria-label="この日は雨"><svg class="ic" aria-hidden="true"><use href="#p-rain"/></svg></button>' +
+      '<button class="iconbtn" type="button" data-add-date="' + calSel + '" aria-label="この日に追加"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>' +
     '</div>' +
     (list.length ? tilesHtml(list, calSel, calSel <= ymd(new Date())) : '');
 }
@@ -746,6 +772,8 @@ $('#cal').addEventListener('click', function(e){
 $('#cal-day').addEventListener('click', function(e){
   var r = e.target.closest('[data-rain]');
   if (r){ toggleRain(r.dataset.rain); return; }
+  var ad = e.target.closest('[data-add-date]');
+  if (ad){ openEdit(null, ONCE, ad.dataset.addDate); return; }
   var t = e.target.closest('[data-done]');
   if (!t || t.disabled) return;
   toggleDone(t);
@@ -756,13 +784,13 @@ $('#cal-day').addEventListener('click', function(e){
 /* ================= 日のシート ================= */
 var openDay = 0;
 function renderDaySheet(){
-  var i = openDay, list = itemsOf(state, i);
+  var i = openDay, list = display(i);
   $('#day-dot').innerHTML = dotInner(i);
-  $('#day-dot').classList.toggle('now', i === RAIN ? isRainy() : i === ANNIV ? hasAnnivToday() : i === dayIndex(new Date()));
+  $('#day-dot').classList.toggle('now', i === RAIN ? isRainy() : i === ANNIV ? hasAnnivToday() : i === ONCE ? hasOnceToday() : i === dayIndex(new Date()));
   $('#day-h').textContent = dayName(i);
   $('#day-list').innerHTML = list.length ? list.map(function(v){
     return '<div class="item" data-id="' + esc(v.id) + '">' + thumb(v.th) +
-      '<span class="txt"><span class="nm">' + esc(v.name) + '</span>' + (v.md ? '<span class="sub">' + mdLabel(v.md) + '</span>' : '') + '</span>' +
+      '<span class="txt"><span class="nm">' + esc(v.name) + '</span>' + (whenLabel(v) ? '<span class="sub">' + whenLabel(v) + '</span>' : '') + '</span>' +
       '<span class="acts">' +
         '<button class="iconbtn" type="button" data-edit aria-label="' + esc(v.name) + 'を直す"><svg class="ic"><use href="#i-pen"/></svg></button>' +
         delButton(v.name) +
@@ -836,8 +864,9 @@ $('#kinds').innerHTML = KINDS.map(function(k){
     '<svg class="ic" aria-hidden="true"><use href="#p-' + k.ic + '"/></svg>' + k.nm + '</label>';
 }).join('');
 function pickedDay(){ var c = $('#edit-form').querySelector('input[name="day"]:checked'); return c ? +c.value : openDay; }
-function canSave(){ return !!$('#name').value.trim() && (pickedDay() !== ANNIV || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)); }
-function paintKind(){ $('#md-field').hidden = pickedDay() !== ANNIV; $('#save').disabled = !canSave(); }
+function needsDate(){ var d = pickedDay(); return d === ANNIV || d === ONCE; }
+function canSave(){ return !!$('#name').value.trim() && (!needsDate() || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)); }
+function paintKind(){ $('#md-field').hidden = !needsDate(); $('#save').disabled = !canSave(); }
 
 function paintPreview(){
   var p = $('#preview');
@@ -848,7 +877,7 @@ function paintPreview(){
   $('#presets').querySelectorAll('input').forEach(function(inp){ inp.checked = draft.th.k === 'ic' && inp.value === draft.th.ic; });
   $('#save').disabled = !canSave();
 }
-function openEdit(id, day){
+function openEdit(id, day, date){
   var v = id ? state.items[id] : null;
   if (id && !v) return;
   draft = v ? {id:v.id, th:v.th} : {id:null, th:{k:'ic', ic:PRESETS[0]}};
@@ -856,7 +885,7 @@ function openEdit(id, day){
   $('#name').value = v ? v.name : '';
   var dd = v ? v.day : day;
   $('#edit-form').querySelectorAll('input[name="day"]').forEach(function(inp){ inp.checked = +inp.value === dd; });
-  $('#md').value = (v && v.md ? new Date().getFullYear() + '-' + v.md : ymd(new Date()));
+  $('#md').value = v && v.md ? new Date().getFullYear() + '-' + v.md : v && v.ymd ? v.ymd : date || ymd(new Date());
   paintKind();
   paintPreview();
   $('#edit-sheet').showModal();
@@ -906,6 +935,7 @@ $('#edit-form').addEventListener('submit', function(e){
   var id = draft.id || uid();
   state.items[id] = {id:id, day:day, name:name, th:draft.th, ord: old ? old.ord : Date.now(), upd:t};
   if (day === ANNIV) state.items[id].md = $('#md').value.slice(5);
+  if (day === ONCE) state.items[id].ymd = $('#md').value;
   save();
   $('#edit-sheet').close();
   renderAll();
