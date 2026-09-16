@@ -886,7 +886,7 @@ const RE_PROMPT = /^❯\s(.*)$/;
 // ⚠️ `❯` の後ろは**ノーブレークスペース（U+00A0）**。ふつうの空白で書いた当てはめは
 //    いつまでも外れる（実測・2026-09-16。Mac の画面から数字を読むときの罠と同じ）。
 //    ついでに \s にも入らないので、先に普通の空白へ均す。
-function stripAnsi(s) { return String(s).replace(RE_ANSI, '').replace(/ /g, ' '); }
+function stripAnsi(s) { return String(s).replace(RE_ANSI, '').replace(/[\u00a0]/g, ' '); }
 
 // その行に「薄い字」（SGR 2）が掛かっているか。
 // ⚠️ 文字列の当てはめ（/\x1b\[2m/ など）で済ませない。2か所で足をすくわれる:
