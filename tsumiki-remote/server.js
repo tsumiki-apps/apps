@@ -1506,6 +1506,9 @@ async function pinnedRows(limit) {
     if (!s) continue;
     let o;
     try { o = JSON.parse(s); } catch (e) { continue; }   // 壊れた行は飛ばす
+    // ⚠️ `null` や数字だけの行も JSON としては読めてしまう。ここで弾かないと
+    //    `o.rel` で投げて、照合ごと全部止まる（2026-09-16 反証役が再現）
+    if (!o || typeof o !== 'object') continue;
     const rel = String(o.rel || '');
     // ⚠️ 置き場の外を指す印は見に行かない（道具の側でも弾いているが、ここでも止める）
     if (!rel || rel.startsWith('/') || rel.split('/').includes('..')) continue;
@@ -1516,66 +1519,86 @@ async function pinnedRows(limit) {
   return rows;
 }
 
-// 画面に出ている「名前」を、開ける場所に変える。
+// 画面に出ている「名前」を、開ける場所の**候補**に変える。
 //
 // 履歴の中の `使い方.png` を押して開くための照合（2026-09-16）。
 // **パスではなく名前で引く**のは、端末が51桁しかなく、長いパスは4行に割れたうえ
 // `… +2 lines` で省略され、右から別の字が割り込むため（実測）。名前なら1行に収まる。
 //
-// ⚠️ ここで iCloud を舐めない。画面を描くたびに呼ばれる口なので、探索を起こすと
-//    巡回のたびに置き場を叩くことになる。手元にある2つだけで答える：
-//      ① 「最近」の写し（recentCache。無ければ使わない）
-//      ② 印（made.jsonl）。写しが届いていないものはこちらで拾う（stat 1回）
-// 同じ名前が何本もあるときは**いちばん新しいもの**を返す。
+// ⚠️ **1つに決めない。候補を全部返す。**
+//    最初は「同じ名前ならいちばん新しいもの」を返していた。ところが置き場の決まり
+//    （ファイル名に版や日付を付けない＝版はフォルダが持つ）と組み合わさると、
+//    **同じ名前はふつうに起きる**。実データで数えると、光る名前のうち2本以上あるものが
+//    145種類（`img1.png` ×8 は別々のお返事カード8枚ぶん）。8/31 の履歴で押すと
+//    9/15 の別物が開く＝この機能でいちばん避けたいことだった（反証役の指摘）。
+//    名前だけでは原理的に1つに絞れないので、2本以上なら画面で場所を見せて選ばせる。
+//
+// 探す先は2つ：
+//   ① 「最近」の写し（recentCache）
+//   ② 印（made.jsonl）。写しに載っていない・写しが古いものを stat で今の姿にする
 const LOOKUP_PINS = 400;
+const LOOKUP_MAX = 12;                 // 1つの名前につき返す候補の数
+// ⚠️ 写しを集め直すのは、**一度も無いとき**か、ここより古いときだけ。
+//    前は照合のたびに recentFiles を起こしていて、見つからない名前（README.md など）を
+//    画面が60秒ごとに聞き直すたびに、置き場全体の探索（最大3.5秒）が回り続けていた
+//    （反証役の指摘）。新しく作ったものは印で拾えるので、写しは遅れてよい
+const LOOKUP_STALE_MS = 10 * 60 * 1000;
 
-// ありふれた名前。**印の無いものは光らせない。**
+// ありふれた名前。**印の無いものは光らせない。印があっても、押したら場所を見せて選ばせる。**
 // ⚠️ 実データで踏んだ（2026-09-16）：履歴に出ていた `index.html` は
 //    このリポジトリのファイルなのに、置き場の別物（PRスライドの中の index.html）が
-//    当たって光った。押したら違うものが開く＝いちばん避けたいことなので、
-//    こういう名前は「自分が置いた」と分かっているものだけにする。
-//    日付だけ・数字だけの名前も同じ理由で入れてある
+//    当たって光った。こういう名前は、画面の字が置き場のものを指している保証が無い
 const COMMON_NAME = new RegExp('^(?:index|readme|main|app|application|style|styles|script|scripts'
   + '|server|client|config|settings|package|data|test|tests|sample|example|demo|temp|tmp'
-  + '|untitled|document|image|images|photo|icon|logo|note|notes|memo|log|output|result'
-  + '|名称未設定|無題|スクリーンショット|画像|写真|メモ|資料|\\d{4}-\\d{2}-\\d{2}|\\d+)'
-  + '(?:[ _-].*)?$', 'i');
+  + '|untitled|document|image|images|img|photo|icon|favicon|logo|note|notes|memo|log|output|result'
+  + '|screenshot|名称未設定|無題|スクリーンショット|画像|写真|メモ|資料|\\d{4}-\\d{2}-\\d{2}|\\d+)'
+  + '(?:[ _.(-].*|\\d+.*)?$', 'i');
 
 function commonName(base) {
   return COMMON_NAME.test(base.replace(/\.[^.]*$/, ''));
 }
 
 async function lookupNames(names) {
-  // 索引がまだ無い／古いときは、裏で集め直しておく。
-  // ⚠️ **待たない。** ここで探索の3.5秒を待つと、名前が光るまで画面が止まって見える。
-  //    温まったかどうかは warming で返し、画面側はその回の「無かった」を覚えない
-  //    ＝温まったころにもう一度聞いてくる（recentFiles は相乗りするので二重には走らない）
+  // ⚠️ 待たない。ここで探索の3.5秒を待つと、名前が光るまで画面が止まって見える。
+  //    写しがまだ無いことは warming で返し、画面側はその回の「無かった」を覚えない
   const warming = !recentCache.list;
-  recentFiles(false).catch(() => {});
+  if (warming || Date.now() - recentCache.at > LOOKUP_STALE_MS) recentFiles(false).catch(() => {});
   const want = new Set(names);
-  const best = new Map();                        // 名前 → {rel, mtime}
-  const take = (rel, mtime) => {
-    const base = rel.split('/').pop();
-    if (!want.has(base)) return;
-    if (!PREVIEW_EXT.test(base)) return;         // ここで開けない形式は光らせない
-    if (commonName(base)) return;                // ありふれた名前は印のあるものだけ（下）
-    const cur = best.get(base);
-    if (!cur || mtime > cur.mtime) best.set(base, { rel, mtime });
+  const cands = new Map();                       // 名前 → Map(rel → {rel, mtime, pin})
+  const add = (base, rel, mtime, pin) => {
+    let m = cands.get(base);
+    if (!m) { m = new Map(); cands.set(base, m); }
+    const cur = m.get(rel);
+    if (!cur) { m.set(rel, { rel, mtime, pin }); return; }
+    // 写しと印で同じものを2度見たら、新しいほうの時刻と「印あり」を残す
+    if (mtime > cur.mtime) cur.mtime = mtime;
+    if (pin) cur.pin = true;
   };
-  if (recentCache.list) for (const f of recentCache.list) take(f.rel, f.mtime);
+  if (recentCache.list) {
+    for (const f of recentCache.list) {
+      const base = f.rel.split('/').pop();
+      if (want.has(base) && PREVIEW_EXT.test(base)) add(base, f.rel, f.mtime, false);
+    }
+  }
   const pins = await pinnedRows(LOOKUP_PINS);
   await Promise.all(pins.map(async (r) => {
     const base = r.rel.split('/').pop();
-    // 印のあるものは、ありふれた名前でも採用する（自分が置いたものだと分かっている）
-    if (!want.has(base) || !PREVIEW_EXT.test(base) || best.has(base)) return;
+    if (!want.has(base) || !PREVIEW_EXT.test(base)) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
-      if (st.isFile()) best.set(base, { rel: r.rel, mtime: st.mtimeMs });
-    } catch (e) { /* もう無い・読めないものは光らせない */ }
+      if (st.isFile()) add(base, r.rel, st.mtimeMs, true);
+    } catch (e) { /* もう無い・読めないものは候補にしない */ }
   }));
-  const out = {};
-  for (const [k, v] of best) out[k] = v.rel;
-  return { found: out, warming };
+  const found = {};
+  for (const [base, m] of cands) {
+    const all = Array.from(m.values());
+    const common = commonName(base);
+    // ありふれた名前は、印のあるものが1つも無ければ光らせない
+    if (common && !all.some((c) => c.pin)) continue;
+    all.sort((a, b) => b.mtime - a.mtime);       // 新しい順（並べ替えは全部そろってから）
+    found[base] = { list: all.slice(0, LOOKUP_MAX), total: all.length, common };
+  }
+  return { found, warming };
 }
 
 // 一度に書き出したかたまりは1行にまとめる。
@@ -2402,12 +2425,14 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 画面に出ている「名前」を、開ける場所に変える口。
+    // 画面に出ている「名前」を、開ける場所の候補に変える口。
     //
     // 履歴を遡って `使い方.png` を見つけたとき、その字を押せば開く。そのための照合。
     // 画面側は**まだ知らない名前だけ**をまとめて聞いてくる（同じ名前を二度聞かない）。
+    // 押したときは、その名前1つだけでもう一度聞いてくる（開く先は押した時点で決める）。
     //
-    // ⚠️ この口は iCloud を舐めない（lookupNames の注を見ること）。
+    // ⚠️ 写しを集め直すのは「一度も無い／10分より古い」ときだけ（lookupNames の注）。
+    //    印の分は stat を打つ＝iCloud には触る。どちらも待たずに締め切りつき。
     if (p === '/api/lookup' && req.method === 'GET') {
       const names = String(url.searchParams.get('names') || '')
         .split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 200);

@@ -37,7 +37,7 @@
 """
 import os, re, sys, unicodedata, threading
 
-# 置いたものに印を付ける（つみきリモートの帯に出すため）。
+# 置いたものに印を付ける（つみきリモートで、履歴の中の名前を押して開くための索引）。
 # 同じフォルダに無い・壊れている場合でも、この道具は動き続ける
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -232,11 +232,14 @@ def main(argv):
         out = os.path.join(vdir, kind_of(fname))
         os.makedirs(out, exist_ok=True)
         out = os.path.join(out, fname)
-        # つみきリモートの帯（席の画面の「さっき作ったもの」）に確実に出すための印。
+        # つみきリモートで、履歴の中のこの名前を押したら開けるようにする印。
         # ⚠️ まだファイルは無い（ここで返すのは「これから置く場所」）。それでよい＝
-        #    帯に出るのは実際にできたものだけで、置くのをやめれば印は無視される。
-        # ⚠️ 印が付かなくてもこの道具は止めない（帯に出にくくなるだけ）→ tsumiki_pin 側で握る
-        pin_made([out])
+        #    光るのは実際にできたものだけで、置くのをやめれば印は無視される。
+        # ⚠️ 印が付かなくてもこの道具は止めない（光りにくくなるだけ）→ tsumiki_pin 側で握る
+        # ⚠️ 試しの置き場（TSUMIKI_OUT_ROOT）のときは付けない。印の控えは HOME の下に
+        #    1つしかないので、試しで作った名前が本物の画面で光ってしまう（反証役の指摘）
+        if not os.environ.get('TSUMIKI_OUT_ROOT'):
+            pin_made([out])
     else:
         os.makedirs(vdir, exist_ok=True)
         out = vdir

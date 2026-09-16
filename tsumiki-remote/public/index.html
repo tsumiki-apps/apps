@@ -24,7 +24,7 @@
        ここに集めておく＝色を変えたいとき1か所で済む（2026-09-12） */
     --tap:#5c9cf5;
     /* 板（--panel）より一段沈んだ面。押したときの色と、小さな写しの下地に使う。
-       同じ値が6か所に直書きされていたのを1つにまとめた（2026-09-16・値は変えていない） */
+       同じ値が4か所に直書きされていたのを1つにまとめた（2026-09-16・値は変えていない） */
     --sunk:#242932;
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
@@ -562,6 +562,10 @@
     background:none;border:none;padding:0;margin:0;font:inherit;
   }
   #out .fl:active{opacity:.55}
+  /* 11px の字の中の札なので、押せる高さが16pxしかない。上下だけ少し広げる
+     （左右は隣の字に被るので広げない。上下も隣の行に届かない幅にとどめる） */
+  #out .fl{position:relative}
+  #out .fl::after{content:'';position:absolute;top:-4px;bottom:-4px;left:0;right:0}
   /* 次の指示の候補（Claude が薄い字で出している下書き）。押すとそのまま送る。
      ＝Mac なら Tab → Enter の2手。つみきリモートは一手で終わらせる（2026-09-16）。
      ⚠️ 入力欄のすぐ上に置く。キー行の側に置くと「キーの1つ」に見えて、
@@ -3279,15 +3283,41 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // だから**パスではなく「名前」で引く**。`使い方.png` なら1行に収まる。
   // 名前をサーバーの索引（印＋「最近」の写し）と照らし、**見つかったものだけ光らせる**。
   // ＝コードの中の `server.js` のような字は光らない（押せるのに開かない、が起きない）。
-  var fileIdx = {};            // 名前 → {rel:開ける場所 または null, at:いつ調べたか}
+  var fileIdx = {};            // 名前 → {hit: サーバーの答え または null, at: いつ調べたか}
   var fileAsking = {};         // いま聞いている最中の名前
   var filePend = {};           // 次の便でまとめて聞く名前
   var fileTimer = null;
   var FILE_RETRY_MS = 60000;   // 「無い」と分かった名前を、もう一度聞くまでの間
+  var FILE_ASK_MAX = 200;      // 1便で聞く数（サーバーも200で切る。溢れた分は次の便へ）
+  var FILE_IDX_MAX = 3000;     // 覚えておく名前の数。超えたら全部忘れて聞き直す
+  var fileRedrawWanted = false;
+  // 答えを待っている枠が、画面の下のほうにあるか（renderScreen が毎回書く）。
+  // ⚠️ liveBox() では足りない。あれは「いちばん最後の枠」を見るだけなので、
+  //    履歴の上のほうに残った古い枠でも真になり、名前が**永久に光らなかった**
+  //    （2026-09-16 実測：clear したあとも、400行の履歴に残った枠で止まった）
+  var screenBoxWaiting = false;
+  var BOX_TAIL_MAX = 4;
 
-  function fileRel(name) {
+  // その枠が、まだ答えを待っているか。**行数で「下から◯行」とは見ない。**
+  // ⚠️ 最初は「下から14行以内」で見ていて、パネルのすぐ後ろに本文が8行続いている
+  //    （＝もう答え終わっている）画面でも待つ側に入り、名前が光らなかった（2026-09-16 実測）。
+  //    枠の後ろに Claude の発言（⏺）か入力欄（❯）が出ていれば、それはもう閉じた枠。
+  //    どちらも無くても、字が何行も続いていれば閉じている（案内の行ぶんだけ許す）
+  function boxStillOpen(lines, end) {
+    var n = 0;
+    for (var k = end + 1; k < lines.length; k++) {
+      var t = lines[k].trim();
+      if (!t) continue;
+      if (/^[⏺❯]/.test(t)) return false;
+      if (++n > BOX_TAIL_MAX) return false;
+    }
+    return true;
+  }
+
+  // 光らせるか（開く先の候補が1つ以上あるか）
+  function fileHit(name) {
     var e = fileIdx[name];
-    return (e && e.rel) || null;
+    return !!(e && e.hit);
   }
 
   // もう調べたか。⚠️ 「無かった」も少しのあいだは覚えておく（同じ名前を毎周期
@@ -3296,7 +3326,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function fileKnown(name) {
     var e = fileIdx[name];
     if (!e) return false;
-    if (e.rel) return true;
+    if (e.hit) return true;
     return Date.now() - e.at < FILE_RETRY_MS;
   }
 
@@ -3311,35 +3341,92 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function fileFlush() {
     fileTimer = null;
     var names = Object.keys(filePend);
-    filePend = {};
     if (!names.length) return;
+    // 溢れた分は次の便に回す（サーバーは200で切るので、送っても答えが来ない）
+    var rest = names.slice(FILE_ASK_MAX);
+    names = names.slice(0, FILE_ASK_MAX);
+    filePend = {};
+    rest.forEach(function (n) { filePend[n] = 1; });
+    if (rest.length) fileTimer = setTimeout(fileFlush, 350);
+    if (Object.keys(fileIdx).length > FILE_IDX_MAX) fileIdx = {};
     names.forEach(function (n) { fileAsking[n] = 1; });
     api('/api/lookup?names=' + encodeURIComponent(names.join('\n')), null, 8000)
       .then(function (d) {
         var found = (d && d.found) || {};
-        // 索引がまだ温まっていない回は、「無かった」を覚えない。
+        // 写しがまだ無い回・時間切れの回は、「無かった」を覚えない。
         // 覚えてしまうと、置き場を集め終えたあとも1分間ずっと光らない
-        var warming = !!(d && d.warming);
+        var unsure = !!(d && (d.warming || d.stale));
         var hit = false;
         var now = Date.now();
         names.forEach(function (n) {
           delete fileAsking[n];
-          if (found[n]) { fileIdx[n] = { rel: found[n], at: now }; hit = true; }
-          else if (!warming) fileIdx[n] = { rel: null, at: now };
+          if (found[n]) { fileIdx[n] = { hit: found[n], at: now }; hit = true; }
+          else if (!unsure) fileIdx[n] = { hit: null, at: now };
         });
-        // 光らせるために、いちど描き直す（見つからなかっただけの回は描き直さない）
-        if (hit && lastText !== null) renderScreen(lastText);
+        if (hit) { fileRedrawWanted = true; fileRedraw(); }
       })
       .catch(function () {
         names.forEach(function (n) { delete fileAsking[n]; });
       });
   }
 
+  // 光らせるための描き直し。**いつでも描き直してよいわけではない。**
+  // ⚠️ 字が変わっていないのに描き直すと、質問パネルと確認の枠が別の物として
+  //    作り直される。二度押しの錠（pickedTwice）は「同じ枠か」で見ているので外れ、
+  //    押した直後に進めておいた位置（dataset.cur）も古い値に戻る
+  //    ＝「二度押しで Enter が3本飛んだ」事故の入口を、こちらから開けていた
+  //    （2026-09-16 反証役の BLOCKER）。指を置いている間も同じで、差し替えると
+  //    押したものが消える。だから危ない場面では**待つ**。巡回が毎回ここを呼ぶので、
+  //    場面が解けた周に光る
+  function fileRedraw() {
+    if (!fileRedrawWanted) return;
+    if (!lastText) return;                     // まだ本物の画面ではない（案内の文など）
+    if (touching) return;
+    if (screenBoxWaiting) return;              // 答えを待っている枠が画面の下にある
+    if (lastPick && Date.now() - lastPick.at < PICK_LOCK_MS) return;
+    renderScreen(lastText);                    // renderScreen がフラグを下ろす
+  }
+
+  // 押したとき。**開く先は押した時点で決める。**
+  // 光らせたときの答えは古いことがある（その後に新しい版ができた・消えた）ので、
+  // その名前1つだけでもう一度聞く。
+  //   候補1つ・ありふれていない名前 → そのまま開く
+  //   候補2つ以上・ありふれた名前   → 場所を並べて選ばせる（名前だけでは1つに絞れない）
+  function fileOpen(name) {
+    api('/api/lookup?names=' + encodeURIComponent(name), null, 8000)
+      .then(function (d) {
+        var h = d && d.found && d.found[name];
+        if (!h || !h.list || !h.list.length) {
+          fileIdx[name] = { hit: null, at: Date.now() };
+          return toast('見つかりません');
+        }
+        fileIdx[name] = { hit: h, at: Date.now() };
+        if (h.list.length === 1 && !h.common) return openPreview(h.list[0].rel);
+        openSheet(name);
+        h.list.forEach(function (c) {
+          var par = fParent(c.rel);
+          // 場所（「ご提案書 V2 ・ 画像」）を主に、時刻を下に。どれがどれかは場所で決まる
+          sheetItem(par ? fLabel(par) : '制作物', fmtWhen(c.mtime), function () {
+            closeSheet();
+            openPreview(c.rel);
+          });
+        });
+        if (h.total > h.list.length) {
+          sheetItem('ほかに ' + (h.total - h.list.length) + ' 件', '制作物を見る', function () {
+            openFiles();
+          });
+        }
+      })
+      .catch(function (e) { toast('開けません: ' + e.message); });
+  }
+
   // 名前らしき字。**`/` を含めない**ので、パスの一部からでも最後の名前だけを拾う。
   // 拡張子はプレビューで開けるものだけ（開かないものを光らせない）。
-  // 後ろに英数字が続くものは弾く（`a.mdx` の `a.md` を拾わない）
+  // 後ろに英数字が続くものは弾く（`a.mdx` の `a.md` を拾わない）。
+  // ⚠️ 前側の区切りに `` ` `` `：` `＝` `・` `→` を入れる。無いと「`使い方.png」
+  //    「詳細：使い方.png」を1つの名前として聞いてしまい、光らない（反証役が実測）
   var RE_FILE = new RegExp(
-    '[^\\s/\\\\:*?"<>|「」『』（）()【】\\[\\]、。，,]{1,60}'
+    '[^\\s/\\\\:*?"<>|「」『』（）()【】\\[\\]、。，,`：＝=・→]{1,60}'
     + '\\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json)(?![A-Za-z0-9])', 'g');
   // 折り返しの続きではない行の頭（別のかたまりの始まり）
   var RE_NOT_WRAP = /^[⏺⎿❯✻✽✶✳✢│┃╭╮╰╯├┤─━*+•]|^-\s/;
@@ -3372,7 +3459,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       while ((m = RE_FILE.exec(joined))) {
         var a = m.index, b = a + m[0].length;
         if (a >= head.length || b <= head.length) continue;   // またいでいない
-        if (!fileRel(m[0])) { fileAskLater(m[0]); continue; }
+        if (!fileHit(m[0])) { fileAskLater(m[0]); continue; }
         (out[i] = out[i] || []).push(
           { i: a, j: head.length, s: head.slice(a), k: 'file', fn: m[0] });
         (out[i + 1] = out[i + 1] || []).push(
@@ -3413,7 +3500,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 未知の名前はここでは札にせず、聞きに行くだけ＝答えが返った回に光る
     RE_FILE.lastIndex = 0;
     while ((m = RE_FILE.exec(text))) {
-      if (fileRel(m[0])) push(m.index, m[0], 'file');
+      if (fileHit(m[0])) push(m.index, m[0], 'file');
       else fileAskLater(m[0]);
     }
     RE_SITE.lastIndex = 0;
@@ -3463,9 +3550,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         fb.type = 'button';
         fb.className = 'fl';
         fb.textContent = h.s;
-        (function (rel) {
-          fb.onclick = function () { openPreview(rel); };   // 閉じると履歴のここに戻る
-        })(fileRel(h.fn || h.s));                           // fn＝行またぎで割れる前の名前
+        (function (name) {
+          fb.onclick = function () { fileOpen(name); };     // 閉じると履歴のここに戻る
+        })(h.fn || h.s);                                    // fn＝行またぎで割れる前の名前
         parent.appendChild(fb);
         at = h.j;
         return;                                  // 写す札は付けない
@@ -3666,6 +3753,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function renderScreen(text) {
+    fileRedrawWanted = false;   // この描き直しで、分かっている名前は全部光る
     // 桁数は「取りに行ったとき」に決まるが、起動直後は保存しておいた画面を先に出す＝
     // まだ分かっていない。そのときは今この場で測る（同じ端末・同じ幅なので前回と同じ値になる）
     var cols = paneCols || measureCols();
@@ -3676,10 +3764,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var dlgs = [];
     var wide = false;      // 広げたい＝答えを待っている2段組が画面の下にある
     var anySbs = false;    // 2段組が画面のどこかにある（戻すかどうかはこちらで見る）
+    var boxNearEnd = false; // 答えを待つ枠が画面の下のほうにある（下の screenBoxWaiting）
     for (var i = 0; i < lines.length; i++) {
       // 質問パネル（AskUserQuestion）が先。タブの行で始まるので取り違えは起きない
       var ask = takeAskPanel(lines, i);
       if (ask) {
+        if (boxStillOpen(lines, ask.end)) boxNearEnd = true;
         block = null; cls = ''; prev = '';
         var ae = askPanelEl(ask);
         frag.appendChild(ae);
@@ -3689,6 +3779,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       }
       var dlg = takeDialog(lines, i);
       if (dlg) {
+        if (boxStillOpen(lines, dlg.end)) boxNearEnd = true;
         // 枠は「かたまり」の外に出す。中で色を塗り直すので、外側の帯に乗せると二重になる。
         // 枠の次の空行に色が伸びないよう、直前の分類も切っておく
         block = null; cls = ''; prev = '';
@@ -3704,6 +3795,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         // いま画面に出ている（＝答えを待っている）2段組なら、端末を広げてもらう。
         // 下に付く案内（「Enter to select…」など）ぶんの余裕を見て終わり際かを判断する
         if (sbs.end >= lines.length - 14) wide = true;
+        if (boxStillOpen(lines, sbs.end)) boxNearEnd = true;
         // ダイアログと同じ扱い＝外の帯には乗せない。ここで分類も切っておかないと、
         // 右側の字下げ行を拾ったオレンジがこの後ろまで続いてしまう
         block = null; cls = ''; prev = '';
@@ -3737,6 +3829,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       addText(block, lines[i] + '\n', false, splitFiles[i]);
       prev = c;
     }
+    screenBoxWaiting = boxNearEnd;
     // 押せるのは一番下の枠だけ。履歴に残った古い枠まで押せると、
     // 遡って読んでいるつもりが、いまの質問に答えてしまう
     dlgs.forEach(function (de, k) {
@@ -3855,6 +3948,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       // 指を置いているあいだは描き直さない。押そうとしていた札が描き直しで消えると
       // 「押したのに何も起きない」になる。次の取得（2秒後）で追いつく
       if (text !== lastText && !touching) { lastText = text; renderScreen(text); }
+      else fileRedraw();        // 光らせる描き直しを待たせていたら、いま安全か見る
       if (stick) el.out.scrollTop = el.out.scrollHeight;
       if (panes[current] !== text) { panes[current] = text; snapDirty = true; }
       saveSnap();
