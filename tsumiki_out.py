@@ -37,6 +37,15 @@
 """
 import os, re, sys, unicodedata, threading
 
+# 置いたものに印を付ける（つみきリモートの帯に出すため）。
+# 同じフォルダに無い・壊れている場合でも、この道具は動き続ける
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from tsumiki_pin import pin as pin_made
+except Exception:
+    def pin_made(paths):
+        return 0
+
 ROOT = os.environ.get('TSUMIKI_OUT_ROOT') or os.path.expanduser(
     '~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/11_やりとり出力')
 READ_TIMEOUT = 5.0
@@ -223,6 +232,11 @@ def main(argv):
         out = os.path.join(vdir, kind_of(fname))
         os.makedirs(out, exist_ok=True)
         out = os.path.join(out, fname)
+        # つみきリモートの帯（席の画面の「さっき作ったもの」）に確実に出すための印。
+        # ⚠️ まだファイルは無い（ここで返すのは「これから置く場所」）。それでよい＝
+        #    帯に出るのは実際にできたものだけで、置くのをやめれば印は無視される。
+        # ⚠️ 印が付かなくてもこの道具は止めない（帯に出にくくなるだけ）→ tsumiki_pin 側で握る
+        pin_made([out])
     else:
         os.makedirs(vdir, exist_ok=True)
         out = vdir

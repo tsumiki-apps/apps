@@ -1376,6 +1376,57 @@ async function recentFiles(fresh) {
   return p;
 }
 
+// ------------------------------------------------------------------ 「印」
+//
+// `tsumiki_out.py`（置き場を聞く道具）と `tsumiki_pin.py` が、作ったものに
+// 印を付けて `~/.tsumiki-remote/made.jsonl` に1行ずつ書き足していく。
+//
+// なぜ探索（recentFiles）と別に持つか：
+//   ・探索は締め切り（3.5秒）で打ち切られる。**実データではほぼ毎回「途中まで」**
+//     になる（2026-09-16 実測）＝拾い漏れがありうる
+//   ・探索は時刻しか見ないので、同じ時間に別の席が書き出したものも混ざる
+// 印のほうは stat 1回で済むので、この2つを受けない。帯の芯はこちら。
+//
+// ⚠️ 印は「これから置く場所」に付く（道具がパスを返す時点ではまだ無い）。
+//    だから**実際にできたものだけ**を残す＝置くのをやめた分の幽霊を出さない。
+const MADE_FILE = path.join(CONF_DIR, 'made.jsonl');
+
+async function pinnedSince(since, limit) {
+  let text = '';
+  try { text = await within(fsp.readFile(MADE_FILE, 'utf8'), 1500, '印の控え'); }
+  catch (e) { return []; }                       // まだ1件も無い＝ふつうのこと
+  const lines = text.split('\n');
+  const seen = new Set();
+  const rows = [];
+  // 新しい順に見る。全部を stat すると置き場を何百回も叩くので、
+  // 見るのは出す数の3倍まで（その中に since より新しいものが無ければ、それ以上古い側にも無い）
+  for (let i = lines.length - 1; i >= 0 && rows.length < limit * 3; i--) {
+    const s = lines[i].trim();
+    if (!s) continue;
+    let o;
+    try { o = JSON.parse(s); } catch (e) { continue; }   // 壊れた行は飛ばす
+    const rel = String(o.rel || '');
+    // ⚠️ 置き場の外を指す印は見に行かない（道具の側でも弾いているが、ここでも止める）
+    if (!rel || rel.startsWith('/') || rel.split('/').includes('..')) continue;
+    if (seen.has(rel)) continue;                 // 同じものは新しいほうだけ
+    seen.add(rel);
+    rows.push({ rel, at: Number(o.at) || 0 });
+  }
+  const out = [];
+  await Promise.all(rows.map(async (r) => {
+    try {
+      const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
+      if (!st.isFile()) return;
+      // 印を付けた時刻か、できあがった時刻。**どちらかが席の誕生より後なら出す**
+      // （席を作る直前に置き場を聞いて、作り終えたのは席ができた後、という順があるため）
+      if (r.at <= since && st.mtimeMs <= since) return;
+      out.push({ rel: r.rel, name: path.basename(r.rel), mtime: st.mtimeMs,
+                 size: st.size, open: PREVIEW_EXT.test(r.rel), pin: true });
+    } catch (e) { /* まだ無い・読めないものは出さない */ }
+  }));
+  out.sort((a, b) => b.mtime - a.mtime);
+  return out.slice(0, limit);
+}
 // 一度に書き出したかたまりは1行にまとめる。
 // ⚠️ 2026-09-12 実測：120件のうち**57件が9/6の色違いアイコン1回ぶん**で埋まり、
 //    遡れるのが6日ぶんしかなかった。まとめないかぎり枠は何度でも食いつぶされる。
@@ -2214,24 +2265,36 @@ const server = http.createServer(async (req, res) => {
       const since = Number(url.searchParams.get('since')) || 0;
       const limit = Math.max(1, Math.min(30, Number(url.searchParams.get('limit')) || 12));
       if (!since) return json(res, 400, { error: 'since が要ります' });
+      // 印のあるもの（つみきの道具が置いたもの）を先に取る。こちらは stat だけなので、
+      // 下の探索がこけても・途中までしか回らなくても必ず出る＝**枠の取り合いでは印が勝つ**。
+      // ⚠️ ただし**並べ替えは最後にまとめてやる**。印を先頭に固めると、帯の中で
+      //    時刻が 16:25 → 16:26 → … と前後して「新しい順」の約束が崩れる
+      //    （2026-09-16 実測で見つけた。印の値打ちは「必ず出ること」であって順番ではない）
+      const items = await pinnedSince(since, limit).catch(() => []);
+      const have = new Set(items.map((i) => i.rel));
+      let total = items.length;
+      const byNew = (a, b) => b.mtime - a.mtime;
       try {
         const r = await within(recentFiles(url.searchParams.has('fresh')),
           RECENT_BUDGET_MS + 2500, 'iCloud の読み込み');
-        const items = [];
-        let total = 0;
         for (const f of r.list) {           // 新しい順に並んでいる
           if (f.mtime <= since) break;      // それより古いものは以降ぜんぶ古い
+          if (have.has(f.rel)) continue;    // 印で出したものを二度出さない
           total++;
           if (items.length < limit) {
-            items.push({ rel: f.rel, name: f.name, mtime: f.mtime, size: f.size, open: f.open });
+            items.push({ rel: f.rel, name: f.name, mtime: f.mtime, size: f.size,
+                         open: f.open, pin: false });
           }
         }
+        items.sort(byNew);
         return json(res, 200, { items, total, partial: r.partial });
       } catch (e) {
         // ⚠️ 帯は「出ないだけ」で済ませる。見に行っていないものの失敗を毎回
         //    知らせると、席の画面が赤い字で埋まる。原因が要るときは
-        //    「制作物を見る」を開けば、あちらがちゃんと見分けて教えてくれる
-        return json(res, 200, { items: [], total: 0, stale: true });
+        //    「制作物を見る」を開けば、あちらがちゃんと見分けて教えてくれる。
+        // 探索がこけても**印のぶんは出す**（ここが案2を足した意味）
+        items.sort(byNew);
+        return json(res, 200, { items, total, stale: true });
       }
     }
     // 画像やPDFを Mac に置く。Claude Code はファイルそのものを受け取れないが、
