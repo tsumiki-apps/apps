@@ -1520,6 +1520,22 @@ async function pinnedRows(limit) {
 // 同じ名前が何本もあるときは**いちばん新しいもの**を返す。
 const LOOKUP_PINS = 400;
 
+// ありふれた名前。**印の無いものは光らせない。**
+// ⚠️ 実データで踏んだ（2026-09-16）：履歴に出ていた `index.html` は
+//    このリポジトリのファイルなのに、置き場の別物（PRスライドの中の index.html）が
+//    当たって光った。押したら違うものが開く＝いちばん避けたいことなので、
+//    こういう名前は「自分が置いた」と分かっているものだけにする。
+//    日付だけ・数字だけの名前も同じ理由で入れてある
+const COMMON_NAME = new RegExp('^(?:index|readme|main|app|application|style|styles|script|scripts'
+  + '|server|client|config|settings|package|data|test|tests|sample|example|demo|temp|tmp'
+  + '|untitled|document|image|images|photo|icon|logo|note|notes|memo|log|output|result'
+  + '|名称未設定|無題|スクリーンショット|画像|写真|メモ|資料|\\d{4}-\\d{2}-\\d{2}|\\d+)'
+  + '(?:[ _-].*)?$', 'i');
+
+function commonName(base) {
+  return COMMON_NAME.test(base.replace(/\.[^.]*$/, ''));
+}
+
 async function lookupNames(names) {
   // 索引がまだ無い／古いときは、裏で集め直しておく。
   // ⚠️ **待たない。** ここで探索の3.5秒を待つと、名前が光るまで画面が止まって見える。
@@ -1533,6 +1549,7 @@ async function lookupNames(names) {
     const base = rel.split('/').pop();
     if (!want.has(base)) return;
     if (!PREVIEW_EXT.test(base)) return;         // ここで開けない形式は光らせない
+    if (commonName(base)) return;                // ありふれた名前は印のあるものだけ（下）
     const cur = best.get(base);
     if (!cur || mtime > cur.mtime) best.set(base, { rel, mtime });
   };
@@ -1540,6 +1557,7 @@ async function lookupNames(names) {
   const pins = await pinnedRows(LOOKUP_PINS);
   await Promise.all(pins.map(async (r) => {
     const base = r.rel.split('/').pop();
+    // 印のあるものは、ありふれた名前でも採用する（自分が置いたものだと分かっている）
     if (!want.has(base) || !PREVIEW_EXT.test(base) || best.has(base)) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
