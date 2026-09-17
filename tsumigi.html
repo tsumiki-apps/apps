@@ -294,7 +294,9 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .tod:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
 .tod:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
 .tile .when{font-size:13px; font-weight:700; line-height:1.4; color:var(--ink-mid); font-variant-numeric:tabular-nums}
-.foot{display:flex; gap:8px}
+.foot{display:flex; gap:8px; position:sticky; bottom:0; z-index:1; margin:0 -20px; padding:12px 20px; background:var(--surface); border-top:1px solid var(--line)}   /* 保存はいつも見える位置に */
+.field.need{border-color:var(--warn-ink)}
+.tods.freq{grid-template-columns:repeat(2,minmax(0,1fr))}
 .foot .btn.fill{flex:1}
 
 /* ---- カレンダー ---- */
@@ -457,7 +459,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
       <svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg>
       <input type="date" id="md" aria-label="日付">
     </label>
-    <div class="tods reps" id="freq" role="radiogroup" aria-label="くり返し" hidden></div>
+    <div class="tods reps freq" id="freq" role="radiogroup" aria-label="くり返し" hidden></div>
     <div id="range" hidden>
       <label class="field">
         <svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg>
@@ -829,12 +831,12 @@ function renderWeek(){
   }
   var kinds = KINDS.filter(function(k){ return k.sub == null; });
   $('#week').innerHTML = DAYS.map(function(d, i){ return row(i); }).join('') +
-    '<button class="kfold-btn" type="button" id="kfold-btn" aria-expanded="' + kindsOpen + '" aria-controls="kfold" aria-label="' + kinds.map(function(k){ return k.nm; }).join('・') + '">' +
+    '<button class="kfold-btn" type="button" id="kfold-btn" aria-expanded="' + kindsOpen + '" aria-controls="kfold" aria-label="' + kinds.map(function(k){ return k.nm + (nowOf[k.i] ? '（今日あり）' : ''); }).join('・') + '">' +
       '<span class="icons" aria-hidden="true">' + kinds.map(function(k){ return '<svg class="ic' + (nowOf[k.i] ? ' now' : '') + '"><use href="#p-' + k.ic + '"/></svg>'; }).join('') + '</span>' +
       '<svg class="ic chev" aria-hidden="true"><use href="#i-chev"/></svg></button>' +
     '<div class="fold' + (kindsOpen ? ' open' : '') + '" id="kfold"><div class="week"' + (kindsOpen ? '' : ' inert') + '>' + kinds.map(function(k){ return row(k.i); }).join('') + '</div></div>';
 }
-var KFOLD_KEY = KEY + '-kinds-open', kindsOpen = false;             /* 開いているかは端末ごとの好み（同期しない） */
+var KFOLD_KEY = KEY + '-kinds-open', kindsOpen = false;             /* 開いているかは端末ごとの好み（同期しない）。絵の折りたたみは時々しか使わないので覚えず毎回閉じる */
 try { kindsOpen = localStorage.getItem(KFOLD_KEY) === '1'; } catch (e) {}
 
 var TINT = {};
@@ -945,7 +947,7 @@ var openDay = 0;
 function renderDaySheet(){
   var i = openDay, list = display(i);
   $('#day-dot').innerHTML = dotInner(i);
-  $('#day-dot').classList.toggle('now', i === RAIN ? isRainy() : i === ANNIV ? hasAnnivToday() : i === ONCE ? hasOnceToday() || hasMonthlyToday() : i === MONTHLY ? hasMonthlyToday() : i === PERIOD ? hasPeriodToday() : i === dayIndex(new Date()));
+  $('#day-dot').classList.toggle('now', i === RAIN ? isRainy() : i === ANNIV ? hasAnnivToday() : i === ONCE ? hasOnceToday() || hasMonthlyToday() : i === PERIOD ? hasPeriodToday() : i === dayIndex(new Date()));
   $('#day-h').textContent = dayName(i);
   $('#day-list').innerHTML = list.length ? list.map(function(v){
     return '<div class="item" data-id="' + esc(v.id) + '">' + thumb(v.th) +
@@ -1017,7 +1019,7 @@ $('#day-list').addEventListener('click', function(e){
 });
 
 /* ================= 作る・直す ================= */
-var draft = null, draftFreq = '1';
+var draft = null, draftFreq = '1', draftMd = '';
 $('#presets').innerHTML = PRESETS.map(function(p){
   return '<label class="preset"><input type="radio" name="preset" value="' + p + '" aria-label="' + p + '">' +
     '<span class="th ' + tone(p) + '"><svg class="ic" aria-hidden="true"><use href="#p-' + p + '"/></svg></span></label>';
@@ -1053,7 +1055,12 @@ $('#spans').innerHTML = SPANS.map(function(n){ return '<button type="button" dat
 function needsDate(){ var d = pickedDay(); return d === ANNIV || d === ONCE || d === MONTHLY; }
 function rangeOk(){ var a = $('#st').value, b = $('#en').value; return /^\d{4}-\d{2}-\d{2}$/.test(a) && /^\d{4}-\d{2}-\d{2}$/.test(b) && a <= b; }
 function canSave(){ return !!$('#name').value.trim() && (!needsDate() || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)) && (pickedDay() !== PERIOD || rangeOk()) && (pickedTod() !== 'at' || /^\d{2}:\d{2}$/.test($('#tm').value)); }
-function paintKind(){ $('#md-field').hidden = !needsDate(); $('#freq').hidden = pickedDay() !== ONCE && pickedDay() !== MONTHLY; $('#reps').hidden = pickedDay() !== ANNIV; $('#range').hidden = pickedDay() !== PERIOD; paintSpans(); $('#tm-field').hidden = pickedTod() !== 'at'; $('#save').disabled = !canSave(); }
+function paintKind(){
+  $('#en').min = $('#st').value;
+  $('#md-field').classList.toggle('need', !/^\d{4}-\d{2}-\d{2}$/.test($('#md').value));
+  $('#en').closest('.field').classList.toggle('need', !rangeOk());
+  $('#tm-field').classList.toggle('need', !/^\d{2}:\d{2}$/.test($('#tm').value));
+  $('#md-field').hidden = !needsDate(); $('#freq').hidden = pickedDay() !== ONCE && pickedDay() !== MONTHLY; $('#reps').hidden = pickedDay() !== ANNIV; $('#range').hidden = pickedDay() !== PERIOD; paintSpans(); $('#tm-field').hidden = pickedTod() !== 'at'; $('#save').disabled = !canSave(); }
 
 function paintPreview(){
   var p = $('#preview');
@@ -1075,13 +1082,16 @@ function openEdit(id, day, date){
   if (dd === MONTHLY) dd = ONCE;
   $('#edit-form').querySelectorAll('input[name="day"]').forEach(function(inp){ inp.checked = +inp.value === dd; });
   $('#edit-form').querySelectorAll('input[name="freq"]').forEach(function(inp){ inp.checked = inp.value === draftFreq; });
-  $('#md').value = v && v.md ? new Date().getFullYear() + '-' + v.md : v && v.ymd ? v.ymd : date || ymd(new Date());
+  var yy = new Date().getFullYear();
+  if (v && v.md === '02-29') while (!(yy % 4 === 0 && (yy % 100 !== 0 || yy % 400 === 0))) yy--;   /* 平年だと 2月29日 が入らず空になる */
+  $('#md').value = v && v.md ? yy + '-' + v.md : v && v.ymd ? v.ymd : date || ymd(new Date());
   if (v && v.dom && !v.ymd){                                         /* 開始日を持たない毎月は、今月のその日（無ければ月末）を入れる */
     var nn = new Date(), last = new Date(nn.getFullYear(), nn.getMonth() + 1, 0).getDate();
     $('#md').value = ymd(new Date(nn.getFullYear(), nn.getMonth(), Math.min(v.dom, last)));
   }
   setFold(false);
   if (v && v.base) $('#md').value = v.base;
+  draftMd = $('#md').value;                                         /* 日付欄を触らずに保存したら、古いデータの dom・base をそのまま残す */
   var rp = v && v.rep || 'y';
   $('#edit-form').querySelectorAll('input[name="rep"]').forEach(function(inp){ inp.checked = inp.value === rp; });
   $('#st').value = v && v.st || date || ymd(new Date());
@@ -1170,9 +1180,16 @@ $('#edit-form').addEventListener('submit', function(e){
   var id = draft.id || uid();
   var col = old ? (old.zcol != null ? old.zcol : tintsOf(state)[id]) : nextTint(state);
   state.items[id] = {id:id, day:day, name:name, th:draft.th, ord: old ? old.ord : Date.now(), upd:t, zcol:col};
-  if (day === ANNIV){ state.items[id].md = $('#md').value.slice(5); state.items[id].base = $('#md').value; state.items[id].rep = pickedRep(); }
+  var keepOld = old && old.day === day && $('#md').value === draftMd;   /* 開始日・元の日を持たない古いものを、日付を触らずに直したとき */
+  if (day === ANNIV){
+    state.items[id].md = $('#md').value.slice(5); state.items[id].rep = pickedRep();
+    if (!(keepOld && !old.base)) state.items[id].base = $('#md').value;
+  }
   if (day === ONCE) state.items[id].ymd = $('#md').value;
-  if (day === MONTHLY){ state.items[id].ymd = $('#md').value; state.items[id].dom = +$('#md').value.slice(8); }
+  if (day === MONTHLY){
+    if (keepOld && !old.ymd) state.items[id].dom = old.dom;
+    else { state.items[id].ymd = $('#md').value; state.items[id].dom = +$('#md').value.slice(8); }
+  }
   if (day === PERIOD){ state.items[id].st = $('#st').value; state.items[id].en = $('#en').value; }
   var tod = pickedTod();
   if (tod) state.items[id].tm = tod === 'at' ? $('#tm').value.slice(0, 5) : tod;
