@@ -471,7 +471,6 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
       </label>
       <div class="spans" id="spans" aria-label="日数"></div>
     </div>
-    <div class="tods reps" id="reps" role="radiogroup" aria-label="くり返し" hidden></div>
     <div class="tods" id="tods" role="radiogroup" aria-label="時間帯"></div>
     <label class="field" id="tm-field" hidden>
       <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
@@ -493,7 +492,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
    曜日ごとに「幸せなこと」を決めておく。今日の分は押すと「できた」の判子が付く。
    データ（1つの JSON）:
      items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付, 10=毎月, 11=期間), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ), tm?:'am'|'pm'|'nt'|'HH:MM'(時間帯・どの種類にも付けられる), dom?:1〜31(毎月だけ・その月に無い日は月末に出す・ymd があればその日から), st?/en?:'YYYY-MM-DD'(期間だけ・この間は毎日),
-            rep?:'w'|'m'|'y'(記念日のくり返し・無ければ毎年), base?:'YYYY-MM-DD'(記念日の元の日・月日は md と同じ・この日より前には出さない)} }
+            rep?:'w'|'m'|'y'(記念日のくり返し・無ければ毎年。2026-09-17 に記念日は毎年だけにした＝今は作らない。前に作った w/m は出し続け、直すと毎月→日付の毎月・毎週→曜日に移る), base?:'YYYY-MM-DD'(記念日の元の日・月日は md と同じ・この日より前には出さない)} }
      rain:  { 'YYYY-MM-DD': {on, upd} }          … その日は雨だったか（今日の傘ボタン）
      dels:  { id: 消した時刻 }                 … 消したものが他の端末から甦らないための印
      done:  { 'YYYY-MM-DD|id': {on, upd} }      … その日にできたか
@@ -801,8 +800,8 @@ function tilesHtml(list, key, can){                                /* can=false 
       tileWhen(v, key) + '</button>';
   }).join('') + '</div>';
 }
-function tileWhen(v, key){                                         /* 期間は「何日目/全部で何日」・記念日は「何年」など */
-  var w = [v.st ? (daysBetween(v.st, key) + 1) + '/' + (daysBetween(v.st, v.en) + 1) + '日' : v.md ? annivCount(v, key) : '', todLabel(v.tm)].filter(Boolean).join(' ');
+function tileWhen(v, key){                                         /* 期間は「何日目/全部で何日」・記念日は「何年」・日付の毎月は「何か月」 */
+  var w = [v.st ? (daysBetween(v.st, key) + 1) + '/' + (daysBetween(v.st, v.en) + 1) + '日' : v.md ? annivCount(v, key) : v.dom && v.ymd ? annivCount({base:v.ymd, rep:'m'}, key) : '', todLabel(v.tm)].filter(Boolean).join(' ');
   return w ? '<span class="when">' + w + '</span>' : '';
 }
 function renderScore(){
@@ -1037,11 +1036,6 @@ $('#tods').innerHTML = TODS.map(function(t){
   return '<label class="tod"><input type="radio" name="tod" value="' + t.v + '" aria-label="' + t.nm + '">' +
     (t.ic ? '<svg class="ic" aria-hidden="true"><use href="#' + t.ic + '"/></svg>' : '') + t.nm + '</label>';
 }).join('');
-var REPS = [{v:'w', nm:'毎週'}, {v:'m', nm:'毎月'}, {v:'y', nm:'毎年'}];
-$('#reps').innerHTML = REPS.map(function(r){
-  return '<label class="tod"><input type="radio" name="rep" value="' + r.v + '" aria-label="' + r.nm + '">' + r.nm + '</label>';
-}).join('');
-function pickedRep(){ var c = $('#edit-form').querySelector('input[name="rep"]:checked'); return c ? c.value : 'y'; }
 function pickedTod(){ var c = $('#edit-form').querySelector('input[name="tod"]:checked'); return c ? c.value : ''; }
 $('#freq').innerHTML = [{v:'1', nm:'1回'}, {v:'m', nm:'毎月'}].map(function(r){
   return '<label class="tod"><input type="radio" name="freq" value="' + r.v + '" aria-label="' + r.nm + '">' + r.nm + '</label>';
@@ -1060,7 +1054,7 @@ function paintKind(){
   $('#md-field').classList.toggle('need', !/^\d{4}-\d{2}-\d{2}$/.test($('#md').value));
   $('#en').closest('.field').classList.toggle('need', !rangeOk());
   $('#tm-field').classList.toggle('need', !/^\d{2}:\d{2}$/.test($('#tm').value));
-  $('#md-field').hidden = !needsDate(); $('#freq').hidden = pickedDay() !== ONCE && pickedDay() !== MONTHLY; $('#reps').hidden = pickedDay() !== ANNIV; $('#range').hidden = pickedDay() !== PERIOD; paintSpans(); $('#tm-field').hidden = pickedTod() !== 'at'; $('#save').disabled = !canSave(); }
+  $('#md-field').hidden = !needsDate(); $('#freq').hidden = pickedDay() !== ONCE && pickedDay() !== MONTHLY; $('#range').hidden = pickedDay() !== PERIOD; paintSpans(); $('#tm-field').hidden = pickedTod() !== 'at'; $('#save').disabled = !canSave(); }
 
 function paintPreview(){
   var p = $('#preview');
@@ -1078,6 +1072,8 @@ function openEdit(id, day, date){
   $('#edit-h').textContent = v ? '直す' : '追加';
   $('#name').value = v ? v.name : '';
   var dd = v ? v.day : day;
+  var legacy = v && v.day === ANNIV && v.base && (v.rep === 'm' || v.rep === 'w') ? v.rep : '';   /* 前に作った記念日の毎月・毎週は、直すと日付の毎月・曜日に移す */
+  if (legacy) dd = legacy === 'm' ? MONTHLY : (weekday(v.base) + 6) % 7;
   draftFreq = dd === MONTHLY ? 'm' : '1';
   if (dd === MONTHLY) dd = ONCE;
   $('#edit-form').querySelectorAll('input[name="day"]').forEach(function(inp){ inp.checked = +inp.value === dd; });
@@ -1091,9 +1087,7 @@ function openEdit(id, day, date){
   }
   setFold(false);
   if (v && v.base) $('#md').value = v.base;
-  draftMd = $('#md').value;                                         /* 日付欄を触らずに保存したら、古いデータの dom・base をそのまま残す */
-  var rp = v && v.rep || 'y';
-  $('#edit-form').querySelectorAll('input[name="rep"]').forEach(function(inp){ inp.checked = inp.value === rp; });
+  draftMd = legacy ? '' : $('#md').value;                                         /* 日付欄を触らずに保存したら、古いデータの dom・base をそのまま残す */
   $('#st').value = v && v.st || date || ymd(new Date());
   $('#en').value = v && v.en || shiftYmd($('#st').value, SPANS[2] - 1);
   var tm = v && v.tm || '', tv = /:/.test(tm) ? 'at' : tm;
@@ -1130,7 +1124,6 @@ $('#spans').addEventListener('click', function(e){
   });
   $('#en').addEventListener(ev, paintKind);
 });
-$('#reps').addEventListener('change', paintKind);
 $('#freq').addEventListener('change', paintKind);
 $('#tods').addEventListener('change', function(){
   paintKind();
@@ -1182,7 +1175,7 @@ $('#edit-form').addEventListener('submit', function(e){
   state.items[id] = {id:id, day:day, name:name, th:draft.th, ord: old ? old.ord : Date.now(), upd:t, zcol:col};
   var keepOld = old && old.day === day && $('#md').value === draftMd;   /* 開始日・元の日を持たない古いものを、日付を触らずに直したとき */
   if (day === ANNIV){
-    state.items[id].md = $('#md').value.slice(5); state.items[id].rep = pickedRep();
+    state.items[id].md = $('#md').value.slice(5);
     if (!(keepOld && !old.base)) state.items[id].base = $('#md').value;
   }
   if (day === ONCE) state.items[id].ymd = $('#md').value;
