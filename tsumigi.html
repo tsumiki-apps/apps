@@ -262,8 +262,12 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .day input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
 .day:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
 .day:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
-.kinds{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:-12px 0 20px}
-@media (max-width:374px){ .kinds{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.kinds{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:-12px 0 20px}
+@media (min-width:600px){ .kinds{grid-template-columns:repeat(5,minmax(0,1fr))} }
+/* 期間：日数のボタン（開始日から数えて終了日を入れる） */
+.spans{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin:-4px 0 16px}
+.spans button{min-height:44px; min-width:0; border:0; border-radius:999px; background:var(--surface-2); color:var(--ink); font:inherit; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; cursor:pointer}
+.spans button[aria-pressed="true"]{background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
 .field select{flex:1; min-width:0; min-height:44px; border:0; background:none; outline:none; font:inherit; font-size:16px; color:var(--ink); -webkit-appearance:none; appearance:none}
 .kind{position:relative; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; min-height:44px; min-width:0; cursor:pointer; border-radius:999px; background:var(--surface-2); font-weight:700; font-size:15px; transition:background-color .12s var(--ease)}
 .kind input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
@@ -347,6 +351,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     <symbol id="p-gift" viewBox="0 0 24 24"><rect x="3.5" y="8" width="17" height="4.5" rx="1"/><path d="M5 12.5V20h14v-7.5M12 8v12"/><path d="M12 8C10.5 5 7 4 6.5 6S9 8 12 8zM12 8c1.5-3 5-4 5.5-2S15 8 12 8z"/></symbol>
     <symbol id="p-date" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M12 13.5v3.5"/></symbol>
     <symbol id="p-month" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M15 15a3 3 0 1 1-1-2.2"/><path d="M14.5 11.3l-.5 1.5 1.5.4"/></symbol>
+    <symbol id="p-period" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4.5h11.5l-2.5 4 2.5 4H5"/></symbol>
     <symbol id="i-shapes" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="4"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.5"/><path d="M17 3.5l3.8 6.5h-7.6z"/><path d="M3.5 20.5l4-7 4 7z"/></symbol>
     <symbol id="p-bowl" viewBox="0 0 24 24"><path d="M3 11.5h18a9 9 0 0 1-18 0z"/><path d="M8.5 20.5h7"/><path d="M13.5 3.5l-3.5 8M18 4.5l-5 7"/></symbol>
   </defs>
@@ -446,6 +451,17 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
       <select id="dom" aria-label="毎月の日"></select>
       <svg class="ic" aria-hidden="true" style="transform:rotate(90deg)"><use href="#i-chev"/></svg>
     </label>
+    <div id="range" hidden>
+      <label class="field">
+        <svg class="ic" aria-hidden="true"><use href="#i-cal"/></svg>
+        <input type="date" id="st" aria-label="開始日">
+      </label>
+      <label class="field">
+        <svg class="ic" aria-hidden="true"><use href="#p-period"/></svg>
+        <input type="date" id="en" aria-label="終了日">
+      </label>
+      <div class="spans" id="spans" aria-label="日数"></div>
+    </div>
     <div class="tods" id="tods" role="radiogroup" aria-label="時間帯"></div>
     <label class="field" id="tm-field" hidden>
       <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
@@ -464,7 +480,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 /* ================= つみ木 =================
    曜日ごとに「幸せなこと」を決めておく。今日の分は押すと「できた」の判子が付く。
    データ（1つの JSON）:
-     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付, 10=毎月), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ), tm?:'am'|'pm'|'nt'|'HH:MM'(時間帯・どの種類にも付けられる), dom?:1〜31(毎月だけ・その月に無い日は月末に出す)} }
+     items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付, 10=毎月, 11=期間), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ), tm?:'am'|'pm'|'nt'|'HH:MM'(時間帯・どの種類にも付けられる), dom?:1〜31(毎月だけ・その月に無い日は月末に出す), st?/en?:'YYYY-MM-DD'(期間だけ・この間は毎日)} }
      rain:  { 'YYYY-MM-DD': {on, upd} }          … その日は雨だったか（今日の傘ボタン）
      dels:  { id: 消した時刻 }                 … 消したものが他の端末から甦らないための印
      done:  { 'YYYY-MM-DD|id': {on, upd} }      … その日にできたか
@@ -477,8 +493,9 @@ var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJl
 var sb = (!TEST && window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_ANON) : null;
 
 var DAYS = ['月','火','水','木','金','土','日'];
-var RAIN = 7, ANNIV = 8, ONCE = 9, MONTHLY = 10;
-var KINDS = [{i:ONCE, ic:'date', nm:'日付'}, {i:MONTHLY, ic:'month', nm:'毎月'}, {i:RAIN, ic:'rain', nm:'雨の日'}, {i:ANNIV, ic:'gift', nm:'記念日'}];
+var RAIN = 7, ANNIV = 8, ONCE = 9, MONTHLY = 10, PERIOD = 11;
+var SPANS = [7, 21, 30, 100];   /* 期間の日数ボタン */
+var KINDS = [{i:ONCE, ic:'date', nm:'日付'}, {i:MONTHLY, ic:'month', nm:'毎月'}, {i:PERIOD, ic:'period', nm:'期間'}, {i:RAIN, ic:'rain', nm:'雨の日'}, {i:ANNIV, ic:'gift', nm:'記念日'}];
 var TODS = [{v:'', nm:'なし'}, {v:'am', ic:'i-sunrise', nm:'午前'}, {v:'pm', ic:'p-sun', nm:'午後'}, {v:'nt', ic:'p-moon', nm:'夜'}, {v:'at', ic:'i-clock', nm:'時刻'}];
 var TINTS = 50;        /* 予定ごとの色の数（CSS の --c0〜--c49） */
 var PRESETS = ['cafe','book','bath','music','sun','cake','leaf','moon','heart','game','film','bowl','rain','gift'];   /* 足すときは末尾に（色の割り当てがずれる） */
@@ -493,7 +510,7 @@ function clean(s){
   Object.keys(it).forEach(function(id){
     var v = it[id];
     if (!v || typeof v !== 'object' || typeof v.name !== 'string') return;
-    var day = Math.max(0, Math.min(MONTHLY, parseInt(v.day, 10) || 0));
+    var day = Math.max(0, Math.min(PERIOD, parseInt(v.day, 10) || 0));
     var th = v.th && v.th.k === 'img' && typeof v.th.src === 'string' && v.th.src.indexOf('data:image/') === 0
       ? {k:'img', src:v.th.src}
       : {k:'ic', ic: v.th && PRESETS.indexOf(v.th.ic) >= 0 ? v.th.ic : PRESETS[0]};
@@ -502,6 +519,8 @@ function clean(s){
     if (typeof v.zcol === 'number' && v.zcol % 1 === 0 && v.zcol >= 0 && v.zcol < TINTS) out.items[id].zcol = v.zcol;
     if (day === ONCE && typeof v.ymd === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v.ymd)) out.items[id].ymd = v.ymd;
     if (day === MONTHLY && typeof v.dom === 'number' && v.dom % 1 === 0 && v.dom >= 1 && v.dom <= 31) out.items[id].dom = v.dom;
+    var YMD = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+    if (day === PERIOD && YMD.test(v.st) && YMD.test(v.en) && v.st <= v.en){ out.items[id].st = v.st; out.items[id].en = v.en; }
     if (typeof v.tm === 'string' && /^(am|pm|nt|([01]\d|2[0-3]):[0-5]\d)$/.test(v.tm)) out.items[id].tm = v.tm;
   });
   var d = s.dels && typeof s.dels === 'object' ? s.dels : {};
@@ -578,8 +597,8 @@ function itemsOf(s, day){
   return Object.keys(s.items).map(function(id){ return s.items[id]; })
     .filter(function(v){ return v.day === day; })
     .sort(function(x, y){
-      var a = day === ANNIV ? x.md || '99' : day === ONCE ? x.ymd || '9999' : day === MONTHLY ? String(x.dom || 99).padStart(2, '0') : '',
-          b = day === ANNIV ? y.md || '99' : day === ONCE ? y.ymd || '9999' : day === MONTHLY ? String(y.dom || 99).padStart(2, '0') : '';
+      var a = day === ANNIV ? x.md || '99' : day === ONCE ? x.ymd || '9999' : day === MONTHLY ? String(x.dom || 99).padStart(2, '0') : day === PERIOD ? x.st || '9999' : '',
+          b = day === ANNIV ? y.md || '99' : day === ONCE ? y.ymd || '9999' : day === MONTHLY ? String(y.dom || 99).padStart(2, '0') : day === PERIOD ? y.st || '9999' : '';
       var p = todKey(x.tm), q = todKey(y.tm);
       return (a !== b ? (a < b ? -1 : 1) : 0) || (p !== q ? (p < q ? -1 : 1) : 0) || x.ord - y.ord || (x.id < y.id ? -1 : 1);
     });
@@ -593,6 +612,10 @@ function isAnniv(md, ymdStr){                                       /* 2月29日
   if (md === m) return true;
   return md === '02-29' && m === '02-28' && !(y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0));
 }
+function daysBetween(a, b){                                         /* a から b まで何日（同じ日なら0） */
+  var p = a.split('-'), q = b.split('-');
+  return Math.round((Date.UTC(+q[0], +q[1] - 1, +q[2]) - Date.UTC(+p[0], +p[1] - 1, +p[2])) / 864e5);
+}
 function isMonthDay(dom, ymdStr){                                   /* 31日など、その月に無い日は月末に出す */
   if (!dom) return false;
   var y = +ymdStr.slice(0, 4), m = +ymdStr.slice(5, 7), d = +ymdStr.slice(8), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -605,6 +628,7 @@ function itemsForDate(s, ymdStr, di){                               /* その日
     .concat(itemsOf(s, ANNIV).filter(function(v){ return isAnniv(v.md, ymdStr); }))
     .concat(itemsOf(s, ONCE).filter(function(v){ return v.ymd === ymdStr; }))
     .concat(itemsOf(s, MONTHLY).filter(function(v){ return isMonthDay(v.dom, ymdStr); }))
+    .concat(itemsOf(s, PERIOD).filter(function(v){ return v.st && v.st <= ymdStr && ymdStr <= v.en; }))
     .sort(function(x, y){ var p = todKey(x.tm), q = todKey(y.tm); return p === q ? 0 : p < q ? -1 : 1; });   /* 時間帯の順（同じなら今までの並び） */
 }
 /* 色番号。zcol を持つものはそれ、持たないもの（色を足す前に作ったもの）は、使われている数がいちばん少ない番号を ord 順に振る。
@@ -664,14 +688,15 @@ function dateLabel(date){                                          /* 今年な�
   return (date.slice(0, 4) === String(new Date().getFullYear()) ? '' : +date.slice(0, 4) + '年') + mdLabel(date.slice(5));
 }
 function todLabel(tm){ return tm === 'am' ? '午前' : tm === 'pm' ? '午後' : tm === 'nt' ? '夜' : tm ? String(+tm.slice(0, 2)) + tm.slice(2) : ''; }
-function whenLabel(v){ return [v.md ? mdLabel(v.md) : v.ymd ? dateLabel(v.ymd) : v.dom ? v.dom + '日' : '', todLabel(v.tm)].filter(Boolean).join(' '); }
-function display(i){                                                /* 日付のものは、これからの分を先に・過ぎた分は新しい順で後ろに */
+function whenLabel(v){ return [v.md ? mdLabel(v.md) : v.ymd ? dateLabel(v.ymd) : v.dom ? v.dom + '日' : v.st ? dateLabel(v.st) + '〜' + dateLabel(v.en) : '', todLabel(v.tm)].filter(Boolean).join(' '); }
+function display(i){                                                /* 日付・期間は、これからの分を先に・終わった分は新しい順で後ろに */
   var list = itemsOf(state, i);
-  if (i !== ONCE) return list;
-  var t = ymd(new Date());
-  return list.filter(function(v){ return (v.ymd || '') >= t; }).concat(list.filter(function(v){ return (v.ymd || '') < t; }).reverse());
+  if (i !== ONCE && i !== PERIOD) return list;
+  var t = ymd(new Date()), last = function(v){ return (i === ONCE ? v.ymd : v.en) || ''; };
+  return list.filter(function(v){ return last(v) >= t; }).concat(list.filter(function(v){ return last(v) < t; }).reverse());
 }
 function hasOnceToday(){ var key = ymd(new Date()); return itemsOf(state, ONCE).some(function(v){ return v.ymd === key; }); }
+function hasPeriodToday(){ var key = ymd(new Date()); return itemsOf(state, PERIOD).some(function(v){ return v.st && v.st <= key && key <= v.en; }); }
 function hasMonthlyToday(){ var key = ymd(new Date()); return itemsOf(state, MONTHLY).some(function(v){ return isMonthDay(v.dom, key); }); }
 function hasAnnivToday(){ var key = ymd(new Date()); return itemsOf(state, ANNIV).some(function(v){ return isAnniv(v.md, key); }); }
 var toastTimer = null;
@@ -740,8 +765,12 @@ function tilesHtml(list, key, can){                                /* can=false 
       (kindOf(v.day) ? '<span class="mark" aria-hidden="true"><svg class="ic"><use href="#p-' + kindOf(v.day).ic + '"/></svg></span>' : '') +
       '<span class="stamp" aria-hidden="true"><i><svg class="ic"><use href="#i-check"/></svg></i></span>' +
       '<span class="nm"><i class="swatch" aria-hidden="true"' + tint(v.id) + '></i>' + esc(v.name) + '</span>' +
-      (v.tm ? '<span class="when">' + todLabel(v.tm) + '</span>' : '') + '</button>';
+      tileWhen(v, key) + '</button>';
   }).join('') + '</div>';
+}
+function tileWhen(v, key){                                         /* 期間は「何日目/全部で何日」 */
+  var w = [v.st ? (daysBetween(v.st, key) + 1) + '/' + (daysBetween(v.st, v.en) + 1) + '日' : '', todLabel(v.tm)].filter(Boolean).join(' ');
+  return w ? '<span class="when">' + w + '</span>' : '';
 }
 function renderScore(){
   var sc = weekScore(state, new Date());
@@ -753,7 +782,7 @@ function renderScore(){
 
 function renderWeek(){
   var di = dayIndex(new Date());
-  var nowOf = {}; nowOf[di] = true; nowOf[RAIN] = isRainy(); nowOf[ANNIV] = hasAnnivToday(); nowOf[ONCE] = hasOnceToday(); nowOf[MONTHLY] = hasMonthlyToday();
+  var nowOf = {}; nowOf[di] = true; nowOf[RAIN] = isRainy(); nowOf[ANNIV] = hasAnnivToday(); nowOf[ONCE] = hasOnceToday(); nowOf[MONTHLY] = hasMonthlyToday(); nowOf[PERIOD] = hasPeriodToday();
   function label(v){ var w = whenLabel(v); return (w ? w + ' ' : '') + v.name; }
   function row(i){
     var list = display(i), shown = list.slice(0, 3), now = !!nowOf[i];
@@ -879,7 +908,7 @@ var openDay = 0;
 function renderDaySheet(){
   var i = openDay, list = display(i);
   $('#day-dot').innerHTML = dotInner(i);
-  $('#day-dot').classList.toggle('now', i === RAIN ? isRainy() : i === ANNIV ? hasAnnivToday() : i === ONCE ? hasOnceToday() : i === MONTHLY ? hasMonthlyToday() : i === dayIndex(new Date()));
+  $('#day-dot').classList.toggle('now', i === RAIN ? isRainy() : i === ANNIV ? hasAnnivToday() : i === ONCE ? hasOnceToday() : i === MONTHLY ? hasMonthlyToday() : i === PERIOD ? hasPeriodToday() : i === dayIndex(new Date()));
   $('#day-h').textContent = dayName(i);
   $('#day-list').innerHTML = list.length ? list.map(function(v){
     return '<div class="item" data-id="' + esc(v.id) + '">' + thumb(v.th) +
@@ -963,9 +992,11 @@ $('#tods').innerHTML = TODS.map(function(t){
 function pickedTod(){ var c = $('#edit-form').querySelector('input[name="tod"]:checked'); return c ? c.value : ''; }
 function pickedDay(){ var c = $('#edit-form').querySelector('input[name="day"]:checked'); return c ? +c.value : openDay; }
 $('#dom').innerHTML = Array.from({length:31}, function(_, i){ return '<option value="' + (i + 1) + '">' + (i + 1) + '日</option>'; }).join('');
+$('#spans').innerHTML = SPANS.map(function(n){ return '<button type="button" data-span="' + n + '" aria-pressed="false">' + n + '日</button>'; }).join('');
 function needsDate(){ var d = pickedDay(); return d === ANNIV || d === ONCE; }
-function canSave(){ return !!$('#name').value.trim() && (!needsDate() || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)) && (pickedTod() !== 'at' || /^\d{2}:\d{2}$/.test($('#tm').value)); }
-function paintKind(){ $('#md-field').hidden = !needsDate(); $('#dom-field').hidden = pickedDay() !== MONTHLY; $('#tm-field').hidden = pickedTod() !== 'at'; $('#save').disabled = !canSave(); }
+function rangeOk(){ var a = $('#st').value, b = $('#en').value; return /^\d{4}-\d{2}-\d{2}$/.test(a) && /^\d{4}-\d{2}-\d{2}$/.test(b) && a <= b; }
+function canSave(){ return !!$('#name').value.trim() && (!needsDate() || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)) && (pickedDay() !== PERIOD || rangeOk()) && (pickedTod() !== 'at' || /^\d{2}:\d{2}$/.test($('#tm').value)); }
+function paintKind(){ $('#md-field').hidden = !needsDate(); $('#dom-field').hidden = pickedDay() !== MONTHLY; $('#range').hidden = pickedDay() !== PERIOD; paintSpans(); $('#tm-field').hidden = pickedTod() !== 'at'; $('#save').disabled = !canSave(); }
 
 function paintPreview(){
   var p = $('#preview');
@@ -987,6 +1018,8 @@ function openEdit(id, day, date){
   $('#md').value = v && v.md ? new Date().getFullYear() + '-' + v.md : v && v.ymd ? v.ymd : date || ymd(new Date());
   $('#dom').value = String(v && v.dom || +(date || ymd(new Date())).slice(8));
   setFold(false);
+  $('#st').value = v && v.st || date || ymd(new Date());
+  $('#en').value = v && v.en || shiftYmd($('#st').value, SPANS[2] - 1);
   var tm = v && v.tm || '', tv = /:/.test(tm) ? 'at' : tm;
   $('#edit-form').querySelectorAll('input[name="tod"]').forEach(function(inp){ inp.checked = inp.value === tv; });
   $('#tm').value = tv === 'at' ? tm : '';
@@ -1003,6 +1036,24 @@ $('#days').addEventListener('change', paintKind);
 $('#kinds').addEventListener('change', paintKind);
 $('#md').addEventListener('input', paintKind);
 $('#md').addEventListener('change', paintKind);
+function paintSpans(){
+  var n = rangeOk() ? daysBetween($('#st').value, $('#en').value) + 1 : 0;
+  $('#spans').querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-pressed', +b.dataset.span === n); });
+}
+$('#spans').addEventListener('click', function(e){
+  var b = e.target.closest('[data-span]');
+  if (!b || !/^\d{4}-\d{2}-\d{2}$/.test($('#st').value)) return;
+  $('#en').value = shiftYmd($('#st').value, +b.dataset.span - 1);
+  paintKind();
+});
+['input', 'change'].forEach(function(ev){
+  $('#st').addEventListener(ev, function(){                          /* 日数を選んでいたら、開始日を動かしても日数を保つ */
+    var n = +(($('#spans').querySelector('[aria-pressed="true"]') || {}).dataset || {}).span || 0;
+    if (n && /^\d{4}-\d{2}-\d{2}$/.test(this.value)) $('#en').value = shiftYmd(this.value, n - 1);
+    paintKind();
+  });
+  $('#en').addEventListener(ev, paintKind);
+});
 $('#tods').addEventListener('change', function(){
   paintKind();
   if (pickedTod() === 'at' && !$('#tm').value) setTimeout(function(){ $('#tm').focus(); }, 60);
@@ -1054,6 +1105,7 @@ $('#edit-form').addEventListener('submit', function(e){
   if (day === ANNIV) state.items[id].md = $('#md').value.slice(5);
   if (day === ONCE) state.items[id].ymd = $('#md').value;
   if (day === MONTHLY) state.items[id].dom = +$('#dom').value;
+  if (day === PERIOD){ state.items[id].st = $('#st').value; state.items[id].en = $('#en').value; }
   var tod = pickedTod();
   if (tod) state.items[id].tm = tod === 'at' ? $('#tm').value.slice(0, 5) : tod;
   save();
