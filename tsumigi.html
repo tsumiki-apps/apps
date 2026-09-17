@@ -267,32 +267,51 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .field .ic{color:var(--ink-mid)}
 .field input{flex:1; min-width:0; border:0; background:none; outline:none; font-size:16px; padding:10px 0}
 .field input::placeholder{color:var(--ink-soft)}
+/* 丸い選択ボタン（曜日・種類・時間帯・1回/毎月・日数）。ここ1か所で全部そろう */
+.chip{position:relative; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; min-height:44px; min-width:0; cursor:pointer; border:0; border-radius:999px; background:var(--surface-2); color:var(--ink); font:inherit; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; transition:background-color .12s var(--ease)}
+.chip input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
+.chip:has(:checked), .chip[aria-pressed="true"]{background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
+.chip:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
+.tods .chip .ic{width:18px; height:18px}
+@media (max-width:374px){ .tods .chip .ic{display:none} }
+/* 選んだ瞬間、下へ伸びて「くびれ」ができ、戻る（Rare UI の Gooey nav の考え方・MIT。フィルタは使わない） */
+.chip::before{content:""; position:absolute; left:30%; right:30%; top:-9px; height:11px; opacity:0; pointer-events:none;
+  background:radial-gradient(circle at 0 50%, transparent 58%, var(--accent-wash) 60%) left/50% 100% no-repeat,
+             radial-gradient(circle at 100% 50%, transparent 58%, var(--accent-wash) 60%) right/50% 100% no-repeat}
+.chip.pop{animation:chip-pop .42s var(--ease)}
+.chip.pop::before{animation:chip-neck .42s var(--ease)}
+@keyframes chip-pop{0%{transform:none} 35%{transform:translateY(8px)} 70%{transform:translateY(-2px)} 100%{transform:none}}
+@keyframes chip-neck{0%{opacity:0; transform:scaleY(.2)} 30%{opacity:1; transform:scaleY(1)} 55%{opacity:0; transform:scaleY(1.3)} 100%{opacity:0}}
+/* 時刻：ふだんは1つのかたまり、押すと時と分に割れる（Rare UI の Duration picker の考え方・MIT） */
+.dp{margin:0 0 16px}
+.dp-row{display:flex; align-items:center; justify-content:center; gap:0; min-height:56px; border:1px solid var(--line-2); border-radius:12px; background:var(--surface); cursor:pointer; transition:gap .26s cubic-bezier(.3,1.5,.5,1), border-color .2s var(--ease), background-color .2s var(--ease)}
+.dp.need .dp-row{border-color:var(--warn-ink)}
+.dp-part{width:2.4em; min-width:0; height:48px; padding:0; border:1px solid transparent; border-radius:0; background:none; color:var(--ink); font:inherit; font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; text-align:center; outline:none; cursor:pointer; transition:border-radius .26s var(--ease), background-color .2s var(--ease), border-color .2s var(--ease), width .26s var(--ease)}
+.dp-colon{font-size:26px; font-weight:700; color:var(--ink-mid)}
+.dp.open .dp-row{gap:8px; border-color:transparent; background:none; cursor:default}
+.dp.open .dp-part{width:84px; height:56px; border-color:var(--line-2); border-radius:12px; background:var(--surface); cursor:text}
+.dp.open .dp-part:focus, .dp.open .dp-part.on{border:2px solid var(--accent-2); background:var(--accent-wash); color:var(--accent-2)}
+.dp-part.err{border:2px solid var(--warn-ink) !important; background:var(--warn-wash) !important; color:var(--warn-ink) !important; animation:dp-err .32s var(--ease)}
+@keyframes dp-err{0%,100%{transform:none} 25%{transform:translateX(6px)} 60%{transform:translateX(-4px)}}
+.dp-wheels{display:grid; grid-template-rows:0fr; transition:grid-template-rows .26s var(--ease)}
+.dp.open .dp-wheels{grid-template-rows:1fr}
+.dp-wheels > div{overflow:hidden; min-height:0; display:flex; justify-content:center; gap:34px}
+.wheel{position:relative; width:84px; height:180px; margin-top:8px; overflow-y:auto; scroll-snap-type:y mandatory; scrollbar-width:none; overscroll-behavior:contain;
+  -webkit-mask-image:var(--fade); mask-image:var(--fade)}
+.wheel::-webkit-scrollbar{display:none}
+.wheel ol{list-style:none; margin:0; padding:72px 0}
+.wheel li{height:36px; line-height:36px; text-align:center; scroll-snap-align:center; font-size:17px; color:var(--ghost); font-variant-numeric:tabular-nums; cursor:pointer}
+.wheel li.on{color:var(--ink); font-weight:700}
 .days{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; margin:0 0 20px}
 @media (max-width:374px){ .days{grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px} }
-.day{position:relative; display:grid; place-items:center; min-height:44px; min-width:0; cursor:pointer; border-radius:999px; background:var(--surface-2); font-weight:700; font-size:15px; transition:background-color .12s var(--ease)}
-.day input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
-.day:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
-.day:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
 .kinds{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:-12px 0 20px}
 @media (max-width:374px){ .kinds{grid-template-columns:repeat(2,minmax(0,1fr))} }
 /* 期間：日数のボタン（開始日から数えて終了日を入れる） */
 .spans{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin:-4px 0 16px}
-.spans button{min-height:44px; min-width:0; border:0; border-radius:999px; background:var(--surface-2); color:var(--ink); font:inherit; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; cursor:pointer}
-.spans button[aria-pressed="true"]{background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
-.kind{position:relative; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; min-height:44px; min-width:0; cursor:pointer; border-radius:999px; background:var(--surface-2); font-weight:700; font-size:15px; transition:background-color .12s var(--ease)}
-.kind input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
-.kind:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
-.kind:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
 .field input[type="date"], .field input[type="time"]{-webkit-appearance:none; appearance:none; min-height:44px; text-align:left}
 /* 時間帯（なし・午前・午後・夜・時刻） */
 .tods{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin:0 0 16px}
-.tod{position:relative; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; min-height:44px; min-width:0; cursor:pointer; border-radius:999px; background:var(--surface-2); font-weight:700; font-size:15px; transition:background-color .12s var(--ease)}
-.tod .ic{width:18px; height:18px}
 .tods.reps{grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:-4px}
-@media (max-width:374px){ .tod .ic{display:none} }
-.tod input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer}
-.tod:has(:checked){background:var(--accent-wash); color:var(--accent-2); box-shadow:inset 0 0 0 1.5px var(--accent-2)}
-.tod:has(:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
 .tile .when{font-size:13px; font-weight:700; line-height:1.4; color:var(--ink-mid); font-variant-numeric:tabular-nums}
 .foot{display:flex; gap:8px; position:sticky; bottom:0; z-index:1; margin:0 -20px; padding:12px 20px; background:var(--surface); border-top:1px solid var(--line)}   /* 保存はいつも見える位置に */
 .field.need{border-color:var(--warn-ink)}
@@ -314,6 +333,36 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 /* 予定の丸（予定ごとの色）：まだ＝淡い地に輪、できた＝塗り */
 .cal-d .cd{width:8px; height:8px; flex:none; border-radius:999px; background:color-mix(in oklab, var(--c, var(--accent-2)) 25%, var(--surface)); box-shadow:inset 0 0 0 1.5px var(--c, var(--accent-2))}
 .cal-d .cd.ok{background:var(--c, var(--accent-2))}
+/* ---- 振り返り（10週） ---- */
+.rv-mini{margin:16px 2px 8px; font-size:13px; font-weight:700; color:var(--ink-mid)}
+.rv-mini:first-child{margin-top:4px}
+.hm{display:grid; grid-template-columns:20px repeat(10,minmax(0,1fr)); gap:3px; align-items:center}
+.hm .wd{font-size:12px; font-weight:700; color:var(--ink-mid); text-align:center}
+.hm .mo{font-size:11px; color:var(--ink-mid); white-space:nowrap; overflow:visible; height:16px; line-height:16px}
+.hm button{display:block; width:100%; aspect-ratio:1; min-width:0; padding:0; border:0; border-radius:5px; background:var(--surface-2); cursor:pointer}
+.hm .l0{background:var(--surface-2)}
+.hm .l1{background:color-mix(in oklab, var(--accent-2) 22%, var(--surface))}
+.hm .l2{background:color-mix(in oklab, var(--accent-2) 45%, var(--surface))}
+.hm .l3{background:color-mix(in oklab, var(--accent-2) 70%, var(--surface))}
+.hm .l4{background:var(--accent-2)}
+.hm .none, .hm .future{background:none; box-shadow:inset 0 0 0 1px var(--line)}
+.hm .future{cursor:default}
+.hm button.sel{outline:2px solid var(--ink); outline-offset:1px}
+.rv-note{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; min-height:20px; font-size:12px; color:var(--ink-mid); font-variant-numeric:tabular-nums}
+.rv-note b{color:var(--ink); font-size:13px}
+.hm.rv-lg{display:flex; align-items:center; gap:3px}
+.rv-lg i{display:block; width:12px; height:12px; border-radius:3px; box-shadow:inset 0 0 0 1px var(--line)}
+.rv-bars{display:grid; gap:8px}
+.rv-bar{display:grid; grid-template-columns:22px minmax(0,1fr) 48px; align-items:center; gap:8px; font-size:14px; font-weight:700}
+.rv-bar .t{position:relative; height:8px; border-radius:4px; background:var(--surface-2); overflow:hidden}
+.rv-bar .t i{position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--accent-2)}
+.rv-bar .n{font-size:13px; font-weight:500; color:var(--ink-mid); text-align:right; font-variant-numeric:tabular-nums}
+.rv-top{display:grid; gap:8px}
+.rv-top div{display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:10px; font-size:15px; font-weight:700}
+.rv-top .th{width:40px; height:40px; border-radius:12px}
+.rv-top .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rv-top .n{display:flex; align-items:center; gap:4px; font-size:14px; font-weight:700; color:var(--ink-mid); font-variant-numeric:tabular-nums}
+.rv-top .n .ic{width:16px; height:16px; color:var(--accent-2)}
 .swatch{display:inline-block; width:10px; height:10px; margin-right:6px; border-radius:999px; background:var(--c, var(--accent-2)); vertical-align:.05em}
 .cal-d .cmore{font-size:9px; line-height:1; font-weight:700; color:var(--accent-2)}
 .cal-dh{display:flex; align-items:center; gap:10px; margin:0 0 12px; min-height:44px; padding-top:12px; border-top:1px solid var(--line)}
@@ -347,6 +396,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
     <symbol id="i-sunrise" viewBox="0 0 24 24"><path d="M6 16.5a6 6 0 0 1 12 0"/><path d="M3 16.5h18M12 4.5v3M4.9 9.4l1.4 1.4M19.1 9.4l-1.4 1.4M8 20h8"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3.5 20h17"/><path d="M7 20v-7M12 20V5M17 20v-10"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-6.6 6.6a1.5 1.5 0 0 1-2.1 0z"/><circle cx="8" cy="8" r="1.3"/></symbol>
     <!-- 幸せなことの絵（サムネイルの代わり） -->
     <symbol id="p-cafe" viewBox="0 0 24 24"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3.5c-.7.8-.7 1.7 0 2.5M12 3.5c-.7.8-.7 1.7 0 2.5"/></symbol>
@@ -374,6 +424,9 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
   <header class="top">
     <svg class="logo" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logo"/></svg>
     <h1 class="sr">つみ木</h1>
+    <button class="iconbtn" id="rv-open" type="button" aria-label="振り返り">
+      <svg class="ic"><use href="#i-chart"/></svg>
+    </button>
     <button class="iconbtn" id="cal-open" type="button" aria-label="カレンダー">
       <svg class="ic"><use href="#i-cal"/></svg>
     </button>
@@ -416,6 +469,19 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     </div>
     <div class="list" id="day-list"></div>
     <button class="btn fill wide" type="button" id="day-add"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>追加</button>
+  </div>
+</dialog>
+
+<!-- 振り返りのシート -->
+<dialog class="sheet" id="rv-sheet" aria-labelledby="rv-h">
+  <div class="sheet-body">
+    <div class="head">
+      <span class="dot now" aria-hidden="true"><svg class="ic"><use href="#i-chart"/></svg></span>
+      <h2 id="rv-h">10週</h2>
+      <span class="score" id="rv-sum"></span>
+      <button class="iconbtn" type="button" data-close aria-label="閉じる"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div id="rv"></div>
   </div>
 </dialog>
 
@@ -472,10 +538,18 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
       <div class="spans" id="spans" aria-label="日数"></div>
     </div>
     <div class="tods" id="tods" role="radiogroup" aria-label="時間帯"></div>
-    <label class="field" id="tm-field" hidden>
-      <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
-      <input type="time" id="tm" step="300" aria-label="時刻">
-    </label>
+    <div class="dp" id="tm-field" hidden>
+      <input type="hidden" id="tm">
+      <div class="dp-row" id="dp-row">
+        <input class="dp-part" id="tm-h" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="時" readonly>
+        <span class="dp-colon" aria-hidden="true">:</span>
+        <input class="dp-part" id="tm-m" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="分" readonly>
+      </div>
+      <div class="dp-wheels"><div>
+        <div class="wheel" data-part="h" aria-hidden="true"></div>
+        <div class="wheel" data-part="m" aria-hidden="true"></div>
+      </div></div>
+    </div>
     <div class="foot">
       <button class="btn fill" type="submit" id="save" disabled><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>保存</button>
     </div>
@@ -686,6 +760,29 @@ function weekScore(s, dt){                                          /* 今週で
   }
   return {n:n, total:total};
 }
+/* 振り返り：今日を含む週までの weeks 週ぶん。「できた」の印は KEEP_DAYS 日しか残らないので 10週（70日）まで。
+   その日に並ぶもの（曜日・雨・記念日・日付・毎月・期間）のうち、その日より後に作ったもの（ord＝作った時刻）は数えない */
+function review(s, today, weeks){
+  var dates = weekDates(today), mon = dates[0], cols = [], byDay = [], cnt = {}, sum = 0;
+  for (var i = 0; i < 7; i++) byDay.push({n:0, total:0});
+  for (var w = weeks - 1; w >= 0; w--){
+    var col = [];
+    for (var d = 0; d < 7; d++){
+      var key = shiftYmd(mon, -7 * w + d), p = key.split('-');
+      if (key > ymd(today)){ col.push({date:key, future:true, n:0, total:0}); continue; }
+      var end = new Date(+p[0], +p[1] - 1, +p[2] + 1).getTime();
+      var list = itemsForDate(s, key, d).filter(function(v){ return !v.ord || v.ord < end; }), n = 0;
+      list.forEach(function(v){ var x = s.done[key + '|' + v.id]; if (x && x.on){ n++; cnt[v.id] = (cnt[v.id] || 0) + 1; } });
+      col.push({date:key, n:n, total:list.length});
+      byDay[d].n += n; byDay[d].total += list.length; sum += n;
+    }
+    cols.push(col);
+  }
+  var top = Object.keys(cnt).map(function(id){ return {id:id, n:cnt[id]}; })
+    .sort(function(a, b){ return b.n - a.n || (s.items[a.id].ord - s.items[b.id].ord) || (a.id < b.id ? -1 : 1); }).slice(0, 3);
+  return {cols:cols, byDay:byDay, top:top, sum:sum};
+}
+function level(c){ return c.future ? 'future' : !c.total ? 'none' : !c.n ? 'l0' : c.n === c.total ? 'l4' : c.n * 3 <= c.total ? 'l1' : c.n * 3 <= c.total * 2 ? 'l2' : 'l3'; }
 /* ---------- 純粋な関数（ここまで） ---------- */
 
 var state = blank();
@@ -845,6 +942,7 @@ function renderAll(){
   renderWeek();
   if ($('#day-sheet').open) renderDaySheet();
   if ($('#cal-sheet').open){ renderCalGrid(); renderCalDay(); }
+  if ($('#rv-sheet').open) renderReview();
 }
 
 /* ================= 今日：押すと「できた」 ================= */
@@ -868,6 +966,64 @@ function toggleRain(key){
   save(); renderAll();
 }
 $('#rain').addEventListener('click', function(){ toggleRain(ymd(new Date())); });
+
+/* ================= 振り返り ================= */
+var RV_WEEKS = 10, rvSel = '';
+function renderReview(){
+  var r = review(state, new Date(), RV_WEEKS), today = ymd(new Date());
+  $('#rv-sum').innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>' + r.sum + '<span class="sr">個できた</span>';
+  var hasAny = r.byDay.some(function(x){ return x.total; });
+  if (!hasAny){
+    $('#rv').innerHTML = '<div class="noitem"><svg class="illust" viewBox="0 0 160 80" aria-hidden="true"><path d="M30 70h100"/><path d="M52 70V52M80 70V34M108 70V46" stroke-dasharray="3 5"/></svg></div>';
+    return;
+  }
+  if (!rvSel) rvSel = today;
+  var html = '<span></span>', prev = '';
+  r.cols.forEach(function(col){
+    var m = +col[0].date.slice(5, 7);
+    html += '<span class="mo">' + (m !== prev ? m + '月' : '') + '</span>'; prev = m;
+  });
+  for (var d = 0; d < 7; d++){
+    html += '<span class="wd">' + DAYS[d] + '</span>';
+    r.cols.forEach(function(col){
+      var c = col[d], lb = +c.date.slice(5, 7) + '月' + +c.date.slice(8) + '日';
+      html += '<button type="button" class="' + level(c) + (c.date === rvSel ? ' sel' : '') + '" data-rv="' + c.date + '"' + (c.future ? ' disabled' : '') +
+        ' aria-label="' + lb + (c.future ? '' : c.total ? ' ' + c.total + '個のうち' + c.n + '個' : ' 予定なし') + '"></button>';
+    });
+  }
+  var sel = null;
+  r.cols.forEach(function(col){ col.forEach(function(c){ if (c.date === rvSel) sel = c; }); });
+  var lg = ['l0', 'l1', 'l2', 'l3', 'l4'].map(function(l){ return '<i class="' + l + '"></i>'; }).join('');
+  var top = r.top.map(function(t){
+    var v = state.items[t.id];
+    return '<div>' + thumb(v.th) + '<span class="nm"><i class="swatch" aria-hidden="true"' + tint(v.id) + '></i>' + esc(v.name) + '</span><span class="n"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>' + t.n + '<span class="sr">回</span></span></div>';
+  }).join('');
+  $('#rv').innerHTML =
+    '<div class="rv-mini">できた割合</div>' +
+    '<div class="hm" id="hm">' + html + '</div>' +
+    '<div class="rv-note"><span id="rv-cell">' + (sel ? cellLabel(sel) : '') + '</span><span class="rv-lg hm" aria-hidden="true">少' + lg + '多</span></div>' +
+    '<div class="rv-mini">曜日</div>' +
+    '<div class="rv-bars">' + r.byDay.map(function(x, i){
+      return '<div class="rv-bar"><span>' + DAYS[i] + '</span><span class="t" aria-hidden="true"><i style="width:' + (x.total ? Math.round(x.n / x.total * 100) : 0) + '%"></i></span>' +
+        '<span class="n">' + x.n + '/' + x.total + '</span></div>';
+    }).join('') + '</div>' +
+    (top ? '<div class="rv-mini">よくできた</div><div class="rv-top">' + top + '</div>' : '');
+}
+function cellLabel(c){
+  var p = c.date.split('-'), di = dayIndex(new Date(+p[0], +p[1] - 1, +p[2]));
+  return +p[1] + '月' + +p[2] + '日（' + DAYS[di] + '） <b>' + (c.total ? c.n + '/' + c.total : '―') + '</b>';
+}
+$('#rv-open').addEventListener('click', function(){
+  rvSel = ymd(new Date());
+  renderReview();
+  $('#rv-sheet').showModal();
+});
+$('#rv').addEventListener('click', function(e){
+  var b = e.target.closest('[data-rv]');
+  if (!b || b.disabled) return;
+  rvSel = b.dataset.rv;
+  renderReview();
+});
 
 /* ================= カレンダー ================= */
 var calMonth = new Date(), calSel = '';
@@ -1023,26 +1179,26 @@ $('#presets').innerHTML = PRESETS.map(function(p){
 var PRESET_NAMES = {cafe:'カップ', book:'本', bath:'お風呂', music:'音楽', sun:'太陽', cake:'ケーキ', leaf:'草花', moon:'夜', heart:'ハート', game:'ゲーム', film:'映画', bowl:'ごはん', rain:'傘', gift:'贈り物'};
 $('#presets').querySelectorAll('input').forEach(function(inp){ inp.setAttribute('aria-label', PRESET_NAMES[inp.value]); });
 $('#days').innerHTML = DAYS.map(function(d, i){
-  return '<label class="day"><input type="radio" name="day" value="' + i + '" aria-label="' + d + '曜">' + d + '</label>';
+  return '<label class="chip"><input type="radio" name="day" value="' + i + '" aria-label="' + d + '曜">' + d + '</label>';
 }).join('');
 $('#kinds').innerHTML = KINDS.filter(function(k){ return k.sub == null; }).map(function(k){
-  return '<label class="kind"><input type="radio" name="day" value="' + k.i + '" aria-label="' + k.nm + '">' +
+  return '<label class="chip"><input type="radio" name="day" value="' + k.i + '" aria-label="' + k.nm + '">' +
     '<svg class="ic" aria-hidden="true"><use href="#p-' + k.ic + '"/></svg>' + k.nm + '</label>';
 }).join('');
 $('#tods').innerHTML = TODS.map(function(t){
-  return '<label class="tod"><input type="radio" name="tod" value="' + t.v + '" aria-label="' + t.nm + '">' +
+  return '<label class="chip"><input type="radio" name="tod" value="' + t.v + '" aria-label="' + t.nm + '">' +
     (t.ic ? '<svg class="ic" aria-hidden="true"><use href="#' + t.ic + '"/></svg>' : '') + t.nm + '</label>';
 }).join('');
 function pickedTod(){ var c = $('#edit-form').querySelector('input[name="tod"]:checked'); return c ? c.value : ''; }
 $('#freq').innerHTML = [{v:'1', nm:'1回'}, {v:'m', nm:'毎月'}].map(function(r){
-  return '<label class="tod"><input type="radio" name="freq" value="' + r.v + '" aria-label="' + r.nm + '">' + r.nm + '</label>';
+  return '<label class="chip"><input type="radio" name="freq" value="' + r.v + '" aria-label="' + r.nm + '">' + r.nm + '</label>';
 }).join('');
 function pickedDay(){                                               /* 日付＋毎月＝ MONTHLY */
   var c = $('#edit-form').querySelector('input[name="day"]:checked'), d = c ? +c.value : openDay;
   var f = $('#edit-form').querySelector('input[name="freq"]:checked');
   return d === ONCE && f && f.value === 'm' ? MONTHLY : d;
 }
-$('#spans').innerHTML = SPANS.map(function(n){ return '<button type="button" data-span="' + n + '" aria-pressed="false">' + n + '日</button>'; }).join('');
+$('#spans').innerHTML = SPANS.map(function(n){ return '<button class="chip" type="button" data-span="' + n + '" aria-pressed="false">' + n + '日</button>'; }).join('');
 function needsDate(){ var d = pickedDay(); return d === ANNIV || d === ONCE || d === MONTHLY; }
 function rangeOk(){ var a = $('#st').value, b = $('#en').value; return /^\d{4}-\d{2}-\d{2}$/.test(a) && /^\d{4}-\d{2}-\d{2}$/.test(b) && a <= b; }
 function canSave(){ return !!$('#name').value.trim() && (!needsDate() || /^\d{4}-\d{2}-\d{2}$/.test($('#md').value)) && (pickedDay() !== PERIOD || rangeOk()) && (pickedTod() !== 'at' || /^\d{2}:\d{2}$/.test($('#tm').value)); }
@@ -1089,7 +1245,8 @@ function openEdit(id, day, date){
   $('#en').value = v && v.en || shiftYmd($('#st').value, SPANS[2] - 1);
   var tm = v && v.tm || '', tv = /:/.test(tm) ? 'at' : tm;
   $('#edit-form').querySelectorAll('input[name="tod"]').forEach(function(inp){ inp.checked = inp.value === tv; });
-  $('#tm').value = tv === 'at' ? tm : '';
+  setTm(tv === 'at' ? tm : '');
+  dpOpen(false);
   paintKind();
   paintPreview();
   $('#edit-sheet').showModal();
@@ -1123,11 +1280,100 @@ $('#spans').addEventListener('click', function(e){
 });
 $('#freq').addEventListener('change', paintKind);
 $('#tods').addEventListener('change', function(){
+  if (pickedTod() === 'at'){ if (!$('#tm').value) setTm('12:00'); dpOpen(true); }
+  else dpOpen(false);
   paintKind();
-  if (pickedTod() === 'at' && !$('#tm').value) setTimeout(function(){ $('#tm').focus(); }, 60);
 });
-$('#tm').addEventListener('input', paintKind);
-$('#tm').addEventListener('change', paintKind);
+
+/* ---- 時刻の入力（#tm に 'HH:MM' を持つ。時・分の欄と、下の回す列の3か所から直せる） ---- */
+var DP = {h:{max:23, step:1}, m:{max:59, step:5}}, dpQuiet = false, dpTimer = {};
+['h', 'm'].forEach(function(k){
+  var n = Math.floor(DP[k].max / DP[k].step) + 1, html = '';
+  for (var i = 0; i < n; i++) html += '<li data-v="' + i * DP[k].step + '">' + String(i * DP[k].step).padStart(2, '0') + '</li>';
+  $('.wheel[data-part="' + k + '"]').innerHTML = '<ol>' + html + '</ol>';
+});
+function tmParts(){ var v = $('#tm').value; return /^\d{2}:\d{2}$/.test(v) ? {h:+v.slice(0, 2), m:+v.slice(3)} : null; }
+function setTm(v){                                                  /* 値を入れて、欄と回す列をそろえる */
+  $('#tm').value = v;
+  var p = tmParts();
+  ['h', 'm'].forEach(function(k){
+    var inp = $('#tm-' + k);
+    if (document.activeElement !== inp) inp.value = p ? String(p[k]).padStart(2, '0') : '';
+    wheelTo(k, p ? p[k] : 0, false);
+  });
+}
+function wheelTo(k, val, smooth){
+  var w = $('.wheel[data-part="' + k + '"]'), i = Math.round(val / DP[k].step);
+  w.querySelectorAll('li').forEach(function(li, j){ li.classList.toggle('on', j === i); });
+  dpQuiet = true; clearTimeout(dpTimer.q);
+  w.scrollTo({top:i * 36, behavior:smooth ? 'smooth' : 'auto'});
+  dpTimer.q = setTimeout(function(){ dpQuiet = false; }, smooth ? 400 : 80);
+}
+function putPart(k, n){
+  var p = tmParts() || {h:12, m:0}; p[k] = n;
+  setTm(String(p.h).padStart(2, '0') + ':' + String(p.m).padStart(2, '0'));
+  paintKind();
+}
+function dpOpen(o){
+  $('#tm-field').classList.toggle('open', o);
+  $('#tm-h').readOnly = $('#tm-m').readOnly = !o;
+  if (o) requestAnimationFrame(function(){ var p = tmParts(); if (p){ wheelTo('h', p.h, false); wheelTo('m', p.m, false); } });
+}
+$('#dp-row').addEventListener('click', function(e){
+  if ($('#tm-field').classList.contains('open')) return;
+  e.preventDefault(); dpOpen(true);
+});
+document.querySelectorAll('.wheel').forEach(function(w){
+  var k = w.dataset.part;
+  w.addEventListener('scroll', function(){
+    if (dpQuiet) return;
+    clearTimeout(dpTimer[k]);
+    dpTimer[k] = setTimeout(function(){
+      var i = Math.round(w.scrollTop / 36), li = w.querySelectorAll('li')[i];
+      if (li) putPart(k, +li.dataset.v);
+    }, 120);
+  });
+  w.addEventListener('click', function(e){
+    var li = e.target.closest('li');
+    if (!li) return;
+    putPart(k, +li.dataset.v); wheelTo(k, +li.dataset.v, true);
+  });
+});
+['h', 'm'].forEach(function(k){
+  var inp = $('#tm-' + k), before = '';
+  inp.addEventListener('focus', function(){ before = inp.value; inp.select(); inp.classList.add('on'); });
+  inp.addEventListener('input', function(){
+    inp.value = inp.value.replace(/\D/g, '').slice(0, 2);
+    if (inp.value === '') return;
+    var n = +inp.value;
+    if (n > DP[k].max){                                             /* 範囲外は文字を出さず、横に小さく弾いて戻す */
+      inp.classList.remove('err'); inp.offsetWidth; inp.classList.add('err');
+      setTimeout(function(){ inp.classList.remove('err'); }, 340);
+      var p = tmParts();
+      inp.value = before || (p ? String(p[k]).padStart(2, '0') : '');
+      return;
+    }
+    before = inp.value;
+    if (inp.value.length === 2 || n * 10 > DP[k].max) putPart(k, n);
+  });
+  inp.addEventListener('blur', function(){
+    inp.classList.remove('on');
+    if (inp.value !== '') putPart(k, +inp.value);
+    var p = tmParts(); inp.value = p ? String(p[k]).padStart(2, '0') : '';
+  });
+});
+$('#edit-form').addEventListener('pointerdown', function(e){         /* 時刻の外を押したら、1つのかたまりに戻す */
+  if ($('#tm-field').classList.contains('open') && !e.target.closest('#tm-field') && !e.target.closest('#tods')) dpOpen(false);
+});
+
+/* ---- 丸い選択ボタンを押した瞬間の「ぐにゃり」 ---- */
+$('#edit-form').addEventListener('change', function(e){ popChip(e.target.closest('.chip')); });
+$('#spans').addEventListener('click', function(e){ popChip(e.target.closest('.chip')); });
+function popChip(c){
+  if (!c) return;
+  c.classList.remove('pop'); c.offsetWidth; c.classList.add('pop');
+  setTimeout(function(){ c.classList.remove('pop'); }, 460);
+}
 function setFold(o){
   $('#fold').classList.toggle('open', o);
   $('#preset-btn').setAttribute('aria-expanded', o);
