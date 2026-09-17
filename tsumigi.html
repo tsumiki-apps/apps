@@ -308,7 +308,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 @media (max-width:374px){ .kinds{grid-template-columns:repeat(2,minmax(0,1fr))} }
 /* 期間：日数のボタン（開始日から数えて終了日を入れる） */
 .spans{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin:-4px 0 16px}
-.field input[type="date"], .field input[type="time"]{-webkit-appearance:none; appearance:none; min-height:44px; text-align:left}
+.field input[type="date"]{-webkit-appearance:none; appearance:none; min-height:44px; text-align:left}
 /* 時間帯（なし・午前・午後・夜・時刻） */
 .tods{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin:0 0 16px}
 .tods.reps{grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:-4px}
@@ -340,16 +340,19 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .hm .wd{font-size:12px; font-weight:700; color:var(--ink-mid); text-align:center}
 .hm .mo{font-size:11px; color:var(--ink-mid); white-space:nowrap; overflow:visible; height:16px; line-height:16px}
 .hm button{display:block; width:100%; aspect-ratio:1; min-width:0; padding:0; border:0; border-radius:5px; background:var(--surface-2); cursor:pointer}
-.hm .l0{background:var(--surface-2)}
+.hm .l0{background:var(--surface-2); box-shadow:inset 0 0 0 1.5px var(--ghost)}
 .hm .l1{background:color-mix(in oklab, var(--accent-2) 22%, var(--surface))}
 .hm .l2{background:color-mix(in oklab, var(--accent-2) 45%, var(--surface))}
 .hm .l3{background:color-mix(in oklab, var(--accent-2) 70%, var(--surface))}
 .hm .l4{background:var(--accent-2)}
-.hm .none, .hm .future{background:none; box-shadow:inset 0 0 0 1px var(--line)}
+.hm .none{background:radial-gradient(circle, var(--ghost) 0 1.5px, transparent 2px)}
+.hm .future{background:none; box-shadow:inset 0 0 0 1px var(--line)}
 .hm .future{cursor:default}
 .hm button.sel{outline:2px solid var(--ink); outline-offset:1px}
 .rv-note{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; min-height:20px; font-size:12px; color:var(--ink-mid); font-variant-numeric:tabular-nums}
 .rv-note b{color:var(--ink); font-size:13px}
+.rv-step{display:flex; align-items:center}
+.rv-step .iconbtn:disabled{opacity:.35; cursor:default}
 .hm.rv-lg{display:flex; align-items:center; gap:3px}
 .rv-lg i{display:block; width:12px; height:12px; border-radius:3px; box-shadow:inset 0 0 0 1px var(--line)}
 .rv-bars{display:grid; gap:8px}
@@ -545,7 +548,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
         <span class="dp-colon" aria-hidden="true">:</span>
         <input class="dp-part" id="tm-m" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="分" readonly>
       </div>
-      <div class="dp-wheels"><div>
+      <div class="dp-wheels" inert><div>
         <div class="wheel" data-part="h" aria-hidden="true"></div>
         <div class="wheel" data-part="m" aria-hidden="true"></div>
       </div></div>
@@ -660,7 +663,7 @@ function merge(a, b){
   });
   var keys = Object.keys(a.done).concat(Object.keys(b.done)), top = '';
   var rkeys = Object.keys(a.rain).concat(Object.keys(b.rain));
-  keys.concat(rkeys).forEach(function(k){ if (/^\d{4}-\d{2}-\d{2}/.test(k) && k.slice(0, 10) > top) top = k.slice(0, 10); });
+  (keys.length ? keys : rkeys).forEach(function(k){ if (/^\d{4}-\d{2}-\d{2}/.test(k) && k.slice(0, 10) > top) top = k.slice(0, 10); });   /* 雨は先の日にも付けられるので、基準に入れない（入れると先の日の傘1回で過去の「できた」が消えた） */
   var limit = top ? shiftYmd(top, -KEEP_DAYS) : '';
   keys.forEach(function(k){
     if (out.done[k] || k.slice(0, 10) < limit) return;
@@ -1001,7 +1004,9 @@ function renderReview(){
   $('#rv').innerHTML =
     '<div class="rv-mini">できた割合</div>' +
     '<div class="hm" id="hm">' + html + '</div>' +
-    '<div class="rv-note"><span id="rv-cell">' + (sel ? cellLabel(sel) : '') + '</span><span class="rv-lg hm" aria-hidden="true">少' + lg + '多</span></div>' +
+    '<div class="rv-note"><span class="rv-step"><button class="iconbtn" type="button" data-rv-step="-1" aria-label="前の日"' + (rvSel <= r.cols[0][0].date ? ' disabled' : '') + '><svg class="ic chev-l" style="transform:scaleX(-1)"><use href="#i-chev"/></svg></button>' +
+      '<span id="rv-cell" aria-live="polite">' + (sel ? cellLabel(sel) : '') + '</span>' +
+      '<button class="iconbtn" type="button" data-rv-step="1" aria-label="次の日"' + (rvSel >= today ? ' disabled' : '') + '><svg class="ic"><use href="#i-chev"/></svg></button></span><span class="rv-lg hm" aria-hidden="true">少' + lg + '多</span></div>' +
     '<div class="rv-mini">曜日</div>' +
     '<div class="rv-bars">' + r.byDay.map(function(x, i){
       return '<div class="rv-bar"><span>' + DAYS[i] + '</span><span class="t" aria-hidden="true"><i style="width:' + (x.total ? Math.round(x.n / x.total * 100) : 0) + '%"></i></span>' +
@@ -1019,10 +1024,13 @@ $('#rv-open').addEventListener('click', function(){
   $('#rv-sheet').showModal();
 });
 $('#rv').addEventListener('click', function(e){
-  var b = e.target.closest('[data-rv]');
-  if (!b || b.disabled) return;
-  rvSel = b.dataset.rv;
+  var st = e.target.closest('[data-rv-step]'), b = e.target.closest('[data-rv]'), focus = '';
+  if (st && !st.disabled){ rvSel = shiftYmd(rvSel, +st.dataset.rvStep); focus = '[data-rv-step="' + st.dataset.rvStep + '"]'; }
+  else if (b && !b.disabled){ rvSel = b.dataset.rv; focus = '[data-rv="' + rvSel + '"]'; }
+  else return;
   renderReview();
+  var f = $('#rv').querySelector(focus);                            /* 描き直しても、押したところに読み上げ位置を戻す */
+  if (f && !f.disabled) f.focus({preventScroll:true});
 });
 
 /* ================= カレンダー ================= */
@@ -1286,38 +1294,49 @@ $('#tods').addEventListener('change', function(){
 });
 
 /* ---- 時刻の入力（#tm に 'HH:MM' を持つ。時・分の欄と、下の回す列の3か所から直せる） ---- */
-var DP = {h:{max:23, step:1}, m:{max:59, step:5}}, dpQuiet = false, dpTimer = {};
+var DP = {h:{max:23, step:1}, m:{max:59, step:5}}, dpQuiet = {h:0, m:0}, dpTimer = {}, dpTouch = {h:false, m:false};
 ['h', 'm'].forEach(function(k){
   var n = Math.floor(DP[k].max / DP[k].step) + 1, html = '';
   for (var i = 0; i < n; i++) html += '<li data-v="' + i * DP[k].step + '">' + String(i * DP[k].step).padStart(2, '0') + '</li>';
   $('.wheel[data-part="' + k + '"]').innerHTML = '<ol>' + html + '</ol>';
 });
 function tmParts(){ var v = $('#tm').value; return /^\d{2}:\d{2}$/.test(v) ? {h:+v.slice(0, 2), m:+v.slice(3)} : null; }
-function setTm(v){                                                  /* 値を入れて、欄と回す列をそろえる */
+function pad2(n){ return String(n).padStart(2, '0'); }
+function setTm(v, only){                                            /* 値を入れて、欄と回す列をそろえる。only があれば、その列だけ動かす（回している別の列を止めない） */
   $('#tm').value = v;
   var p = tmParts();
   ['h', 'm'].forEach(function(k){
-    var inp = $('#tm-' + k);
-    if (document.activeElement !== inp) inp.value = p ? String(p[k]).padStart(2, '0') : '';
-    wheelTo(k, p ? p[k] : 0, false);
+    $('#tm-' + k).value = p ? pad2(p[k]) : '';
+    if (!only || only === k) wheelTo(k, p ? p[k] : 0, false);
   });
 }
 function wheelTo(k, val, smooth){
   var w = $('.wheel[data-part="' + k + '"]'), i = Math.round(val / DP[k].step);
-  w.querySelectorAll('li').forEach(function(li, j){ li.classList.toggle('on', j === i); });
-  dpQuiet = true; clearTimeout(dpTimer.q);
+  w.querySelectorAll('li').forEach(function(li, j){ li.classList.toggle('on', j === i && val % DP[k].step === 0); });   /* 07分のように列に無い値は、どの段も光らせない */
+  if (Math.abs(w.scrollTop - i * 36) < 1) return;
+  dpQuiet[k]++;
   w.scrollTo({top:i * 36, behavior:smooth ? 'smooth' : 'auto'});
-  dpTimer.q = setTimeout(function(){ dpQuiet = false; }, smooth ? 400 : 80);
+  setTimeout(function(){ dpQuiet[k]--; }, smooth ? 450 : 120);
 }
-function putPart(k, n){
+function putPart(k, n, fromWheel){
   var p = tmParts() || {h:12, m:0}; p[k] = n;
-  setTm(String(p.h).padStart(2, '0') + ':' + String(p.m).padStart(2, '0'));
+  setTm(pad2(p.h) + ':' + pad2(p.m), fromWheel ? 'none' : k);
   paintKind();
 }
 function dpOpen(o){
-  $('#tm-field').classList.toggle('open', o);
+  var f = $('#tm-field'), was = f.classList.contains('open');
+  f.classList.toggle('open', o);
   $('#tm-h').readOnly = $('#tm-m').readOnly = !o;
-  if (o) requestAnimationFrame(function(){ var p = tmParts(); if (p){ wheelTo('h', p.h, false); wheelTo('m', p.m, false); } });
+  f.querySelector('.dp-wheels').inert = !o;
+  if (!o && f.contains(document.activeElement)) document.activeElement.blur();
+  if (o && !was){
+    requestAnimationFrame(function(){ var p = tmParts(); if (p){ wheelTo('h', p.h, false); wheelTo('m', p.m, false); } });
+    setTimeout(function(){                                          /* 列が下に固定した保存ボタンに隠れないよう、シートを送る */
+      if (!f.classList.contains('open')) return;
+      var sheet = f.closest('dialog'), over = f.querySelector('.dp-wheels').getBoundingClientRect().bottom - $('#edit-form .foot').getBoundingClientRect().top + 8;
+      if (over > 0) sheet.scrollBy({top:over, behavior:'smooth'});
+    }, 300);
+  }
 }
 $('#dp-row').addEventListener('click', function(e){
   if ($('#tm-field').classList.contains('open')) return;
@@ -1325,18 +1344,29 @@ $('#dp-row').addEventListener('click', function(e){
 });
 document.querySelectorAll('.wheel').forEach(function(w){
   var k = w.dataset.part;
+  function settle(){                                                /* 指が離れて、止まったところで決める */
+    if (dpQuiet[k] || dpTouch[k]) return;
+    var i = Math.round(w.scrollTop / 36), li = w.querySelectorAll('li')[i];
+    if (!li) return;
+    w.querySelectorAll('li').forEach(function(x){ x.classList.toggle('on', x === li); });
+    var p = tmParts();
+    if (!p || p[k] !== +li.dataset.v) putPart(k, +li.dataset.v, true);
+  }
+  function blurPart(){ var a = document.activeElement; if (a && a.classList.contains('dp-part')) a.blur(); }   /* 欄に残った数字が、あとで列の値を上書きしないように */
+  w.addEventListener('touchstart', function(){ dpTouch[k] = true; blurPart(); }, {passive:true});
+  w.addEventListener('touchend', function(){ dpTouch[k] = false; clearTimeout(dpTimer[k]); dpTimer[k] = setTimeout(settle, 160); }, {passive:true});
+  w.addEventListener('pointerdown', blurPart);
   w.addEventListener('scroll', function(){
-    if (dpQuiet) return;
+    if (dpQuiet[k]) return;
     clearTimeout(dpTimer[k]);
-    dpTimer[k] = setTimeout(function(){
-      var i = Math.round(w.scrollTop / 36), li = w.querySelectorAll('li')[i];
-      if (li) putPart(k, +li.dataset.v);
-    }, 120);
+    dpTimer[k] = setTimeout(settle, 160);
   });
+  if ('onscrollend' in window) w.addEventListener('scrollend', function(){ clearTimeout(dpTimer[k]); settle(); });
   w.addEventListener('click', function(e){
     var li = e.target.closest('li');
     if (!li) return;
-    putPart(k, +li.dataset.v); wheelTo(k, +li.dataset.v, true);
+    blurPart();
+    putPart(k, +li.dataset.v, true); wheelTo(k, +li.dataset.v, true);
   });
 });
 ['h', 'm'].forEach(function(k){
@@ -1350,7 +1380,7 @@ document.querySelectorAll('.wheel').forEach(function(w){
       inp.classList.remove('err'); inp.offsetWidth; inp.classList.add('err');
       setTimeout(function(){ inp.classList.remove('err'); }, 340);
       var p = tmParts();
-      inp.value = before || (p ? String(p[k]).padStart(2, '0') : '');
+      inp.value = before || (p ? pad2(p[k]) : '');
       return;
     }
     before = inp.value;
@@ -1358,12 +1388,20 @@ document.querySelectorAll('.wheel').forEach(function(w){
   });
   inp.addEventListener('blur', function(){
     inp.classList.remove('on');
-    if (inp.value !== '') putPart(k, +inp.value);
-    var p = tmParts(); inp.value = p ? String(p[k]).padStart(2, '0') : '';
+    var p = tmParts();
+    if (inp.value !== '' && (!p || +inp.value !== p[k])) putPart(k, +inp.value);   /* 打って変わったときだけ入れる */
+    p = tmParts(); inp.value = p ? pad2(p[k]) : '';
   });
 });
-$('#edit-form').addEventListener('pointerdown', function(e){         /* 時刻の外を押したら、1つのかたまりに戻す */
-  if ($('#tm-field').classList.contains('open') && !e.target.closest('#tm-field') && !e.target.closest('#tods')) dpOpen(false);
+function flushTm(){
+  if (pickedTod() !== 'at') return;
+  ['h', 'm'].forEach(function(k){
+    var v = $('#tm-' + k).value, p = tmParts();
+    if (/^\d{1,2}$/.test(v) && +v <= DP[k].max && (!p || +v !== p[k])) putPart(k, +v);
+  });
+}
+$('#edit-form').addEventListener('click', function(e){              /* 時刻の外を押したら（指を動かさずに離したら）、1つのかたまりに戻す */
+  if ($('#tm-field').classList.contains('open') && !e.target.closest('#tm-field') && !e.target.closest('#tods') && !e.target.closest('#save')) dpOpen(false);
 });
 
 /* ---- 丸い選択ボタンを押した瞬間の「ぐにゃり」 ---- */
@@ -1372,8 +1410,8 @@ $('#spans').addEventListener('click', function(e){ popChip(e.target.closest('.ch
 function popChip(c){
   if (!c) return;
   c.classList.remove('pop'); c.offsetWidth; c.classList.add('pop');
-  setTimeout(function(){ c.classList.remove('pop'); }, 460);
 }
+$('#edit-form').addEventListener('animationend', function(e){ if (e.animationName === 'chip-pop') e.target.classList.remove('pop'); });
 function setFold(o){
   $('#fold').classList.toggle('open', o);
   $('#preset-btn').setAttribute('aria-expanded', o);
@@ -1408,6 +1446,7 @@ function toThumb(file){
 }
 $('#edit-form').addEventListener('submit', function(e){
   e.preventDefault();
+  flushTm();                                                         /* 打ちかけの時刻を先に入れてから保存する（blur が先に来ない端末もある） */
   var name = $('#name').value.trim().slice(0, 24);
   if (!name) return;
   if (!canSave()) return;
