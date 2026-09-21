@@ -96,40 +96,41 @@
   .entry:active { transform: scale(.992); }
   .entry .cover { width:100%; aspect-ratio: 4/3; object-fit:cover; background:var(--accent-soft); display:block;}
   .entry .cover.placeholder { display:flex; align-items:center; justify-content:center; font-size:46px; }
-  .entry .multi { position:relative; }
-  .entry .multi .count {
+  .multi { position:relative; }
+  .multi .count {
     position:absolute; right:10px; bottom:10px; background:rgba(0,0,0,.55); color:#fff;
     font-size:12px; padding:3px 9px; border-radius:999px;
   }
   /* 写真が複数のとき：カードの中を横にスワイプして2枚目以降を見る */
-  .entry .cover-track {
+  .cover-track {
     display:flex; overflow-x:auto; overscroll-behavior-x:contain;
     scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
     scrollbar-width:none; touch-action:pan-x pan-y;
   }
-  .entry .cover-track::-webkit-scrollbar { display:none; }
-  .entry .cover-track .cover { flex:0 0 100%; scroll-snap-align:center; }
-  .entry .multi .dots {
+  .cover-track::-webkit-scrollbar { display:none; }
+  .cover-track .cover { flex:0 0 100%; width:100%; aspect-ratio:4/3; object-fit:cover;
+    background:var(--accent-soft); display:block; scroll-snap-align:center; }
+  .multi .dots {
     position:absolute; left:0; right:0; bottom:9px; display:flex; justify-content:center;
     gap:5px; pointer-events:none;
   }
-  .entry .multi .dots i {
+  .multi .dots i {
     width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.55);
     box-shadow:0 1px 3px rgba(0,0,0,.3); transition:background .18s, transform .18s;
   }
-  .entry .multi .dots i.on { background:rgba(255,255,255,.98); transform:scale(1.18); }
-  .entry .multi .nav {
+  .multi .dots i.on { background:rgba(255,255,255,.98); transform:scale(1.18); }
+  .multi .nav {
     position:absolute; top:50%; transform:translateY(-50%); width:32px; height:32px;
     border:0; border-radius:50%; background:var(--card); color:var(--text);
     font-size:18px; line-height:1; font-family:inherit; cursor:pointer;
     align-items:center; justify-content:center; display:none;
     box-shadow:0 1px 6px rgba(0,0,0,.18);
   }
-  .entry .multi .nav.prev { left:8px; }
-  .entry .multi .nav.next { right:8px; }
+  .multi .nav.prev { left:8px; }
+  .multi .nav.next { right:8px; }
   @media (hover:hover) and (pointer:fine) {
-    .entry .multi:hover .nav { display:flex; }
-    .entry .multi .nav.off { opacity:.3; pointer-events:none; }
+    .multi:hover .nav { display:flex; }
+    .multi .nav.off { opacity:.3; pointer-events:none; }
   }
   .entry .body { padding: 11px 14px 12px; }
   .entry .e-top { display:flex; align-items:center; gap:8px; }
@@ -330,10 +331,8 @@
   .chosen-tags .ct { font-size:13px; padding:6px 12px; border-radius:999px; background:var(--accent-2); color:var(--bg); cursor:pointer; display:flex; gap:6px; align-items:center;}
 
   /* 詳細 */
-  .detail-photos { display:flex; gap:10px; overflow-x:auto; margin: 0 -16px 4px; padding: 0 16px; scroll-snap-type:x mandatory;}
-  .detail-photos::-webkit-scrollbar{display:none;}
-  .detail-photos img { height:240px; border-radius:16px; scroll-snap-align:center; object-fit:cover; }
-  .detail-photos img:only-child { width:calc(100% - 0px); object-fit:cover; }
+  .d-photos { border-radius:16px; overflow:hidden; margin-bottom:6px; }
+  .d-photos .cover { cursor:zoom-in; }
   .d-name { font-size:24px; font-weight:700; margin: 14px 0 4px;}
   .d-date { font-size:13px; color:var(--accent); font-weight:600; }
   .d-note { font-size:15.5px; margin-top:14px; white-space:pre-wrap; line-height:1.75;}
@@ -1719,6 +1718,20 @@ function allTags(){
   allRecords.forEach(r=>(r.tags||[]).forEach(t=>set.add(t)));
   return [...set];
 }
+/* 写真を横に送れる形にして返す。一覧カードと詳細で同じ見た目を使う。
+   lb=true なら1枚ずつに data-lb を振り、押すと大きい写真（ライトボックス）が開く */
+function carouselHTML(photos, extraClass, lb){
+  const many = photos.length>1;
+  return `<div class="multi${extraClass?' '+extraClass:''}">
+      <div class="cover-track">${photos.map((p,i)=>
+        `<img class="cover" src="${p}"${lb?` data-lb="${i}"`:''} loading="${(lb&&!i)?'eager':'lazy'}" decoding="async">`).join('')}</div>
+      ${many ? (photos.length<=6
+         ? `<div class="dots">${photos.map((_,i)=>`<i class="${i?'':'on'}"></i>`).join('')}</div>`
+         : `<span class="count"><b>1</b>/${photos.length}</span>`) : ''}
+      ${many ? `<button type="button" class="nav prev off" aria-label="前の写真">‹</button>
+      <button type="button" class="nav next" aria-label="次の写真">›</button>` : ''}
+    </div>`;
+}
 /* 記録カード（月ごとグループ）を組み立てる。フィードとタグページで共用 */
 function recordListHTML(list, {groupByMonth=true}={}){
   if(GRANDMA) return recordListGrandmaHTML(list);
@@ -1727,16 +1740,7 @@ function recordListHTML(list, {groupByMonth=true}={}){
     const mk=monthKey(r.date);
     if(groupByMonth && mk!==lastMonth){ html+=`<div class="month-head">${fmtMonth(mk)}</div>`; lastMonth=mk; }
     const photos=r.photos||[];
-    const cover = photos.length
-      ? `<div class="multi">
-           <div class="cover-track">${photos.map(p=>`<img class="cover" src="${p}" loading="lazy" decoding="async">`).join('')}</div>
-           ${photos.length>1 ? (photos.length<=6
-              ? `<div class="dots">${photos.map((_,i)=>`<i class="${i?'':'on'}"></i>`).join('')}</div>`
-              : `<span class="count"><b>1</b>/${photos.length}</span>`) : ''}
-           ${photos.length>1 ? `<button type="button" class="nav prev off" aria-label="前の写真">‹</button>
-           <button type="button" class="nav next" aria-label="次の写真">›</button>` : ''}
-         </div>`
-      : `<div class="cover placeholder">🍽️</div>`;
+    const cover = photos.length ? carouselHTML(photos) : `<div class="cover placeholder">🍽️</div>`;
     const tags=(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
     const cc=commentsFor(r.id).length;
     const posted = fmtPostedShort(r.createdAt);   // 記録に残した時間帯（🌇 18:42）
@@ -2814,9 +2818,7 @@ function renderDetail(id){
   _detailSig=sig;
   editingCmt=null;                       // 一から組み直すので、直しかけは持ち越さない
   const photos=r.photos||[];
-  const photoHtml = photos.length
-    ? `<div class="detail-photos">${photos.map((p,i)=>`<img src="${p}" data-lb="${i}" decoding="async">`).join('')}</div>`
-    : '';
+  const photoHtml = photos.length ? carouselHTML(photos, 'd-photos', true) : '';
   const tags=(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
   const n=commentsFor(id).length;
   $('#detailBody').innerHTML = `
@@ -2848,7 +2850,11 @@ function renderDetail(id){
   bindMentionInput($('#cmtInput'), $('#menSug'));
   $('#replyCancel').onclick=cancelReply;
   renderReplyChip();
-  $('#detailBody').querySelectorAll('[data-lb]').forEach(el=>el.onclick=()=>openLightbox(photos, +el.dataset.lb));
+  bindCarousels($('#detailBody'));
+  $('#detailBody').querySelectorAll('[data-lb]').forEach(el=>el.onclick=()=>{
+    if(Date.now()-_lastPhotoSwipeAt < 350) return;   // 横に送った指が止まっただけでは開かない
+    openLightbox(photos, +el.dataset.lb);
+  });
 }
 function sendComment(id){
   const inp=$('#cmtInput'); const v=inp.value.trim(); if(!v) return;
