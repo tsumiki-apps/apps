@@ -152,5 +152,9 @@ export function probeInfo(metric, dates, ends, values) {
     with_decimal: values.filter((v) => /[.,]\d/.test(String(v))).length,
     digits: Object.fromEntries([...values.reduce((m, v) => { const k = String(v).replace(/\D/g, "").length; m.set(k, (m.get(k) || 0) + 1); return m; }, new Map())]),
     value_kinds: kinds,
+    // 正体を確かめるための一時的な覗き窓（2026-09-23）。最初の5件の文字そのもの・日付とは結び付けない。
+    // 確かめたら消す（health_probe を空にする）。値の正体が分かったらこの行ごと外す
+    head: values.slice(0, 5).map((v) => String(v).slice(0, 40)),
+    distinct: new Set(values).size,
   };
 }

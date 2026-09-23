@@ -2,7 +2,7 @@
 // からだ帳（health.html）に、iPhone のショートカットからヘルスケアの値を入れる受け口。
 //
 // 本文（ショートカットの「辞書」をそのまま送る）:
-//   { token, mode: "probe" | "save", metric, limit, dates, ends?, values }
+//   { token, mode: "probe" | "save", metric, window | limit, dates, ends?, values }
 //   dates / ends / values は配列でも、改行区切りの文字でも受ける（ショートカットはリストを改行でつなぐ）。
 //   metric: hrv / rhr / exercise / weight / walk / sleep
 // mode:
@@ -32,13 +32,16 @@ Deno.serve(async (req) => {
     if (!(metric in METRICS) && metric !== "sleep") return json({ ok: false, msg: "知らない種類: " + metric.slice(0, 20) }, 400);
     const name = NAMES[metric];
     const mode = String(body?.mode || "probe");
-    const limit = Number(body?.limit || 0);
+    // window（過去◯日）で取ったときは、いちばん古い日が途中からなので必ず捨てる。
+    // 捨て方は limit と同じ道を通す（limit=1 なら「件数が上限に達した＝最古は途中」と同じ扱いになる）
+    const limit = Number(body?.window || 0) > 0 ? 1 : Number(body?.limit || 0);
     const dates = toList(body?.dates), ends = toList(body?.ends), values = toList(body?.values);
 
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
     if (mode === "probe") {
-      const info: any = { ...probeInfo(metric, dates, ends, values), keys: Object.keys(body || {}).filter((k) => k !== "token") };
+      const info: any = { ...probeInfo(metric, dates, ends, values), keys: Object.keys(body || {}).filter((k) => k !== "token"),
+        raw_type: Array.isArray(body?.values) ? "array" : typeof body?.values, raw_len: String(body?.values ?? "").length };
       // 書き出しから入れた値と、日ごとに比べる（**値は残さず比だけ**）。単位の食い違いを見つけるため
       if (metric === "sleep") {
         info.value_per_minute = sleepValueRatio(dates, ends, values);

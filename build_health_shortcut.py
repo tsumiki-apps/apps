@@ -10,9 +10,9 @@
 
 組み方は公開ショートカット「Health Data Export」（heartbridge・iCloud 22bb56e73c354d9aa76a3678548dfe3a）の
 実動の形をなぞる。**キーも値も推測しない**：
-  ・検索（filter.health.quantity）＝「種類」だけで絞る。日付の条件は置かない（あなたのライブラリにも実例が無い）。
-    新しい順（Latest First＝写真の検索3件で実例あり）に LIMIT 件だけ取り、日ごとのまとめは受け口でやる。
-    LIMIT 件ちょうど届いたら、いちばん古い日は途中までかもしれないので受け口が捨てる。
+  ・検索（filter.health.quantity）＝**本人が iPhone で作った見本と同じ形**：「種類」＋「開始日が過去3日以内」。
+    種類だけの条件（heartbridge の形）は今の iOS で効かず、既定の「歩数」が返った（2026-09-23 実測）。
+    過去3日の最初の日は途中からなので、受け口がいちばん古い日を必ず捨てる。
   ・種類名は HealthKit の英語の表示名（Localizable-DataTypes.loctable で裏取り。例の "Heart Rate" と同じ出どころ）。
     心肺機能（VO₂ max）は名前が決めきれないので入れない（書き出しの取り込みで入る）。
   ・単位（WFHKSampleFilteringUnit）は置かない＝ヘルスケアの既定の単位（例では "count" だが種類ごとの正しい値の裏が無い）。
@@ -28,16 +28,18 @@ HERE = pathlib.Path(__file__).parent
 SB_FUNC = "https://okbjqtdirrathscctyvx.supabase.co/functions/v1/health-ingest"
 CACHE = pathlib.Path.home() / ".cache/tsumiki"
 REF = CACHE / "ref_heartbridge.plist"
+REF2 = CACHE / "ref_mihon.plist"      # 本人が iPhone で作った見本（2026-09-23・iCloud 47b4c9603d514ca6946a15902ebe3661）
+DAYS = 3                              # 過去3日。いちばん古い日は途中からなので受け口が捨てる
 REF_URL = "https://www.icloud.com/shortcuts/api/records/22bb56e73c354d9aa76a3678548dfe3a"
 
-# (受け口の名前, ヘルスケアの種類名, 取る件数, 終わりの時刻も要るか)。睡眠は最後（種類名が通らなかったときに前の5つは届いている）
+# (受け口の名前, ヘルスケアの種類名, 終わりの時刻も要るか)。睡眠は最後（種類名が通らなかったときに前の5つは届いている）
 METRICS = [
-    ("hrv",      "Heart Rate Variability", 150, False),
-    ("rhr",      "Resting Heart Rate",      20, False),
-    ("exercise", "Exercise Minutes",       800, False),
-    ("weight",   "Weight",                  10, False),
-    ("walk",     "Walking Speed",          400, False),
-    ("sleep",    "Sleep",                  400, True),
+    ("hrv",      "Heart Rate Variability", False),
+    ("rhr",      "Resting Heart Rate",     False),
+    ("exercise", "Exercise Minutes",       False),
+    ("weight",   "Weight",                 False),
+    ("walk",     "Walking Speed",          False),
+    ("sleep",    "Sleep",                  True),
 ]
 
 def U(): return str(uuid.uuid4()).upper()
@@ -93,13 +95,16 @@ def fixed_dict(pairs):
     return {"Value": {"WFDictionaryFieldValueItems": items}, "WFSerializationType": "WFDictionaryFieldValue"}
 
 def type_filter(type_name):
-    """heartbridge の例の「種類」の条件をそのまま（日付の条件は置かない）"""
+    """本人の見本と同じ形：「種類が◯◯」＋「開始日が過去 DAYS 日以内」（Operator 1001・Unit 16＝日）。
+    2026-09-23、種類だけの条件（heartbridge の形）は今の iOS で効かず、6種類とも歩数が返った（受け口で実測）"""
     return {"Value": {"WFActionParameterFilterPrefix": 1,
                       "WFContentPredicateBoundedDate": False,
-                      "WFActionParameterFilterTemplates": [{
-                          "Bounded": True, "Operator": 4, "Removable": False, "Property": "Type",
-                          "Values": {"Enumeration": {"Value": type_name,
-                                                     "WFSerializationType": "WFStringSubstitutableState"}}}]},
+                      "WFActionParameterFilterTemplates": [
+                          {"Bounded": True, "Operator": 4, "Removable": False, "Property": "Type",
+                           "Values": {"Enumeration": {"Value": type_name,
+                                                      "WFSerializationType": "WFStringSubstitutableState"}}},
+                          {"Bounded": True, "Operator": 1001, "Removable": False, "Property": "Start Date",
+                           "Values": {"Unit": 16, "Number": str(DAYS)}}]},
             "WFSerializationType": "WFContentPredicateTableTemplate"}
 
 # 出力名（例の英語名。解決は UUID で行われるので名前の食い違いは動作に影響しない）
@@ -124,22 +129,17 @@ def build(mode, tok, anon):
         return u_f
 
     msgs = []
-    for key, type_name, limit, need_end in METRICS:
+    for key, type_name, need_end in METRICS:
         u_find = U()
         A("is.workflow.actions.filter.health.quantity", {
             "WFContentItemFilter": type_filter(type_name),
-            "WFContentItemSortProperty": "Start Date",
-            "WFContentItemSortOrder": "Latest First",
-            "WFContentItemLimitEnabled": True,
-            "WFContentItemLimitNumber": float(limit),
-            "WFHKSampleFilteringFillMissing": False,
         }, u_find)
         u_start = stamp(u_find, "Start Date")
         u_end = stamp(u_find, "End Date") if need_end else None
 
         u_d0 = U()
         A("is.workflow.actions.dictionary", {"WFItems": fixed_dict(
-            [("token", tok), ("mode", mode), ("metric", key), ("limit", str(limit))])}, u_d0)
+            [("token", tok), ("mode", mode), ("metric", key), ("window", str(DAYS))])}, u_d0)
         def setv(u_in, k, value, u_out):
             A("is.workflow.actions.setvalueforkey",
               {"WFDictionary": att(u_in, O_DICT), "WFDictionaryKey": k, "WFDictionaryValue": value}, u_out)
@@ -200,7 +200,7 @@ def main():
         with open(wf, "wb") as f:
             plistlib.dump(wrap(build(mode, tok, anon)), f, fmt=plistlib.FMT_BINARY)
         os.chmod(wf, 0o600)
-        chk = subprocess.run([sys.executable, str(HERE / "shortcut_check.py"), str(wf), "--ref", str(REF)],
+        chk = subprocess.run([sys.executable, str(HERE / "shortcut_check.py"), str(wf), "--ref", str(REF), "--ref", str(REF2)],
                              capture_output=True, text=True)
         tail = "\n".join(chk.stdout.strip().split("\n")[-6:])
         print(f"── 照合 {name}\n{tail}")

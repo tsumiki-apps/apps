@@ -30,7 +30,8 @@ PAT = re.compile(r"^(is\.workflow\.actions\.[a-z0-9.]+|WF[A-Za-z]+|Repeat (Item|
 
 # 実測で意味を確定させた定数（実動4本から裏取り）。99 は実動3件あるが意味は未確定。
 COND = {0: "より小さい", 1: "以下", 2: "より大きい", 3: "以上", 4: "等しい",
-        99: "（実動例あり・意味は未確定）", 1003: "範囲内", 100: "値がある", 101: "値がない"}
+        99: "（実動例あり・意味は未確定）", 1003: "範囲内", 100: "値がある", 101: "値がない",
+        1001: "過去◯以内（日付・Unit 16＝日。本人の見本 2026-09-23）"}
 ENUM = {
     ("is.workflow.actions.getitemfromlist", "WFItemSpecifier"):
         {"First Item", "Last Item", "Item At Index", "Random Item", "Items in Range"},
