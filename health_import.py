@@ -13,7 +13,7 @@
                （0時をまたぐ夜が前の日と今日に割れない）。昼寝は別のまとまりになるので足されない。
                時計の段階つきがあるまとまりでは iPhone の「区別なし」を使わない（起きていた時間まで埋めるため）。
   hrv       … 心拍変動 SDNN の日平均（ms）
-  rhr       … 安静時心拍数（その日の最後の値）
+  rhr       … 安静時心拍数の日平均（ヘルスケアの「平均」と同じ）
   exercise  … エクササイズ時間の合計（分）
   vo2       … 心肺機能（その日の最後の値）
   weight    … 体重 kg（lb なら換算）
@@ -39,7 +39,7 @@ ASLEEP = {"HKCategoryValueSleepAnalysisAsleepCore", "HKCategoryValueSleepAnalysi
 UNSPEC = "HKCategoryValueSleepAnalysisAsleepUnspecified"
 Q = {
     "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": ("hrv", "mean"),
-    "HKQuantityTypeIdentifierRestingHeartRate": ("rhr", "last"),
+    "HKQuantityTypeIdentifierRestingHeartRate": ("rhr", "mean"),
     "HKQuantityTypeIdentifierAppleExerciseTime": ("exercise", "sum"),
     "HKQuantityTypeIdentifierVO2Max": ("vo2", "last"),
     "HKQuantityTypeIdentifierBodyMass": ("weight", "last"),
