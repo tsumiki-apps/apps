@@ -2,7 +2,7 @@
 // からだ帳（health.html）に、iPhone のショートカットからヘルスケアの値を入れる受け口。
 //
 // 本文（ショートカットの「辞書」をそのまま送る）:
-//   { token, mode: "probe" | "save", metric, window | limit, dates, ends?, values }
+//   { token, mode: "probe" | "save", metric, window, dates, ends?, values }
 //   dates / ends / values は配列でも、改行区切りの文字でも受ける（ショートカットはリストを改行でつなぐ）。
 //   metric: hrv / rhr / exercise / weight / walk / sleep
 // mode:
@@ -11,7 +11,7 @@
 // 合い言葉は Supabase の secrets（HEALTH_INGEST_TOKEN）。**コードにもクエリにも書かない。**
 // 出力: どの道でも { ok, msg }。ショートカットは msg だけを見せる。
 
-import { toList, aggregate, aggregateSleep, probeInfo, METRICS, dailyRaw, median, sleepValueRatio } from "./pure.js";
+import { toList, aggregate, aggregateSleep, probeInfo, METRICS, dailyRaw, median, sleepValueRatio, cutDay, tzOf } from "./pure.js";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 function json(o: unknown, s = 200) {
@@ -32,9 +32,6 @@ Deno.serve(async (req) => {
     if (!(metric in METRICS) && metric !== "sleep") return json({ ok: false, msg: "知らない種類: " + metric.slice(0, 20) }, 400);
     const name = NAMES[metric];
     const mode = String(body?.mode || "probe");
-    // window（過去◯日）で取ったときは、いちばん古い日が途中からなので必ず捨てる。
-    // 捨て方は limit と同じ道を通す（limit=1 なら「件数が上限に達した＝最古は途中」と同じ扱いになる）
-    const limit = Number(body?.window || 0) > 0 ? 1 : Number(body?.limit || 0);
     const dates = toList(body?.dates), ends = toList(body?.ends), values = toList(body?.values);
 
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -62,9 +59,26 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "save") {
-      const rows = metric === "sleep" ? aggregateSleep(dates, ends, values, limit) : aggregate(metric, dates, values, limit);
+      // ⚠️ 2026-09-24 反証役 BLOCKER：保存は閉じてある。iCloud に古い save 版（V1＝中身が歩数）が合い言葉入りで残っており、
+      //    押されると正しい書き出しの値を壊す。実機で5指標の形を確かめ終えるまで開けない（SAVE_OPEN を true にするのは本人の確認後）
+      const SAVE_OPEN = Deno.env.get("HEALTH_SAVE_OPEN") === "1";
+      if (!SAVE_OPEN) return json({ ok: false, msg: `${name}：保存はまだ閉じています（送信テスト中）` }, 403);
+      const win = Number(body?.window || 0);
+      if (!(win > 0)) return json({ ok: false, msg: `${name}：古いショートカットです。新しい版を入れ直してください` }, 400);
+      if (dates.length !== values.length || (metric === "sleep" && ends.length !== dates.length))
+        return json({ ok: false, msg: `${name}：日付と値の数が合いません（${dates.length}/${values.length}）。保存しません` }, 400);
+      const cut = cutDay(Date.now(), win, tzOf(dates[0]) ?? 540);   // 端末の時差で「今日」を決める
+      let rows = metric === "sleep" ? aggregateSleep(dates, ends, values, 0, cut) : aggregate(metric, dates, values, 0, cut);
+      const bad = rows.filter((r) => !r.ok);
+      if (bad.length) return json({ ok: false, msg: `${name}：ありえない値の日があるので保存しません（${bad.map((r) => r.day.slice(5)).join("・")}）` }, 422);
+      // 書き出しから入れた日は上書きしない（書き出しのほうが確か。上書きすると戻せず、突き合わせもできなくなる）
+      if (rows.length) {
+        const { data } = await sb.from("health_daily").select("day").eq("metric", metric).eq("source", "export").in("day", rows.map((r) => r.day));
+        const keep = new Set((data || []).map((r: any) => r.day));
+        rows = rows.filter((r) => !keep.has(r.day));
+      }
       if (!rows.length) return json({ ok: true, msg: `${name}：入れるものなし（${dates.length}件届いた）` });
-      const up = rows.map((r) => ({ ...r, source: "shortcut", updated_at: new Date().toISOString() }));
+      const up = rows.map(({ ok, ...r }) => ({ ...r, source: "shortcut", updated_at: new Date().toISOString() }));
       const { error } = await sb.from("health_daily").upsert(up, { onConflict: "day,metric" });
       if (error) return json({ ok: false, msg: name + "：保存できませんでした（" + error.message + "）" }, 500);
       const days = rows.map((r) => r.day).sort();

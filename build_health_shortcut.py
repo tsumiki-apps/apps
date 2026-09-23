@@ -44,6 +44,26 @@ METRICS = [
     ("sleep",    "Sleep",                  True),
 ]
 
+# 種類名の裏（2026-09-24 反証役：shortcut_check は検索の条件の中身を照合しないので、ここで関門をかける）。
+# 本人の見本（REF2）に出てくる名前は自動で足す。ここにも見本にも無い名前は組み込まない。
+TYPE_PROOF = {
+    "Resting Heart Rate": "実機 V2・V3 で書き出し比 1.00（2026-09-23）",
+    "Walking Speed": "実機 V3 で書き出し比 1.01（2026-09-23・単位は受け口で関門）",
+}
+
+def proven_types():
+    ok = dict(TYPE_PROOF)
+    try:
+        for a in plistlib.load(open(REF2, "rb")).get("WFWorkflowActions", []):
+            if a.get("WFWorkflowActionIdentifier") != "is.workflow.actions.filter.health.quantity":
+                continue
+            for t in a["WFWorkflowActionParameters"]["WFContentItemFilter"]["Value"]["WFActionParameterFilterTemplates"]:
+                if t.get("Property") == "Type":
+                    ok[t["Values"]["Enumeration"]["Value"]] = "本人の見本"
+    except Exception:
+        pass
+    return ok
+
 def U(): return str(uuid.uuid4()).upper()
 
 def anon_key():
@@ -131,7 +151,11 @@ def build(mode, tok, anon):
         return u_f
 
     msgs = []
+    proof = proven_types()
     for key, type_name, need_end in METRICS:
+        if type_name not in proof:
+            print(f"  ⚠️ 種類名「{type_name}」は裏が取れていないので組み込みません（本人の見本に足してもらう）")
+            continue
         u_find = U()
         A("is.workflow.actions.filter.health.quantity", {
             "WFContentItemFilter": type_filter(type_name),
@@ -197,7 +221,9 @@ def main():
     work = CACHE / "health_shortcut"
     work.mkdir(parents=True, exist_ok=True)
     os.chmod(work, 0o700)
-    for mode, name in (("probe", "からだ帳 送信テスト"), ("save", "からだ帳 送信")):
+    # ⚠️ 2026-09-24 反証役 BLOCKER：save 版は、実機で5指標の形を確かめ終えるまで焼かない（受け口でも保存を閉じてある）
+    modes = [("probe", "からだ帳 送信テスト")] + ([("save", "からだ帳 送信")] if os.environ.get("HEALTH_BUILD_SAVE") == "1" else [])
+    for mode, name in modes:
         wf = work / f"{name}.wflow"
         with open(wf, "wb") as f:
             plistlib.dump(wrap(build(mode, tok, anon)), f, fmt=plistlib.FMT_BINARY)

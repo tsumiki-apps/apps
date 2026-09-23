@@ -29,15 +29,28 @@ export function num(s) {
 }
 
 export const METRICS = {
-  hrv:      { how: "mean", lo: 5,   hi: 300 },
-  rhr:      { how: "mean", lo: 30,  hi: 130 },
-  exercise: { how: "sum",  lo: 0,   hi: 1440 },
-  weight:   { how: "last", lo: 20,  hi: 300 },
-  walk:     { how: "mean", lo: 0.5, hi: 12 },
+  hrv:      { how: "mean", lo: 5,   hi: 300,  dlo: 5,   dhi: 300 },
+  rhr:      { how: "mean", lo: 30,  hi: 130,  dlo: 30,  dhi: 130 },
+  exercise: { how: "sum",  lo: 0,   hi: 1440, dlo: 0,   dhi: 1440 },
+  weight:   { how: "last", lo: 20,  hi: 300,  dlo: 20,  dhi: 300 },
+  // 歩行速度は km/h。m/s で届くことがある（2026-09-23 実測・比 0.28）。日の中央値が 2.5 未満なら m/s と見て**保存を断る**
+  walk:     { how: "mean", lo: 0.5, hi: 12,   dlo: 2.5, dhi: 9 },
 };
 
+/* "2026-09-23 04:45:00+0900" → 540（分）。読めなければ null */
+export function tzOf(s) {
+  const m = /([+-])(\d{2}):?(\d{2})$/.exec(String(s ?? "").trim());
+  return m ? (m[1] === "-" ? -1 : 1) * (+m[2] * 60 + +m[3]) : null;
+}
+
+/* 窓（過去 window 日）の境目。この日以前は途中からなので捨てる。now は ms、tzMin は端末の時差（分） */
+export function cutDay(now, window, tzMin) {
+  const t = new Date(now + tzMin * 60000 - window * 864e5);
+  return t.toISOString().slice(0, 10);
+}
+
 /* 数量の指標を日ごとにまとめる。limit 件ちょうど届いたら、いちばん古い日は途中までかもしれないので捨てる */
-export function aggregate(metric, dates, values, limit) {
+export function aggregate(metric, dates, values, limit, cut) {
   const def = METRICS[metric];
   if (!def) throw new Error("unknown metric");
   const byDay = new Map();
@@ -49,13 +62,14 @@ export function aggregate(metric, dates, values, limit) {
     byDay.get(p.day).push([p.t, v]);
   }
   let days = [...byDay.keys()].sort();
-  if (limit && dates.length >= limit && days.length) days = days.slice(1);
+  if (cut) days = days.filter((d) => d > cut);
+  else if (limit && dates.length >= limit && days.length) days = days.slice(1);
   return days.map((d) => {
     const a = byDay.get(d).sort((x, y) => x[0] - y[0]);
     const v = def.how === "sum" ? a.reduce((s, x) => s + x[1], 0)
             : def.how === "last" ? a[a.length - 1][1]
             : a.reduce((s, x) => s + x[1], 0) / a.length;
-    return { day: d, metric, value: Math.round(v * 10) / 10 };
+    return { day: d, metric, value: Math.round(v * 10) / 10, ok: v >= def.dlo && v <= def.dhi };
   });
 }
 
@@ -63,14 +77,14 @@ export function aggregate(metric, dates, values, limit) {
 export function stageOf(s) {
   const x = String(s).trim().toLowerCase();
   if (/(awake|覚醒|起きて)/.test(x)) return "awake";
-  if (/(in ?bed|ベッド|就床)/.test(x)) return "inbed";
+  if (/(in ?bed|ベッド|就床|就寝)/.test(x)) return "inbed";
   if (/(core|コア|deep|深い|rem|レム)/.test(x)) return "staged";
-  if (/(asleep|unspecified|睡眠|眠)/.test(x)) return "asleep";
+  if (/(asleep|unspecified|不明|睡眠|眠)/.test(x)) return "asleep";
   return "unknown";
 }
 
 /* 睡眠：すき間3時間以内をひと続きにし、終わった日にいちばん長い眠りの分を付ける（health_import.py と同じ考え方） */
-export function aggregateSleep(starts, ends, values, limit) {
+export function aggregateSleep(starts, ends, values, limit, cut) {
   const spans = [];
   const n = Math.min(starts.length, ends.length, values.length);
   for (let i = 0; i < n; i++) {
@@ -78,7 +92,7 @@ export function aggregateSleep(starts, ends, values, limit) {
     if (st !== "staged" && st !== "asleep") continue;
     const a = parseStamp(starts[i]), b = parseStamp(ends[i]);
     if (!a || !b || b.t <= a.t) continue;
-    spans.push({ s: a.t, e: b.t, eday: b.day, staged: st === "staged" });
+    spans.push({ s: a.t, e: b.t, sday: a.day, eday: b.day, staged: st === "staged" });
   }
   spans.sort((x, y) => x.s - y.s);
   const GAP = 3 * 3600e3, groups = [];
@@ -90,7 +104,8 @@ export function aggregateSleep(starts, ends, values, limit) {
   if (cur.length) groups.push(cur);
   const best = new Map();
   groups.forEach((g, gi) => {
-    if (limit && starts.length >= limit && gi === 0) return;   // いちばん古いまとまりは途中までかもしれない
+    if (!cut && limit && starts.length >= limit && gi === 0) return;   // いちばん古いまとまりは途中までかもしれない
+    if (cut && g[0].sday <= cut) return;   // 窓の境目の日（端末の日付）に始まる眠りは途中からかもしれない
     let use = g.some((x) => x.staged) ? g.filter((x) => x.staged) : g;
     use = use.slice().sort((x, y) => x.s - y.s);
     let total = 0, cs = null, ce = null, eday = use[0].eday, maxE = -Infinity;
@@ -103,7 +118,7 @@ export function aggregateSleep(starts, ends, values, limit) {
     const mins = Math.round(total / 60000);
     if (mins >= 30 && mins > (best.get(eday) || 0)) best.set(eday, mins);
   });
-  return [...best.entries()].sort().map(([day, value]) => ({ day, metric: "sleep", value }));
+  return [...best.entries()].sort().map(([day, value]) => ({ day, metric: "sleep", value, ok: value >= 30 && value <= 1080 }));
 }
 
 /* 送信テスト版の突き合わせ：日ごとにまとめた値（範囲の足切りなし）。値そのものは外に出さず、比だけに使う */
@@ -152,9 +167,10 @@ export function probeInfo(metric, dates, ends, values) {
     with_decimal: values.filter((v) => /[.,]\d/.test(String(v))).length,
     digits: Object.fromEntries([...values.reduce((m, v) => { const k = String(v).replace(/\D/g, "").length; m.set(k, (m.get(k) || 0) + 1); return m; }, new Map())]),
     value_kinds: kinds,
-    // 正体を確かめるための一時的な覗き窓（2026-09-23）。最初の5件の文字そのもの・日付とは結び付けない。
-    // 確かめたら消す（health_probe を空にする）。値の正体が分かったらこの行ごと外す
-    head: values.slice(0, 5).map((v) => String(v).slice(0, 40)),
     distinct: new Set(values).size,
+    n_match: dates.length === values.length && (!ends.length || ends.length === dates.length),
+    // 窓の意味を見る手がかり：いちばん古い・新しいサンプルが「今から何時間前」か（健康の値ではない）
+    hours_ago: (() => { const ts = dates.map((d) => parseStamp(d)?.t).filter((t) => t != null);
+      return ts.length ? { oldest: Math.round((Date.now() - Math.min(...ts)) / 36e5), newest: Math.round((Date.now() - Math.max(...ts)) / 36e5) } : null; })(),
   };
 }
