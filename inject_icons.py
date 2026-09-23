@@ -7,6 +7,7 @@ import re
 # app名: ホーム画面に表示する短い名前
 TITLES = {
     "index":       "つみき",
+    "health":      "からだ帳",
     "cooking":     "ゆずごはん",
     "credit":      "クレジット明細",
     "forecast":    "資産予測",
