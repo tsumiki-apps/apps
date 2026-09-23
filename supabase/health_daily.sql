@@ -32,3 +32,17 @@ end $$;
 
 revoke all on function public.health_list(text, date) from public;
 grant execute on function public.health_list(text, date) to anon;
+
+-- ------------------------------------------------------------
+-- health_probe（2026-09-23・migration: health_probe_locked）
+-- ショートカットの「送信テスト版」が届けた形だけ（数字は伏せ字）。受け口 health-ingest（service role）だけが書く。
+-- ------------------------------------------------------------
+create table if not exists public.health_probe (
+  id     bigserial primary key,
+  at     timestamptz not null default now(),
+  metric text not null,
+  info   jsonb not null
+);
+alter table public.health_probe enable row level security;
+revoke all on table public.health_probe from anon, authenticated;
+revoke all on sequence public.health_probe_id_seq from anon, authenticated;
