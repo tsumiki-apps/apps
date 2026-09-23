@@ -1147,7 +1147,7 @@
     d="M5 12h13M13 7l5 5-5 5"/></svg><span class="sgt"></span></button>
   <div class="row">
     <button id="pick" title="画像やPDFを送る">＋</button>
-    <textarea id="cmd" rows="1" placeholder="指示を入力…" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="enter"></textarea>
+    <textarea id="cmd" rows="1" placeholder="指示を入力…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="enter"></textarea>
     <button id="send" disabled>↑</button>
   </div>
   <input id="file" type="file" accept="image/*,application/pdf,.pdf" multiple hidden>
@@ -2270,6 +2270,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 以前は3か所が別々に disabled を触っていて、「MacBook に届きません」の帯が
   // 出ている最中でもボタンが押せた＝押した瞬間に長文が失われる入口になっていた。
   function syncSendEnabled() {
+    syncDraftSeat();
     el.send.disabled = offline || !current;
   }
 
@@ -2571,6 +2572,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function select(name) {
+    // 札（画像・PDF）を Mac に置いている途中に切り替えると、置き終わった札の行き先が無くなって消える
+    if (name !== current && atts.some(function (a) { return !a.path; })) {
+      return toast('ファイルを置いている途中です。終わってから切り替えてください');
+    }
     flushMemo();          // 前の席のメモを、切り替える前に送り切る
     if (!el.memo.hidden) closeMemo();   // 打ちかけの欄を、前の席のまま持ち越さない
     current = name;
@@ -2682,6 +2687,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         toast(name + (kind === 'claude'
           ? ' で ' + (model ? model.label : 'Claude') + ' を起動中…'
           : ' を作りました'));
+        forgetDraft(name);   // 同じ名前の前の席の書きかけを、新しい席に出さない
         select(name);
         tick(true);
       })
@@ -2707,16 +2713,111 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 中身は Mac に置いた後なので、パスと小さな見本だけで戻せる
   // 最後に送った本文。別のタブ（Mac の Chrome で2枚開いている等）が古い字のまま預け直しても、
   // 送り済みの文なら預からない（起動時に戻すのをやめたので、放っておくと送った文が戻ってくる）
-  var DRAFT_SENT = 'tsumiki-remote-draft-sent';
+  var DRAFT_SENT = 'tsumiki-remote-draft-sent';   // { 席の名前: 最後に送った本文 }（席ごと）
+  function sentOf(seat) {
+    try { var o = JSON.parse(localStorage.getItem(DRAFT_SENT) || '{}'); return (o && o[seat]) || ''; } catch (e) { return ''; }
+  }
+  function setSent(seat, text) {
+    try {
+      var o = {}; try { o = JSON.parse(localStorage.getItem(DRAFT_SENT) || '{}') || {}; } catch (e) {}
+      if (typeof o !== 'object') o = {};
+      if (text) o[seat] = text; else delete o[seat];
+      localStorage.setItem(DRAFT_SENT, JSON.stringify(o));
+    } catch (e) {}
+  }
+
+  // 書きかけは**席ごと**に持つ（2026-09-23・本人が選んだ）。以前は入力欄1つを全部の席で使い回していて、
+  // 書いている途中で席を切り替えると、切り替えた先に送られた。
+  //   預け先＝ localStorage の DRAFTS に { 席の名前: { t:本文, a:札, born:席の誕生時刻 } }
+  //   draftSeat＝いま入力欄に出している書きかけが、どの席のものか
+  // ⚠️ 席の名前（work1〜9）は使い回される。メモと同じく席の誕生時刻（created）を控えておき、
+  //    違えば前の住人の書きかけ＝出さずに捨てる（→ README「メモ」の3つの関門）
+  var DRAFTS = 'tsumiki-remote-drafts';
+  var draftSeat = '';
+  function readDrafts() {
+    try { var o = JSON.parse(localStorage.getItem(DRAFTS) || '{}'); return o && typeof o === 'object' ? o : {}; }
+    catch (e) { return {}; }
+  }
+  function seatCreated(name) {
+    var s = sessions.filter(function (x) { return x.name === name; })[0];
+    return (s && s.created) || 0;
+  }
+  function packDraft(body, list, seat, prev) {
+    return { t: body, a: list, born: seatCreated(seat) || (prev && prev.born) || 0, at: Date.now() };
+  }
   function saveDraft() {
+    if (!draftSeat) return;        // まだどの席の書きかけでもない（起動の途中）
     try {
       var body = el.cmd.value || '';
-      if (body && body === localStorage.getItem(DRAFT_SENT)) body = '';
+      if (body && body === sentOf(draftSeat)) body = '';
       var keep = atts.filter(function (a) { return a.path; })
         .map(function (a) { return { p: a.path, t: a.thumb, k: a.kind, n: a.name }; });
-      if (!body && !keep.length) return localStorage.removeItem(DRAFT);
-      localStorage.setItem(DRAFT, JSON.stringify({ t: body, a: keep }));
+      var all = readDrafts();
+      if (!body && !keep.length) delete all[draftSeat];
+      else all[draftSeat] = packDraft(body, keep, draftSeat, all[draftSeat]);
+      localStorage.setItem(DRAFTS, JSON.stringify(all));
     } catch (e) { /* 入らなくても本文優先で諦める */ }
+  }
+  // その席の書きかけを捨てる。席を終わらせたとき・同じ名前で新しく作ったとき（メモの forgetSeat と同じ考え）
+  function forgetDraft(name) {
+    var all = readDrafts();
+    if (all[name]) { delete all[name]; try { localStorage.setItem(DRAFTS, JSON.stringify(all)); } catch (e) {} }
+    setSent(name, '');
+    if (draftSeat === name) {           // いま入力欄に出しているのがその席の書きかけ＝もう宛先が無い
+      el.cmd.value = ''; atts = []; loadedBorn = 0; loadedText = null;
+      renderAtts(); autoGrow(); renderSug();
+    }
+  }
+  // 読み込んだときの控え。読んだ瞬間に一覧がまだ新しい席を知らない（作った直後など）と
+  // 誕生時刻を確かめられないので、一覧が届いたあとに syncDraftSeat で確かめ直す（反証役の指摘）
+  var loadedBorn = 0, loadedText = null;
+  function loadDraft(name) {
+    var all = readDrafts(), d = all[name] || null;
+    var born = seatCreated(name);
+    if (d && born && d.born && d.born !== born) {        // 同じ名前の、前の席の書きかけ
+      delete all[name];
+      try { localStorage.setItem(DRAFTS, JSON.stringify(all)); } catch (e) {}
+      d = null;
+    }
+    loadedBorn = d ? (d.born || 0) : 0;
+    loadedText = d ? (d.t || '') : null;
+    el.cmd.value = d ? (d.t || '') : '';
+    atts = d ? (d.a || []).map(function (x) {
+      return { id: ++attSeq, path: x.p, thumb: x.t || '', kind: x.k || 'img', name: x.n || '' };
+    }) : [];
+    renderAtts();
+    autoGrow();
+    renderSug();
+  }
+  // 送り先（current）が変わったら、入力欄の中身をその席の書きかけに入れ替える。
+  // current はあちこちで変わる（選ぶ・席が消えて先頭に移る・写しから戻す）ので、
+  // どれのあとにも必ず呼ばれる syncSendEnabled から呼んでいる
+  function syncDraftSeat() {
+    if (current && current === draftSeat) {
+      // 読んだときは誕生時刻が分からなかった／写しの古い一覧で読んだ → いま分かったら確かめ直す
+      var now = seatCreated(current);
+      if (now && loadedBorn && loadedBorn !== now) {
+        var all = readDrafts();
+        if (all[current] && all[current].born === loadedBorn) { delete all[current]; try { localStorage.setItem(DRAFTS, JSON.stringify(all)); } catch (e) {} }
+        // 読んだあと手を入れていなければ、前の住人の字なので下げる（打ち足していたら残す＝本人の字を消さない）
+        if (loadedText !== null && el.cmd.value === loadedText) {
+          el.cmd.value = ''; atts = []; renderAtts(); autoGrow(); renderSug();
+        }
+        loadedText = null;
+      }
+      if (now) loadedBorn = now;
+      return;
+    }
+    if (!current) return;
+    if (!draftSeat) {
+      // 起動して最初の席。前の版が預けた書きかけ（席の区別なし）が入力欄に戻してあれば、この席のものにする
+      draftSeat = current;
+      if (el.cmd.value || atts.length) saveDraft(); else loadDraft(current);
+      return;
+    }
+    saveDraft();
+    draftSeat = current;
+    loadDraft(current);
   }
 
   function checkVersion(v) {
@@ -4423,19 +4524,32 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var paths = atts.map(function (a) { return a.path; }).join(' ');
     var text = paths ? (v ? paths + ' ' + v : paths) : v;
     if (!text) return;
-    var keepText = el.cmd.value, keepAtts = atts;
+    var keepText = el.cmd.value, keepAtts = atts, sentSeat = draftSeat;
     el.cmd.value = '';
     autoGrow();                 // 1行に戻す
     atts = [];
     renderAtts();
-    try { localStorage.setItem(DRAFT_SENT, keepText); } catch (e) {}
+    setSent(sentSeat, keepText);
     saveDraft();                // 空にしたことを預かりにも映す（送れたら消えたままになる）
     sendText(text, true, true).catch(function (e) {
+      setSent(sentSeat, '');   // 送れていない＝預かってよい
+      // 返事を待つあいだに別の席へ移っていたら、送ろうとした席の預かりに戻す（いまの入力欄には入れない）
+      if (draftSeat !== sentSeat) {
+        var all = readDrafts(), had = all[sentSeat];
+        var backAtts = keepAtts.filter(function (a) { return a.path; })
+          .map(function (a) { return { p: a.path, t: a.thumb, k: a.kind, n: a.name }; });
+        // その席にもう別の書きかけがあれば、送れなかった文をその上に足す（どちらも消さない）
+        all[sentSeat] = packDraft(had && had.t ? keepText + '\n' + had.t : keepText,
+          backAtts.concat((had && had.a) || []), sentSeat, had);
+        var saved = true;
+        try { localStorage.setItem(DRAFTS, JSON.stringify(all)); } catch (e3) { saved = false; }
+        return toast('送信できませんでした（' + e.message + '）。' + (saved
+          ? sentSeat + ' の書きかけに戻しました' : '書きかけにも戻せませんでした'), 3600);
+      }
       // 書いている途中に戻ってきたときは、いま打っている字を消さない
       var back = false;
       if (!el.cmd.value) { el.cmd.value = keepText; autoGrow(); back = true; }
       if (!atts.length) { atts = keepAtts; renderAtts(); }
-      try { localStorage.removeItem(DRAFT_SENT); } catch (e2) {}   // 送れていない＝預かってよい
       saveDraft();
       // ⚠️ トーストは1枠しかない（後から出したものが前を塗り潰す）。理由を混ぜないと
       // 「本文が大きすぎます」も「MacBook に届きません」も一度も読めなくなる
@@ -4924,6 +5038,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     api('/api/kill', { method: 'POST', body: JSON.stringify({ name: name }) })
       .then(function () {
         toast(name + ' を終わらせました');
+        forgetDraft(name);
         if (current === name) {
           current = '';
           localStorage.removeItem('tsumiki-remote-session');
@@ -5152,6 +5267,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         var msg = d.killed.length + ' 件を終わらせました';
         if (d.skipped.length) msg += '（' + d.skipped.length + ' 件は残しました）';
         toast(msg);
+        d.killed.forEach(forgetDraft);
         if (d.killed.indexOf(current) >= 0) {
           current = '';
           localStorage.removeItem('tsumiki-remote-session');
@@ -6538,10 +6654,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(true); });
 
-  // 読み込み直す前に預けた書きかけを戻す（古い版は本文だけの文字列で入っている）
+  // 前の版が預けた書きかけ（席の区別なし）を戻す。戻したら古いキーは消す＝
+  // syncDraftSeat が最初の席の書きかけとして預け直す。以後は DRAFTS（席ごと）だけを使う
   try {
     var draft = localStorage.getItem(DRAFT);
-    if (draft) {
+    localStorage.removeItem(DRAFT);
+    if (draft && !el.cmd.value) {
       var d = null;
       try { d = JSON.parse(draft); } catch (e) {}
       if (d && typeof d === 'object') {
