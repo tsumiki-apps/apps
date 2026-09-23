@@ -32,13 +32,15 @@ REF2 = CACHE / "ref_mihon.plist"      # 本人が iPhone で作った見本（20
 DAYS = 3                              # 過去3日。いちばん古い日は途中からなので受け口が捨てる
 REF_URL = "https://www.icloud.com/shortcuts/api/records/22bb56e73c354d9aa76a3678548dfe3a"
 
-# (受け口の名前, ヘルスケアの種類名, 終わりの時刻も要るか)。睡眠は最後（種類名が通らなかったときに前の5つは届いている）
+# (受け口の名前, ヘルスケアの種類名, 終わりの時刻も要るか)
+# ⚠️ 検索が0件だと「サンプルが見つかりません」でショートカットごと止まる（2026-09-23 実機）。
+#    止まりにくい順に並べ、0件になりやすい体重は入れない（最後の記録が数か月前＝毎回ここで止まる。書き出しの取り込みで入る）。
+#    睡眠は着けて寝なかった3日間だと0件になるので最後。
 METRICS = [
     ("hrv",      "Heart Rate Variability", False),
     ("rhr",      "Resting Heart Rate",     False),
-    ("exercise", "Exercise Minutes",       False),
-    ("weight",   "Weight",                 False),
     ("walk",     "Walking Speed",          False),
+    ("exercise", "Exercise Minutes",       False),
     ("sleep",    "Sleep",                  True),
 ]
 
