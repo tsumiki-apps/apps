@@ -17,6 +17,7 @@
 決まり（2026-09-23 反証役の指摘で作り直した）:
   ・**自分で置いた複製だけを覚えておき（控え＝~/.cache/tsumiki/inbox.json）、刈り込みはその中だけ。**
     本人が自分で置いたファイルは、名前が同じでも消さない・上書きしない。
+  ・同じ成果物の同じファイル名は、版（V1→V2）が変わっても同じ名前で置き換える（古い版が元の名前で残って取り違えないように）。
   ・名前がぶつかったら（本人のファイル／別の案件の同じ名前）、「名前（成果物名）.拡張子」→「名前 (2)」の順に逃がす。
   ・新しい KEEP 件だけ残す。フォルダの一覧は取らない（iCloud の一覧は固まることがある。控えだけで決まる）。
   ・コピーは一時名に書いてから入れ替える（途中で打ち切っても、書きかけが正しい名前で残らない）。
@@ -26,7 +27,7 @@
     **Claude にも本人にも届く形**（additionalContext と systemMessage）で知らせる。
   ・何が起きても終了コード0（フックの失敗で本来の作業を止めない）。
 """
-import os, sys, json, subprocess, pathlib, time
+import os, sys, json, subprocess, pathlib, time, re
 
 CLOUD = pathlib.Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"
 # つみきリモート（tsumiki-remote/server.js の PREVIEW_ROOT・tsumiki_pin.py）と同じ根。ここの外はリモートで開けない
@@ -63,8 +64,14 @@ def product_of(src):
         return ""
 
 
+def same_item(a, b):
+    """同じ物か。版のフォルダ（/V1/ /V2/）だけが違うなら同じ物の新しい版＝同じ名前で置き換える"""
+    norm = lambda x: re.sub(r"/V\d+/", "/V*/", str(x))
+    return norm(a) == norm(b)
+
+
 def pick_name(src, ledger):
-    """ぶつからない名前。控えの中で同じ元ファイルなら同じ名前を使い回す（送り直し＝上書き）"""
+    """ぶつからない名前。控えの中で同じ物（送り直し・新しい版）なら同じ名前を使い回す＝置き換え"""
     mine = {e["name"]: e["src"] for e in ledger}
     base = src.name
     cands = [base]
@@ -74,8 +81,8 @@ def pick_name(src, ledger):
     cands += [f"{src.stem} ({i}){src.suffix}" for i in range(2, 50)]
     for n in cands:
         if n in mine:
-            if mine[n] == str(src):
-                return n                      # 同じ物の送り直し
+            if same_item(mine[n], src):
+                return n                      # 同じ物の送り直し・新しい版
             continue                          # 別の案件の同じ名前
         if not (INBOX / n).exists():
             return n                          # 空いている（本人のファイルでもない）
