@@ -2768,6 +2768,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var RE_TOOL = /^⏺\s+[A-Za-z][A-Za-z0-9_]*\(/;
   var RE_SAY = /^⏺\s/;
   var RE_RESULT = /^\s*⎿/;
+  var RE_INTERRUPT = /^\s*⎿\s*Interrupted\b/;
   var RE_ME = /^❯\s/;
   // 枠は行の頭から描かれる。深く字下げされた縦線は「右側に並んだ絵」の一部なので
   // 拾わない（拾うと、その後ろの字下げ行・空行までオレンジのベタ塗りになる。2026-08-16）
@@ -2811,12 +2812,33 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // （2026-09-23：狭い幅の表は項目の間に ──── を引く＝2項目目から帯の外に出ていた）
   function holds(cls) { return cls === 'say' || cls === 'me'; }
 
-  function classify(line, prevCls, fold) {
+  // ⏺ で始まるのに RE_TOOL に当たらないツールの見出しを探す（`⏺ Web Search("…")` `⏺ hansho-yaku(…)`
+  // `⏺ User declined to answer questions` など。名前に空白や - が入る・かっこが無い）。
+  // 見分けは**形**で：ツールの ⎿ は見出しの直後に、空行も本文の行（2桁字下げ）も挟まずに来る。
+  // 実画面264件すべてこの形（2026-09-23）。返答の本文は2桁字下げなので、途中に ⎿ を書いても当たらない
+  function toolHeads(lines) {
+    var hit = {};
+    for (var i = 0; i < lines.length; i++) {
+      if (!RE_SAY.test(lines[i]) || RE_TOOL.test(lines[i])) continue;
+      for (var j = i + 1; j < lines.length && lines[j].trim(); j++) {
+        // 中断の知らせは返答の1行目の直下にも出る（1行目が出た瞬間に止めたとき・実物で撮った）
+        if (RE_RESULT.test(lines[j])) { if (!RE_INTERRUPT.test(lines[j])) hit[i] = true; break; }
+        // 見出しの折り返しは6桁以上の字下げ（Bash 6・Agent 7・Web Search 12）。
+        // それより浅い行は本文（2桁）か、本文の中の字下げした箇条書き（4桁）＝返答
+        if (!/^ {6}/.test(lines[j])) break;
+      }
+    }
+    return hit;
+  }
+
+  function classify(line, prevCls, fold, head) {
     if (!line.trim()) return prevCls;                 // 空行は直前のかたまりを続ける
     if (RE_ME.test(line)) return 'me';
-    if (RE_TOOL.test(line)) return 'dim';
+    if (RE_TOOL.test(line) || head) return 'dim';
     if (RE_SAY.test(line)) return 'say';
-    if (RE_RESULT.test(line)) return 'dim';
+    // ⎿ は返答の中なら本文（ツールの見出しは toolHeads で先に灰色になっている）。
+    // ❯ の下の ⎿（「Resuming agent…」）や中断の知らせは Claude Code 自身の字なので灰色
+    if (RE_RESULT.test(line)) return prevCls === 'say' && !RE_INTERRUPT.test(line) ? 'say' : 'dim';
     if (fold) return 'dim';
     if (holds(prevCls) && /^\s/.test(line)) return prevCls;
     if (RE_STATUS.test(line)) return 'dim';
@@ -3961,6 +3983,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var lines = joinUrlWraps(text.split('\n'), cols);
     var splitFiles = fileSplitHits(lines);         // 折り返しで割れた名前
     var folds = foldLines(lines);                  // 畳まれたツールの記録（灰色にする行）
+    var heads = toolHeads(lines);                  // RE_TOOL に当たらないツールの見出し
     var sent = sentFileHits(lines);                // 「送ったファイル」の枠（パスで引く）
     // 同じ範囲なら枠のほう（パスで1つに決まる）が採られる（findTargets の並べ替え）
     Object.keys(sent).forEach(function (k) { splitFiles[k] = sent[k].concat(splitFiles[k] || []); });
@@ -4034,7 +4057,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         frag.appendChild(document.createElement('div')).className = 'rule';
         continue;
       }
-      var c = classify(lines[i], prev, folds[i]) || '';
+      var c = classify(lines[i], prev, folds[i], heads[i]) || '';
       if (!block || c !== cls) {
         block = document.createElement('span');
         block.className = 'blk ' + c;
