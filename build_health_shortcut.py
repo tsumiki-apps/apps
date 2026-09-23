@@ -20,7 +20,7 @@
   ・送信は「辞書 → 値を設定 → URLの内容（本文＝ファイル＝辞書）」で例と同じ。
 **焼く前に shortcut_check.py を必ず通す（この台本が --ref つきで自分で呼ぶ）。落ちたら焼かない。**
 合い言葉はキーチェーン（health-ingest-token）から読む。**このファイルには書かない**（PUBLIC リポジトリ）。
-焼いた .shortcut には合い言葉が入る。置き場は ~/つみき出力（非公開）だけ。
+焼いた .shortcut には合い言葉が入る。置くのは ~/つみき出力 と、送ったときに複製される 00_Tsumiki/受け取り（どちらも本人の iCloud の非公開の場所）だけ。
 """
 import plistlib, uuid, sys, re, subprocess, pathlib, shutil, os
 
@@ -210,9 +210,13 @@ def main():
         r = subprocess.run(["shortcuts", "sign", "--mode", "anyone", "--input", str(wf), "--output", str(signed)],
                            capture_output=True, text=True)
         if r.returncode != 0 or not signed.exists() or signed.stat().st_size == 0:
+            wf.unlink(missing_ok=True)            # 平文の合い言葉を残さない
             sys.exit(f"署名できませんでした（{name}）: {r.stderr.strip()[:200]}")
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(signed, out_dir / signed.name)
+        # 署名前の .wflow は合い言葉が平文。手元にも残さない（照合し直すときは焼き直せばよい）
+        wf.unlink(missing_ok=True)
+        signed.unlink(missing_ok=True)
         print(f"  焼いた: {out_dir / signed.name}")
 
 if __name__ == "__main__":
