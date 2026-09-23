@@ -890,7 +890,11 @@ async function captureHistory(name, lines) {
 //    読めない・迷ったときは「候補なし」に倒す（帯を出さない＝何も起きない）。
 const SUG_MAX = 300;
 const RE_ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
-const RE_RULE = /^\s*[─━]{10,}\s*$/;               // 入力欄を挟む2本の罫線
+// 入力欄を挟む2本の罫線。⚠️ 会話に名前が付くと上の罫線に名前が入る
+// （`────── replace-hello-with-bye ─`・プランを通したあとに実測）。線だけの形しか見ないと
+// 入力欄を見失う（候補の帯が出ない・入力欄の見張りが送信を止める）ので、名前入りも受ける
+// 行頭から引かれた線だけ（字下げのある線は返答の中の表などの線。反証役の指摘で絞った）
+const RE_RULE = /^[─━]{10,}(\s+\S.*?\s+[─━]+)?\s*$/;
 const RE_PROMPT = /^❯\s(.*)$/;
 // ⚠️ `❯` の後ろは**ノーブレークスペース（U+00A0）**。ふつうの空白で書いた当てはめは
 //    いつまでも外れる（実測・2026-09-16。Mac の画面から数字を読むときの罠と同じ）。
@@ -937,6 +941,57 @@ function inputBox(lines) {
   if (top < 0 || bottom - top < 2) return null;
   return { top, bottom };
 }
+
+// 入力欄から送る文を、いまキーを奪っている画面に流し込まないための見張り（2026-09-23）。
+//
+// ⚠️ 許可の画面（`Do you want to proceed? ❯ 1. Yes …`）が出ているときに文を送ると、
+//    入力欄ではなく**許可の画面にキーが入る**。使い捨ての席で「3つ目の案で進めてください」を
+//    送ったら、**コマンドが許可されて走った**（実測）。プランの承認画面でも同じく承認された（反証役が実測）。
+//
+// 決め方は「**ふだんの入力欄（罫線2本＋`❯` の行）が画面の下に見えていなければ止める**」。
+// 最初は「選ぶ画面の字（Do you want 等）があれば止める」形で作ったが、①案内の字が折り返すと
+// 見逃す（/resume）②履歴に出た字で例外が効いてしまう、の2つで抜けた（反証役）。
+// 入力欄が見えている＝キーは入力欄に入る、は画面の形そのものなので、字面より確か。
+//
+// 例外は、**カーソル（最後の ❯ の行）が「字を打って答える行」に乗っているとき**だけ通す：
+//  ・質問パネルの `Type something.`（自分の言葉で書く）…1つだけ選ぶ質問のみ（`[ ]` の付いた
+//    複数選ぶ質問は、打って Enter でも印が付かない＝答えにならない。反証役が実測）
+//  ・許可の画面で tab を押した `No, and tell Claude what to do differently`（断って指示する）
+//  ⚠️ `Yes, and tell Claude what to do next`（許可して書き足す）は通さない。何を打っても許可になる
+// ⚠️ キー行の数字（1〜4）はこの見張りを通さない＝答えるための正規の手段なので止めない。
+// 返すのは止める理由（止めないときは ''）。理由ごとに本人への言い方を変える（/api/send の BLOCK_MSG）
+function choiceOpen(screenText) {
+  if (screenText == null) return 'noscreen';
+  const lines = String(screenText).replace(/\s+$/, '').split('\n').map(stripAnsi);
+  const box = inputBox(lines);
+  if (box && /^[❯!](\s|$)/.test(lines[box.top + 1] || '')) {
+    // ⚠️ 入力欄が見えていても、ctrl+r の履歴検索が開いていると、送った字は**検索語**になり、
+    //    Enter で**検索に当たった昔の指示がそのまま送られる**（反証役が実測）。入力欄の形は
+    //    ふだんと同じで、違いは下の罫線より下の `search prompts:` だけ
+    const below = lines.slice(box.bottom + 1).join('\n');
+    // 狭い幅では `search` と `prompts:` が2行に割れ、あいだに `⏸ manual mode on …` が挟まる（実物）
+    if (/\bsearch\b[\s\S]{0,120}?\bprompts:/i.test(below)) return 'search';
+    // 入力欄が見えたまま数字を取る「この会話の評価」（1: Bad …）。先頭の数字が評価として取られる。
+    // ⚠️ 実物は撮れていない（出し方が分からない）。字が出ていたら止める
+    if (/How is Claude doing this session/i.test(lines.slice(-15).join('\n'))) return 'survey';
+    return '';
+  }
+  let cur = '';
+  for (let i = lines.length - 1; i >= 0; i--) if (/^\s*❯/.test(lines[i])) { cur = lines[i]; break; }
+  if (/❯\s*\d+\.\s*Type something\.?\s*$/.test(cur)) return '';
+  if (/❯\s*\d+\.\s*No, and tell Claude what to do differently/.test(cur)) return '';
+  // カーソルが番号の行に乗っている＝選ぶ画面。そうでなければ入力欄を見失っただけ
+  // （Mac 側に長い書きかけがあって上の罫線が画面の外に出た、など）
+  return /❯\s*\d+\./.test(cur) || /Esc to|Enter to/i.test(lines.slice(-6).join('\n')) ? 'choice' : 'nobox';
+}
+
+const BLOCK_MSG = {
+  choice: '確認の画面が出ています。キー行で答えてから送ってください',
+  search: 'Mac で履歴の検索（ctrl+r）が開いています。esc で閉じてから送ってください',
+  survey: 'Mac に評価のアンケートが出ています。キー行で答えるか esc で閉じてから送ってください',
+  nobox: 'Mac の入力欄が画面に見つかりません（Mac 側に長い書きかけがある等）。Mac の画面を確かめてください',
+  noscreen: 'Mac の画面を読めませんでした。少し待ってから送り直してください',
+};
 
 async function readSuggestion(name, screenText) {
   if (!NAME_RE.test(name)) return null;
@@ -2240,7 +2295,21 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req, SEND_LIMIT);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
-      const text = String(body.text || '').replace(/\r\n?/g, '\n');
+      let text = String(body.text || '').replace(/\r\n?/g, '\n');
+      // 入力欄から送った文だけの手当て（キー行の数字・候補の帯は通らない）。Claude の席に限る
+      if (body.box && text) {
+        const cmd = await tmux(['display', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
+        if (cmd.ok && kindOf(cmd.out.trim()) === 'claude') {
+          const why = choiceOpen(await captureScreen(name));
+          if (why) {
+            console.log(`send ${name} 止めた（${why}）`);
+            return json(res, 409, { error: BLOCK_MSG[why] });
+          }
+          // 行末の `\` は Claude Code では「改行を入れる」の合図＝Enter が送信にならず、
+          // 文が入力欄に残ったままになる（`C:\temp\` で実測）。空白を1つ足すと送信になる
+          if (body.enter && text.endsWith('\\')) text += ' ';
+        }
+      }
       const lines = text ? text.split('\n').length : 0;
       // 「押したのに効かない」を後から追えるようにする。ただし本文は残さない。
       // ⚠️ 以前は8文字以下なら中身を丸ごと出していた（数字ボタンの調査のため）。
@@ -2255,7 +2324,9 @@ const server = http.createServer(async (req, res) => {
       // ⚠️ 短い1行は今までどおり send-keys のまま（貼り付け方式が変わると見え方が
       // 変わりうるため。数字キーの「1」もここを通る）。境目は上限の半分で余裕を取る。
       const bigLine = Buffer.byteLength(text, 'utf8') > SEND_ARGV_MAX;
-      if (lines > 1 || bigLine) {
+      // タブ入りの1行も貼り付けで入れる。send-keys だと Tab キーとして押されて字が消える
+      // （Claude Code の入力欄では Tab は候補の受け入れ＝本文に入らない。実測）
+      if (lines > 1 || bigLine || text.includes('\t')) {
         // 複数行は「角括弧ペースト」で入れる（-p）。素直に送ると、改行のたびに
         // Enter を押したのと同じ＝1行ごとに実行されてしまう（2026-08-13 実測）。
         // 名前つきの控えに置いて、貼ったら消す（-d）＝tmux の貼り付け履歴を汚さない

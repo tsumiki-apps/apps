@@ -2705,9 +2705,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // 書きかけは本文だけでなく、添えた札（画像・PDF）も一緒に預ける。
   // 中身は Mac に置いた後なので、パスと小さな見本だけで戻せる
+  // 最後に送った本文。別のタブ（Mac の Chrome で2枚開いている等）が古い字のまま預け直しても、
+  // 送り済みの文なら預からない（起動時に戻すのをやめたので、放っておくと送った文が戻ってくる）
+  var DRAFT_SENT = 'tsumiki-remote-draft-sent';
   function saveDraft() {
     try {
       var body = el.cmd.value || '';
+      if (body && body === localStorage.getItem(DRAFT_SENT)) body = '';
       var keep = atts.filter(function (a) { return a.path; })
         .map(function (a) { return { p: a.path, t: a.thumb, k: a.kind, n: a.name }; });
       if (!body && !keep.length) return localStorage.removeItem(DRAFT);
@@ -3877,6 +3881,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         flush();
         rows.push(cur = { k: 'opt', n: m[3], at: !!m[2], box: m[4] || '',
           on: !!m[4] && RE_ASK_CHK.test(m[4]), text: askWord((m[5] || '').trim()),
+          free: /^Type something\.?$/.test((m[5] || '').trim()),
           desc: '', tail: tail });
         return;
       }
@@ -3935,6 +3940,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       b.dataset.label = r.text;
       if (r.k === 'go') { b.dataset.go = '1'; b.textContent = r.text; box.appendChild(b); return; }
       b.dataset.num = r.n;                       // キー行の 1〜5 はこの番号で行を引く
+      if (r.free) b.dataset.free = '1';          // 自分の言葉で書く行（askMove で Enter を打たない）
       // 番号は**必ず出す**。押す入口がキー行だけになったので、番号が見えないと押せない。
       // 複数選べる質問は行頭がチェック箱に変わるが、そのときも番号を左に添える
       var num = document.createElement('span');
@@ -4300,12 +4306,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 「成功した Promise」を返していたので、呼び出し元は送れたのか失敗したのかを知れず、
   // 送信ボタンは書きかけを戻せなかった。トーストは今までどおり出したうえで投げ直す。
   // 失敗を気にしない呼び出し元（キー行・ダイアログ）は .catch で受け流している。
-  function sendText(text, enter) {
+  // box＝入力欄から送った文。Mac 側が「確認の画面が出ていたら止める」「行末の \ に空白を足す」を
+  // この印のときだけ行う（キー行の数字は確認の画面に答えるためのものなので止めない）
+  function sendText(text, enter, box) {
     if (!current) { toast('送り先が選ばれていません'); return Promise.reject(new Error('送り先なし')); }
     setSug('');   // 自分の言葉を送った＝画面の候補はもう古い（次の巡回まで待たない）
     return api('/api/send', {
       method: 'POST',
-      body: JSON.stringify({ name: current, text: text, enter: !!enter })
+      body: JSON.stringify({ name: current, text: text, enter: !!enter, box: !!box })
     }).then(lookAgain)
       .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
@@ -4343,6 +4351,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
 
+  var lastEsc = { name: '', at: 0 };   // キー行の esc を最後に送った席と時刻（二度押しよけ）
+
   // 添えた画像（札）。送信の瞬間に「パス + 半角スペース + 本文」に組み立てる
   var atts = [];
 
@@ -4355,7 +4365,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     el.cmd.style.height = 'auto';
     el.cmd.style.height = (el.cmd.scrollHeight + 2) + 'px';
   }
-  el.cmd.addEventListener('input', function () { autoGrow(); renderSug(); });
+  // 書きかけは打つたびに預ける（手が止まって0.5秒後）。裏に回ったときにも預ける（下の visibilitychange）。
+  // ⚠️ 以前は版の入れ替えと ↻ のときだけ預けていた＝iPhone がアプリを裏で閉じると（メモリが
+  //    足りないと普通に起きる）、長く書いた指示が消えていた（2026-09-23 点検）
+  var draftTimer = null;
+  el.cmd.addEventListener('input', function () {
+    autoGrow(); renderSug();
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraft, 500);
+  });
 
   // ---------------------------------- 次の指示の候補（入力欄の薄い字の下書き）
   //
@@ -4398,7 +4416,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // そのかわり、失敗したら書きかけを**必ず戻す**（2026-09-02）。
   // 以前は空にして投げっぱなしで、電波が切れかけ・500・合言葉切れのどれでも
   // 1.6秒のトーストが出るだけ。長々書いた指示がどこにも残らず、書き直すしかなかった
-  // （打つたびの自動保存は無く、saveDraft は版の入れ替えと ↻ のときだけ走る）。
+  // （当時は打つたびの自動保存が無かった。2026-09-23 から打つたび・裏に回るときにも預ける）。
   el.send.onclick = function () {
     var v = el.cmd.value.trim();
     if (atts.some(function (a) { return !a.path; })) return toast('ファイルを置いている途中です');
@@ -4410,11 +4428,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     autoGrow();                 // 1行に戻す
     atts = [];
     renderAtts();
-    sendText(text, true).catch(function (e) {
+    try { localStorage.setItem(DRAFT_SENT, keepText); } catch (e) {}
+    saveDraft();                // 空にしたことを預かりにも映す（送れたら消えたままになる）
+    sendText(text, true, true).catch(function (e) {
       // 書いている途中に戻ってきたときは、いま打っている字を消さない
       var back = false;
       if (!el.cmd.value) { el.cmd.value = keepText; autoGrow(); back = true; }
       if (!atts.length) { atts = keepAtts; renderAtts(); }
+      try { localStorage.removeItem(DRAFT_SENT); } catch (e2) {}   // 送れていない＝預かってよい
+      saveDraft();
       // ⚠️ トーストは1枠しかない（後から出したものが前を塗り潰す）。理由を混ぜないと
       // 「本文が大きすぎます」も「MacBook に届きません」も一度も読めなくなる
       toast(back
@@ -4525,12 +4547,19 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
     var keys = [];
     for (var n = Math.abs(to - from); n > 0; n--) keys.push(to > from ? 'Down' : 'Up');
-    keys.push('Enter');
+    // 「自分の言葉で書く」の行は、合わせるだけで Enter を打たない。空のまま Enter を打つと
+    // Claude Code は「答えなかった」として質問を閉じてしまう（v2.1.280 で実測・2026-09-23）。
+    // 合わせたあと入力欄に書いて送れば、その字がこの行に入って答えになる（Mac 側も通す）
+    // 複数選べる質問では使わない＝打って Enter でも印が付かず答えにならない（反証役が実測）。今まで通り Enter を打つ
+    var free = row.dataset.free === '1' && panel.dataset.multi !== '1';
+    if (!free) keys.push('Enter');
     panel.dataset.cur = to;            // 送った直後の位置。次に画面を取れば本物に直る
     lastPick = { panel: panel, mv: to, at: Date.now() };
     // ⚠️ 送れなかったなら錠を外す。外さないと、圏外で1回押しただけで4秒間
     // 押し直せず、しかも「送っています」と嘘を言うことになる
-    sendKeys(keys).catch(function () { lastPick = null; });
+    if (free) lastPick = null;         // 合わせただけ＝まだ答えていない。錠をかけない
+    (keys.length ? sendKeys(keys) : Promise.resolve()).catch(function () { lastPick = null; });
+    if (free) return toast('「自分の言葉で書く」に合わせました。入力欄に書いて送ってください', 3600);
     toast('「' + (row.dataset.label || '') + '」を押しました');
   }
 
@@ -4568,6 +4597,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       var draft = el.cmd.value;
       el.cmd.value = draft + (draft && !/\n$/.test(draft) ? '\n' : '') + PERM_TEXT;
       autoGrow();
+      saveDraft();
       renderSug();
       return;
     }
@@ -4584,6 +4614,24 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       syncKeys();
       setHold(current, on).then(function () { tick(true); });
       return toast(on ? '中断の印をつけました（unhold で外します）' : '中断の印を外しました');
+    }
+    // esc を続けて2回押すと、Claude Code は「会話の巻き戻し」の一覧を開く（実測）。
+    // そこで ⏎ や数字を押すと、会話やファイルを前の状態に戻してしまう。
+    // 効いたか不安で押し直すのはよくあるので、1.5秒以内の2回目は送らない
+    // 席ごとに見る（別の席の esc は巻き戻しに繋がらない）。送れなかった esc は数えない
+    if (b.dataset.key === 'Escape') {
+      var nowEsc = Date.now();
+      if (lastEsc.name === current && nowEsc - lastEsc.at < 1500) {
+        return toast('esc の2回目は送っていません（続けて押すと巻き戻しの画面が開くため）');
+      }
+      var mine = lastEsc = { name: current, at: nowEsc };
+      if (!current) return toast('送り先が選ばれていません');
+      return api('/api/key', { method: 'POST', body: JSON.stringify({ name: current, key: 'Escape' }) })
+        .then(lookAgain)
+        .catch(function (e) {
+          if (lastEsc === mine) lastEsc = { name: '', at: 0 };   // 届いていない＝押し直せるように
+          toast('送信失敗: ' + e.message);
+        });
     }
     if (b.dataset.key) return sendKey(b.dataset.key);
     if (!b.dataset.text) return;
@@ -4744,6 +4792,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   pickBtn.onclick = function () { fileInput.click(); };
 
   function renderAtts() {
+    saveDraft();          // 札を足した・外した＝書きかけが変わった（札だけのときも裏で閉じられて消えないように）
     attsBox.innerHTML = '';
     attsBox.hidden = !atts.length;
     atts.forEach(function (a) {
@@ -6493,7 +6542,6 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   try {
     var draft = localStorage.getItem(DRAFT);
     if (draft) {
-      localStorage.removeItem(DRAFT);
       var d = null;
       try { d = JSON.parse(draft); } catch (e) {}
       if (d && typeof d === 'object') {
@@ -6524,9 +6572,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // 閉じる・裏に回る直前に必ず1回残す。次に開いたときここから始まる。
   // メモも同じところで送り切る（打ってすぐアプリを畳んでも、待ち時間のぶんが消えない）
-  window.addEventListener('pagehide', function () { saveSnap(true); flushMemo(); });
+  window.addEventListener('pagehide', function () { saveSnap(true); flushMemo(); saveDraft(); });
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { saveSnap(true); flushMemo(); }
+    if (document.hidden) { saveSnap(true); flushMemo(); saveDraft(); }
   });
 
   if (!token) gate(true);
