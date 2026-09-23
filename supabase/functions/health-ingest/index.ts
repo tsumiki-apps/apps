@@ -11,7 +11,7 @@
 // 合い言葉は Supabase の secrets（HEALTH_INGEST_TOKEN）。**コードにもクエリにも書かない。**
 // 出力: どの道でも { ok, msg }。ショートカットは msg だけを見せる。
 
-import { toList, aggregate, aggregateSleep, probeInfo, METRICS } from "./pure.js";
+import { toList, aggregate, aggregateSleep, probeInfo, METRICS, dailyRaw, median, sleepValueRatio } from "./pure.js";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 function json(o: unknown, s = 200) {
@@ -38,10 +38,24 @@ Deno.serve(async (req) => {
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
     if (mode === "probe") {
-      const info = { ...probeInfo(metric, dates, ends, values), keys: Object.keys(body || {}).filter((k) => k !== "token") };
+      const info: any = { ...probeInfo(metric, dates, ends, values), keys: Object.keys(body || {}).filter((k) => k !== "token") };
+      // 書き出しから入れた値と、日ごとに比べる（**値は残さず比だけ**）。単位の食い違いを見つけるため
+      if (metric === "sleep") {
+        info.value_per_minute = sleepValueRatio(dates, ends, values);
+      } else {
+        const mine = dailyRaw(metric, dates, values);
+        const days = [...mine.keys()];
+        if (days.length) {
+          const { data } = await sb.from("health_daily").select("day,value").eq("metric", metric).eq("source", "export").in("day", days);
+          const ratios = (data || []).map((r: any) => mine.get(r.day) / Number(r.value)).filter((x: number) => isFinite(x));
+          info.vs_export = { days: ratios.length, median_ratio: median(ratios) };
+        }
+      }
       const { error } = await sb.from("health_probe").insert({ metric, info });
       if (error) return json({ ok: false, msg: name + "：記録できませんでした（" + error.message + "）" }, 500);
-      return json({ ok: true, msg: `${name}：${dates.length}件 ${info.parsed ? "読めた" : "読めない"}` });
+      const vs = info.vs_export?.median_ratio, vpm = info.value_per_minute?.median;
+      const hint = vs != null ? ` 書き出し比 ${Math.round(vs * 100) / 100}` : vpm != null ? ` 値/分 ${Math.round(vpm * 100) / 100}` : "";
+      return json({ ok: true, msg: `${name}：${dates.length}件 ${info.parsed ? "読めた" : "読めない"}${hint}` });
     }
 
     if (mode === "save") {

@@ -106,13 +106,51 @@ export function aggregateSleep(starts, ends, values, limit) {
   return [...best.entries()].sort().map(([day, value]) => ({ day, metric: "sleep", value }));
 }
 
+/* 送信テスト版の突き合わせ：日ごとにまとめた値（範囲の足切りなし）。値そのものは外に出さず、比だけに使う */
+export function dailyRaw(metric, dates, values) {
+  const def = METRICS[metric];
+  const byDay = new Map();
+  const n = Math.min(dates.length, values.length);
+  for (let i = 0; i < n; i++) {
+    const p = parseStamp(dates[i]), v = num(values[i]);
+    if (!p || !isFinite(v)) continue;
+    if (!byDay.has(p.day)) byDay.set(p.day, []);
+    byDay.get(p.day).push([p.t, v]);
+  }
+  const out = new Map();
+  for (const [d, a0] of byDay) {
+    const a = a0.sort((x, y) => x[0] - y[0]);
+    out.set(d, def.how === "sum" ? a.reduce((s, x) => s + x[1], 0)
+      : def.how === "last" ? a[a.length - 1][1] : a.reduce((s, x) => s + x[1], 0) / a.length);
+  }
+  return out;
+}
+export function median(a) {
+  if (!a.length) return null;
+  const b = a.slice().sort((x, y) => x - y), m = b.length >> 1;
+  return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2;
+}
+/* 睡眠：値 ÷（終了−開始の分）の比。値が「長さ（分）」なら 1 に集まる */
+export function sleepValueRatio(starts, ends, values) {
+  const r = [];
+  const n = Math.min(starts.length, ends.length, values.length);
+  for (let i = 0; i < n; i++) {
+    const a = parseStamp(starts[i]), b = parseStamp(ends[i]), v = num(values[i]);
+    if (!a || !b || !isFinite(v) || b.t <= a.t) continue;
+    r.push(v / ((b.t - a.t) / 60000));
+  }
+  return { n: r.length, median: median(r), p10: median(r.slice().sort((x, y) => x - y).slice(0, Math.max(1, r.length / 5 | 0))) };
+}
+
 /* 送信テスト版：形だけを返す（数字は伏せる。睡眠の段階の文字だけはそのまま＝健康の値ではない） */
 export function probeInfo(metric, dates, ends, values) {
-  const kinds = [...new Set(values.map((v) => (metric === "sleep" ? String(v).slice(0, 20) : mask(v))))].slice(0, 12);
+  const kinds = [...new Set(values.map((v) => (metric === "sleep" && !/\d/.test(String(v)) ? String(v).slice(0, 20) : mask(v))))].slice(0, 12);
   return {
     n_dates: dates.length, n_ends: ends.length, n_values: values.length,
     date_shape: mask(dates[0] ?? ""), end_shape: mask(ends[0] ?? ""),
     parsed: dates.length ? !!parseStamp(dates[0]) : null,
+    with_decimal: values.filter((v) => /[.,]\d/.test(String(v))).length,
+    digits: Object.fromEntries([...values.reduce((m, v) => { const k = String(v).replace(/\D/g, "").length; m.set(k, (m.get(k) || 0) + 1); return m; }, new Map())]),
     value_kinds: kinds,
   };
 }
