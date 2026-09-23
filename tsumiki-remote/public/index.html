@@ -2741,6 +2741,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var loadedText = null;   // 読み込んだ書きかけの本文（そのあと手を入れたかを見る）。読んでいなければ null
   var checkedBorn = 0;     // いまの席について、最後に確かめた誕生時刻
   var hiding = false;      // いまの席の預かりを「前の住人かも」で隠している（確かめ直すまで消さない）
+  var loading = false;     // 読み込みの最中（読むだけで預かりの時刻・誕生時刻を書き換えない）
+  var HIDDEN = 'tsumiki-remote-drafts-hidden';   // 隠していた預かりの退避先（本人が打ち始めても消さない）
+  // 宛先を確かめていない書きかけ（別の席あてだった字・前の席の字が混ざった）。送信の1回目は止めて宛先を出す
+  var destCheck = null;    // { seat: 席, armedAt: 1回目を押した時刻 }
+  var killing = {};        // アプリで終わらせている最中の席（巡回と返事が行き違っても、字を別の席へ移さない）
   function readDrafts() {
     try { var o = JSON.parse(localStorage.getItem(DRAFTS) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }
     catch (e) { return {}; }
@@ -2770,10 +2775,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function draftStale(d, born) {
     if (!d || !born) return false;
     if (d.born) return d.born !== born;
-    return !!d.at && d.at < born * 1000 - 2000;
+    // ⚠️ at は iPhone の時計・born は Mac の時計。ずれを見込んで60秒の余裕を取る
+    // （前の住人の書きかけは、ふつう新しい席ができる何分も前に預けてある）
+    return !!d.at && d.at < born * 1000 - 60000;
   }
   function saveDraft() {
-    if (!draftSeat) return;        // まだどの席の書きかけでもない（起動の途中）
+    if (!draftSeat || loading) return;   // まだどの席の書きかけでもない（起動の途中）／読み込み中
     try {
       var body = el.cmd.value || '';
       if (body && body === sentOf(draftSeat)) body = '';
@@ -2783,19 +2790,46 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         if (hiding) return;        // 隠しているだけの預かりを、空の入力欄で上書きして消さない
         delete all[draftSeat];
       } else {
-        hiding = false;            // 本人が書いた＝この字が、この席の書きかけ
-        all[draftSeat] = packDraft(body, keep, draftSeat, all[draftSeat]);
+        if (hiding) {
+          // 隠していた預かりは、本物かもしれない（写しの古い一覧で隠した）。上書きする前に退避しておき、
+          // 一覧が届いて本物と分かったら入力欄の下に足して戻す（recheckDraft）
+          stashHidden(draftSeat, all[draftSeat]);
+          hiding = false;
+          all[draftSeat] = packDraft(body, keep, draftSeat, null);
+        } else {
+          all[draftSeat] = packDraft(body, keep, draftSeat, all[draftSeat]);
+        }
       }
       writeDrafts(all);
     } catch (e) { /* 入らなくても本文優先で諦める */ }
   }
+  function stashHidden(name, d) {
+    if (!d) return;
+    try {
+      var o = JSON.parse(localStorage.getItem(HIDDEN) || '{}');
+      if (!o || typeof o !== 'object' || Array.isArray(o)) o = {};
+      o[name] = d;
+      localStorage.setItem(HIDDEN, JSON.stringify(o));
+    } catch (e) {}
+  }
+  function takeHidden(name) {
+    try {
+      var o = JSON.parse(localStorage.getItem(HIDDEN) || '{}');
+      if (!o || typeof o !== 'object' || Array.isArray(o) || !o[name]) return null;
+      var d = o[name]; delete o[name];
+      localStorage.setItem(HIDDEN, JSON.stringify(o));
+      return d;
+    } catch (e) { return null; }
+  }
+  // 宛先を確かめていない印を立てる（送信の1回目で止める）
+  function markDest(seat) { destCheck = { seat: seat, armedAt: 0 }; }
   function dropStored(name) {
     var all = readDrafts();
     if (all[name]) { delete all[name]; writeDrafts(all); }
     setSent(name, '');
   }
   function clearBox() {
-    el.cmd.value = ''; atts = []; loadedText = null;
+    el.cmd.value = ''; atts = []; loadedText = null; destCheck = null;
     renderAtts(); autoGrow(); renderSug();
   }
   // その席の書きかけを捨てる。clear＝いま入力欄に出しているのがその席なら、入力欄も空にする
@@ -2803,6 +2837,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 入力欄に字があって消したら true
   function forgetDraft(name, clear) {
     dropStored(name);
+    takeHidden(name);
     if (!clear || draftSeat !== name) return false;
     var had = !!(el.cmd.value || atts.length);
     clearBox();
@@ -2818,7 +2853,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     loadedText = d ? (d.t || '') : null;
     el.cmd.value = d ? (d.t || '') : '';
     atts = d ? unpackAtts(d.a) : [];
-    renderAtts();
+    destCheck = null;
+    loading = true;
+    try { renderAtts(); } finally { loading = false; }
     autoGrow();
     renderSug();
   }
@@ -2841,19 +2878,30 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (!now || now === checkedBorn) return;
     checkedBorn = now;
     var all = readDrafts(), d = all[current] || null;
-    if (d && draftStale(d, now)) {
+    if (d && draftStale(d, now) && !(el.cmd.value || atts.length)) {
+      // 見えていない前の住人の預かり＝捨てる（①）
       delete all[current]; writeDrafts(all);
       hiding = false;
-      if (loadedText !== null && el.cmd.value === loadedText) clearBox();          // 手を入れていない＝下げる
-      else if (loadedText !== null && el.cmd.value) {
-        // 打ち足していた＝本人の字を消さない。代わりに、前の住人の字が混ざっていると知らせる
-        toast('入力欄に、同じ名前の前の席の書きかけが混ざっています。送る前に確かめてください', 5000);
-      }
-      loadedText = null;
+    } else if (loadedText !== null && d && draftStale(d, now)) {
+      // 前の住人あてだった字が、もう入力欄に見えている＝消さない（②）。預かりは新しい席のものとして預け直し、
+      // 宛先を確かめていない印を立てる（送信の1回目で止める）
+      markDest(current);
+      saveDraft();
+      toast('入力欄の書きかけは、同じ名前の前の席あてでした。送る前に宛先を確かめてください', 5000);
     } else if (d && !el.cmd.value && !atts.length && loadedText === null) {
       loadDraft(current);        // 古い一覧で隠してしまった本物の書きかけ
     }
+    loadedText = null;
+    // 本人が打ち始めたので退避しておいた預かり。本物だったなら入力欄の下に足して戻す
+    var h = takeHidden(current);
+    if (h && !draftStale(h, now) && (h.t || (h.a && h.a.length))) {
+      if (h.t) el.cmd.value = el.cmd.value ? el.cmd.value + '\n' + h.t : h.t;
+      atts = atts.concat(unpackAtts(h.a));
+      renderAtts(); autoGrow(); renderSug();
+      toast('隠していた書きかけを、入力欄の下に戻しました', 4000);
+    }
   }
+
   // 送り先（current）が変わったら、入力欄の中身をその席の書きかけに入れ替える。
   // current はあちこちで変わる（選ぶ・席が消えて先頭に移る・写しから戻す）ので、
   // どれのあとにも必ず呼ばれる syncSendEnabled から呼んでいる
@@ -2862,9 +2910,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (current === draftSeat) return recheckDraft();
     if (!draftSeat) {
       // 起動して最初の席。前の版が預けた書きかけ（席の区別なし）が入力欄に戻してあれば、この席のものにする
-      draftSeat = current;
-      if (el.cmd.value || atts.length) { checkedBorn = seatCreated(current); saveDraft(); }
-      else loadDraft(current);
+      if (el.cmd.value || atts.length) moveBoxTo(current);   // 前の版の書きかけ＋この席の書きかけ（下に足す）
+      else { draftSeat = current; loadDraft(current); }
       try { localStorage.removeItem(DRAFT); } catch (e) {}   // 移し替えが済んでから古いキーを消す
       return;
     }
@@ -2872,7 +2919,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if ((el.cmd.value || atts.length) && !seatAlive(draftSeat)) {
       var gone = draftSeat;
       dropStored(gone);
+      if (killing[gone]) {
+        // アプリで終わらせている席＝本人が消した席あての字。別の席へ移さずに捨てる（返事の前に巡回が届いた）
+        killing[gone].had = true;
+        clearBox();
+        draftSeat = current;
+        loadDraft(current);
+        return;
+      }
       moveBoxTo(current);
+      markDest(current);
       toast(gone + ' が無くなったので、書きかけを ' + current + ' に移しました。送る前に宛先を確かめてください', 5000);
       return;
     }
@@ -4586,7 +4642,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var paths = atts.map(function (a) { return a.path; }).join(' ');
     var text = paths ? (v ? paths + ' ' + v : paths) : v;
     if (!text) return;
-    var keepText = el.cmd.value, keepAtts = atts, sentSeat = draftSeat;
+    // 宛先を確かめていない書きかけ（別の席あてだった字など）は、1回目は送らずに宛先を出す。6秒以内にもう一度押せば送る
+    if (destCheck && destCheck.seat === draftSeat) {
+      if (!destCheck.armedAt || Date.now() - destCheck.armedAt > 6000) {
+        destCheck.armedAt = Date.now();
+        return toast('この書きかけは別の席あてでした。' + draftSeat + ' に送るなら、もう一度 ↑ を押してください', 6000);
+      }
+    }
+    destCheck = null;
+    var keepText = el.cmd.value, keepAtts = atts, sentSeat = draftSeat, sentBorn = seatCreated(draftSeat);
     el.cmd.value = '';
     autoGrow();                 // 1行に戻す
     atts = [];
@@ -4596,11 +4660,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     sendText(text, true, true).catch(function (e) {
       setSent(sentSeat, '');   // 送れていない＝預かってよい
       // 返事を待つあいだに別の席へ移っていたら、送ろうとした席の預かりに戻す（いまの入力欄には入れない）
-      if (draftSeat !== sentSeat && !seatAlive(sentSeat)) {
+      // 宛先の席が無くなった／同じ名前で作り直された（誕生時刻が違う）＝その席の預かりには戻さない（①②）
+      var sentGone = !seatAlive(sentSeat) || (sentBorn && seatCreated(sentSeat) && seatCreated(sentSeat) !== sentBorn);
+      if (draftSeat !== sentSeat && sentGone) {
         // 宛先の席が無くなっていた＝その席の預かりに戻しても画面から出せない。見えている入力欄に戻す（②）
         el.cmd.value = el.cmd.value ? keepText + '\n' + el.cmd.value : keepText;
         atts = keepAtts.concat(atts);
         renderAtts(); autoGrow(); renderSug();
+        markDest(draftSeat);
         return toast('送信できませんでした（' + e.message + '）。' + sentSeat + ' が無くなっていたので、いまの入力欄に戻しました', 4000);
       }
       if (draftSeat !== sentSeat) {
@@ -5103,9 +5170,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 終わらせる = tmux ごと消す。作業場所の後始末はこれ1つだけ（戻せない）。
   // 「隠すだけ」も持っていた時期があるが、隠れたまま席を占め続けて満席になった
   function doKill(name) {
+    killing[name] = { had: false };
     api('/api/kill', { method: 'POST', body: JSON.stringify({ name: name }) })
       .then(function () {
-        var hadDraft = forgetDraft(name, true);
+        var hadDraft = forgetDraft(name, true) || killing[name].had;
+        delete killing[name];
         toast(name + ' を終わらせました' + (hadDraft ? '（書きかけも消しました）' : ''));
         if (current === name) {
           current = '';
@@ -5114,7 +5183,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         }
         tick(true);
       })
-      .catch(function (e) { toast('終わらせられません: ' + e.message); });
+      .catch(function (e) { delete killing[name]; toast('終わらせられません: ' + e.message); });
   }
 
   // 選ばれている札をもう一度タップしたときのメニュー。⋯（右上）まで行かずに、
@@ -5331,12 +5400,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function doKillMany(names) {
+    names.forEach(function (n) { killing[n] = { had: false }; });
     api('/api/killmany', { method: 'POST', body: JSON.stringify({ names: names }) })
       .then(function (d) {
         var msg = d.killed.length + ' 件を終わらせました';
         if (d.skipped.length) msg += '（' + d.skipped.length + ' 件は残しました）';
         var hadDraft = false;
-        d.killed.forEach(function (n) { if (forgetDraft(n, true)) hadDraft = true; });
+        d.killed.forEach(function (n) { if (forgetDraft(n, true) || (killing[n] && killing[n].had)) hadDraft = true; });
+        names.forEach(function (n) { delete killing[n]; });
         toast(msg + (hadDraft ? '（書きかけも消しました）' : ''));
         if (d.killed.indexOf(current) >= 0) {
           current = '';
@@ -5345,7 +5416,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         }
         tick(true);
       })
-      .catch(function (e) { toast('終わらせられません: ' + e.message); });
+      .catch(function (e) { names.forEach(function (n) { delete killing[n]; }); toast('終わらせられません: ' + e.message); });
   }
 
   // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用
