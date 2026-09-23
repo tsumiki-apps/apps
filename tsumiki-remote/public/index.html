@@ -2773,14 +2773,52 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 拾わない（拾うと、その後ろの字下げ行・空行までオレンジのベタ塗りになる。2026-08-16）
   var RE_BOX = /^ {0,3}[│┃╭╮╰╯├┤]/;
   var RE_STATUS = /^\s*[✻✽✶✳✢*]\s/;
-  var RE_RULE = /^\s*[─━]{20,}\s*$/;                // 端末が引いた区切り線だけの行
+  var RE_RULE = /^\s*[─━]{20,}\s*$/;                // 区切り線だけの行
+  // 畳まれたツールの記録（「Read 1 file (ctrl+o to expand)」）。⏺ が付かず字下げだけで出るので、
+  // 見分けないと直前の ❯ や ⏺ の続きとして塗られる → foldLines()
+  var RE_FOLD = /\(ctrl\+o to\s+expand\)\s*$/;
 
-  function classify(line, prevCls) {
+  // 畳まれた記録の行番号を集める。1行ずつではなく**段落**で見る：
+  //  ・51桁だと「Read 2 files, listed 1 directory (ctrl+o to」「expand)」と2行に割れる
+  //  ・返答の中で「Read 1 file (ctrl+o to expand)」と**書いただけ**のものを拾うと、
+  //    そこから返答の最後まで灰色になる → 段落の前が空行で、後ろ（次の字のある行）が
+  //    行頭から始まる行・画面の終わり・別の畳まれた記録のときだけ本物とみなす
+  //    （実画面13件は全部この形。返答の中なら後ろにまだ字下げの続きがある）
+  function foldLines(lines) {
+    var paras = [], i = 0;
+    while (i < lines.length) {
+      if (/^ {2}\S/.test(lines[i]) && (i === 0 || !lines[i - 1].trim())) {
+        var j = i;
+        while (j + 1 < lines.length && /^ {2}\S/.test(lines[j + 1]) && j - i < 2) j++;
+        var txt = lines.slice(i, j + 1).map(function (x) { return x.trim(); }).join(' ');
+        if (RE_FOLD.test(txt) && !(j + 1 < lines.length && lines[j + 1].trim())) paras.push([i, j]);
+        i = j + 1;
+      } else i++;
+    }
+    var hit = {};
+    for (var k = paras.length - 1; k >= 0; k--) {
+      var n = paras[k][1] + 1;
+      while (n < lines.length && !lines[n].trim()) n++;
+      var ok = n >= lines.length || !/^\s/.test(lines[n]) || hit[n];
+      if (ok) for (var m = paras[k][0]; m <= paras[k][1]; m++) hit[m] = true;
+    }
+    return hit;
+  }
+
+  // ⏺ の返答と ❯ の入力は「行頭の記号から、次に行頭から始まる行が来るまで」が1つのかたまり。
+  // 中の字下げ行は、形が何に見えても（│ で始まる・* で始まる・区切り線）そのかたまりの続き。
+  // 形で分類し直すと、Claude が返答の中に書いた表の区切り線や箇条書きで緑の帯が切れる
+  // （2026-09-23：狭い幅の表は項目の間に ──── を引く＝2項目目から帯の外に出ていた）
+  function holds(cls) { return cls === 'say' || cls === 'me'; }
+
+  function classify(line, prevCls, fold) {
     if (!line.trim()) return prevCls;                 // 空行は直前のかたまりを続ける
     if (RE_ME.test(line)) return 'me';
     if (RE_TOOL.test(line)) return 'dim';
     if (RE_SAY.test(line)) return 'say';
     if (RE_RESULT.test(line)) return 'dim';
+    if (fold) return 'dim';
+    if (holds(prevCls) && /^\s/.test(line)) return prevCls;
     if (RE_STATUS.test(line)) return 'dim';
     if (RE_BOX.test(line)) return 'ask';
     if (/^\s/.test(line)) return prevCls;             // 字下げは前の行の続き
@@ -3750,6 +3788,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    最後に**番号の無い「Submit」の行**まで下りて Enter＝確定。
   //  ・全部答えると「Review your answers」の確認画面に変わる（ここも同じ操作）。
   var RE_ASK_TAB  = /^\s*←\s/;
+  // 1問だけのときは ← も Submit も出ず「 ☐ 色の選択」の1行になる（v2.1.280 で実物を撮った・2026-09-23）
+  var RE_ASK_ONE  = /^ ?[☐☒] \S/;
   var RE_ASK_FOOT = /Enter to select|Esc to cancel/;
   var RE_ASK_OPT  = /^(\s*)(❯)?\s*(\d{1,2})\.\s+(?:(\[[^\]]?\])\s*)?(.*)$/;
   var RE_ASK_GO   = /^(\s*)(❯)?\s*Submit\s*$/;
@@ -3769,11 +3809,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // i 行目からパネルが始まっていれば、タブの行・本文・終わりの行番号を返す
   function takeAskPanel(lines, i) {
-    if (!RE_ASK_TAB.test(lines[i])) return null;
+    var one = !RE_ASK_TAB.test(lines[i]) && RE_ASK_ONE.test(lines[i]);
+    if (!one && !RE_ASK_TAB.test(lines[i])) return null;
     // タブの行は、質問が多い／端末が狭いと折り返る。→ が出るまで束ねる
     var tab = lines[i], t = i;
-    for (var k = 0; k < 3 && tab.indexOf('→') < 0 && t + 1 < lines.length; k++) tab += ' ' + lines[++t];
-    if (tab.indexOf('Submit') < 0) return null;
+    if (!one) {
+      for (var k = 0; k < 3 && tab.indexOf('→') < 0 && t + 1 < lines.length; k++) tab += ' ' + lines[++t];
+      if (tab.indexOf('Submit') < 0) return null;
+    }
     var body = [], end = t, foot = false;
     for (var j = t + 1; j < lines.length; j++) {
       if (RE_ASK_FOOT.test(lines[j])) { foot = true; end = j; break; }
@@ -3785,6 +3828,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       if (body.length > 40) return null;             // 本物のパネルはこんなに長くない
       end = j;
     }
+    // 1問の見出しは「☐ 」で始まる普通の行と紛れやすいので、下の案内まで見えたときだけパネルにする
+    if (one && !foot) return null;
     // 下の案内（「Enter to select · … · Esc」「to cancel」）は2行に割れていることがある
     if (foot) while (end + 1 < lines.length && lines[end + 1].trim() && !RE_ASK_TAB.test(lines[end + 1])
                      && dispw(lines[end + 1]) < 40) end++;
@@ -3901,7 +3946,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       ? '答えた内容の確認です。下のキー行の番号か ↑↓ ⏎ で選んでください'
       : multi
         ? 'いくつでも選べます。下の番号で入／切りして、最後に「決定」を押してください'
-        : '下の番号を押すとその場で選ばれ、次の質問へ進みます';
+        : chips.length > 1
+          ? '下の番号を押すとその場で選ばれ、次の質問へ進みます'
+          : '下の番号を押すとその場で選ばれます';
     box.appendChild(h);
     return box;
   }
@@ -3913,6 +3960,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var cols = paneCols || measureCols();
     var lines = joinUrlWraps(text.split('\n'), cols);
     var splitFiles = fileSplitHits(lines);         // 折り返しで割れた名前
+    var folds = foldLines(lines);                  // 畳まれたツールの記録（灰色にする行）
     var sent = sentFileHits(lines);                // 「送ったファイル」の枠（パスで引く）
     // 同じ範囲なら枠のほう（パスで1つに決まる）が採られる（findTargets の並べ替え）
     Object.keys(sent).forEach(function (k) { splitFiles[k] = sent[k].concat(splitFiles[k] || []); });
@@ -3923,8 +3971,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var anySbs = false;    // 2段組が画面のどこかにある（戻すかどうかはこちらで見る）
     var boxNearEnd = false; // 答えを待つ枠が画面の下のほうにある（下の screenBoxWaiting）
     for (var i = 0; i < lines.length; i++) {
+      // ⏺ の返答・❯ の入力の中の字下げ行＝Claude が文章として書いたもの。
+      // 角丸の箱や選択肢の形をしていても本物の確認ではない（押せる枠に組むと、読んでいる文章が
+      // 押すと答えが送られるボタンに化け、緑の帯もそこで切れる）。表だけは中に組む（下の takeTable）
+      var inside = !!block && holds(cls) && /^\s/.test(lines[i]);
       // 質問パネル（AskUserQuestion）が先。タブの行で始まるので取り違えは起きない
-      var ask = takeAskPanel(lines, i);
+      var ask = inside ? null : takeAskPanel(lines, i);
       if (ask) {
         if (boxStillOpen(lines, ask.end)) boxNearEnd = true;
         block = null; cls = ''; prev = '';
@@ -3934,7 +3986,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         i = ask.end;
         continue;
       }
-      var dlg = takeDialog(lines, i);
+      var dlg = inside ? null : takeDialog(lines, i);
       if (dlg) {
         if (boxStillOpen(lines, dlg.end)) boxNearEnd = true;
         // 枠は「かたまり」の外に出す。中で色を塗り直すので、外側の帯に乗せると二重になる。
@@ -3946,7 +3998,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         i = dlg.end;
         continue;
       }
-      var sbs = takeSideBySide(lines, i);
+      var sbs = inside ? null : takeSideBySide(lines, i);
       if (sbs) {
         anySbs = true;
         // いま画面に出ている（＝答えを待っている）2段組なら、端末を広げてもらう。
@@ -3972,11 +4024,17 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         continue;
       }
       if (RE_RULE.test(lines[i])) {
+        // 字下げされた区切り線は、返答・入力・ツールの結果の中に引かれた線＝かたまりの中に描いて続ける。
+        // 行頭から引かれた線（入力欄の上下・許可の画面の上）だけが、かたまりの切れ目
+        if (block && (holds(cls) || cls === 'dim') && /^\s/.test(lines[i])) {
+          block.appendChild(document.createElement('div')).className = 'rule';
+          continue;
+        }
         block = null; cls = ''; prev = '';
         frag.appendChild(document.createElement('div')).className = 'rule';
         continue;
       }
-      var c = classify(lines[i], prev) || '';
+      var c = classify(lines[i], prev, folds[i]) || '';
       if (!block || c !== cls) {
         block = document.createElement('span');
         block.className = 'blk ' + c;
