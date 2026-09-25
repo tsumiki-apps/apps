@@ -2513,7 +2513,8 @@ const server = http.createServer(async (req, res) => {
       const listed = await listSessions();
       // 同じ分に2回押したら2つ目は作らない（書き込みの二重は asa.py の鍵でも止まる）
       if (listed.ok && listed.sessions.some((s) => s.name === name)) {
-        return json(res, 409, { error: 'いま始めたところです（' + name + '）' });
+        const msg = 'いま始めたところです（' + name + '）';
+        return json(res, 409, { error: msg, msg });
       }
       sized.set(name, COLS_DEFAULT);
       forgetSeat(name);
@@ -2521,11 +2522,15 @@ const server = http.createServer(async (req, res) => {
       const cwd = path.join(os.homedir(), '制作物');
       const r = await tmux(['new-session', '-d', '-s', name, '-x', String(COLS_DEFAULT), '-y', String(ROWS),
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
-      if (!r.ok) { sized.delete(name); return json(res, 500, { error: r.err.slice(0, 200) }); }
+      if (!r.ok) {
+        sized.delete(name);
+        return json(res, 500, { error: r.err.slice(0, 200), msg: '席を作れませんでした（' + r.err.slice(0, 80) + '）' });
+      }
       await tmux(['send-keys', '-t', '=' + name + ':', '-l', CLAUDE_CMD + " '/task-minaoshi'"]);
       await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       console.log('minaoshi ' + name);
-      return json(res, 200, { ok: true, name, message: 'タスクの見直しを始めました（' + name + '）' });
+      // ショートカットは msg だけを画面に出す（成功も失敗も同じ鍵）
+      return json(res, 200, { ok: true, name, msg: 'タスクの見直しを始めました（' + name + '）' });
     }
 
     // 制作物の一覧。3つの顔を1本の口で返す
