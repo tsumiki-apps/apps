@@ -83,11 +83,62 @@ def amonth(published=False, assigned=False, reqs=False, submitted=True,
             "dayneeds":[],"assign":assign if assigned else [],
             "requests":REQUESTS if reqs else []}
 
-ASCENES={"open":amonth(),"kime":amonth(assigned=True),"pub":amonth(published=True,assigned=True),
+
+# ===== 月まるごと入れた直後（○の希望を全部シフトに入れた状態・減らす前） =====
+assign_all=[]; fx2={s["id"]:[0,0] for s in staff}
+for a in avail:
+    if a["mark"]!="o": continue
+    assign_all.append({"d":a["d"],"staff_id":a["staff_id"],"k":a["k"],"from":a["from"],"to":a["to"]})
+    fx2[a["staff_id"]][1]+=a["to"]-a["from"]
+for s in staff:
+    fx2[s["id"]][0]=len({a["d"] for a in assign_all if a["staff_id"]==s["id"]})
+staff_all=[dict(s,fixed_days=fx2[s["id"]][0],fixed_min=fx2[s["id"]][1]) for s in staff]
+MARU={"month":f"{Y}-{M:02d}","deadline":f"{Y}-09-20","published":False,"assign_updated":None,
+      "staff":staff_all,"avail":avail,"dayneeds":[],"assign":assign_all,"requests":[]}
+
+# ===== ご相談用：時間帯4つ（昼①昼②・夜①夜②が重なる）で、同じ方が両方に出している =====
+FOUR=[{"k":"s1","label":"昼①","from":570,"to":870,"need":1},{"k":"day","label":"昼②","from":600,"to":870,"need":2},
+      {"k":"s3","label":"夜①","from":1020,"to":1260,"need":1},{"k":"night","label":"夜②","from":1050,"to":1260,"need":2}]
+PAT4=[("s1","s1"),("s1","day"),("s2","day"),("s3","s3"),("s3","night"),("s4","night")]
+av4=[]
+for d in range(1,LAST+1):
+    if dow(d)==1: continue
+    for sid,k in PAT4:
+        sl=[x for x in FOUR if x["k"]==k][0]
+        av4.append({"d":key(d),"staff_id":sid,"k":k,"from":sl["from"],"to":sl["to"],"mark":"o"})
+st4=[dict(s,days=(len(range(1,LAST+1))-5 if s["id"] in ("s1","s2","s3","s4") else 0),done=s["id"] in ("s1","s2","s3","s4"),fixed_days=0,fixed_min=0) for s in staff]
+FOURM={"month":f"{Y}-{M:02d}","deadline":f"{Y}-09-20","published":False,"assign_updated":None,
+       "staff":st4,"avail":av4,"dayneeds":[],"assign":[],"requests":[]}
+# ===== ご相談用：昼・夜の2つにまとめ、何時から入るかを1人ずつ変えた形 =====
+TWO=[{"k":"day","label":"昼","from":570,"to":870,"need":3},{"k":"night","label":"夜","from":1020,"to":1260,"need":3}]
+PAT2=[("s1","day",570),("s2","day",600),("s3","day",600),("s4","night",1020),("s5","night",1050),("s6","night",1050)]
+av2=[];as2=[]
+for d in range(1,LAST+1):
+    if dow(d)==1: continue
+    for sid,k,f in PAT2:
+        t=870 if k=="day" else 1260
+        av2.append({"d":key(d),"staff_id":sid,"k":k,"from":f,"to":t,"mark":"o"})
+        as2.append({"d":key(d),"staff_id":sid,"k":k,"from":f,"to":t})
+st2=[dict(s,days=(26 if s["id"] in ("s1","s2","s3","s4","s5","s6") else 0),done=True,fixed_days=(26 if s["id"] in ("s1","s2","s3","s4","s5","s6") else 0),fixed_min=0) for s in staff]
+TWOM={"month":f"{Y}-{M:02d}","deadline":f"{Y}-09-20","published":False,"assign_updated":None,
+      "staff":st2,"avail":av2,"dayneeds":[],"assign":as2,"requests":[]}
+
+# ===== ご相談用：昼だけ・夜だけ・両方足りない日がまざる（昼・夜の2つ、どちらも3人） =====
+avm=[]
+for d in range(1,LAST+1):
+    if dow(d)==1: continue
+    nd = 2 if d%5 in (1,3) else 3          # 昼が足りない日
+    nn = 2 if d%7 in (2,5) else 3          # 夜が足りない日
+    for i in range(nd): avm.append({"d":key(d),"staff_id":f"s{i+1}","k":"day","from":570,"to":870,"mark":"o"})
+    for i in range(nn): avm.append({"d":key(d),"staff_id":f"s{i+4}","k":"night","from":1020,"to":1260,"mark":"o"})
+MIXM={"month":f"{Y}-{M:02d}","deadline":f"{Y}-09-20","published":False,"assign_updated":None,
+      "staff":[dict(s,days=20,done=True) for s in staff],"avail":avm,"dayneeds":[],"assign":[],"requests":[]}
+
+ASCENES={"mix":MIXM,"four":FOURM,"two":TWOM,"maru":MARU,"open":amonth(),"kime":amonth(assigned=True),"pub":amonth(published=True,assigned=True),
          "req":amonth(assigned=True,reqs=True),"empty":amonth(submitted=False),
          "nostaff":amonth(staffed=False),"sending":amonth(sending=True),
          "paused":amonth(paused=True)}
-ALOGINS={"past":dict(ALOGIN,today=f"{Y}-09-22")}
+ALOGINS={"past":dict(ALOGIN,today=f"{Y}-09-22"),"now":dict(ALOGIN,today=f"{Y}-09-25"),"four":dict(ALOGIN,slots=FOUR,today=f"{Y}-09-26"),"two":dict(ALOGIN,slots=TWO,today=f"{Y}-09-26")}
 
 AMOCK = """<script>
 /* ===== 撮影用のニセの通信（本番のデータベースには一切つながらない。名前もお店も架空） ===== */
