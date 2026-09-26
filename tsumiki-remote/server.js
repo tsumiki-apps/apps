@@ -1593,6 +1593,7 @@ async function pinnedRows(limit) {
 //   ② 印（made.jsonl）。写しに載っていない・写しが古いものを stat で今の姿にする
 const LOOKUP_PINS = 400;
 const LOOKUP_MAX = 12;                 // 1つの名前につき返す候補の数
+const LOOKUP_MAX_OPEN = 60;            // 押したとき（max を付けて聞く）の上限
 // ⚠️ 写しを集め直すのは、**一度も無いとき**か、ここより古いときだけ。
 //    前は照合のたびに recentFiles を起こしていて、見つからない名前（README.md など）を
 //    画面が60秒ごとに聞き直すたびに、置き場全体の探索（最大3.5秒）が回り続けていた
@@ -1613,26 +1614,28 @@ function commonName(base) {
   return COMMON_NAME.test(base.replace(/\.[^.]*$/, ''));
 }
 
-async function lookupNames(names) {
+async function lookupNames(names, max) {
+  max = max || LOOKUP_MAX;
   // ⚠️ 待たない。ここで探索の3.5秒を待つと、名前が光るまで画面が止まって見える。
   //    写しがまだ無いことは warming で返し、画面側はその回の「無かった」を覚えない
   const warming = !recentCache.list;
   if (warming || Date.now() - recentCache.at > LOOKUP_STALE_MS) recentFiles(false).catch(() => {});
   const want = new Set(names);
   const cands = new Map();                       // 名前 → Map(rel → {rel, mtime, pin})
-  const add = (base, rel, mtime, pin) => {
+  // size＝押したときに「中身が同じ複製か」を見分けるため（受け取りの複製と元の置き場など）
+  const add = (base, rel, mtime, pin, size) => {
     let m = cands.get(base);
     if (!m) { m = new Map(); cands.set(base, m); }
     const cur = m.get(rel);
-    if (!cur) { m.set(rel, { rel, mtime, pin }); return; }
-    // 写しと印で同じものを2度見たら、新しいほうの時刻と「印あり」を残す
-    if (mtime > cur.mtime) cur.mtime = mtime;
+    if (!cur) { m.set(rel, { rel, mtime, pin, size }); return; }
+    // 写しと印で同じものを2度見たら、新しいほうの時刻・大きさと「印あり」を残す
+    if (mtime > cur.mtime) { cur.mtime = mtime; cur.size = size; }
     if (pin) cur.pin = true;
   };
   if (recentCache.list) {
     for (const f of recentCache.list) {
       const base = f.rel.split('/').pop();
-      if (want.has(base) && PREVIEW_EXT.test(base)) add(base, f.rel, f.mtime, false);
+      if (want.has(base) && PREVIEW_EXT.test(base)) add(base, f.rel, f.mtime, false, f.size);
     }
   }
   const pins = await pinnedRows(LOOKUP_PINS);
@@ -1641,7 +1644,7 @@ async function lookupNames(names) {
     if (!want.has(base) || !PREVIEW_EXT.test(base)) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
-      if (st.isFile()) add(base, r.rel, st.mtimeMs, true);
+      if (st.isFile()) add(base, r.rel, st.mtimeMs, true, st.size);
     } catch (e) { /* もう無い・読めないものは候補にしない */ }
   }));
   const found = {};
@@ -1651,7 +1654,7 @@ async function lookupNames(names) {
     // ありふれた名前は、印のあるものが1つも無ければ光らせない
     if (common && !all.some((c) => c.pin)) continue;
     all.sort((a, b) => b.mtime - a.mtime);       // 新しい順（並べ替えは全部そろってから）
-    found[base] = { list: all.slice(0, LOOKUP_MAX), total: all.length, common };
+    found[base] = { list: all.slice(0, max), total: all.length, common };
   }
   return { found, warming };
 }
@@ -2587,7 +2590,10 @@ const server = http.createServer(async (req, res) => {
         .split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 200);
       if (!names.length) return json(res, 200, { found: {} });
       try {
-        const r = await within(lookupNames(names), 4000, '名前の照合');
+        // max＝押したとき（名前1つ）だけ多めに返す。古い版が新しい順の12件から漏れると、
+        // 画面の近くに書かれた置き場と照らせない
+        const max = Math.min(LOOKUP_MAX_OPEN, Math.max(1, Number(url.searchParams.get('max')) || LOOKUP_MAX));
+        const r = await within(lookupNames(names, max), 4000, '名前の照合');
         return json(res, 200, r);
       } catch (e) {
         // 照らし合わせられなかった回は「見つからない」と同じ。字はそのまま出る

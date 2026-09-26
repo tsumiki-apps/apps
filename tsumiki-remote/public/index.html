@@ -3690,16 +3690,166 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 光らせたときの答えは古いことがある（その後に新しい版ができた・消えた）ので、
   // その名前1つだけでもう一度聞く。
   //
-  // **選ばせずに1つ開く**（2026-09-26 本人の指示「押したら一発で開く・選ぶ画面は不要」）。
-  // 前は候補が2つ以上なら場所を並べて選ばせていたが、ほとんどは
-  // 「送った物の受け取りの複製」と「元の置き場」の2つ＝中身は同じだった。
-  //   ① 受け取り（INBOX_DIR）の複製は、元の置き場に同じ名前があれば候補から外す
-  //   ② 残りのうち、いちばん新しいもの（サーバーが新しい順で返す）を開く
-  // ⚠️ 名前が同じ別物（img1.png など）では、古い履歴から押しても新しいほうが開く。
-  //    そのかわり、どこの物を開いたかを一言出す
+  // **なるべく選ばせずに1つ開く**（2026-09-26 本人の指示「押したら一発で開く」）。
+  // ただし「新しいほうを開く」だけにすると、古い履歴の `img1.png` を押して別の日の
+  // お返事カードが開く＝取り違える（本人「旧ファイルを開かないように」）。
+  // そこで押した名前の**近くの字**で絞る：
+  //   ① 受け取り（INBOX_DIR）の複製は、元の置き場に同じ大きさのものがあれば外す
+  //      ⚠️ 受け取り以外は大きさでまとめない。V3 と V4 のように版が違っても同じ大きさの
+  //         ことがあり（実データで15組）、文字数の変わらない直しをした md/txt/html もそうなる。
+  //         先にまとめると、文脈に V3 と書いてあっても V4 が開いた（反証役の指摘）
+  //   ② 名前の**すぐ前**にパスが付いていれば（`…/V1/画像/スライド.png`）、それで決める
+  //   ③ 同じ会話の中に書かれた置き場（`~/つみき出力/せんや/時間帯のご相談/V2/`）と
+  //      いちばん長く重なる候補。同点なら、押した名前にいちばん近く書かれているもの
+  //   ④ それでも決まらない＝名前だけでは決められない。**このときだけ選ばせる**
+  //      （黙って新しいほうを開くと、見ている履歴と違う物を見せることになる）
   var INBOX_DIR = '受け取り/';
-  function fileOpen(name) {
-    api('/api/lookup?names=' + encodeURIComponent(name), null, 8000)
+  var OUT_DIR = '11_やりとり出力/';
+  var CTX_SPAN = 30;           // 前後に見る行数（本人の入力＝❯ の行でも止める）
+  // それだけでは置き場を指したことにならない、ありふれたフォルダ名
+  var RE_GENERIC_SEG = /^(?:V\d+|画像|書類|メモ|データ|動画・音声|受け取り)$/;
+  // パスの頭の前に来てよい字（`は` `の` のような文の字の直後はパスの頭と見なさない
+  // ＝`MacminiとMacStudioの伝え方` の途中や、文中の「アプリ」という単語に当てない）
+  var RE_PATH_EDGE = /[\/\s~:：（「『【(＝=・→`'"]/;
+  var RE_PATH_END = /[\/\s）)」』】、。，,・`'"]/;
+  // 読んだだけのツールの見出し。見比べで古い版を読むことはよくあり、そのパスを
+  // 手がかりにすると、後の「作り直しました img1.png」で古い版が開いた（反証役の指摘）
+  var RE_READ_HEAD = /^\s*⏺\s*Read\(/;
+
+  // 押した名前のまわりの字を1本に繋ぐ。行の折り返しで割れたパスも繋がるよう、
+  // 改行と次の行の字下げを消して繋ぐ。
+  // ⚠️ ⏺ の行では止めない。ツールの見出し（`⏺ Bash(tsumiki_out.py …)`）や結果の行に出た
+  //    パスが、後の返答の名前の手がかりになるため（反証役の見積もりで選ぶ画面の35%がこれ）。
+  //    止めるのは本人の入力（❯）＝別の往復の字だけ
+  // col＝押した札が行のどこから始まるか。名前の位置は繋いだ字の中で探し直す
+  // （行またぎの札は後ろの行の頭から始まるので、そこから一番近い同じ名前を採る）
+  function fileCtx(lines, no, col, name) {
+    if (!lines || no == null || no < 0 || !lines[no]) return null;
+    var a = no, b = no;
+    while (a > 0 && no - a < CTX_SPAN && !/^\s*❯/.test(lines[a - 1])) a--;
+    while (b + 1 < lines.length && b - no < CTX_SPAN && !/^\s*❯/.test(lines[b + 1])) b++;
+    var text = '', at = 0, inRead = false;
+    for (var k = a; k <= b; k++) {
+      // Read の見出しと、その折り返しの続き（字下げされ、⎿ ⏺ ❯ で始まらない行）は飛ばす。
+      // 押した行そのものは飛ばさない（そこに名前がある）
+      if (RE_READ_HEAD.test(lines[k])) inRead = true;
+      else if (inRead && !(/^\s/.test(lines[k]) && !/^\s*[⎿⏺❯]/.test(lines[k]))) inRead = false;
+      if (inRead && k !== no) continue;
+      var pad = /^\s*/.exec(lines[k])[0].length;
+      if (k === no) at = text.length + Math.max(0, (col || 0) - pad);
+      text += lines[k].slice(pad).replace(/\s+$/, '');
+    }
+    // 押した位置にいちばん近い、その名前の出どころ
+    var pos = -1, from = 0, i;
+    while ((i = text.indexOf(name, from)) >= 0) {
+      if (pos < 0 || Math.abs(i - at) < Math.abs(pos - at)
+          || (i <= at && at < i + name.length)) pos = i;
+      if (i <= at && at < i + name.length) break;
+      from = i + 1;
+    }
+    if (pos < 0) return null;
+    return { text: text, at: pos, name: name };
+  }
+
+  // 候補の置き場（11_やりとり出力/ を外したフォルダの並び）
+  function fileSegs(rel) {
+    var r = rel.indexOf(OUT_DIR) === 0 ? rel.slice(OUT_DIR.length) : rel;
+    return r.split('/').slice(0, -1);
+  }
+
+  // 名前のすぐ前に付いたパス（`~/つみき出力/せんや/…/V1/画像/`）。無ければ ''
+  function fileLeadPath(ctx) {
+    var i = ctx.at;
+    if (ctx.text.charAt(i - 1) !== '/') return '';
+    var j = i;
+    // `・` `、` でも止める（`画像/使い方.png・メモ/本文.txt` の2つ目）。`動画・音声` のように
+    // フォルダ名の途中で切れた分は、照らす側（filePick ②）で受ける
+    while (j > 0 && !/[\s（「『【(＝=→`'"：・、，,]/.test(ctx.text.charAt(j - 1))) j--;
+    return ctx.text.slice(j, i);
+  }
+
+  // 候補の置き場が、近くの字にどれだけ書かれているか。
+  // 置き場のフォルダの続きの並び（`せんや/時間帯のご相談/V2`）が、パスの形
+  // （前が区切り・後ろが `/`）で出てくる最長の個数と、名前からの近さ
+  function fileScore(rel, ctx) {
+    var segs = fileSegs(rel);
+    var best = { n: 0, d: Infinity };
+    for (var x = 0; x < segs.length; x++) {
+      for (var y = segs.length; y > x; y--) {
+        var k = y - x;
+        if (k < best.n) break;
+        // ありふれた名前だけの並び（`V2` `V2/画像`）は、どの成果物にもあるので手がかりにしない
+        if (segs.slice(x, y).every(function (g) { return RE_GENERIC_SEG.test(g); })) continue;
+        var run = segs.slice(x, y).join('/'), from = 0, i;
+        while ((i = ctx.text.indexOf(run, from)) >= 0) {
+          from = i + 1;
+          var e = i + run.length;
+          if (i > 0 && !RE_PATH_EDGE.test(ctx.text.charAt(i - 1))) continue;
+          // 後ろは `/` か、パスの終わり（空白・閉じ括弧・句読点・字の終わり）。
+          // `V1` が `V10` の頭に当たらないよう、名前の字が続くものは外す
+          if (e < ctx.text.length && !RE_PATH_END.test(ctx.text.charAt(e))) continue;
+          // 近さは名前から、パスの近いほうの端まで（名前の前に書けば終わり・後ろなら頭）
+          var d = e <= ctx.at ? ctx.at - e : Math.max(0, i - ctx.at);
+          if (k > best.n || d < best.d) best = { n: k, d: d };
+        }
+      }
+    }
+    return best.n ? best : { n: 0, d: 0 };
+  }
+
+  function filePick(list, ctx) {
+    // ① 受け取りの複製は、元の置き場に同じ大きさのものがあれば外す（新しい順で届いている）
+    var reps = list.filter(function (c) {
+      if (c.rel.indexOf(INBOX_DIR) !== 0) return true;
+      return !list.some(function (o) {
+        return o.rel.indexOf(INBOX_DIR) !== 0 && c.size != null && o.size === c.size;
+      });
+    });
+    if (reps.length === 1) return { one: reps[0] };
+    if (!ctx) return { many: reps };
+    // ② 名前のすぐ前に付いたパスは**網**にする。後ろから1つずつ照らし、どちらかが尽きるまで
+    //    全部合う候補だけを残す（`V1/画像/img1.png` なら V1 の画像だけが残る）。
+    //    ⚠️ 前は「ありふれた名前だけのパスは使わない」にしていて、すぐ前に V1 と書いてあるのに
+    //       近くに書かれた V2 のフルパスが勝った（反証役の BLOCKER）。
+    //    1つも残らない＝書いてある場所と違う物しか無い（`~/制作物/…` や消えた版）。
+    //    そのときは黙って近くの別物を開かず、選ばせる
+    var lead = fileLeadPath(ctx);
+    if (lead) {
+      var ls = lead.split('/').slice(0, -1);
+      reps = reps.filter(function (c) {
+        var segs = fileSegs(c.rel);
+        var n = Math.min(ls.length, segs.length);
+        if (!n) return false;
+        for (var q = 1; q <= n; q++) {
+          var l = ls[ls.length - q], g = segs[segs.length - q];
+          if (l === g) continue;
+          // パスのいちばん左は、`・` で切って取っているので `動画・音声` が `音声` になる。
+          // そこだけは「フォルダ名の `・` から後ろ」と合えばよい
+          if (q === ls.length && g.length > l.length && g.slice(-l.length) === l
+              && g.charAt(g.length - l.length - 1) === '・') continue;
+          return false;
+        }
+        return true;
+      });
+      if (!reps.length) return { many: list };
+      if (reps.length === 1) return { one: reps[0] };
+    }
+    // ③ 近くに書かれた置き場で絞る
+    var scored = reps.map(function (c) { return { c: c, s: fileScore(c.rel, ctx) }; });
+    var top = 0;
+    scored.forEach(function (o) { if (o.s.n > top) top = o.s.n; });
+    if (top) {
+      var near = scored.filter(function (o) { return o.s.n === top; });
+      var dmin = Math.min.apply(null, near.map(function (o) { return o.s.d; }));
+      near = near.filter(function (o) { return o.s.d === dmin; });
+      if (near.length === 1) return { one: near[0].c };
+    }
+    // ④ 決められない
+    return { many: reps };
+  }
+
+  function fileOpen(name, ctx) {
+    api('/api/lookup?max=60&names=' + encodeURIComponent(name), null, 8000)
       .then(function (d) {
         var h = d && d.found && d.found[name];
         if (!h || !h.list || !h.list.length) {
@@ -3707,13 +3857,21 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           return toast('見つかりません');
         }
         fileIdx[name] = { hit: h, at: Date.now() };
-        var list = h.list.filter(function (c) { return c.rel.indexOf(INBOX_DIR) !== 0; });
-        if (!list.length) list = h.list;
-        var c = list[0];
-        openPreview(c.rel);
-        if (list.length > 1) {
+        var p = filePick(h.list, ctx);
+        if (p.one) return openPreview(p.one.rel);
+        openSheet(name);
+        p.many.forEach(function (c) {
           var par = fParent(c.rel);
-          toast((par ? fLabel(par) : '制作物') + ' を開きました');
+          // 場所（「ご提案書 V2 ・ 画像」）を主に、時刻を下に。どれがどれかは場所で決まる
+          sheetItem(par ? fLabel(par) : '制作物', fmtWhen(c.mtime), function () {
+            closeSheet();
+            openPreview(c.rel);
+          });
+        });
+        if (h.total > h.list.length) {
+          sheetItem('ほかに ' + (h.total - h.list.length) + ' 件', '制作物を見る', function () {
+            openFiles();
+          });
         }
       })
       .catch(function (e) { toast('開けません: ' + e.message); });
@@ -3986,10 +4144,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         fb.type = 'button';
         fb.className = 'fl';
         fb.textContent = h.s;
-        (function (name, full) {
+        (function (name, full, lines, no, col) {
           // 閉じると履歴のここに戻る。path＝「送ったファイル」の枠から繋いだパス（1つに決まる）
-          fb.onclick = function () { if (full) pathOpen(full); else fileOpen(name); };
-        })(h.fn || h.s, h.path);                            // fn＝行またぎで割れる前の名前
+          // lines/no/col＝押した札の画面・行・桁。近くに書かれた置き場で候補を絞る（fileOpen）
+          fb.onclick = function () {
+            if (full) pathOpen(full); else fileOpen(name, fileCtx(lines, no, col, name));
+          };
+        })(h.fn || h.s, h.path, rsLines, rsLine, h.i);      // fn＝行またぎで割れる前の名前
         parent.appendChild(fb);
         at = h.j;
         return;                                  // 写す札は付けない
@@ -4200,6 +4361,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return box;
   }
 
+  // いま組み立てている画面の行と、その何行目か（ファイル名の札が押されたときの手がかり）。
+  // rsLine は本文の1行を描くあいだだけ立つ（それ以外で作った札には手がかりを渡さない）
+  var rsLines = null, rsLine = -1;
+
   function renderScreen(text) {
     fileRedrawWanted = false;   // この描き直しで、分かっている名前は全部光る
     // 桁数は「取りに行ったとき」に決まるが、起動直後は保存しておいた画面を先に出す＝
@@ -4207,6 +4372,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var cols = paneCols || measureCols();
     var lines = joinUrlWraps(text.split('\n'), cols);
     var splitFiles = fileSplitHits(lines);         // 折り返しで割れた名前
+    rsLines = lines;
     var folds = foldLines(lines);                  // 畳まれたツールの記録（灰色にする行）
     var heads = toolHeads(lines);                  // RE_TOOL に当たらないツールの見出し
     var sent = sentFileHits(lines);                // 「送ったファイル」の枠（パスで引く）
@@ -4289,7 +4455,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         frag.appendChild(block);
         cls = c;
       }
+      // 手がかりの行番号は、本文の1行をそのまま描くここでだけ渡す。
+      // ⚠️ 表・質問パネルは何行もまとめて組むので、どのマスの札も先頭の行番号になり、
+      //    表の上の行の版が必ず勝った（反証役の BLOCKER）。そちらは渡さない＝選ぶ画面
+      rsLine = i;
       addText(block, lines[i] + '\n', false, splitFiles[i]);
+      rsLine = -1;
       prev = c;
     }
     screenBoxWaiting = boxNearEnd;
@@ -4303,6 +4474,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       Array.prototype.forEach.call(de.querySelectorAll('button.dopt'), function (b) { b.disabled = true; });
     });
     el.out.textContent = '';
+    rsLines = null; rsLine = -1;    // 画面の外で作る札に、この画面の行を渡さない
     el.out.appendChild(frag);
     syncKeys();
     // 広げるのは「答えを待っている2段組が画面の下にある」とき。
