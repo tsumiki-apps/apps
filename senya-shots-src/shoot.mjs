@@ -17,6 +17,8 @@ for(const j of JOBS){
   await send('Page.navigate',{url}); await wait(j.wait||1900);
   const guard=await ev("location.href.includes('_%E3%83%86%E3%82%B9%E3%83%88%E7%94%A8_')");
   if(!guard){ console.log('ABORT: テスト用の複製ではありません'); process.exit(1); }
+  const cs=await ev('document.characterSet');
+  if(cs!=='UTF-8'){ console.log('ABORT: 文字コードが '+cs+'（文字化けする） '+j.file); process.exit(1); }
   await ev("(function(){var s=document.createElement('style');s.textContent='*{transition:none!important;animation:none!important;caret-color:transparent!important}';document.head.appendChild(s)})()");
   if(j.app==='kanri' && !j.nologin){
     const need=await ev("(function(){var l=document.getElementById('loginView');return !!(l&&!l.hidden)})()");

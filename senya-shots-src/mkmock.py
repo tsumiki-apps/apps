@@ -129,7 +129,7 @@ AMOCK = """<script>
        json.dumps(ALOGINS,ensure_ascii=False), json.dumps(SHOP,ensure_ascii=False))
 
 (OUT/"_テスト用_senya-kanri.html").write_text(
-    AMOCK+(TOOLS/"tsumiki-senya-kanri.html").read_text(encoding="utf-8"), encoding="utf-8")
+    '<meta charset="utf-8">\n'+AMOCK+(TOOLS/"tsumiki-senya-kanri.html").read_text(encoding="utf-8"), encoding="utf-8")
 
 # ================= スタッフアプリ（やまだ はな＝s1） =================
 ME="s1"
@@ -191,7 +191,7 @@ SMOCK = """<script>
 """ % (json.dumps(SLOGIN,ensure_ascii=False), json.dumps(SSCENES,ensure_ascii=False))
 
 (OUT/"_テスト用_senya-staff.html").write_text(
-    SMOCK+(TOOLS/"tsumiki-senya.html").read_text(encoding="utf-8"), encoding="utf-8")
+    '<meta charset="utf-8">\n'+SMOCK+(TOOLS/"tsumiki-senya.html").read_text(encoding="utf-8"), encoding="utf-8")
 
 print("ok  staff=%d avail=%d assign=%d  やまだ:出した%d日 シフト%d日"
       %(len(staff),len(avail),len(assign),len(set(r["d"] for r in mine)),len(set(r["d"] for r in myasg))))
