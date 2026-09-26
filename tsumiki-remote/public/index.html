@@ -3689,8 +3689,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 押したとき。**開く先は押した時点で決める。**
   // 光らせたときの答えは古いことがある（その後に新しい版ができた・消えた）ので、
   // その名前1つだけでもう一度聞く。
-  //   候補1つ・ありふれていない名前 → そのまま開く
-  //   候補2つ以上・ありふれた名前   → 場所を並べて選ばせる（名前だけでは1つに絞れない）
+  //
+  // **選ばせずに1つ開く**（2026-09-26 本人の指示「押したら一発で開く・選ぶ画面は不要」）。
+  // 前は候補が2つ以上なら場所を並べて選ばせていたが、ほとんどは
+  // 「送った物の受け取りの複製」と「元の置き場」の2つ＝中身は同じだった。
+  //   ① 受け取り（INBOX_DIR）の複製は、元の置き場に同じ名前があれば候補から外す
+  //   ② 残りのうち、いちばん新しいもの（サーバーが新しい順で返す）を開く
+  // ⚠️ 名前が同じ別物（img1.png など）では、古い履歴から押しても新しいほうが開く。
+  //    そのかわり、どこの物を開いたかを一言出す
+  var INBOX_DIR = '受け取り/';
   function fileOpen(name) {
     api('/api/lookup?names=' + encodeURIComponent(name), null, 8000)
       .then(function (d) {
@@ -3700,20 +3707,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           return toast('見つかりません');
         }
         fileIdx[name] = { hit: h, at: Date.now() };
-        if (h.list.length === 1 && !h.common) return openPreview(h.list[0].rel);
-        openSheet(name);
-        h.list.forEach(function (c) {
+        var list = h.list.filter(function (c) { return c.rel.indexOf(INBOX_DIR) !== 0; });
+        if (!list.length) list = h.list;
+        var c = list[0];
+        openPreview(c.rel);
+        if (list.length > 1) {
           var par = fParent(c.rel);
-          // 場所（「ご提案書 V2 ・ 画像」）を主に、時刻を下に。どれがどれかは場所で決まる
-          sheetItem(par ? fLabel(par) : '制作物', fmtWhen(c.mtime), function () {
-            closeSheet();
-            openPreview(c.rel);
-          });
-        });
-        if (h.total > h.list.length) {
-          sheetItem('ほかに ' + (h.total - h.list.length) + ' 件', '制作物を見る', function () {
-            openFiles();
-          });
+          toast((par ? fLabel(par) : '制作物') + ' を開きました');
         }
       })
       .catch(function (e) { toast('開けません: ' + e.message); });
