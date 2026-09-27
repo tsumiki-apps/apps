@@ -4186,8 +4186,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           };
         })(h.fn || h.s, h.path, rsLines, rsLine, h.i);      // fn＝行またぎで割れる前の名前
         parent.appendChild(fb);
+        // 文字のファイル（返信文の .txt など）には、中身をまるごと写す札を添える（2026-09-27 本人の依頼）
+        if (RE_COPY_FILE.test(h.fn || h.s)) parent.appendChild(makeFileCopyBtn(h.fn || h.s, h.path, rsLines, rsLine, h.i));
         at = h.j;
-        return;                                  // 写す札は付けない
+        return;
       }
       if (h.k === 'url') {
         var a = document.createElement('a');
@@ -5204,11 +5206,100 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     } catch (e) { return false; }
   }
 
+  // ------------------------------------------- 文字のファイルを中身ごと写す（2026-09-27）
+  //
+  // 返信文（LINE・メール）は .txt に置き、会話にはその名前を書く（~/.claude/CLAUDE.md §1）。
+  // 名前の横の札を押すと、ファイルの中身をそのままクリップボードへ。画面から写すと
+  // 端末の幅で折れた改行が混ざるが、ファイルから取るので段落の改行だけが残る。
+  //
+  // ⚠️ iPhone の Safari は「押したその場」でないと写させない。中身は Mac に取りに行くので、
+  //   ① 指が触れた時点（pointerdown）で取りに行き始め、離した時点で届いていればその場で写す
+  //   ② 届いていなければ ClipboardItem に「届く予定の中身」を渡す（Safari が認めている形）
+  var RE_COPY_FILE = /\.(?:txt|md)$/i;
+  var fileTextCache = {};                 // 名前＋場所 → 中身（同じ札の二度押しで取りに行かない）
+
+  function makeFileCopyBtn(name, full, lines, no, col) {
+    var b = makeCopyBtn('本文');
+    b.classList.add('fcp');
+    b.dataset.file = name;
+    b._want = function () {
+      if (b._p) return b._p;
+      var relP = full
+        ? api('/api/resolve?paths=' + encodeURIComponent(full), null, 8000).then(function (d) {
+            var h = d && d.found && d.found[full];
+            if (!h) throw new Error('見つかりません');
+            return h.rel;
+          })
+        : api('/api/lookup?max=60&names=' + encodeURIComponent(name), null, 8000).then(function (d) {
+            var h = d && d.found && d.found[name];
+            if (!h || !h.list || !h.list.length) throw new Error('見つかりません');
+            var pk = filePick(h.list, fileCtx(lines, no, col, name));
+            if (!pk.one) throw new Error('同じ名前が複数あります。名前を押して開き、右上でコピーしてください');
+            return pk.one.rel;
+          });
+      b._p = relP.then(function (rel) {
+        if (fileTextCache[rel] != null) return fileTextCache[rel];
+        return ensurePreviewCookie().then(function () {
+          return fetch(previewUrl(rel), { credentials: 'same-origin' });
+        }).then(function (r) {
+          if (r.status === 401) { cookieReady = null; throw new Error('合言葉が切れました。開き直してください'); }
+          if (!r.ok) throw new Error('読み込めません');
+          return r.text();
+        }).then(function (t) {
+          fileTextCache[rel] = t;
+          return t;
+        });
+      });
+      b._p.then(function (t) { b._text = t; }, function () { b._p = null; });
+      return b._p;
+    };
+    b.addEventListener('pointerdown', function () { b._want(); });
+    return b;
+  }
+
+  function fileCopyDone(b) {
+    b.classList.add('done');
+    b.innerHTML = ICON_DONE;
+    toast('本文をコピーしました');
+    setTimeout(function () { b.classList.remove('done'); b.innerHTML = ICON_COPY; }, 2000);
+  }
+
+  function fileCopy(b) {
+    // ① もう届いている＝押したその場で写す（どの道でも通る）
+    if (b._text != null) {
+      copyText(b._text).then(function () { fileCopyDone(b); },
+        function () { toast('コピーできませんでした', 2600); });
+      return;
+    }
+    var p = b._want();
+    // ② 届く予定の中身を渡す。Safari はこの形なら、あとから届いても写してくれる
+    if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+      var item;
+      try {
+        item = new ClipboardItem({ 'text/plain': p.then(function (t) { return new Blob([t], { type: 'text/plain' }); }) });
+      } catch (e) { item = null; }
+      if (item) {
+        navigator.clipboard.write([item]).then(function () { fileCopyDone(b); }, function () {
+          // 断られた（中身が取れなかった・許可が無い）。取れていればもう一度だけ普通に写す
+          p.then(function (t) { return copyText(t); })
+            .then(function () { fileCopyDone(b); },
+              function (e) { toast((e && e.message) || 'コピーできませんでした。もう一度押してください', 3200); });
+        });
+        return;
+      }
+    }
+    // ③ どちらも無い古い道。届いてから写す（届いた後の2回目で確実に通る）
+    p.then(function (t) { return copyText(t); })
+      .then(function () { fileCopyDone(b); },
+        function (e) { toast((e && e.message) || 'もう一度押してください', 3200); });
+  }
+
   // URL の横の札。写したら、押した札そのものがチェックに変わる＝
   // どのリンクを取ったのかが分かる（言い添えだけだと取り違えに気づけない）
   el.out.addEventListener('click', function (e) {
     var b = e.target.closest('.lcp');
     if (!b) return;
+    if (b.dataset.file) { fileCopy(b); return; }
     // 逃げ道で選ぶ相手＝直前のリンク／合言葉
     var link = b.previousSibling;
     copyText(b.dataset.copy || '').then(function () {
