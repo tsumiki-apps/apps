@@ -3848,6 +3848,34 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return { many: reps };
   }
 
+  // ------------------------------------------- 光った名前はファイルアプリで開く
+  //
+  // 置き場（PREVIEW_ROOT＝iCloud Drive の Kodai/00_Tsumiki）は iPhone のファイルアプリにも
+  // 同じ形で見えている。`shareddocuments://` に iPhone 側のフルパスを渡すと、
+  // ファイルアプリがそのファイルを直接開く（フォルダ止まりではない）。
+  // ⚠️ Apple の文書に載っていない口。Simulator の「このiPhone内」では開けたが（2026-09-27）、
+  //    iCloud Drive の実機では未確認。行けなかったら（画面が隠れなかったら）従来のプレビューに戻す。
+  var FILES_BASE = '/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/';
+
+  function openInFiles(rel) {
+    var left = false;
+    function gone() { left = true; }
+    document.addEventListener('visibilitychange', gone);
+    window.addEventListener('pagehide', gone);
+    window.addEventListener('blur', gone);
+    setTimeout(function () {
+      document.removeEventListener('visibilitychange', gone);
+      window.removeEventListener('pagehide', gone);
+      window.removeEventListener('blur', gone);
+      if (left) return;
+      toast('ファイルアプリで開けませんでした');
+      openPreview(rel);
+    }, 1800);
+    // パスの区切りは残し、名前の日本語・空白・# などだけ符号化する
+    location.href = 'shareddocuments://'
+      + (FILES_BASE + rel).split('/').map(encodeURIComponent).join('/');
+  }
+
   function fileOpen(name, ctx) {
     api('/api/lookup?max=60&names=' + encodeURIComponent(name), null, 8000)
       .then(function (d) {
@@ -3858,14 +3886,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         }
         fileIdx[name] = { hit: h, at: Date.now() };
         var p = filePick(h.list, ctx);
-        if (p.one) return openPreview(p.one.rel);
+        if (p.one) return openInFiles(p.one.rel);
         openSheet(name);
         p.many.forEach(function (c) {
           var par = fParent(c.rel);
           // 場所（「ご提案書 V2 ・ 画像」）を主に、時刻を下に。どれがどれかは場所で決まる
           sheetItem(par ? fLabel(par) : '制作物', fmtWhen(c.mtime), function () {
             closeSheet();
-            openPreview(c.rel);
+            openInFiles(c.rel);
           });
         });
         if (h.total > h.list.length) {
@@ -4056,7 +4084,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           return toast('見つかりません');
         }
         pathIdx[p] = { rel: h.rel, at: Date.now() };
-        openPreview(h.rel);
+        openInFiles(h.rel);
       })
       .catch(function (e) { toast('開けません: ' + e.message); });
   }
