@@ -5246,6 +5246,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           if (!r.ok) throw new Error('読み込めません');
           return r.text();
         }).then(function (t) {
+          // 末尾の改行・空白は落とす。テキストファイルは最後を改行で終えるのが普通で、
+          // そのまま写すと貼った先の最後に空行が1つ入る（2026-09-27 本人の指摘）
+          t = t.replace(/\s+$/, '');
           fileTextCache[rel] = t;
           return t;
         });
@@ -6975,7 +6978,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   function viewerText(rel) {
     return fetchText(rel).then(function (src) {
-      if (!HTML_RE.test(rel)) return src;   // md/txt/csv は元のまま＝改行や空白が崩れない
+      if (!HTML_RE.test(rel)) return src.replace(/\s+$/, '');   // md/txt/csv は元のまま＝改行や空白が崩れない（末尾の改行だけ落とす）
       var t = htmlToText(src);
       return t || src;                      // 字が取れなければ元の中身を渡す
     });
