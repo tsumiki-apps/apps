@@ -9,7 +9,7 @@
 
 > **つみきは単一HTML＋素のJS。React も Motion も入っていないので、コードはそのままでは使えない。**
 > 借りるのは**考え方と数値**。**移植ずみの動く見本＝隣の `rareui.motion.demo.html`（コピー元はここ）**
-> ／ 同じものが `~/つみき出力/_これまでの制作物/道具としらべ/RareUI移植見本_2026-09-08.html` にもある（スマホで見る用）。
+> ／ 同じものが `~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/17_調べもの・道具/道具としらべ/RareUI移植見本_2026-09-08.html` にもある（スマホで見る用）。
 
 ---
 

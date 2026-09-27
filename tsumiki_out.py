@@ -22,7 +22,8 @@
   ・同じ名前のフォルダが別のセッションのもの（または本人が作ったもの）なら「名前 (2)」にする。
   ・種類のフォルダは作らない（2026-09-27 本人）。フォルダの中はファイルだけ。
   ・同じセッションで同じ名前を聞けば同じ場所（直して上書き）。前の物を残したいときは --new。
-  ・2026-09-27 より前の物は `_これまでの制作物/`（プロジェクト → 成果物 → 版 → 種類 の形のまま）。
+  ・2026-09-27 より前の物は、つみきは Kodai/00_Tsumiki の番号フォルダ、Apple は Kodai/02_Apple/2026、
+    私用は Kodai/05_Personal/2026 へ仕分けた（対応表＝~/.tsumiki-remote/moved.json）。
 
 前の書き方（<プロジェクト> <成果物> <ファイル名>）で呼ばれても止めない。最後のファイル名だけを使い、
 書き方を注意する（ほかのスキルや手順書がまだ前の形で呼ぶことがあるため）。
@@ -46,7 +47,7 @@ TESTING = bool(os.environ.get('TSUMIKI_OUT_ROOT'))
 ROOT = os.environ.get('TSUMIKI_OUT_ROOT') or os.path.expanduser(
     '~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/04_つみきリモート制作物')
 MAP_FILE = os.environ.get('TSUMIKI_OUT_MAP') or os.path.expanduser('~/.cache/tsumiki/out_sessions.json')
-ARCHIVE = '_これまでの制作物'
+ARCHIVE = '_これまでの制作物'   # 2026-09-27 に廃止した保管庫の名前。新しいセッションに使わせない
 READ_TIMEOUT = 5.0
 # 札の頭に Claude Code が付ける動きの印（✳ ✻ など）と点字の回転
 SPIN_RE = re.compile(r'^[\s⠀-⣿✳✻✽✶✢·•*⏺◐◓◑◒]+')

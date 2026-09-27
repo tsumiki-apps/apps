@@ -1422,8 +1422,18 @@ const PREVIEW_ROOT = path.join(
   os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Kodai');
 const PREVIEW_OUT_NAME = '04_つみきリモート制作物';
 const PREVIEW_TOPS = [PREVIEW_OUT_NAME, '00_Tsumiki'];
-// 2026-09-27 より前の制作物（プロジェクト → 成果物 → 版 → 種類 の形のまま）。新しい物はセッションごとのフォルダ
-const PREVIEW_ARCHIVE = '_これまでの制作物';
+// 2026-09-27 に、それまで受け取り口の直下にあったプロジェクトを 00_Tsumiki・02_Apple・05_Personal へ仕分けた。
+// 古い履歴の `~/つみき出力/<プロジェクト>/…` を引き直すための対応表（プロジェクト名 → Kodai からの新しい場所）。
+// ⚠️ お客様の名前が入るので公開リポジトリには置かない（~/.tsumiki-remote/moved.json）
+const MOVED_FILE = path.join(os.homedir(), '.tsumiki-remote', 'moved.json');
+let movedCache = { at: 0, map: {} };
+function movedMap() {
+  if (Date.now() - movedCache.at < 60000) return movedCache.map;
+  let map = {};
+  try { map = JSON.parse(fs.readFileSync(MOVED_FILE, 'utf8')) || {}; } catch (e) { /* 無ければ引き直さない */ }
+  movedCache = { at: Date.now(), map };
+  return map;
+}
 // やり取りの中で作ったものはここ。Mac からは `~/つみき出力/` がその近道。
 const PREVIEW_OUT = path.join(PREVIEW_ROOT, PREVIEW_OUT_NAME);
 fsp.mkdir(PREVIEW_OUT, { recursive: true }).catch(() => {});
@@ -1718,12 +1728,15 @@ async function resolvePaths(paths) {
   await Promise.all(paths.map(async (p) => {
     const rel0 = sentPathRel(p);
     if (!rel0) return;
-    // 2026-09-27 に直下の置き場を `_これまでの制作物/` にまとめた。それより前の履歴の
-    // `~/つみき出力/<プロジェクト>/…` は、無ければそちらで引き直す
+    // それより前の履歴の `~/つみき出力/<プロジェクト>/…` は、無ければ移した先（movedMap）で引き直す。
+    // 移した先も見せてよい置き場の中（previewRelOk）でなければ引かない（02_Apple・05_Personal は見せない）
     const tries = [rel0];
     const out = PREVIEW_OUT_NAME + '/';
-    if (rel0.startsWith(out) && !rel0.startsWith(out + PREVIEW_ARCHIVE + '/')) {
-      tries.push(out + PREVIEW_ARCHIVE + '/' + rel0.slice(out.length));
+    if (rel0.startsWith(out)) {
+      const rest = rel0.slice(out.length);
+      const i = rest.indexOf('/');
+      const to = i > 0 && movedMap()[rest.slice(0, i)];
+      if (to && previewRelOk(to)) tries.push(to + rest.slice(i));
     }
     try {
       for (const rel of tries) {

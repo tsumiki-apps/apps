@@ -1434,7 +1434,7 @@ URL の `joinUrlWraps` とはここが違う）。
 
 ファイルを送ると、端末にはこの形の枠が出る（51桁のときの実測）：
 
-    ␣␣›␣␣␣␣␣␣~/つみき出力/_これまでの制作物/Instagram運用/つみきス␣(214.3
+    ␣␣›␣␣␣␣␣␣~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/14_Instagram投稿/Instagram運用/つみきス␣(214.3
     ␣␣[image]トーリー_募集/V2/画像/つみきストー␣KB)
     ␣␣␣␣␣␣␣␣␣リー_募集3_料金の目安_特典入り_2026
     ␣␣␣␣␣␣␣␣␣-09-15.png
