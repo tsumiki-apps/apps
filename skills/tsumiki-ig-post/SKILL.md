@@ -7,7 +7,8 @@ description: つみきのアプリからInstagram用の投稿画像4枚とリー
 
 正本の型 → `~/ObsidianVault/Playbooks/app-post-and-reel-format.md` を**必ず先に読む**。
 道具 → `~/つみき出力/Instagram運用/` の `reelbase.py` `make_posts.py` `render_*.py` `mp4に書き出す.swift`
-出す先 → `~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/14_Instagram投稿/`（`画像/` `リール動画/`）
+出す先 → **いったん `~/つみき出力/`**（受け取り口＝`Kodai/04_つみきリモート制作物`）。場所は `python3 ~/制作物/tsumiki_out.py` に聞く（正本＝`~/制作物/CLAUDE.md` §5）。
+  本人が「これは良い」と決めた物だけ、資産として `00_Tsumiki/14_Instagram投稿/` に移す（2026-09-27 本人が決めた）。
 
 ## 進め方
 
