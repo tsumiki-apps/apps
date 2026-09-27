@@ -391,4 +391,4 @@ npx @google/design.md export --format css-vars ~/制作物/DESIGN.md
 この文書は正本であって、生成器ではない。
 
 - 規格: [google-labs-code/design.md](https://github.com/google-labs-code/design.md)（Apache-2.0・`alpha`）
-- 調べた記録: `~/つみき出力/道具としらべ/DESIGN.md標準の調査_2026-09-08.md`
+- 調べた記録: `~/つみき出力/_これまでの制作物/道具としらべ/DESIGN.md標準の調査_2026-09-08.md`

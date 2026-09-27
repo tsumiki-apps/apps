@@ -1422,6 +1422,8 @@ const PREVIEW_ROOT = path.join(
   os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Kodai');
 const PREVIEW_OUT_NAME = '04_つみきリモート制作物';
 const PREVIEW_TOPS = [PREVIEW_OUT_NAME, '00_Tsumiki'];
+// 2026-09-27 より前の制作物（プロジェクト → 成果物 → 版 → 種類 の形のまま）。新しい物はセッションごとのフォルダ
+const PREVIEW_ARCHIVE = '_これまでの制作物';
 // やり取りの中で作ったものはここ。Mac からは `~/つみき出力/` がその近道。
 const PREVIEW_OUT = path.join(PREVIEW_ROOT, PREVIEW_OUT_NAME);
 fsp.mkdir(PREVIEW_OUT, { recursive: true }).catch(() => {});
@@ -1714,11 +1716,25 @@ async function resolvePaths(paths) {
   const found = {};
   let stale = false;
   await Promise.all(paths.map(async (p) => {
-    const rel = sentPathRel(p);
-    if (!rel) return;
+    const rel0 = sentPathRel(p);
+    if (!rel0) return;
+    // 2026-09-27 に直下の置き場を `_これまでの制作物/` にまとめた。それより前の履歴の
+    // `~/つみき出力/<プロジェクト>/…` は、無ければそちらで引き直す
+    const tries = [rel0];
+    const out = PREVIEW_OUT_NAME + '/';
+    if (rel0.startsWith(out) && !rel0.startsWith(out + PREVIEW_ARCHIVE + '/')) {
+      tries.push(out + PREVIEW_ARCHIVE + '/' + rel0.slice(out.length));
+    }
     try {
-      const st = await within(fsp.stat(path.join(PREVIEW_ROOT, rel)), 1200, 'iCloud');
-      if (st.isFile()) found[p] = { rel, mtime: st.mtimeMs };
+      for (const rel of tries) {
+        try {
+          const st = await within(fsp.stat(path.join(PREVIEW_ROOT, rel)), 1200, 'iCloud');
+          if (st.isFile()) { found[p] = { rel, mtime: st.mtimeMs }; return; }
+        } catch (e) {
+          if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) continue;
+          throw e;
+        }
+      }
     } catch (e) {
       // ⚠️ 時間切れは「無い」ではない。stale を返して、画面が「無かった」を覚えないようにする
       //    （覚えると、iCloud が遅かっただけのファイルが60秒光らない＝反証役の指摘）
