@@ -26,7 +26,8 @@
   ・**まだ無いファイルでもよい**。`tsumiki_out.py` は「これから置く場所」を返すので、
     印はその時点で付く。光るのは実際にできたものだけ（サーバーが見に行ったときに
     無ければ候補にしない）＝置くのをやめても、幽霊は光らない
-  ・置き場（00_Tsumiki）の外は受け付けない。プレビューがその中しか開けないため
+  ・置き場（Kodai の中の 04_つみきリモート制作物 と 00_Tsumiki）の外は受け付けない。プレビューがその中しか開けないため
+    （tsumiki-remote/server.js の PREVIEW_TOPS と同じ）
 
 ## 置き場
 
@@ -41,7 +42,9 @@
 import fcntl, json, os, sys, threading, time
 
 PREVIEW_ROOT = os.environ.get('TSUMIKI_PREVIEW_ROOT') or os.path.expanduser(
-    '~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki')
+    '~/Library/Mobile Documents/com~apple~CloudDocs/Kodai')
+# rel の先頭はこのどれか（Kodai の隣の 05_Personal などは印を付けない）
+PREVIEW_TOPS = ('04_つみきリモート制作物', '00_Tsumiki')
 MADE_FILE = os.path.join(os.path.expanduser('~'), '.tsumiki-remote', 'made.jsonl')
 LOCK_FILE = MADE_FILE + '.lock'
 KEEP = 400          # 刈るときに残す行数
@@ -76,7 +79,7 @@ def _rel(path):
     # ⚠️ 外に出るものを弾く。**区切りごとに** `..` を見る（`..foo.png` のような
     #    正当な名前まで弾かないため）。印はプレビューで開ける道なので、外を指させない
     parts = rel.split(os.sep)
-    if os.path.isabs(rel) or '..' in parts:
+    if os.path.isabs(rel) or '..' in parts or parts[0] not in PREVIEW_TOPS:
         return None
     return '/'.join(parts)
 

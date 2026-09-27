@@ -20,7 +20,7 @@
   ・送信は「辞書 → 値を設定 → URLの内容（本文＝ファイル＝辞書）」で例と同じ。
 **焼く前に shortcut_check.py を必ず通す（この台本が --ref つきで自分で呼ぶ）。落ちたら焼かない。**
 合い言葉はキーチェーン（health-ingest-token）から読む。**このファイルには書かない**（PUBLIC リポジトリ）。
-焼いた .shortcut には合い言葉が入る。置くのは ~/つみき出力 と、送ったときに複製される 00_Tsumiki/受け取り（どちらも本人の iCloud の非公開の場所）だけ。
+焼いた .shortcut には合い言葉が入る。置くのは ~/つみき出力（本人の iCloud の非公開の場所）だけ。
 """
 import plistlib, uuid, sys, re, subprocess, pathlib, shutil, os
 

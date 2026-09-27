@@ -1406,21 +1406,40 @@ async function makeThumb(real, st) {
 
 // -------------------------------------------------------------- プレビュー
 
-// つみきの持ちもの一式（ロゴ・名刺・書類ひな形・やり取りの出力）の置き場。
-// 実体は iCloud Drive なので、アプリで見るのと iPhone のファイルアプリで
-// 見るのが同じ1か所になる。ここから外は絶対に出さない。
+// 見せてよい置き場は iCloud Drive の Kodai の中の**2つだけ**（PREVIEW_TOPS）。
+//   04_つみきリモート制作物 … やり取りで作った物の受け取り口（本業の物も入るので屋号の外・2026-09-27 本人が決めた）
+//   00_Tsumiki             … 屋号の持ちもの（ロゴ・名刺・書類ひな形・IG投稿）
+// rel は Kodai からの相対（`04_つみきリモート制作物/…`）。実体は iCloud Drive なので、
+// アプリで見るのと iPhone のファイルアプリで見るのが同じ場所になる。
+// ⚠️ PREVIEW_ROOT（Kodai）そのものは見せない。隣に 05_Personal・08_Money がある。
+//    入口の判定は必ず previewRelOk / previewRealOk を通す（startsWith(PREVIEW_ROOT) だけで済ませない）。
 //
 // ⚠️ iCloud のフォルダは、同期系の fs 呼び出し（readdirSync など）が
 // 数分単位で返ってこないことがある。Node は1本のループで動いているので、
 // そこで固まるとターミナル表示もキー送信も全部止まる（実際に止めた）。
 // このフォルダを触るときは必ず非同期＋制限時間つきで扱うこと。
 const PREVIEW_ROOT = path.join(
-  os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs',
-  'Kodai', '00_Tsumiki');
-// やり取りの中で作ったものは、屋号の資産（ロゴ・名刺・書類）と混ざらないよう
-// この中の `11_やりとり出力` に入れる。Mac からは `~/つみき出力/` がその近道。
-const PREVIEW_OUT = path.join(PREVIEW_ROOT, '11_やりとり出力');
+  os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Kodai');
+const PREVIEW_OUT_NAME = '04_つみきリモート制作物';
+const PREVIEW_TOPS = [PREVIEW_OUT_NAME, '00_Tsumiki'];
+// やり取りの中で作ったものはここ。Mac からは `~/つみき出力/` がその近道。
+const PREVIEW_OUT = path.join(PREVIEW_ROOT, PREVIEW_OUT_NAME);
 fsp.mkdir(PREVIEW_OUT, { recursive: true }).catch(() => {});
+
+// rel（字の上）が見せてよい置き場の中か。先頭が PREVIEW_TOPS のどれかで、`..` を含まない
+function previewRelOk(rel) {
+  const segs = String(rel || '').split(/[\\/]/);
+  return PREVIEW_TOPS.includes(segs[0]) && !segs.includes('..');
+}
+// realpath を辿った先が見せてよい置き場の中か（rootReal＝PREVIEW_ROOT の realpath）
+// allowRoot＝Kodai そのもの（入口の一覧）を許すか。許しても、並べるのは PREVIEW_TOPS だけ
+function previewRealOk(real, rootReal, allowRoot) {
+  if (real === rootReal) return !!allowRoot;
+  return PREVIEW_TOPS.some((t) => {
+    const top = path.join(rootReal, t);
+    return real === top || real.startsWith(top + path.sep);
+  });
+}
 
 // 制限時間つきで待つ。返ってこない相手を切り離すための保険。
 function within(promise, ms, label) {
@@ -1468,7 +1487,7 @@ let recentRunning = null;
 // 「最初の枝だけ深く、あとは空」という偏った結果になる
 async function scanRecent(deadline) {
   const out = [];
-  let queue = [{ dir: PREVIEW_ROOT, depth: 0 }];
+  let queue = PREVIEW_TOPS.map((t) => ({ dir: path.join(PREVIEW_ROOT, t), depth: 0 }));
   let partial = false, deep = 0;
   // ⚠️ **1件ずつ締め切りで包む。** ここを裸の await にしていて事故りかけた（2026-09-12 点検）。
   //    TCC（プライバシー保護）で止められた iCloud の呼び出しは**断られるのではなく返ってこない**ので、
@@ -1641,7 +1660,7 @@ async function lookupNames(names, max) {
   const pins = await pinnedRows(LOOKUP_PINS);
   await Promise.all(pins.map(async (r) => {
     const base = r.rel.split('/').pop();
-    if (!want.has(base) || !PREVIEW_EXT.test(base)) return;
+    if (!want.has(base) || !PREVIEW_EXT.test(base) || !previewRelOk(r.rel)) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
       if (st.isFile()) add(base, r.rel, st.mtimeMs, true, st.size);
@@ -1678,13 +1697,16 @@ function sentPathRel(p) {
   if (abs.startsWith('~/')) abs = path.join(os.homedir(), abs.slice(2));
   if (!path.isAbsolute(abs)) return null;
   abs = path.normalize(abs);
-  // `~/つみき出力` は `11_やりとり出力` への近道（シンボリックリンク）。
+  // `~/つみき出力` は `04_つみきリモート制作物` への近道（シンボリックリンク）。
   // realpath は iCloud を触るので使わず、字の上で置き換える
   const alias = path.join(os.homedir(), 'つみき出力') + path.sep;
   if (abs.startsWith(alias)) abs = path.join(PREVIEW_OUT, abs.slice(alias.length));
+  // 2026-09-27 より前の履歴に残るフルパス（00_Tsumiki/11_やりとり出力/…）も、移した先で引く
+  const oldOut = path.join(PREVIEW_ROOT, '00_Tsumiki', '11_やりとり出力') + path.sep;
+  if (abs.startsWith(oldOut)) abs = path.join(PREVIEW_OUT, abs.slice(oldOut.length));
   if (!abs.startsWith(PREVIEW_ROOT + path.sep)) return null;
   const rel = abs.slice(PREVIEW_ROOT.length + 1);
-  if (!rel || rel.split(path.sep).includes('..') || !PREVIEW_EXT.test(rel)) return null;
+  if (!rel || !previewRelOk(rel) || !PREVIEW_EXT.test(rel)) return null;
   return rel;
 }
 
@@ -1824,7 +1846,8 @@ async function resolveInRoot(rel) {
     real = await within(fsp.realpath(full), 4000, 'iCloud');
   } catch (e) { return null; }
   // シンボリックリンクを辿った先が外なら拒否する（/preview/ と同じ守り）
-  if (real !== rootReal && !real.startsWith(rootReal + path.sep)) return null;
+  // Kodai そのもの（rel が空）は入口として許す。並べるのは browseDir が PREVIEW_TOPS に絞る
+  if (!previewRealOk(real, rootReal, !rel)) return null;
   return real;
 }
 
@@ -1839,6 +1862,8 @@ async function browseDir(rel) {
   const dirs = [], files = [];
   await Promise.all(entries.map(async (e) => {
     if (e.name.startsWith('.')) return;
+    // 入口（Kodai そのもの）では、見せてよい2つ以外を並べない
+    if (!rel && !PREVIEW_TOPS.includes(e.name)) return;
     const full = path.join(real, e.name);
     const item = { name: e.name, rel: rel ? rel + '/' + e.name : e.name, dir: e.isDirectory() };
     if (e.isDirectory()) {
@@ -1859,7 +1884,9 @@ async function browseDir(rel) {
     }
   }));
   const byName = (a, b) => a.name.localeCompare(b.name, 'ja');
-  dirs.sort(byName);
+  // 入口では制作物を先に（PREVIEW_TOPS の順）
+  if (!rel) dirs.sort((a, b) => PREVIEW_TOPS.indexOf(a.name) - PREVIEW_TOPS.indexOf(b.name));
+  else dirs.sort(byName);
   files.sort(byName);
   return { dir: rel, entries: dirs.concat(files) };
 }
@@ -1892,7 +1919,7 @@ async function searchFiles(q, limit = 200) {
       }
     }
   }
-  await walk(PREVIEW_ROOT, 0);
+  for (const t of PREVIEW_TOPS) await walk(path.join(PREVIEW_ROOT, t), 0);
   dirs.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   files.sort((a, b) => b.mtime - a.mtime);
   return dirs.concat(files).slice(0, limit);
@@ -2111,8 +2138,8 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       return send(res, 404, 'ありません', 'text/plain; charset=utf-8');
     }
-    // シンボリックリンクを辿った先が外なら拒否する
-    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) {
+    // シンボリックリンクを辿った先が外なら拒否する（Kodai そのもの・隣の 05_Personal なども）
+    if (!previewRealOk(real, rootReal, false)) {
       return send(res, 403, '置き場の外は開けません', 'text/plain; charset=utf-8');
     }
     try { st = await within(fsp.stat(real), 4000, 'iCloud'); } catch (e) {

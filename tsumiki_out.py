@@ -13,7 +13,7 @@
 
 置き方（2026-09-15 本人の依頼で決めた）：
 
-    11_やりとり出力/<プロジェクト>/<成果物>/V<番号>/<種類>/<ファイル>
+    04_つみきリモート制作物/<プロジェクト>/<成果物>/V<番号>/<種類>/<ファイル>
 
   ・成果物 … 「ストーリー_募集」「ご返信カード」のように、作り直していく1つのもの
   ・V<番号> … 作り直したら番号を上げる。いちばん大きい番号が最新
@@ -47,7 +47,7 @@ except Exception:
         return 0
 
 ROOT = os.environ.get('TSUMIKI_OUT_ROOT') or os.path.expanduser(
-    '~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/11_やりとり出力')
+    '~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/04_つみきリモート制作物')
 READ_TIMEOUT = 5.0
 
 # 種類のフォルダ名。名前は 2026-09-06 の iCloud 整理と同じにそろえる
