@@ -200,6 +200,12 @@ def smonth(av=None,usual=None,submitted=False,published=False,editable=True,
             "assign_updated":"2026-09-19 02:10" if published else None,
             "avail":av or [],"usual":usual or [],"assign":asg or [],"requests":reqs or []}
 
+# みんなの希望（kibo_staff_peers）。本番と同じく ○ が先・△ が後、自分には me:true
+NM={x["id"]:x["name"] for x in staff}
+PEERS={"peers":[{"d":a["d"],"k":a["k"],"name":NM[a["staff_id"]],"mark":a["mark"],"me":a["staff_id"]==ME}
+                for a in sorted(avail,key=lambda a:(a["d"],a["k"],a["mark"]=="t",a["staff_id"]))],
+       "needs":[{"d":key(d),"k":sl["k"],"need":sl["need"]} for d in range(1,LAST+1) for sl in SLOTS]}
+
 SREQ=[{"id":"q1","d":key(9),"k":"night","kind":"drop","status":"open","note":""}]
 SSCENES={
  "empty":  smonth(),
@@ -215,7 +221,7 @@ SSCENES={
 SMOCK = """<script>
 /* ===== 撮影用のニセの通信（本番のデータベースには一切つながらない。名前もお店も架空） ===== */
 (function(){
-  var LOGIN=%s, SCENES=%s;
+  var LOGIN=%s, SCENES=%s, PEERS=%s;
   var q=new URLSearchParams(location.search);
   var scene=q.get('scene')||'filled';
   try{
@@ -233,13 +239,15 @@ SMOCK = """<script>
     if(url.indexOf('/rest/v1/rpc/')<0) return real.apply(this,arguments);
     var fn=url.split('/rest/v1/rpc/')[1];
     var body = fn==='kibo_staff_login' ? LOGIN
-             : fn==='kibo_staff_month' ? SCENES[scene] : {ok:true};
+             : fn==='kibo_staff_month' ? SCENES[scene]
+             : fn==='kibo_staff_peers' ? (q.get('peers')==='0' ? null : PEERS) : {ok:true};
     return Promise.resolve(new Response(JSON.stringify(body),
       {status:200, headers:{'Content-Type':'application/json'}}));
   };
 })();
 </script>
-""" % (json.dumps(SLOGIN,ensure_ascii=False), json.dumps(SSCENES,ensure_ascii=False))
+""" % (json.dumps(SLOGIN,ensure_ascii=False), json.dumps(SSCENES,ensure_ascii=False),
+       json.dumps(PEERS,ensure_ascii=False))
 
 (OUT/"_テスト用_senya-staff.html").write_text(
     '<meta charset="utf-8">\n'+SMOCK+(TOOLS/"tsumiki-senya.html").read_text(encoding="utf-8"), encoding="utf-8")
