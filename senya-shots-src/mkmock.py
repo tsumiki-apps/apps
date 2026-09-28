@@ -202,7 +202,7 @@ def smonth(av=None,usual=None,submitted=False,published=False,editable=True,
 
 # みんなの希望（kibo_staff_peers）。本番と同じく ○ が先・△ が後、自分には me:true
 NM={x["id"]:x["name"] for x in staff}
-PEERS={"peers":[{"d":a["d"],"k":a["k"],"name":NM[a["staff_id"]],"mark":a["mark"],"me":a["staff_id"]==ME}
+PEERS={"open":True,"peers":[{"d":a["d"],"k":a["k"],"name":NM[a["staff_id"]],"mark":a["mark"],"me":a["staff_id"]==ME}
                 for a in sorted(avail,key=lambda a:(a["d"],a["k"],a["mark"]=="t",a["staff_id"]))],
        "needs":[{"d":key(d),"k":sl["k"],"need":sl["need"]} for d in range(1,LAST+1) for sl in SLOTS]}
 
@@ -240,9 +240,12 @@ SMOCK = """<script>
     var fn=url.split('/rest/v1/rpc/')[1];
     var body = fn==='kibo_staff_login' ? LOGIN
              : fn==='kibo_staff_month' ? SCENES[scene]
-             : fn==='kibo_staff_peers' ? (q.get('peers')==='0' ? null : PEERS) : {ok:true};
-    return Promise.resolve(new Response(JSON.stringify(body),
-      {status:200, headers:{'Content-Type':'application/json'}}));
+             : fn==='kibo_staff_peers' ? (q.get('peers')==='0' ? null
+                 : (SCENES[scene]||{}).editable===false ? {open:false,peers:[],needs:[]} : PEERS) : {ok:true};
+    var res=new Response(JSON.stringify(body),{status:200, headers:{'Content-Type':'application/json'}});
+    // peersdelay=ミリ秒：みんなの希望だけ遅らせる（電波の弱い店内の再現）
+    var dl=fn==='kibo_staff_peers' ? +(q.get('peersdelay')||0) : 0;
+    return dl ? new Promise(function(r){ setTimeout(function(){ r(res); }, dl); }) : Promise.resolve(res);
   };
 })();
 </script>
