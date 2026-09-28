@@ -4579,6 +4579,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
   // いま出ている画面が「何桁で」描かれたものか。URL の折り返しを見分けるのに要る
   var paneCols = 0;
+  // この端末が最後に「この幅で」と送った桁数と、次の取得で送り直すかの印
+  var claimedCols = 0;
+  var claimCols = true;
 
   var lastText = null;
   var touching = false;
@@ -4602,10 +4605,17 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function refreshPane(force) {
     if (!current) return Promise.resolve();
     var cols = wantedCols();
-    if (cols) paneCols = cols;
+    // 幅は「最後に触った端末」だけが決める。巡回のたびに送ると、iPhone(51桁)と
+    // iPad(101桁)で同じ席を開いているとき1.5秒ごとに幅を取り合い、Claude Code が
+    // 狭まるたびに描き直して、起動の見出しが履歴に何枚も積もった（2026-09-28 実測：
+    // 51↔60 を10回往復で見出し1→6枚）。送るのは、席を開いた・表に戻した・送信した
+    // 直後（force）と、この端末の幅が変わったとき（回転・広げる/戻す）だけ
+    var claim = cols && (force || claimCols || cols !== claimedCols);
+    if (claim) { claimedCols = cols; claimCols = false; paneCols = cols; }
     var asked = current;
     return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400'
-      + (cols ? '&cols=' + cols : ''), null, READ_TIMEOUT).then(function (d) {
+      + (claim ? '&cols=' + cols : ''), null, READ_TIMEOUT).then(function (d) {
+      if (d && d.name === asked && d.cols) paneCols = d.cols;   // 実際に描かれた桁数
       // ⚠️ 頼んだ席と、返ってきた席が同じときだけ使う（2026-09-02）。
       // サーバーは席名（d.name）を返しているのに照らし合わせていなかったので、
       // 席を切り替えた直後に古い席あての返事が後から着くと、その中身が
@@ -4645,6 +4655,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 休むのは1.5秒ごとの定期巡回だけ。ここで force まで捨てると、出先で表に戻しても
     // 何も起きない時間ができる（2026-09-02 レビュー指摘）
     if (force !== true && tickAt && perfNow() - tickAt < TICK_STUCK_MS) return;
+    if (force === true) claimCols = true;   // 触った端末が幅を取り返す（→ refreshPane）
     var mine = perfNow();
     tickAt = mine;
     var release = function () { if (tickAt === mine) tickAt = 0; };

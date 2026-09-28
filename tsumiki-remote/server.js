@@ -2310,7 +2310,10 @@ const server = http.createServer(async (req, res) => {
         const { status, quietMs } = judge(name, (await captureScreenShared(name)) || '');
         // 入力欄に出ている候補（薄い字の下書き）。無ければ null
         const sug = await readSuggestion(name, text);
-        return { name, text, status, quietMs, sug };
+        // いま何桁で描かれているか。幅を決めるのは最後に触った端末だけなので、
+        // 見ているだけの端末は自分の幅と違う画面を受け取る（URL の継ぎ直しに要る）
+        const cols = await windowWidth(name);
+        return { name, text, status, quietMs, sug, cols };
       })();
       let got;
       try { got = await within(body, PANE_MS, '画面の読み取り'); }
