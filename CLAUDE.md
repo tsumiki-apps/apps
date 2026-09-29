@@ -1,162 +1,38 @@
 # 制作物（つみき）— AI作業ルール（B層・このリポジトリだけ）
 
-ここは Kodai の「つみき」アプリ群（単一HTMLアプリ＋一部 Supabase 同期）の作業ディレクトリ。
-**共通ルール（事故防止の核・報告の作法・個人情報・ディレクトリ地図）は `~/.claude/CLAUDE.md`（A層）にある。**
-ここには**このリポジトリでしか意味を持たないもの**だけを書く。同じ文章をA層と二重に持たない。
+つみきアプリ群の作業場。共通ルールはA層。長い説明は `docs/`（必要なときに開く）。
 
 > **A層カナリア: A-20260831**
 > この行の直前に「Kodai の共通ルール（A層）」の内容が見えていなければ、
 > `~/.claude/CLAUDE.md` が読まれていない。**その場合は作業を止めて Kodai に伝える。**
 
-## 1. 置き場は「外部に使わせるか？」で決める（4系統）
-| 行き先 | パス / URL | 使うとき | 戻るボタン |
-|---|---|---|---|
-| 仕事（Apple）で同僚に | 別アカウント `teamkit-tools` = teamkit-tools.github.io | 仕事用URLに屋号「つみき」を出さない。`gh auth switch --user teamkit-tools` →**終わったら tsumiki-apps に戻す** | — |
-| 外部向け（無料も有料も） | `~/tsumiki-tools` = tools.tsumiki-apps.com | 少しでも外部に見せる/渡す/使わせるなら**必ずこれ** | 注入しない |
-| 自分専用 | ここ（apps）= tsumiki-apps.github.io/apps/ | 自分だけが使う | **注入する** |
-| 会社の顔 | `~/tsumiki-portfolio` = tsumiki-apps.com | ポートフォリオ・墨シミュ | — |
+## 1. 置き場は「外部に使わせるか？」で決める
+- 外に少しでも見せる＝`~/tsumiki-tools`（tools.tsumiki-apps.com・戻るボタンなし）／自分専用＝ここ（apps・戻るボタンあり）／会社の顔＝`~/tsumiki-portfolio`。
+- 仕事（Apple）の同僚向け＝`teamkit-tools.github.io`（屋号を出さない。`gh auth switch --user teamkit-tools`→**終わったら tsumiki-apps に戻す**）。
+- tools 更新：ビルドあり＝`python3 deploy_tools.py <name>`／単一HTML＝`~/tsumiki-tools` を直接編集して push。引っ越したら TOOLS から撤去までワンセット。
+- 有料アプリは**プロダクトキーゲートを注入**（`inject_license.py <HTML> <app名>`）。キー発行は Supabase の `license_issue()`。
+- 正本 → `~/ObsidianVault/Decisions/2026-07-27-server-operation-model.md`
 
-- tools 更新は2通り：ビルドあり＝`python3 deploy_tools.py <name>`／ビルド不要の単一HTML＝`~/tsumiki-tools` を直接編集して push。
-- 引っ越したら TOOLS からの撤去までワンセット（残すと本体を案内ページで上書きする事故）。
-- 有料で渡すアプリは**プロダクトキーゲートを注入**（`inject_license.py <HTML> <app名>` または TOOLS エントリに `license:`）。
-  キー発行は Supabase の `license_issue()`。
-- 振り分けの正本 → `~/ObsidianVault/Decisions/2026-07-27-server-operation-model.md`
+## 2. 注入
+- 自分専用の新規アプリは `inject_backbtn.py`（戻るボタン＋apple-touch-icon）。**HTMLにベタ書きしない**（左端エッジスワイプのみ。見える「‹ つみき」は置かない）。外部配布には注入しない。
+- UI部品（選択カード・つまみ・ダイアログ・タブ・表など）は `tn.css`、決定論の乱数 `TN.rnd` と見えたら再生 `TN.reveal` は `tn.js`。`python3 inject_tn.py <HTML>` で両方入る。デモで `Math.random()` を使わない。外部配布に入れてよい → 詳細 `docs/tn部品.md`
 
-## 2. 戻るボタンとアイコンの注入
-- **自分専用（ここ）に置く新規アプリには `~/制作物/inject_backbtn.py` を実行**。apple-touch-icon も毎回注入。
-- **HTMLにベタ書きしない**（常時表示の `<a href="index.html">`・フッターリンクは禁止）。
-  正しい仕様＝左端エッジスワイプのみ。見える「‹ つみき」ボタンは置かない。
-- **外部配布（tools）には注入しない。**
+## 3. 見た目
+- 正本は `DESIGN.md`（読むのはA層 §5 P1）。ダークの塗りボタンは `--accent` 地に `--ink` 文字、洗い色の帯は `--good-ink`/`--warn-ink`。
+- 色を触ったら `python3 design_check.py <HTML>` と `python3 color_leak.py <HTML>` の両方を通す（✗1件で終了コード1）。
+- refero から写すときは `refero-styles` スキル。スキルを直したら `python3 sync_skills.py --write`。→ 詳細 `docs/見た目の検査.md`
 
-## 2.5 見た目（配色・角丸・影）を決めるとき
+## 4. 固有の禁止・お返事カード
+- 受託ソース `Kouban/` `Teppari/` は `.gitignore`。成果物のHTMLだけを `~/tsumiki-tools` へ。
+- お返事カード（1枚画像）は `python3 make_reply_card.py <カード.json>`。正本 `~/ObsidianVault/Playbooks/reply-card-format.md`。画面は架空データの複製から撮る（せんや＝`senya-shots-src/`）。
 
-### 正本は `DESIGN.md`（このリポジトリの直下）
-正本であること・作る前に読むことは A層 §5 P1。規格 → [Google Labs の DESIGN.md 規格](https://github.com/google-labs-code/design.md)（`alpha`）。
+## 5. 出力の置き場（正本＝`docs/置き場.md`）
+- 出力は全部 `~/つみき出力/<セッションの名前>/<ファイル>`（実体は iCloud `Kodai/04_つみきリモート制作物`）。種類や版のフォルダを作らない。名前は日本語、日付や v2 を付けない。
+- **置き場は自分で組み立てず `python3 tsumiki_out.py <ファイル名>` に聞く**（見せた後に作り直すなら `--new`）。`SendUserFile` はここに置いてから。
+- `00_Tsumiki` へ移すのは本人が言ったときだけ。
 
-実測で決めた要点のうち A層に無いもの（ライトの塗りボタン・黄土に白文字・顔料は A層 §5 P1）:
-- ダークの塗りつぶしボタンは `--accent` の地に `--ink`（墨）の文字（7.07:1）。`color:#fff` の直書きをしない。
-- 洗い色の帯の文字は `--good-ink` / `--warn-ink`（濃い側）。`--good` をそのまま `--good-wash` に置くと 3.98:1。
+## 6. Codex連携
+Codex は `~/制作物` 専用。agmsg は scripts の inbox.sh / send.sh 経由だけ。CLI を回すときだけデスクトップアプリを閉じる。→ `~/ObsidianVault/Knowledge/claude-codex-integration.md`
 
-### 検査（色を触ったら必ず通す）
-
-    python3 design_check.py <HTML>     # そのHTMLだけ
-    python3 design_check.py            # DESIGN.md ＋ 全HTML
-    python3 design_check.py --spec-only
-
-何を見るかは A層 §5 P1。コントラストは大きい文字の例外込みで判定する。HTMLは書き換えない。指摘して返すだけ。
-
-2026-09-11 時点の指摘は **18件／9本**（見たのは93本。初回スキャンは444件／77本）。
-内訳はコントラスト不足が12件、純白/純黒が6件。区切りの本数は「参考」表示で件数に入らない。
-**新しく足した分を増やさないための関門**として使う。
-
-もう1本、**役の違う検査**がある。`design_check.py` は「正本のルールを守れているか」、
-`color_leak.py` は「**決めた色板から漏れていないか**」を見る。重ならないので両方通す。
-
-    python3 color_leak.py <HTML>          # ✗色漏れ / △直書き / ・無彩色 に分けて出す
-    python3 color_leak.py --all <HTML>    # 無彩色もぜんぶ並べる
-
-`:root` と dark の上書きで宣言した変数を色板とみなし、`var()` を通さずに直に書かれた色を拾う。
-グラデーションの途中・SVGの `fill`・JSの中の色文字列も見る（目では見落とすところ）。
-**✗ が1件でもあると終了コード1。** 出どころは lieflat-charts の validate.mjs の考え方
-（コードは写していない）→ `design_refs/lieflat.chart.md`。
-
-### refero styles から写すとき
-- `refero-styles` スキルを起動する → 提案の義務は A層 §5 P2、手順の正本は
-  `~/.claude/skills/refero-styles/SKILL.md`。道具は `refero_tokens.py`、見本は `design_refs/`。
-- 見本は **`design_refs/<名前>.design.md`（DESIGN.md 規格準拠）**。`npx @google/design.md lint` が通る形。
-- スキル本体は git 管理外なので、直したら `python3 sync_skills.py --write` で `skills/` に控えを取る。
-
-## 2.6 JSを書かずに済ませる部品（tn.css）と、動きの下ごしらえ（tn.js）
-- 選択カード・チェック・つまみ・アコーディオン・ダイアログ・明細・メーター・進捗・チップ・タブ・表・押せる行は
-  **`tn.css` に用意してある**。クラスは全部 `tn-` 始まりで、既存アプリのCSSとぶつからない。
-  色は `--card/--ink/--sub/--line/--accent/--radius` をそのまま使う（無いアプリでも既定値で動く）。
-- 注入は `python3 inject_tn.py <HTML>`（何度でも実行可・古い版は自動で最新に置換）。
-  **`tn.css` と `tn.js` を1つのマーカーで一緒に入れる。** 確認 `--check`／取り外し `--remove`。
-  見本は `_tn_見本.html`（このページ自体が注入の動作確認）。
-- **`tn.js` は CSS で書けない2つだけを持つ**（ぶら下がる名前は `window.TN` の1つ）。
-  - `TN.rnd(i,k)` … **決定論の擬似乱数。デモ・架空データで `Math.random()` を使わない**
-    （`~/制作物` 直下の HTML 52本がまだ使っている・2026-09-11 実測）。
-    リロードのたびに形が変わると、お返事カードもIG投稿も毎回ちがう絵になり、
-    「前と同じか」の見比べもできない。`rndIn/pick/shuffle` も同じ理屈で決定論。
-  - `TN.reveal(id, fn)` … 見えたら再生・押したらもう一度。**再生前にタイマーを全部消す**
-    ので、連打しても積み上がらない（5回押しても走っているのは1本・実測）。
-    **画面に寸法が無いところ（Claude のブラウザペインは 0×0・スクショ用ヘッドレス・
-    PDF書き出し・`display:none` の iframe）では IntersectionObserver が永久に発火しない。**
-    そのまま焼くと図が白いままになるので、寸法が無いときだけ 1.2 秒後に描く保険が入っている。
-- 出どころは lieflat-charts の**考え方だけ**（あちらは非商用ライセンスなのでコードは写していない）。
-  `rnd` の式は本家をそのまま使うと k=0 で等差の直線になるため、別のかき混ぜに替えてある。
-  調査 → `~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/17_調べもの・道具/道具としらべ/lieflat-charts_調査と採用可否_2026-09-08.md`
-- **戻るボタンと違い、外部配布(`~/tsumiki-tools`)に入れてもよい**（見た目だけで屋号も戻る導線も含まない）。
-- 「どれか1つ選ぶ」を作るとき `classList.toggle('on')` を手書きしない → `.tn-choice` + `:has(:checked)`。
-- 出どころは sashimi UI(MIT)の手法を書き直したもの。調査の記録は
-  `~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/17_調べもの・道具/道具としらべ/sashimi-ui調査_2026-09-08.html`。
-- 必要ブラウザ: `:has()` Safari 15.4+ / `color-mix()` Safari 16.2+（未裏取り）。実機iPhoneでは未検証。
-
-## 3. このリポジトリ固有の禁止
-- 受託ソースの `.gitignore` 対象は `Kouban/` `Teppari/`。成果物のHTMLだけを `~/tsumiki-tools` へ出す（PUBLIC・実名grep・`--force`・ink-fluid・ロゴは A層 §5 P0/P1）。
-
-## 4. お客様への「お返事カード」（1枚画像）
-- ご質問・改善のご相談への返信に添える1枚画像は `python3 ~/制作物/make_reply_card.py <カード.json>`。
-  型・数値・禁止事項の正本 → `~/ObsidianVault/Playbooks/reply-card-format.md`
-- 画面は**架空データの複製**から撮る（せんや＝`senya-shots-src/`）。本番の画面を撮らない。
-
-## 5. やり取りの出力の置き場 — **受け取り口は1つ**／**セッションごとに1つのフォルダ**
-**このセクションが置き場の決まりの正本。** ほか（自動メモリ・`tsumiki_inbox.py`・置き場の説明・tsumiki-remote の README・スキルや手順書）はここを指すだけにする。
-- 出力（レポート・図・画像・調査結果・単発HTML・スライドのPDF）は、つみきの物も本業（Apple）の物も **`~/つみき出力/`** に置く。
-  実体は iCloud の **`Kodai/04_つみきリモート制作物`**（2026-09-27 本人が決めた。本業の物も入るので屋号の `00_Tsumiki` の外・浅い階層）。
-  本人の受け取り口はここ1つ。**複製の置き場（旧「受け取り」）を作らない**。深い階層は、つみきリモートのピンクの名前がファイルアプリで直接開くことで補う
-  （本人の iPhone でこのフォルダを「ダウンロードしたままにする」にしてあるのが前提。外れていると iCloud Drive の一番上が開く）。
-  つみきリモートが開けるのはこことロゴ等の `00_Tsumiki` だけ（`tsumiki-remote/server.js` の `PREVIEW_TOPS`）。
-- **新しい制作物は、スキルや手順書が別の出し先を書いていても、いったん全部ここに置く。**
-  本人が「素晴らしい」と決めた物だけ、仕上がった資産として `00_Tsumiki` の番号フォルダ（`14_Instagram投稿` など）へ**移す**（2026-09-27 本人が決めた）。
-  移すのは本人が言ったときだけ。こちらの判断で `00_Tsumiki` に直接出さない。
-- 形は **`<セッションの名前>/<ファイル>`**（2026-09-27 本人が決めた）。
-
-      04_つみきリモート制作物/
-      ├─ つみきリモートのファイルリンク改善/   ← このセッションで作った物
-      │    ├─ 確認用_赤.png
-      │    └─ 手順.md
-      ├─ 〇〇の見積書づくり/                   ← 別のセッション
-      └─ 〇〇の見積書づくり (2)/               ← 同じ題名の別のセッション
-
-  - セッションの名前＝つみきリモートの席の札の題名（名札があればそれ、無ければ Claude Code の題名）。
-    **最初に置いた時点で固定**（自動の題名が途中で変わってもフォルダは増えない）。同じ名前の別セッションは「名前 (2)」。
-  - **種類のフォルダ（画像・書類…）も版のフォルダ（V1…）も作らない。** フォルダの中はファイルだけ。
-  - 同じセッションで同じ名前を置けば上書き（直している途中）。**本人に見せたあとで作り直すときは `--new`** で前を残し「名前 (2)」にする。
-- **置き場は自分で組み立てず、必ずこの道具に聞く**：
-
-      python3 ~/制作物/tsumiki_out.py <ファイル名>            このセッションのフォルダに置く場所
-      python3 ~/制作物/tsumiki_out.py <ファイル名> --new      前の物を残して「名前 (2)」
-      python3 ~/制作物/tsumiki_out.py --dir                   このセッションのフォルダ
-      python3 ~/制作物/tsumiki_out.py --session <名前> …      題名が取れないとき・本人が名前を決めたとき（最初の1回だけ効く）
-
-  初めてなら**フォルダを自動で作る**（許可を求めない）。前の書き方（`<プロジェクト> <成果物> <ファイル名>`）で呼んでも、
-  最後のファイル名だけを使い、書き方を注意する。控え＝`~/.cache/tsumiki/out_sessions.json`（セッションID → フォルダ名）。
-- 置き場を聞いた時点で、そのファイルには**自動で印が付く**（`tsumiki_pin.py`）。つみきリモートで履歴の中の
-  ファイル名を押して開くときの索引になり、置き場の探索が届かないものや `メモ.md` のようなありふれた名前も光る。
-  道具を通さずに作ったものは `python3 ~/制作物/tsumiki_pin.py <ファイル>` で後から付けられる（`~/つみき出力/…` でも可・置き場の外は不可）。
-- **送る物（`SendUserFile`）は必ずここに置いてから送る。** 置き場の外のファイルを送ると、フック（`tsumiki_inbox.py --hook`）が Claude と本人の両方に知らせる。
-  知らされたら `tsumiki_out.py` で置き場を聞いて置き直し、送り直す。
-- 名前は日本語。**ファイル名に日付や v2 を付けない**（セッションのフォルダが持ち、日付は更新日時で分かる）。
-- 元に戻す台本：`~/.tsumiki-remote/undo-受け取り口-20260927-143940.sh`（11_やりとり出力 → 04 の移動）、
-  `~/.tsumiki-remote/undo-これまでの制作物-20260927-145638.sh`（直下 → `_これまでの制作物`）、
-  `~/.tsumiki-remote/undo-これまでの制作物を仕分け-20260927-151829.sh`（仕分け → `_これまでの制作物`）。戻すときは新しい順に。
-- **2026-09-27 より前の物の行き先**＝そのフォルダの決まりに合わせて仕分けた（対応表＝`~/.tsumiki-remote/moved.json`。お客様名が入るので公開リポジトリに置かない）。
-  つみき → `Kodai/00_Tsumiki` の番号フォルダ（`15_アプリ別`・`16_事業計画`・`17_調べもの・道具` を新設）／Apple → `Kodai/02_Apple/2026/<月>_<名前>`／私用 → `Kodai/05_Personal/2026/`。
-  つみきリモートは古い履歴のパスを対応表で引き直す。`02_Apple`・`05_Personal` は見せる範囲の外なので開けない。
-
-## 6. Codex連携 — 現場ガード
-- **Codex は `~/制作物` 専用**で使う（別dirから使うと team config に登録が増殖するバグ）。
-- agmsg は**必ず scripts 経由**：受信 `~/.agents/skills/agmsg/scripts/inbox.sh`、送信 `.../send.sh`。db/ や teams/ を直接読み書きしない。
-- **`/codex:review` 等のCLIを回すときだけ Codexデスクトップアプリを閉じる**（トークン共有で認証衝突）。agmsg会話だけなら開いたままでOK。
-- レビュー依頼は4点セット：①目的 ②変更ファイル＋各意図 ③テスト/動作確認の結果 ④未解決の懸念。
-- → 詳細 `~/ObsidianVault/Knowledge/claude-codex-integration.md`
-
-## 7. クラウドセッション（claude.ai/code など）で開かれた場合
-- このリポジトリの作業は、**Kodai の Mac の上（ターミナル・デスクトップアプリ）で行う**前提（2026-09-11 に決めた）。
-- クラウドの環境には、この Mac にしか無いものが入っていない：共通ルール `~/.claude/CLAUDE.md`（A層）、記録の書庫 `~/ObsidianVault`、
-  gitignore してある `.claude/`（設定・スキル）、`~/つみき出力`、`~/tsumiki-tools`、Supabase MCP。
-- 見分け方：冒頭のカナリアの直前に A層の中身が見えていない／`~/ObsidianVault` が無い。
-- その場合は、ローカル前提の指示（Vault を読む・`push_pages.sh` で公開する・`tsumiki_out.py` で置き場を聞く・お返事カードを作る など）に、
-  **代わりの手順を組み立てて従おうとしない。「クラウドの環境で開かれていて、共通ルールと記録が読めないので、ここでは作業しない」と伝えて止まる。**
-- ブランチを作って push しない（このリポジトリは PUBLIC なので、押した中身は誰でも読め、あとから消しきれない）。
+## 7. クラウドで開かれたら止まる
+A層が見えない／`~/ObsidianVault` が無い＝claude.ai/code などのクラウド環境。代わりの手順を組まず「ここでは作業しない」と伝えて止まる。ブランチも push しない。→ `docs/クラウドセッション.md`
