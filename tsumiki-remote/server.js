@@ -1467,6 +1467,13 @@ const SKIP_DIR = /^(\.git|node_modules|\.next|dist|build|\.venv|__pycache__)$/;
 //    （2026-09-12 点検で実測）。記録の「パッケージの中身は触らない」とも食い違う
 const PKG_DIR = /\.(app|key|pages|numbers|rtfd|scptd|photoslibrary|fcpbundle|sparsebundle)(\.[^.\/]*)?$/i;
 const PREVIEW_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;
+// 履歴の中で「押せる名前」として光らせる種類。PREVIEW_EXT（画面の中で見られるもの）より広い。
+// ⚠️ 2026-09-30：`.shortcut` は印（made.jsonl）で5番目に多い（32件）のに、PREVIEW_EXT だけで
+//    照合していたので**一度も光らなかった**。光らせる判定と「中で見られるか」は別の問い。
+//    見られない種類はファイルアプリで開く（shortcut なら取り込み画面が出る）。
+// ⚠️ 同じ一覧が public/index.html の RE_FILE・RE_SENT_EXT にもある。変えたら
+//    `node bin/link_ext_check.js`（3か所の一致と、印に多い種類の漏れを見る）
+const LINK_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|docx|xlsx|zip)$/i;
 
 // ------------------------------------------------------------------ 「最近」
 //
@@ -1666,13 +1673,13 @@ async function lookupNames(names, max) {
   if (recentCache.list) {
     for (const f of recentCache.list) {
       const base = f.rel.split('/').pop();
-      if (want.has(base) && PREVIEW_EXT.test(base)) add(base, f.rel, f.mtime, false, f.size);
+      if (want.has(base) && LINK_EXT.test(base)) add(base, f.rel, f.mtime, false, f.size);
     }
   }
   const pins = await pinnedRows(LOOKUP_PINS);
   await Promise.all(pins.map(async (r) => {
     const base = r.rel.split('/').pop();
-    if (!want.has(base) || !PREVIEW_EXT.test(base) || !previewRelOk(r.rel)) return;
+    if (!want.has(base) || !LINK_EXT.test(base) || !previewRelOk(r.rel)) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
       if (st.isFile()) add(base, r.rel, st.mtimeMs, true, st.size);
@@ -1718,7 +1725,7 @@ function sentPathRel(p) {
   if (abs.startsWith(oldOut)) abs = path.join(PREVIEW_OUT, abs.slice(oldOut.length));
   if (!abs.startsWith(PREVIEW_ROOT + path.sep)) return null;
   const rel = abs.slice(PREVIEW_ROOT.length + 1);
-  if (!rel || !previewRelOk(rel) || !PREVIEW_EXT.test(rel)) return null;
+  if (!rel || !previewRelOk(rel) || !LINK_EXT.test(rel)) return null;
   return rel;
 }
 

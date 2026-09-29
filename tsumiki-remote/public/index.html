@@ -3916,6 +3916,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    （雲のマークが付いた）フォルダの先を渡すと、黙って手前（iCloud Drive の一番上など）を開く。
   //    本人の iPhone で置き場を「ダウンロードしたままにする」にして直った（2026-09-27 実機。当時は 11_やりとり出力）。
   //    このとき画面は離れるので、プレビューへの戻しは効かない。
+  var RE_VIEWABLE = /\.(?:html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;   // server.js の PREVIEW_EXT と同じ
   var FILES_BASE = '/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Kodai/';
 
   function openInFiles(rel) {
@@ -3930,7 +3931,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       window.removeEventListener('blur', gone);
       if (left) return;
       toast('ファイルアプリで開けませんでした');
-      openPreview(rel);
+      // shortcut・動画などは中で見られない（サーバーの PREVIEW_EXT の外）＝知らせるだけ
+      if (RE_VIEWABLE.test(rel)) openPreview(rel);
     }, 1800);
     // パスの区切りは残し、名前の日本語・空白・# などだけ符号化する
     location.href = 'shareddocuments://'
@@ -3977,7 +3979,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var RE_FILE = new RegExp(
     '[^\\s/\\\\:*?"<>|「」『』（）()【】\\[\\]、。，,`：＝=・→]{1,60}'
     + '(?:[ 　]?(?:\\([0-9]{1,3}\\)|（[0-9]{1,3}）))?'
-    + '\\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json)(?![A-Za-z0-9])', 'g');
+    + '\\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|docx|xlsx|zip)(?![A-Za-z0-9])', 'g');
   // 折り返しの続きではない行の頭（別のかたまりの始まり）
   var RE_NOT_WRAP = /^[⏺⎿❯✻✽✶✳✢│┃╭╮╰╯├┤─━*+•]|^-\s/;
 
@@ -4061,7 +4063,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var RE_SENT_TAG = /^(\s*\[[A-Za-z]+\]\s*)(.*)$/;
   var RE_SENT_UNIT = /\s*[KMG]?B?\)\s*$/;
   var PATH_IDX_MAX = 500;      // 覚えておくパスの数。超えたら全部忘れて聞き直す
-  var RE_SENT_EXT = /\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json)$/i;
+  // ⚠️ 光らせる種類は server.js の LINK_EXT・上の RE_FILE と同じ一覧（`node bin/link_ext_check.js`）
+  var RE_SENT_EXT = /\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|docx|xlsx|zip)$/i;
   var pathIdx = {};            // パス → {rel: 置き場の中の場所 または null, at}
   var pathAsking = {};
   var pathPend = {};
