@@ -5121,9 +5121,20 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 定型文の札。よく打つ許可の一言を**入力欄に入れるだけ**で、送らない
     // （書き足してから送れるように）。書きかけがあれば改行してその下に足す
     // 反証役・作業報告・コミットの札（data-snip）も同じ動き（2026-09-28）
+    // 許可の札だけは**依頼の下に**置き、カーソルをその上に残す。空の入力欄で先頭に入れると
+    // 最初の一言が「画面操作許可」になり、Claude Code の題名がそれになっていた（2026-09-29）
     if (b === el.kperm || b.dataset.snip) {
       var draft = el.cmd.value;
-      el.cmd.value = draft + (draft && !/\n$/.test(draft) ? '\n' : '') + (b.dataset.snip || PERM_TEXT);
+      var isPerm = !b.dataset.snip;
+      if (isPerm && !draft.trim()) draft = '';
+      var head = draft + (draft && !/\n$/.test(draft) ? '\n' : '');
+      if (isPerm && !draft) head = '\n\n';
+      el.cmd.value = head + (b.dataset.snip || PERM_TEXT);
+      if (isPerm) {
+        var caret = draft ? draft.replace(/\n+$/, '').length : 0;
+        el.cmd.focus();
+        el.cmd.setSelectionRange(caret, caret);
+      }
       autoGrow();
       saveDraft();
       renderSug();
