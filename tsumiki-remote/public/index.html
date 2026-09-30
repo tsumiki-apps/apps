@@ -4829,13 +4829,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 失敗を気にしない呼び出し元（キー行・ダイアログ）は .catch で受け流している。
   // box＝入力欄から送った文。Mac 側が「確認の画面が出ていたら止める」「行末の \ に空白を足す」を
   // この印のときだけ行う（キー行の数字は確認の画面に答えるためのものなので止めない）
-  // nodraft：Mac 側の入力欄に打ちかけがあれば送らない（hold の指示文だけが使う）
-  function sendText(text, enter, box, nodraft) {
+  function sendText(text, enter, box) {
     if (!current) { toast('送り先が選ばれていません'); return Promise.reject(new Error('送り先なし')); }
     setSug('');   // 自分の言葉を送った＝画面の候補はもう古い（次の巡回まで待たない）
     return api('/api/send', {
       method: 'POST',
-      body: JSON.stringify({ name: current, text: text, enter: !!enter, box: !!box, nodraft: !!nodraft })
+      body: JSON.stringify({ name: current, text: text, enter: !!enter, box: !!box })
     }).then(lookAgain)
       .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
@@ -5236,9 +5235,19 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       // unhold は印を外すだけで何も送らない（続けるかどうかは自分で決める）
       var seat = sessions.filter(function (s) { return s.name === current; })[0];
       if (on && seat && seat.kind === 'claude') {
-        sendText(holdText(current), true, true, true).then(function () {
-          toast('中断の印をつけ、中断の指示を送りました（メモは席が書きます）');
-        }, function () {});
+        // sendText は通さない＝失敗時の「送信失敗: …」は hold には合わない（印はもう付いている。
+        // 「〜してから送ってください」と言われても、ボタンは unhold に替わっている）。
+        // 止まった理由は長いので、表示を長めにする
+        setSug('');
+        api('/api/send', { method: 'POST', body: JSON.stringify({
+          name: current, text: holdText(current), enter: true, box: true, nodraft: true }) })
+          .then(lookAgain)
+          .then(function () {
+            toast('中断の印をつけ、中断の指示を送りました（メモは席が書きます）', 3000);
+          }, function (e) {
+            toast('中断の印だけ付けました。指示は送れませんでした：' + e.message +
+              '（送り直すなら unhold → hold）', 6000);
+          });
         return;
       }
       return toast(on ? '中断の印をつけました（unhold で外します）' : '中断の印を外しました');

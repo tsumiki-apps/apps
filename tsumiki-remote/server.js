@@ -991,22 +991,57 @@ const BLOCK_MSG = {
   survey: 'Mac に評価のアンケートが出ています。キー行で答えるか esc で閉じてから送ってください',
   nobox: 'Mac の入力欄が画面に見つかりません（Mac 側に長い書きかけがある等）。Mac の画面を確かめてください',
   noscreen: 'Mac の画面を読めませんでした。少し待ってから送り直してください',
-  draft: 'Mac の入力欄に書きかけがあります。中断の指示は送らず、印だけ付けました',
-  shell: 'この席は Claude が動いていません。中断の指示は送らず、印だけ付けました',
+  draft: 'Mac の入力欄に書きかけ（または ! のシェルモード）があります',
+  shell: 'この席は Claude が動いていません',
 };
 
 // Mac 側の入力欄に本人の打ちかけ（薄くない字）があるか。hold の指示文だけが使う
 // ＝打ちかけの後ろに足されて、続く Enter で打ちかけごと送られる事故を防ぐ（2026-09-30 反証役）。
 // 薄い字は Claude Code の入力の候補で、打つと置き換わるので打ちかけに数えない（実測）
+// ⚠️ 行ごとに hasDim を見るだけでは足りない（2回目の反証役）:
+//   ・tmux は属性が変わるときだけ色を書き出す＝折り返した候補の2行目は頭に ESC[2m が無い
+//   ・1行に「本人の字」と「薄い案内」が混ざる（`/review [pr-number]` など）と、行のどこかが
+//     薄いだけで打ちかけを見逃す
+//   なので入力欄の帯を1本の流れとして読み、薄さの状態を持ち越しながら「薄くない字」だけを拾う。
+// ⚠️ `!`（シェルモード）の入力欄は空でも止める。送るとシェルのコマンドとして走る
+function nonDimLines(rawLines) {
+  let dim = false;
+  return rawLines.map((line) => {
+    let out = '';
+    const re = /\x1b\[([0-9;]*)m|\x1b\[[0-9;?]*[A-Za-z]|([\s\S])/g;
+    let m;
+    while ((m = re.exec(String(line))) !== null) {
+      if (m[2] !== undefined) { if (!dim) out += m[2]; continue; }
+      if (m[1] === undefined) continue;             // 色以外の制御は読み飛ばす
+      const ps = m[1].split(';');
+      for (let i = 0; i < ps.length; i++) {
+        const v = ps[i] === '' ? 0 : Number(ps[i]);
+        if (v === 38 || v === 48) {                  // 拡張色が食う数字は飛ばす（hasDim と同じ）
+          if (ps[i + 1] === '5') i += 2;
+          else if (ps[i + 1] === '2') i += 4;
+          continue;
+        }
+        if (v === 0 || v === 22) dim = false;
+        else if (v === 2) dim = true;
+      }
+    }
+    return out.replace(/[\u00a0]/g, ' ');
+  });
+}
+
 async function hasDraft(name) {
   const r = await tmux(['capture-pane', '-e', '-p', '-t', '=' + name + ':', '-S', '-20']);
   if (!r.ok) return true;                           // 読めない＝あるものとして止める
   const raw = r.out.replace(/\s+$/, '').split('\n');
   const box = inputBox(raw);
   if (!box) return true;
-  for (let j = box.top + 1; j < box.bottom; j++) {
-    const t = stripAnsi(raw[j]).replace(/^[❯!]\s?/, '').trim();
-    if (t && !hasDim(raw[j])) return true;
+  if (/^!/.test(stripAnsi(raw[box.top + 1] || ''))) return true;   // シェルモード
+  // 貼り付け・画像の札は、薄く描かれていても中身は本人の打ちかけ
+  if (/\[(Pasted text|Image) #\d+/.test(raw.slice(box.top + 1, box.bottom).map(stripAnsi).join(' '))) return true;
+  const plain = nonDimLines(raw.slice(box.top, box.bottom)).slice(1);
+  for (let j = 0; j < plain.length; j++) {
+    const t = (j === 0 ? plain[j].replace(/^❯\s?/, '') : plain[j]).trim();
+    if (t) return true;
   }
   return false;
 }
@@ -2465,8 +2500,13 @@ const server = http.createServer(async (req, res) => {
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       let text = String(body.text || '').replace(/\r\n?/g, '\n');
       // 入力欄から送った文だけの手当て（キー行の数字・候補の帯は通らない）。Claude の席に限る
-      if (body.box && text) {
+      // nodraft は box なしで渡されても見張る（見張りを飛ばして送る穴を作らない）
+      if ((body.box || body.nodraft) && text) {
         const cmd = await tmux(['display', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
+        if (!cmd.ok && body.nodraft) {
+          console.log(`send ${name} 止めた（席の種類を読めない）`);
+          return json(res, 409, { error: BLOCK_MSG.noscreen });
+        }
         if (cmd.ok && kindOf(cmd.out.trim()) === 'claude') {
           let why = choiceOpen(await captureScreen(name));
           if (!why && body.nodraft && await hasDraft(name)) why = 'draft';
