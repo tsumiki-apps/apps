@@ -1991,6 +1991,78 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.end(body);
 }
 
+// ------------------------------------------------ 自分が出した指示を見返す
+//
+// 返事を読んでいて「何を頼んだんだっけ」となったときに、Claude に聞き直さずに
+// 自分の発言だけを並べて見せる（2026-09-30 本人の依頼）。聞き直すと1手使ううえ、
+// 作業中の席に割り込むことになるので、会話の記録（jsonl）をこちらで読むだけにする。
+//   席 → Claude Code が書く ~/.claude/sessions/<pid>.json の "tmux":"work2:@12.%12"
+//        で結びつける（同じ席に古い pid が残ることがあるので、生きているものの最新）
+//   → ~/.claude/projects/*/<sessionId>.jsonl
+// ⚠️ 記録は数十MBになるので末尾だけ読む。そこに無いほど前の指示は出さない
+const CC_DIR = path.join(os.homedir(), '.claude');
+const ASKED_TAIL = 4 * 1024 * 1024;
+const ASKED_MAX = 8;
+function transcriptOf(name) {
+  let best = null;
+  let files = [];
+  try { files = fs.readdirSync(path.join(CC_DIR, 'sessions')).filter((f) => /^\d+\.json$/.test(f)); } catch (e) { return null; }
+  for (const f of files) {
+    let o;
+    try { o = JSON.parse(fs.readFileSync(path.join(CC_DIR, 'sessions', f), 'utf8')); } catch (e) { continue; }
+    if (!o || typeof o.tmux !== 'string' || o.tmux.split(':')[0] !== name) continue;
+    try { process.kill(o.pid, 0); } catch (e) { continue; }   // 終わった pid の残り
+    if (!best || (o.updatedAt || 0) > (best.updatedAt || 0)) best = o;
+  }
+  if (!best || !/^[0-9a-f-]{36}$/.test(String(best.sessionId))) return null;
+  let dirs = [];
+  try { dirs = fs.readdirSync(path.join(CC_DIR, 'projects')); } catch (e) { return null; }
+  for (const d of dirs) {
+    const f = path.join(CC_DIR, 'projects', d, best.sessionId + '.jsonl');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+function askedText(o) {
+  if (!o || o.type !== 'user' || o.isMeta || o.isSidechain || !o.message) return '';
+  const c = o.message.content;
+  let t = typeof c === 'string' ? c
+    : Array.isArray(c) && c.every((x) => x && x.type === 'text') ? c.map((x) => x.text).join('\n') : '';
+  t = t.trim();
+  if (!t) return '';
+  // 打ったコマンドは本体だけ（/compact など）
+  const cmd = t.match(/<command-name>([^<]*)<\/command-name>/);
+  if (cmd) {
+    const a = t.match(/<command-args>([^<]*)<\/command-args>/);
+    return (cmd[1] + (a && a[1].trim() ? ' ' + a[1].trim() : '')).trim();
+  }
+  // 人が打っていないもの（裏の作業の知らせ・コマンドの出力など）は出さない
+  if (/^<[a-z-]+[\s>]/.test(t)) return '';
+  // 送った画像は置き場のパスで入っている。長くて読めないので札にする
+  return t.replace(/\S*\/\.tsumiki-remote\/uploads\/\S+/g, '［添付］');
+}
+function readAsked(file) {
+  const size = fs.statSync(file).size;
+  const start = Math.max(0, size - ASKED_TAIL);
+  const fd = fs.openSync(file, 'r');
+  const buf = Buffer.alloc(size - start);
+  try { fs.readSync(fd, buf, 0, buf.length, start); } finally { fs.closeSync(fd); }
+  const lines = buf.toString('utf8').split('\n');
+  if (start > 0) lines.shift();   // 途中から読んだ1行目は切れている
+  // 番号だけの返事（「1」「2,3」）が続くと、8件が全部数字で埋まって肝心の頼みごとが
+  // 見えなくなる（work2 で実際にそうなっていた）。文章の指示が1件入るまでは読み進める
+  const out = [];
+  const worded = () => out.some((x) => x.t.length > 8);
+  for (let i = lines.length - 1; i >= 0 && (out.length < ASKED_MAX || (!worded() && out.length < 30)); i--) {
+    if (!lines[i]) continue;
+    let o;
+    try { o = JSON.parse(lines[i]); } catch (e) { continue; }
+    const t = askedText(o);
+    if (t) out.push({ t: t.slice(0, 2000), at: Date.parse(o.timestamp) || 0 });
+  }
+  return out;
+}
+
 function json(res, code, obj) {
   send(res, code, JSON.stringify(obj));
 }
@@ -2303,6 +2375,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 1セッションの画面
+    if (p === '/api/asked' && req.method === 'GET') {
+      const name = url.searchParams.get('name') || '';
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      const file = transcriptOf(name);
+      if (!file) return json(res, 404, { error: 'この席の会話の記録が見つかりません' });
+      try { return json(res, 200, { items: readAsked(file) }); }
+      catch (e) { return json(res, 500, { error: String(e.message).slice(0, 200) }); }
+    }
+
     if (p === '/api/pane' && req.method === 'GET') {
       const name = url.searchParams.get('name') || '';
       const lines = Number(url.searchParams.get('lines') || 400);
