@@ -4856,6 +4856,27 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       'メモの中身は返答に書かないでください。返答は「⏸ 中断しました」の1行だけ。';
   }
 
+  // unhold で席に送る一言（hold の対）。A層の決まり（`続けて` で再開）に、hold のときに
+  // 席が書いたメモ（⏸ 始まり）を添える＝どこから再開するかを席に思い出させる。
+  // 手書きのメモ（⏸ なし）は席あての字ではないので添えない
+  function unholdText(name) {
+    var m = String(memos[name] || '');
+    m = /^⏸/.test(m) ? m.replace(/^⏸\s*/, '') : '';
+    return '続けて（つみきリモートの unhold）。' +
+      (m ? '中断前のメモ「' + m + '」の続きから再開してください。'
+         : '中断したところから再開してください。');
+  }
+
+  // 再開したら hold のメモ（⏸ 始まり）を消す。手書きのメモと、打っている最中の欄には触らない
+  function clearHoldMemo(name) {
+    if (!/^⏸/.test(String(memos[name] || '')) || memoPending.hasOwnProperty(name)) return;
+    if (name === current && !el.memo.hidden) return;
+    memos[name] = '';
+    syncMemo(current);
+    api('/api/memo', { method: 'POST', body: JSON.stringify({ name: name, text: '' }) })
+      .catch(function () { /* 消せなくても害はない（次の hold で上書きされる） */ });
+  }
+
   function setHold(name, on) {
     if (!name) return Promise.resolve();
     return api('/api/pause', { method: 'POST', body: JSON.stringify({ name: name, on: !!on }) })
@@ -5217,7 +5238,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
     // 中断の札（hold / unhold）。タブの縁の色を変える付箋。
     // 一度 hold を押したら、unhold を押すまで印は消えない（文字を送っても、席が
-    // 動き出しても降りない）。2026-09-30 から hold は Claude の席に中断の指示も送る（下）
+    // 動き出しても降りない）。2026-09-30 から hold は Claude の席に中断の指示、
+    // unhold は再開の指示も送る（下）
     if (b === el.khold || b === el.kunhold) {
       if (!current) return toast('送り先が選ばれていません');
       var on = b === el.khold;
@@ -5232,8 +5254,24 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       // 止まったときは「送信失敗: 〈理由〉」が出て、印だけが付く。
       // 作業中でも Claude Code は受け取って、次の区切りで読む。
       // メモは Claude が bin/memo.js で書く（いまどこまで進んだかを知っているのは席の中だけ）。
-      // unhold は印を外すだけで何も送らない（続けるかどうかは自分で決める）
+      // unhold はその対（2026-09-30 本人の依頼）＝印を外し、Claude の席なら `続けて` と
+      // hold のメモを送って再開させ、送れたら ⏸ のメモを消す。見張り（box・nodraft）は hold と同じ
       var seat = sessions.filter(function (s) { return s.name === current; })[0];
+      if (!on && seat && seat.kind === 'claude') {
+        var name = current;
+        setSug('');
+        api('/api/send', { method: 'POST', body: JSON.stringify({
+          name: name, text: unholdText(name), enter: true, box: true, nodraft: true }) })
+          .then(lookAgain)
+          .then(function () {
+            clearHoldMemo(name);
+            toast('中断の印を外し、再開の指示を送りました', 3000);
+          }, function (e) {
+            toast('中断の印だけ外しました。再開の指示は送れませんでした：' + e.message +
+              '（続けるなら自分で「続けて」を送ってください）', 6000);
+          });
+        return;
+      }
       if (on && seat && seat.kind === 'claude') {
         // sendText は通さない＝失敗時の「送信失敗: …」は hold には合わない（印はもう付いている。
         // 「〜してから送ってください」と言われても、ボタンは unhold に替わっている）。
