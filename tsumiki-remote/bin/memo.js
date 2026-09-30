@@ -27,7 +27,8 @@ const req = http.request({
   res.on('data', (c) => { s += c; });
   res.on('end', () => {
     if (res.statusCode !== 200) { console.error(`書けませんでした（${res.statusCode}）: ${s}`); process.exit(1); }
-    console.log(`メモを書きました（${name}）: ${JSON.parse(s).text}`);
+    // 中身は出さない＝席の画面（ツールの結果）にメモを写さない。メモ欄で読めば足りる
+    console.log(`メモ欄に書きました（${name}）`);
   });
 });
 req.on('error', (e) => { console.error('つみきリモートに届きません: ' + e.message); process.exit(1); });
