@@ -991,7 +991,25 @@ const BLOCK_MSG = {
   survey: 'Mac に評価のアンケートが出ています。キー行で答えるか esc で閉じてから送ってください',
   nobox: 'Mac の入力欄が画面に見つかりません（Mac 側に長い書きかけがある等）。Mac の画面を確かめてください',
   noscreen: 'Mac の画面を読めませんでした。少し待ってから送り直してください',
+  draft: 'Mac の入力欄に書きかけがあります。中断の指示は送らず、印だけ付けました',
+  shell: 'この席は Claude が動いていません。中断の指示は送らず、印だけ付けました',
 };
+
+// Mac 側の入力欄に本人の打ちかけ（薄くない字）があるか。hold の指示文だけが使う
+// ＝打ちかけの後ろに足されて、続く Enter で打ちかけごと送られる事故を防ぐ（2026-09-30 反証役）。
+// 薄い字は Claude Code の入力の候補で、打つと置き換わるので打ちかけに数えない（実測）
+async function hasDraft(name) {
+  const r = await tmux(['capture-pane', '-e', '-p', '-t', '=' + name + ':', '-S', '-20']);
+  if (!r.ok) return true;                           // 読めない＝あるものとして止める
+  const raw = r.out.replace(/\s+$/, '').split('\n');
+  const box = inputBox(raw);
+  if (!box) return true;
+  for (let j = box.top + 1; j < box.bottom; j++) {
+    const t = stripAnsi(raw[j]).replace(/^[❯!]\s?/, '').trim();
+    if (t && !hasDim(raw[j])) return true;
+  }
+  return false;
+}
 
 async function readSuggestion(name, screenText) {
   if (!NAME_RE.test(name)) return null;
@@ -2450,7 +2468,8 @@ const server = http.createServer(async (req, res) => {
       if (body.box && text) {
         const cmd = await tmux(['display', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
         if (cmd.ok && kindOf(cmd.out.trim()) === 'claude') {
-          const why = choiceOpen(await captureScreen(name));
+          let why = choiceOpen(await captureScreen(name));
+          if (!why && body.nodraft && await hasDraft(name)) why = 'draft';
           if (why) {
             console.log(`send ${name} 止めた（${why}）`);
             return json(res, 409, { error: BLOCK_MSG[why] });
@@ -2458,6 +2477,11 @@ const server = http.createServer(async (req, res) => {
           // 行末の `\` は Claude Code では「改行を入れる」の合図＝Enter が送信にならず、
           // 文が入力欄に残ったままになる（`C:\temp\` で実測）。空白を1つ足すと送信になる
           if (body.enter && text.endsWith('\\')) text += ' ';
+        } else if (body.nodraft) {
+          // hold の指示文は Claude の席にだけ送る。画面の席の種類が古いまま押された
+          // （Claude を抜けた直後など）ときは、素のシェルに日本語を流さないようここでも止める
+          console.log(`send ${name} 止めた（claude でない）`);
+          return json(res, 409, { error: BLOCK_MSG.shell });
         }
       }
       const lines = text ? text.split('\n').length : 0;

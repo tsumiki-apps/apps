@@ -4829,12 +4829,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 失敗を気にしない呼び出し元（キー行・ダイアログ）は .catch で受け流している。
   // box＝入力欄から送った文。Mac 側が「確認の画面が出ていたら止める」「行末の \ に空白を足す」を
   // この印のときだけ行う（キー行の数字は確認の画面に答えるためのものなので止めない）
-  function sendText(text, enter, box) {
+  // nodraft：Mac 側の入力欄に打ちかけがあれば送らない（hold の指示文だけが使う）
+  function sendText(text, enter, box, nodraft) {
     if (!current) { toast('送り先が選ばれていません'); return Promise.reject(new Error('送り先なし')); }
     setSug('');   // 自分の言葉を送った＝画面の候補はもう古い（次の巡回まで待たない）
     return api('/api/send', {
       method: 'POST',
-      body: JSON.stringify({ name: current, text: text, enter: !!enter, box: !!box })
+      body: JSON.stringify({ name: current, text: text, enter: !!enter, box: !!box, nodraft: !!nodraft })
     }).then(lookAgain)
       .catch(function (e) { toast('送信失敗: ' + e.message); throw e; });
   }
@@ -4845,10 +4846,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 再開用のメモを書く手順を足す。
   // 2026-09-30 本人の指示：メモは**メモ欄にだけ**・端的に。返答の中にメモを書き写さない
   // （実際に、返答にもメモを引用して長い説明を足していた）。
-  // スマホ縦のメモ欄は幅の半分＝13字前後で「…」になる＝15字以内にしてもらう
+  // 長さは10字以内。memo.js が頭に「⏸ 」を足すので、画面では12字ぶん。
+  // メモ欄（幅の半分・11px）の実測：全角12字ぶんは 375px 以上で収まり、320px では「…」で切れる。
+  // 15字だと 430px 未満はすべて切れた（反証役・2026-09-30）。
+  // 例文は型だけにする（中身のある例は、席がなぞって書き写すおそれがある）
   function holdText(name) {
     return 'pause（つみきリモートの hold）。区切りのよいところで手を止め、' +
-      '再開用のメモを15字以内で端的に（例「手順2a済→許可待ち」）メモ欄へ書いてください：' +
+      '再開用のメモを10字以内で端的に（型「A済→B待ち」）メモ欄へ書いてください：' +
       'node ~/制作物/tsumiki-remote/bin/memo.js ' + name + ' "メモ"。' +
       'メモの中身は返答に書かないでください。返答は「⏸ 中断しました」の1行だけ。';
   }
@@ -5212,11 +5216,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       renderSug();
       return;
     }
-    // 中断の札（hold / unhold）。**tmux には何も送らない**。変わるのはタブの縁の色だけ。
-    // 止めるのも続けるのも自分でやる＝これは「この席は置いてある」と自分に見せる付箋。
+    // 中断の札（hold / unhold）。タブの縁の色を変える付箋。
     // 一度 hold を押したら、unhold を押すまで印は消えない（文字を送っても、席が
-    // 動き出しても降りない）。前は esc や `pause` の言葉を送っていたが、
-    // 印が勝手に付いたり消えたりするのをやめて、2026-09-04 にここまで削った
+    // 動き出しても降りない）。2026-09-30 から hold は Claude の席に中断の指示も送る（下）
     if (b === el.khold || b === el.kunhold) {
       if (!current) return toast('送り先が選ばれていません');
       var on = b === el.khold;
@@ -5227,12 +5229,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       // hold は席にも中断を伝える（2026-09-30 本人の依頼）。Claude の席にだけ送る
       // ＝素のシェルに日本語を送るとコマンドとして走るため。box: true で送るので、
       // 許可の箱・選択肢が出ている席では Mac 側が止める（番号として読まれる事故を防ぐ）。
+      // nodraft: true で、Mac 側の入力欄に打ちかけがある席も止める（打ちかけごと送られる事故を防ぐ）。
+      // 止まったときは「送信失敗: 〈理由〉」が出て、印だけが付く。
       // 作業中でも Claude Code は受け取って、次の区切りで読む。
       // メモは Claude が bin/memo.js で書く（いまどこまで進んだかを知っているのは席の中だけ）。
       // unhold は印を外すだけで何も送らない（続けるかどうかは自分で決める）
       var seat = sessions.filter(function (s) { return s.name === current; })[0];
       if (on && seat && seat.kind === 'claude') {
-        sendText(holdText(current), true, true).then(function () {
+        sendText(holdText(current), true, true, true).then(function () {
           toast('中断の印をつけ、中断の指示を送りました（メモは席が書きます）');
         }, function () {});
         return;
