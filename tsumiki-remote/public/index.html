@@ -480,7 +480,8 @@
      会話の途中で出てくる短い言葉（あとで見る番号・言い直したい一言）を、
      画面を離れずに書き留める場所。**常に出しておく**のがこの欄の全部の目的なので、
      押したときだけ開く形にはしない（開く形だと、書いたことを忘れる）。
-     ⚠️ ここに打った字は席に届かない＝Claude は読まない。Mac 側に保存するので、
+     ⚠️ ここに打った字は席に届かない＝Claude は読まない（例外：⏸ 始まりのメモだけは
+     unhold の再開の指示に添えて席に渡す）。Mac 側に保存するので、
      iPhone で書いたものが Mac のブラウザでもそのまま見える。
 
      ⚠️ **ふだん出ている札と、押している間だけ出る入力欄の2枚**でできている（2026-09-12）。
@@ -2582,7 +2583,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // --------------------------------------- 席ごとのメモ
   //
   // 送り先バーの右にいつも出している1行。ここに打った字は **tmux に送らない**
-  // （Claude は読まない）。保存先は Mac の ~/.tsumiki-remote/memos.json で、
+  // （Claude は読まない。例外は ⏸ 始まり＝unhold が再開の指示に添える）。保存先は Mac の ~/.tsumiki-remote/memos.json で、
   // 端末をまたいでも同じものが見える。
 
   // いま見ている席のメモを出す。
@@ -4861,13 +4862,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 手書きのメモ（⏸ なし）は席あての字ではないので添えない
   function unholdText(name) {
     var m = String(memos[name] || '');
-    m = /^⏸/.test(m) ? m.replace(/^⏸\s*/, '') : '';
+    m = /^⏸/.test(m) ? m.replace(/^⏸\uFE0F?\s*/, '') : '';   // ⏸️ の見えない字も落とす
     return '続けて（つみきリモートの unhold）。' +
       (m ? '中断前のメモ「' + m + '」の続きから再開してください。'
          : '中断したところから再開してください。');
   }
 
-  // 再開したら hold のメモ（⏸ 始まり）を消す。手書きのメモと、打っている最中の欄には触らない
+  // hold のメモ（⏸ 始まり）を消す。手書きのメモと、打っている最中の欄には触らない。
+  // 使うのは2か所＝unhold で再開を送れたあと／hold を押した直後（席が書く前に前回の ⏸ を
+  // 片付ける。残っていると、席がメモを書く前に unhold したとき、済んだ前回の目印が
+  // 再開の指示に添えられてしまう＝反証役・2026-09-30）
   function clearHoldMemo(name) {
     if (!/^⏸/.test(String(memos[name] || '')) || memoPending.hasOwnProperty(name)) return;
     if (name === current && !el.memo.hidden) return;
@@ -4875,6 +4879,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     syncMemo(current);
     api('/api/memo', { method: 'POST', body: JSON.stringify({ name: name, text: '' }) })
       .catch(function () { /* 消せなくても害はない（次の hold で上書きされる） */ });
+  }
+
+  // unhold が止まったときの案内。止まった理由で変える（反証役・2026-09-30）。
+  // 打ちかけ・! で止まったのに「続けてを送って」と言うと、入力欄からの送信（nodraft なし）が
+  // 打ちかけごと送る事故に誘導する。シェルの席には「続けて」を送らせない
+  function unholdHint(msg) {
+    if (/書きかけ/.test(msg)) return '（Mac の書きかけを片付けてから、自分で「続けて」を送ってください）';
+    if (/Claude が動いていません/.test(msg)) return '';
+    return '（席の様子を見てから、自分で「続けて」を送ってください）';
   }
 
   function setHold(name, on) {
@@ -5260,15 +5273,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       if (!on && seat && seat.kind === 'claude') {
         var name = current;
         setSug('');
+        // 15秒で見切る＝Mac が返事の途中で止まっても「送れたのか」が分からないままにしない
         api('/api/send', { method: 'POST', body: JSON.stringify({
-          name: name, text: unholdText(name), enter: true, box: true, nodraft: true }) })
+          name: name, text: unholdText(name), enter: true, box: true, nodraft: true }) }, 15000)
           .then(lookAgain)
           .then(function () {
             clearHoldMemo(name);
             toast('中断の印を外し、再開の指示を送りました', 3000);
           }, function (e) {
             toast('中断の印だけ外しました。再開の指示は送れませんでした：' + e.message +
-              '（続けるなら自分で「続けて」を送ってください）', 6000);
+              unholdHint(e.message), 6000);
           });
         return;
       }
@@ -5277,8 +5291,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         // 「〜してから送ってください」と言われても、ボタンは unhold に替わっている）。
         // 止まった理由は長いので、表示を長めにする
         setSug('');
+        clearHoldMemo(current);   // 前回の ⏸ を先に片付ける（上の clearHoldMemo を見る）
         api('/api/send', { method: 'POST', body: JSON.stringify({
-          name: current, text: holdText(current), enter: true, box: true, nodraft: true }) })
+          name: current, text: holdText(current), enter: true, box: true, nodraft: true }) }, 15000)
           .then(lookAgain)
           .then(function () {
             toast('中断の印をつけ、中断の指示を送りました（メモは席が書きます）', 3000);
