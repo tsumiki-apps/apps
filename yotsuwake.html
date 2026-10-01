@@ -3,8 +3,49 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0f0d07" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="theme-color" content="#f5f4f0">
+<script>
+/* 時間帯で明るさを切り替える：日の入り〜日の出はダーク（iPhone の「自動」と同じ考え方）。
+   日の出・日の入りは東京の緯度経度で日付ごとに計算する（NOAA の近似式・誤差は数分）。
+   ファイル名に「_テスト」が入る複製は、検査の道具が使えるよう端末の設定（prefers-color-scheme）に従う。
+   複製で時刻を試すときは #t=2026-10-02T19:00 のように付ける */
+(function(){
+  var LAT = 35.68, LNG = 139.77, R = Math.PI / 180;
+  var href = decodeURIComponent(location.href), TEST = href.indexOf('_テスト') >= 0;
+  function forced(){ var m = TEST && location.hash.match(/t=([\d\-T:]+)/); return m ? new Date(m[1]) : null; }
+  function sun(d){                                     /* その日の [日の出, 日の入り]（ミリ秒） */
+    var y = d.getFullYear(), mo = d.getMonth(), da = d.getDate();
+    var n = Math.round((Date.UTC(y, mo, da) - Date.UTC(y, 0, 1)) / 864e5) + 1;
+    var g = 2 * Math.PI / 365 * (n - 1);
+    var eq = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+    var de = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+    var ha = Math.acos(Math.cos(90.833 * R) / (Math.cos(LAT * R) * Math.cos(de)) - Math.tan(LAT * R) * Math.tan(de)) / R;
+    var base = Date.UTC(y, mo, da);                    /* その日付の 0:00（UTC）から何分後か */
+    return [base + (720 - 4 * (LNG + ha) - eq) * 6e4, base + (720 - 4 * (LNG - ha) - eq) * 6e4];
+  }
+  function isDark(now){ var t = sun(now); return now < t[0] || now >= t[1]; }
+  function nextAt(now){                                /* 次に切り替わる時刻 */
+    var t = sun(now);
+    if (now < t[0]) return t[0];
+    if (now < t[1]) return t[1];
+    var tm = new Date(now.getTime() + 864e5); return sun(tm)[0];
+  }
+  var timer = null;
+  function apply(){
+    var f = forced(), now = f || new Date(), el = document.documentElement, dark;
+    if (TEST && !f){ el.removeAttribute('data-theme'); dark = matchMedia('(prefers-color-scheme: dark)').matches; }
+    else { dark = isDark(now); el.setAttribute('data-theme', dark ? 'dark' : 'light'); }
+    var m = document.getElementById('theme-color'); if (m) m.content = dark ? '#0f0d07' : '#f5f4f0';
+    clearTimeout(timer);
+    if (!f) timer = setTimeout(apply, Math.min(Math.max(nextAt(now) - now + 1000, 1000), 36e5));
+  }
+  apply();
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') apply(); });
+  window.addEventListener('hashchange', apply);
+  if (TEST) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', apply);
+  window.YW_THEME = {sun: sun, isDark: isDark, nextAt: nextAt};
+})();
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="よつわけ">
 <title>よつわけ</title>
@@ -26,10 +67,10 @@
   --radius:20px;
   --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
   --ease:cubic-bezier(0.2,0,0,1);
-  color-scheme:light dark;
+  color-scheme:light;
 }
-@media (prefers-color-scheme: dark){
-  :root{
+/* ダークの色。本番は時刻で付く data-theme="dark"、テスト用の複製は端末の設定で効く（2つの中身は同じに保つ） */
+:root[data-theme="dark"]{
     --paper:#0f0d07; --surface:#211d14; --surface-2:#2b2619; --card:#211d14;
     --ink:#efe8da; --ink-mid:#a89e8b; --ink-soft:#9f988a; --sub:#9f988a; --ghost:#8a8170;
     --line:#36301f; --line-2:#443d2b;
@@ -39,6 +80,20 @@
     --c0:#d59a4d; --c1:#8ba5bd; --c2:#93ae84; --c3:#a895bd;
     --btn-ink:#1d1a15;
     --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+    color-scheme:dark;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0f0d07; --surface:#211d14; --surface-2:#2b2619; --card:#211d14;
+    --ink:#efe8da; --ink-mid:#a89e8b; --ink-soft:#9f988a; --sub:#9f988a; --ghost:#8a8170;
+    --line:#36301f; --line-2:#443d2b;
+    --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+    --good:#7fae82; --good-wash:#23301f; --good-ink:#7fae82;
+    --warn:#d9825a; --warn-wash:#39251a; --warn-ink:#d9825a;
+    --c0:#d59a4d; --c1:#8ba5bd; --c2:#93ae84; --c3:#a895bd;
+    --btn-ink:#1d1a15;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+    color-scheme:dark;
   }
 }
 *{box-sizing:border-box}
