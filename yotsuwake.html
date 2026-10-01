@@ -97,7 +97,7 @@ header h1{font-size:20px;font-weight:700;margin:0;flex:1;display:flex;align-item
 .box .nm{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:500;color:var(--ink)}
 .box .nm .i{width:20px;height:20px;color:var(--bc)}
 .box .nm .r{margin-left:auto;font-size:13px;color:var(--ink-soft);font-weight:400}
-.box .big{font-size:min(26px,14.5cqi);font-weight:700;margin:8px 0 0;line-height:1.5}
+.box .big{font-size:min(26px,13cqi);font-weight:700;margin:8px 0 0;line-height:1.5}
 .box .of{font-size:13px;color:var(--ink-soft)}
 .box .meter{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-top:8px}
 .box .meter i{display:block;height:100%;width:0;background:var(--bc);border-radius:99px;transition:width .2s var(--ease)}
@@ -170,6 +170,8 @@ header h1{font-size:20px;font-weight:700;margin:0;flex:1;display:flex;align-item
 .clear .ok:disabled{opacity:.45}
 .clear.ask .ok{display:flex}
 .clear.ask .go{display:none}
+.sheet-foot:has(.clear.ask) #ratio-reset{display:none}
+.clear.ask{flex:1;justify-content:space-between}
 .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;clip-path:inset(50%);white-space:nowrap;border:0}
 
 @media (prefers-reduced-motion: reduce){ *,*::before,*::after{transition-duration:0ms !important;animation-duration:0ms !important} }
@@ -885,7 +887,7 @@ header h1{font-size:20px;font-weight:700;margin:0;flex:1;display:flex;align-item
       <div class="income">
         <label for="income"><svg class="i" aria-hidden="true"><use href="#ic-wallet"/></svg>収入</label>
         <span class="yen">¥</span>
-        <input id="income" class="num" type="text" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="0" aria-label="今月の収入">
+        <input id="income" class="num" type="text" inputmode="numeric" maxlength="24" autocomplete="off" placeholder="0" aria-label="今月の収入">
       </div>
       <button class="band" id="band" aria-label="比率を変える">
         <div class="bar" id="band-bar"></div>
@@ -904,7 +906,7 @@ header h1{font-size:20px;font-weight:700;margin:0;flex:1;display:flex;align-item
       <div class="empty" id="empty" hidden><svg class="i" aria-hidden="true"><use href="#ic-note"/></svg></div>
       <form class="add" id="new-row" autocomplete="off">
         <input class="name" id="new-name" type="text" maxlength="60" enterkeyhint="next" aria-label="項目">
-        <input class="amt num" id="new-amt" type="text" inputmode="numeric" maxlength="13" placeholder="¥" enterkeyhint="done" aria-label="金額">
+        <input class="amt num" id="new-amt" type="text" inputmode="numeric" maxlength="24" placeholder="¥" enterkeyhint="done" aria-label="金額">
         <button class="plus" type="submit" aria-label="追加"><svg class="i" aria-hidden="true"><use href="#ic-plus"/></svg></button>
       </form>
       <div class="sum"><span>予定</span><span class="num" id="memo-sum"></span></div>
@@ -1098,7 +1100,7 @@ var TRASH = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="cur
 function rowEl(it){
   var li = document.createElement('li'); li.className = 'row'; li.dataset.id = it.id;
   li.innerHTML = '<input class="name" type="text" maxlength="60" aria-label="項目" enterkeyhint="done">' +
-    '<input class="amt num" type="text" inputmode="numeric" maxlength="13" aria-label="金額" enterkeyhint="done">' +
+    '<input class="amt num" type="text" inputmode="numeric" maxlength="24" aria-label="金額" enterkeyhint="done">' +
     '<div class="del"><div class="ask"><button class="yes" type="button" aria-label="消す"><span><svg class="i" aria-hidden="true"><use href="#ic-ok"/></svg></span></button>' +
     '<button class="no" type="button" aria-label="やめる"><span><svg class="i" aria-hidden="true"><use href="#ic-x"/></svg></span></button></div>' +
     '<button class="trash" type="button" aria-label="削除">' + TRASH + '</button></div>';
@@ -1142,6 +1144,7 @@ $('#new-row').addEventListener('submit', function(e){
 });
 $('#new-name').addEventListener('keydown', function(e){ if (e.key === 'Enter' && !composing(e)){ e.preventDefault(); $('#new-amt').focus(); } });
 (function(am){
+  am.addEventListener('keydown', function(e){ if (e.key === 'Enter' && composing(e)) e.preventDefault(); });
   am.addEventListener('focus', function(){ var n = digits(am.value); am.value = n ? String(n) : ''; });
   am.addEventListener('blur', function(){ var n = digits(am.value); am.value = n ? '¥' + fmtInput(n) : ''; });
 })($('#new-amt'));
@@ -1223,17 +1226,22 @@ SYNC = (function(){
   var sb = (!TEST && window.supabase && window.supabase.createClient) ? window.supabase.createClient(URL_, ANON) : null;
   window.sb = sb;
   var TABLE = 'yotsuwake_state', ID = 'kodai', META = KEY + '-sync-meta';
-  var timer = null, retry = null, pending = false, lastPushed = '', subscribed = false, pulled = false;
+  var timer = null, retry = null, pending = false, lastPushed = '', subscribed = false, pulled = false, stale = false;
   var loadedT = localT();                 /* 開いた時点の手元の時刻（最初の取得はこれと比べる） */
   var note = $('#sync-note');
   function paint(on){ note.textContent = TEST ? 'テスト（同期なし）' : !sb ? 'この端末に保存' : on ? '同期中' : 'オフライン'; }
   function localT(){ try { return (JSON.parse(localStorage.getItem(META)) || {}).updatedAt || 0; } catch (e) { return 0; } }
   function setT(t){ try { localStorage.setItem(META, JSON.stringify({updatedAt: t})); } catch (e) {} }
   function backup(){ try { localStorage.setItem(KEY + '-before-sync', JSON.stringify({at: Date.now(), data: state})); } catch (e) {} }
-  function later(){ clearTimeout(retry); retry = setTimeout(function(){ if (pending){ if (pulled) push(); else pull(); } }, 8000); }
+  function later(){ clearTimeout(retry); retry = setTimeout(function(){ if (stale) pull(true); else if (pending){ if (pulled) push(); else pull(); } }, 8000); }
   function push(){
     if (!sb || !pending) return;
     if (!pulled){ pull(); return; }      /* 最初の取得が済むまでは送らない（空の中身でクラウドを上書きしない） */
+    if (stale){                          /* 入力中にほかの端末の新しい中身が届いていた＝こちらで上書きしない */
+      stale = false; pending = false; clearTimeout(timer);
+      backup();                          /* 手元の中身は控えに残して、クラウドの方を出す */
+      pull(true); return;
+    }
     pending = false; clearTimeout(timer);
     var body = {updatedAt: localT() || Date.now(), data: state};
     lastPushed = body.updatedAt;
@@ -1260,19 +1268,20 @@ SYNC = (function(){
       .on('postgres_changes', {event: '*', schema: 'public', table: TABLE, filter: 'id=eq.' + ID}, function(p){
         var b = p.new && p.new.state;
         if (!b || !b.data || b.updatedAt === lastPushed) return;            /* 自分が送ったもの */
-        if ((b.updatedAt || 0) <= localT() || pending || editing()) return;
+        if ((b.updatedAt || 0) <= localT()) return;
+        if (pending || editing()){ stale = true; return; }        /* あとで取り直す（捨てたままにしない） */
         apply(b);
       })
       .subscribe();
   }
-  var pulling = false;
-  function pull(){
+  var pulling = false, wantForce = false;
+  function pull(force){
     if (!sb){ paint(false); return; }
-    if (pulling) return;                  /* 取得を重ねない（重なると古い時刻で比べてしまう） */
+    if (pulling){ if (force) wantForce = true; return; }   /* 取得を重ねない（重なると古い時刻で比べてしまう） */
     pulling = true;
     sb.from(TABLE).select('state').eq('id', ID).maybeSingle().then(function(res){
       pulling = false;
-      if (!res || res.error){ paint(false); later(); return; }
+      if (!res || res.error){ if (force) stale = true; paint(false); later(); return; }
       paint(true);
       var body = res.data && res.data.state;
       var has = !!(body && body.data && typeof body.data === 'object');
@@ -1291,17 +1300,22 @@ SYNC = (function(){
         }
       } else {
         var lt = localT();
-        if (has && rt > lt){
-          if (pending || editing()){ /* 送る前の手元の変更がある＝こちらを先に送る */ }
+        if (force && has){ apply(body); }
+        else if (has && rt > lt){
+          if (pending || editing()) stale = true;   /* 送る前の手元の変更がある／入力中＝あとで取り直す */
           else apply(body);
         } else if (lt > rt){
           pending = true; push();
         }
       }
       subscribe();
-    }, function(){ pulling = false; paint(false); later(); });
+      if (wantForce){ wantForce = false; pull(true); }
+    }, function(){ pulling = false; if (force) stale = true; paint(false); later(); });
   }
   document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') pull(); else push(); });
+  document.addEventListener('focusout', function(){
+    setTimeout(function(){ if (stale && !editing() && !pending){ stale = false; pull(); } }, 0);
+  });
   window.addEventListener('online', function(){ if (pending && pulled) push(); else pull(); });
   window.addEventListener('pagehide', push);
   paint(false);
