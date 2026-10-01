@@ -981,6 +981,9 @@ function choiceOpen(screenText) {
   for (let i = lines.length - 1; i >= 0; i--) if (/^\s*❯/.test(lines[i])) { cur = lines[i]; break; }
   if (/❯\s*\d+\.\s*Type something\.?\s*$/.test(cur)) return '';
   if (/❯\s*\d+\.\s*No, and tell Claude what to do differently/.test(cur)) return '';
+  // /login の「Paste code here if prompted >」＝ブラウザで出たコードを貼る欄。下の `Esc to cancel` で
+  // 選ぶ画面と取り違えて、コードを送れなかった（2026-10-02 実物）。ここは字を打つのが正しい答え
+  if (/Paste code here if prompted/i.test(lines.slice(-6).join('\n'))) return '';
   // カーソルが番号の行に乗っている＝選ぶ画面。そうでなければ入力欄を見失っただけ
   // （Mac 側に長い書きかけがあって上の罫線が画面の外に出た、など）
   return /❯\s*\d+\./.test(cur) || /Esc to|Enter to/i.test(lines.slice(-6).join('\n')) ? 'choice' : 'nobox';
