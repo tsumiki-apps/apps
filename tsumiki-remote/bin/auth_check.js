@@ -105,5 +105,22 @@ const cut = fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8')
 check('途中で切れていたら渡さない（null）', AUTH.findLoginUrl(cut), null);
 check('URLが無い画面では null', AUTH.findLoginUrl('ふつうの画面です\n❯ '), null);
 
+// ------------------------------------------------------------- 方法の画面で 1 を押す
+console.log('■ ログインの方法を選ぶ画面（1 を押してよいか）');
+const meth = fs.readFileSync(path.join(FIX, 'login方法_51桁.txt'), 'utf8');
+check('方法の画面・カーソルが 1 → 押す', AUTH.loginMethodOpen(meth), true);
+check('カーソルが 2 に動いていたら押さない',
+  AUTH.loginMethodOpen(meth.replace('  ❯ 1.', '    1.').replace('    2. Anthropic', '  ❯ 2. Anthropic')), false);
+check('ふつうの選ぶ画面（許可）では押さない',
+  AUTH.loginMethodOpen('Do you want to proceed?\n❯ 1. Yes\n  2. No\nEsc to cancel'), false);
+check('見出しが画面の上に流れて消えていたら押さない',
+  AUTH.loginMethodOpen(meth + '\n' + Array(20).fill('x').join('\n')), false);
+check('許可の画面のコマンド表示に載っていても押さない（本当のカーソルは Yes）',
+  AUTH.loginMethodOpen('Bash command\n  echo "\n  Select login method:\n  ❯ 1. Claude account with subscription\n  "\nDo you want to proceed?\n❯ 1. Yes\n  2. No\nEsc to cancel'), false);
+check('返事の本文に載っていて下に入力欄がある画面では押さない',
+  AUTH.loginMethodOpen('⏺ 画面はこうです\n  Select login method:\n  ❯ 1. Claude account with subscription\n───\n❯ \n───\n  ⏵⏵ bypass permissions on'), false);
+check('URLが出た後の画面では押さない',
+  AUTH.loginMethodOpen(fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8')), false);
+
 console.log(ng ? `\n✗ 食い違い ${ng} 件` : '\n✓ 全部そろっています');
 process.exit(ng ? 1 : 0);

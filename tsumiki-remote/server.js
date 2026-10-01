@@ -1311,6 +1311,36 @@ async function setPermMode(name, target) {
 const PERM_STEP_MS = 220;
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+// /login の直後に出る「Select login method:」で 1（Claude account with subscription）を押す。
+// 本人が毎回手で押していた答えを代わりに押すだけ。判定は lib/auth.js の loginMethodOpen。
+// ⚠️ Claude が作業中だと /login は順番待ちになり、方法の画面は作業が終わってから開く
+//    （反証役が実測）。なので iPhone 側がURLを待つのと同じ90秒まで見張る。出なければ何もしない
+// ⚠️ 1つの席に見張りは1本だけ。2本走ると2本とも '1' を打ち、貼る欄に 1 が混ざることがある（実測）
+const LOGIN_WATCH_MS = 90 * 1000;
+const loginWatch = new Set();
+async function pickLoginMethod(name) {
+  if (loginWatch.has(name)) return;
+  loginWatch.add(name);
+  try {
+    const until = Date.now() + LOGIN_WATCH_MS;
+    while (Date.now() < until) {
+      await sleep(500);
+      const r = await tmux(['capture-pane', '-p', '-t', '=' + name + ':']);
+      if (!r.ok) continue;
+      // URLと貼る欄まで進んだ（本人が手で押した等）＝もう押さない
+      if (AUTH.findLoginUrl(r.out) && /Paste code here/i.test(r.out)) return;
+      if (!AUTH.loginMethodOpen(r.out)) continue;
+      const k = await tmux(['send-keys', '-t', '=' + name + ':', '-l', '--', '1']);
+      console.log(`login ${name} 方法の画面で 1 を押した${k.ok ? '' : '（失敗）'}`);
+      forgetScreen(name);
+      return;
+    }
+    console.log(`login ${name} 方法の画面が90秒出なかった（押さない）`);
+  } finally {
+    loginWatch.delete(name);
+  }
+}
+
 function lastMeaningfulLine(text) {
   const lines = text.split('\n').map((l) => l.replace(/\s+$/, ''));
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -2478,12 +2508,22 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      // 選ぶ画面（許可など）が開いていたら打たない。続く Enter でいちばん上の答えを選んでしまう（反証役）
+      const cmd = await tmux(['display', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
+      if (cmd.ok && kindOf(cmd.out.trim()) === 'claude') {
+        const why = choiceOpen(await captureScreen(name));
+        if (why) {
+          console.log(`login ${name} 止めた（${why}）`);
+          return json(res, 409, { error: BLOCK_MSG[why] });
+        }
+      }
       console.log(`login ${name} に /login を打つ`);
       const r = await tmux(['send-keys', '-t', '=' + name + ':', '-l', '--', sendKeysArg('/login')]);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       const e = await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       if (!e.ok) return json(res, 500, { error: e.err.slice(0, 200) });
       forgetScreen(name);   // 打った直後に見に行くので、撮り置きは捨てる
+      pickLoginMethod(name);   // 待たない（URLを拾う巡回は iPhone 側が別に回す）
       return json(res, 200, { ok: true });
     }
 

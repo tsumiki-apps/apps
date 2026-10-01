@@ -113,4 +113,24 @@ function findLoginUrl(text) {
   return ok.length ? ok[ok.length - 1] : null;
 }
 
-module.exports = { SOON_MS, stateOf, quiet, whenText, notifyText, findLoginUrl };
+// ------------------------------------------------ ログインの方法を選ぶ画面
+//
+// `/login` を打つと、まず「Select login method:」の3択が出る。出先の本人はいつも
+// 1（Claude account with subscription）を手で押していた＝毎回同じ答えなので、こちらで押す。
+// ⚠️ 押してよいのは**この画面で、カーソルが 1. Claude account に乗っているとき**だけ。
+//    ほかの選ぶ画面（許可・質問）に数字を打つと、その答えになってしまう。
+//    Claude Code 側の文言が変わったら押さなくなるだけ＝今までどおり手で押せる。
+function loginMethodOpen(text) {
+  const tail = String(text || '').replace(/\r/g, '').replace(/\s+$/, '').split('\n').slice(-15);
+  // ⚠️ 「見出しの下のどこかに1行ある」では足りない（反証役）。返事の本文や許可の画面の
+  //    コマンド表示にこの2行が載っていても true になり、許可の画面なら '1' が「Yes」になる。
+  //    なので①いちばん下の行が `Esc to cancel` ②いちばん下の `❯` の行（＝本当のカーソル）が
+  //    1. Claude account ③その上に見出し、の3つが揃ったときだけ
+  if (!/^\s*Esc to cancel\s*$/.test(tail[tail.length - 1] || '')) return false;
+  let cur = -1;
+  for (let i = tail.length - 1; i >= 0; i--) if (/^\s*❯/.test(tail[i])) { cur = i; break; }
+  if (cur < 0 || !/^\s*❯\s*1\.\s*Claude account with subscription/.test(tail[cur])) return false;
+  return tail.slice(0, cur).some((l) => /^\s*Select login method:\s*$/.test(l));
+}
+
+module.exports = { SOON_MS, stateOf, quiet, whenText, notifyText, findLoginUrl, loginMethodOpen };
