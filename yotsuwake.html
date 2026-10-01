@@ -1,0 +1,1401 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0d07" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="よつわけ">
+<title>よつわけ</title>
+<link rel="apple-touch-icon" href="icons/icon-yotsuwake.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* 色の正本は ~/制作物/DESIGN.md。箱の色は顔料 1・3・4・6（弁柄は「オーバー」の弁柄と紛れるので使わない） */
+:root{
+  --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5; --card:#fffefb;
+  --ink:#1d1a15; --ink-mid:#5b554a; --ink-soft:#666154; --sub:#68645d; --ghost:#887f70;
+  --line:#e2ded4; --line-2:#d8d3c7;
+  --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
+  --good:#4c7a51; --good-wash:#dde9dd; --good-ink:#416845;
+  --warn:#b0522a; --warn-wash:#f2e0d4; --warn-ink:#974624;
+  --c0:#b07a2c; --c1:#4c6478; --c2:#63764e; --c3:#6a5878;
+  --btn-ink:#f5f4f0;
+  --radius:20px;
+  --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
+  --ease:cubic-bezier(0.2,0,0,1);
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0f0d07; --surface:#211d14; --surface-2:#2b2619; --card:#211d14;
+    --ink:#efe8da; --ink-mid:#a89e8b; --ink-soft:#9f988a; --sub:#9f988a; --ghost:#8a8170;
+    --line:#36301f; --line-2:#443d2b;
+    --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+    --good:#7fae82; --good-wash:#23301f; --good-ink:#7fae82;
+    --warn:#d9825a; --warn-wash:#39251a; --warn-ink:#d9825a;
+    --c0:#d59a4d; --c1:#8ba5bd; --c2:#93ae84; --c3:#a895bd;
+    --btn-ink:#1d1a15;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{margin:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:'Zen Maru Gothic','Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;
+  font-size:16px; line-height:1.6; min-height:100dvh;
+  -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent;
+}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.num{font-variant-numeric:tabular-nums}
+
+.wrap{max-width:1120px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 40px)}
+header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+header h1{font-size:20px;font-weight:700;margin:0;flex:1;display:flex;align-items:baseline;gap:10px;min-width:0}
+#sync-note{font-size:13px;font-weight:400;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconbtn{width:44px;height:44px;border:0;border-radius:12px;background:transparent;color:var(--ink-mid);display:flex;align-items:center;justify-content:center;transition:background .12s var(--ease)}
+.iconbtn:active{background:var(--surface-2)}
+.hint{display:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--ink-mid);margin:-4px 0 12px}
+.hint.on{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:4px 12px}
+.hint b{color:var(--ink);font-weight:500}
+
+.layout{display:grid;gap:16px}
+@media (min-width:900px){ .layout{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:24px} .side{position:sticky;top:16px} }
+
+/* 収入 */
+.income{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:8px 16px;min-height:64px}
+.income label{display:flex;align-items:center;gap:6px;color:var(--ink-mid);font-size:14px;font-weight:500;flex:none}
+.income .yen{font-size:22px;font-weight:700;color:var(--ink-mid);margin-left:auto}
+.income input{flex:1;min-width:0;width:100%;border:0;background:transparent;font-size:26px;font-weight:700;text-align:right;padding:6px 0;outline:none}
+.income:focus-within{border-color:var(--accent)}
+
+/* 比率の帯 */
+.band{display:block;width:100%;border:0;background:transparent;padding:14px 0 4px;text-align:left}
+.band .bar{display:flex;height:14px;border-radius:99px;overflow:hidden;gap:2px;background:var(--paper)}
+.band .bar i{display:block;height:100%;transition:flex-grow .2s var(--ease)}
+.band .lbl{display:flex;margin-top:6px;font-size:13px;color:var(--ink-soft);gap:2px}
+.band .lbl span{white-space:nowrap;text-align:center;transition:flex-grow .2s var(--ease)}
+
+/* 全体の残り */
+.total{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:10px 4px 14px}
+.total .k{font-size:14px;color:var(--ink-mid);display:flex;align-items:center;gap:6px}
+.total .v{font-size:28px;font-weight:700}
+.total .v.over{color:var(--warn-ink)}
+
+/* 4つの箱 */
+.boxes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:600px) and (max-width:899.98px){ .boxes{grid-template-columns:repeat(4,minmax(0,1fr))} }
+.box{position:relative;display:flex;flex-direction:column;justify-content:flex-start;text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:var(--radius);padding:14px 14px 12px;container-type:inline-size;transition:border-color .12s var(--ease),transform .12s var(--ease);min-height:44px}
+.box:active{transform:scale(.985)}
+.box[aria-pressed="true"]{border-color:var(--bc);box-shadow:var(--shadow)}
+.box .nm{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:500;color:var(--ink)}
+.box .nm .i{width:20px;height:20px;color:var(--bc)}
+.box .nm .r{margin-left:auto;font-size:13px;color:var(--ink-soft);font-weight:400}
+.box .big{font-size:min(26px,14.5cqi);font-weight:700;margin:8px 0 0;line-height:1.5}
+.box .of{font-size:13px;color:var(--ink-soft)}
+.box .meter{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-top:8px}
+.box .meter i{display:block;height:100%;width:0;background:var(--bc);border-radius:99px;transition:width .2s var(--ease)}
+.box.over .big{color:var(--warn-ink)}
+.box.over .meter i{background:var(--warn)}
+.pill{display:none;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--warn-wash);color:var(--warn-ink);font-size:13px;border-radius:99px;padding:1px 10px;width:max-content;max-width:100%}
+.box.over .pill{display:block}
+
+/* メモ欄 */
+.memo{background:var(--surface);border-radius:var(--radius);border:1px solid var(--line);padding:16px 16px 12px}
+.memo h2{margin:0 0 4px;font-size:18px;display:flex;align-items:center;gap:8px}
+.memo h2 .i{color:var(--bc)}
+.memo h2 .bud{margin-left:auto;font-size:14px;font-weight:400;color:var(--ink-mid)}
+.rows{list-style:none;margin:0;padding:0}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,38%) 44px;align-items:center;gap:6px;border-bottom:1px solid var(--line);min-height:52px}
+.row input{border:0;background:transparent;font-size:16px;padding:10px 4px;min-width:0;width:100%;border-radius:8px;outline:none}
+.row input:focus{background:var(--surface-2);box-shadow:inset 0 0 0 1.5px var(--line-2)}
+.row .amt{text-align:right;font-weight:500}
+.empty{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--ink-soft);padding:20px 0 12px;font-size:14px}
+.empty svg{width:56px;height:56px;color:var(--ghost);stroke-width:1.4}
+.add{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,38%) 44px;gap:6px;margin-top:12px}
+.add input{border:1px solid var(--line);background:var(--paper);border-radius:12px;font-size:16px;padding:0 12px;height:44px;min-width:0;width:100%;outline:none}
+.add input:focus{border-color:var(--accent)}
+.add .amt{text-align:right}
+.plus{width:44px;height:44px;border:0;border-radius:12px;background:var(--accent-2);color:var(--btn-ink);display:flex;align-items:center;justify-content:center}
+.plus:active{transform:scale(.96)}
+.sum{display:flex;justify-content:space-between;font-size:14px;color:var(--ink-mid);padding:10px 4px 0}
+
+/* その場で確かめる削除（Rare UI「Delete button」の移植・MIT・https://www.rareui.com/） */
+.del{position:relative;width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+.del .trash{width:44px;height:44px;border:0;background:transparent;color:var(--ghost);display:flex;align-items:center;justify-content:center;border-radius:12px}
+.del .trash svg{width:20px;height:20px;overflow:visible}
+.del .lid{transform-box:view-box;transform-origin:3px 6px;transition:transform .2s var(--ease)}
+.del .can{transition:d .2s var(--ease)}
+.del .ask{position:absolute;right:40px;top:0;height:44px;display:flex;gap:2px;pointer-events:none;visibility:hidden;transition:visibility 0s linear .12s}
+.del .ask button{width:44px;height:44px;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:0;transform:translateX(8px);transition:opacity .12s var(--ease),transform .12s var(--ease)}
+.del .ask button span{width:30px;height:30px;border-radius:99px;display:flex;align-items:center;justify-content:center}
+.del .ask .yes span{background:var(--warn-wash);color:var(--warn-ink)}
+.del .ask .no span{background:var(--surface-2);color:var(--ink-mid)}
+.del .ask svg{width:16px;height:16px}
+.del.open .trash{color:var(--warn-ink)}
+.del.open .lid{transform:rotate(-35deg)}
+.del.open .ask{pointer-events:auto;visibility:visible;transition:none}
+.del.open .ask button{opacity:1;transform:none}
+.del.open .ask .no{transition-delay:.07s}
+.row.asking .amt,.row.asking .name{opacity:.25}
+
+/* くるくる回る数字（Rare UI「Animated counter」の移植・MIT） */
+.roll{display:inline-flex;align-items:baseline;white-space:nowrap}
+.roll .dg{display:inline-block;height:1.5em;clip-path:inset(0);vertical-align:bottom;
+  -webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,.06) 5.5%,rgba(0,0,0,.5) 11%,rgba(0,0,0,.94) 16.5%,#000 22%,#000 78%,rgba(0,0,0,.94) 83.5%,rgba(0,0,0,.5) 89%,rgba(0,0,0,.06) 94.5%,rgba(0,0,0,0) 100%);
+          mask-image:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(0,0,0,.06) 5.5%,rgba(0,0,0,.5) 11%,rgba(0,0,0,.94) 16.5%,#000 22%,#000 78%,rgba(0,0,0,.94) 83.5%,rgba(0,0,0,.5) 89%,rgba(0,0,0,.06) 94.5%,rgba(0,0,0,0) 100%)}
+.roll .col{display:flex;flex-direction:column;transition:transform .2s var(--ease)}
+.roll .col span,.roll .ch{display:block;height:1.5em;line-height:1.5em}
+.roll .ch{display:inline-block}
+
+/* 比率のシート */
+.tn-sheet{background:var(--surface);color:var(--ink)}
+.sheet-h{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:18px}
+.sheet-h .x{margin-left:auto}
+.ratio{display:grid;grid-template-columns:auto minmax(0,1fr) 2.2em;align-items:center;gap:6px 12px;margin:8px 0 16px}
+.ratio .n{display:flex;align-items:center;gap:6px;font-size:15px}
+.ratio .n .i{width:20px;height:20px;color:var(--bc)}
+.ratio .v{font-size:22px;font-weight:700;text-align:right}
+.ratio input[type=range]{width:100%;height:44px;accent-color:var(--bc);margin:0}
+.sheet-foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:12px}
+.quiet{height:44px;border:0;border-radius:12px;background:var(--surface-2);padding:0 14px;display:flex;align-items:center;gap:6px;font-size:14px}
+.clear{display:flex;align-items:center;gap:6px}
+.clear .ok{display:none;background:var(--warn-wash);color:var(--warn-ink)}
+.clear .ok:disabled{opacity:.45}
+.clear.ask .ok{display:flex}
+.clear.ask .go{display:none}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;clip-path:inset(50%);white-space:nowrap;border:0}
+
+@media (prefers-reduced-motion: reduce){ *,*::before,*::after{transition-duration:0ms !important;animation-duration:0ms !important} }
+</style>
+<!-- tsumiki-native-parts sha=2d1e5370 -->
+<style>
+/* ================================================================
+   つみき用「ネイティブ部品」CSS  v2  (2026-09-09)
+   sashimi UI (MIT / yuto-hasegawa) の作り方を参考に、
+   つみきの決まりごと（タップ44px・入力16px・8幅・変数名）へ書き直したもの。
+   コードはコピーではなく書き直し。考え方の出どころだけ上に記す。
+
+   使い方：単一HTMLの <style> にこのまま貼る。クラスはすべて tn- 始まり。
+   色は既存アプリの変数（--card/--ink/--sub/--line/--accent/--radius など）を
+   そのまま使う。無いアプリでも下の既定値で動く。
+   ================================================================ */
+
+/* すべてを @layer tn に入れてある。
+   層に入れた規則は、層に入っていないアプリ側の規則に**必ず負ける**（順番も詳細度も関係ない）。
+   だから tn.css を </head> の直前＝アプリのCSSより後に入れても、
+   アプリが持っている見た目が勝つ。上書きに !important は要らない。 */
+@layer tn {
+
+:root{
+  /* 既存アプリの変数があればそちらが勝つ。無ければ次の候補→最後に既定値。
+     ⚠ --accent を持たないアプリに青を差し込まないよう、accent は最後に --ink へ落とす
+        （墨色なら何色のアプリに混ぜても浮かない）。 */
+  --tn-paper:      var(--paper,  var(--card, var(--surface, #ffffff)));
+  --tn-ink:        var(--ink,     var(--text,  #1d1d1f));
+  --tn-sub:        var(--sub,     var(--muted, #6e6e73));
+  --tn-line:       var(--line,    var(--hair,  #e3e3e6));
+  --tn-accent:     var(--accent,  var(--ink,   #0071e3));
+  /* 塗りつぶしの地は --accent-2（濃い側）。DESIGN.md いわく --accent に白文字は 4.08:1 で不合格 */
+  --tn-fill:       var(--accent-2, var(--tn-accent));
+  --tn-on-fill:    var(--paper,    #ffffff);
+  --tn-radius:     var(--radius, 14px);
+  --tn-good:       var(--good,   var(--ok,   #34c759));
+  --tn-warn:       var(--warn,   #ff9500);
+  --tn-danger:     var(--danger, var(--red,  #ff3b30));
+  /* 洗い色の帯に載せる文字は濃い側を使う（--good をそのまま置くと 3.98:1） */
+  --tn-good-ink:   var(--good-ink, var(--tn-good));
+  --tn-warn-ink:   var(--warn-ink, var(--tn-warn));
+
+  /* 1色から淡い面を自動でつくる（--accent-soft などを手で持たなくていい） */
+  --tn-accent-wash: color-mix(in srgb, var(--tn-accent) 12%, transparent);
+  --tn-hover:       color-mix(in srgb, var(--tn-ink)    5%, transparent);
+
+  --tn-tap: 44px;          /* つみきの最小タップ。ここだけ直せば全部そろう */
+  --tn-gap: 12px;
+}
+
+/* ---- 触れるものすべてに同じフォーカスの輪（キーボード操作のときだけ出る） ---- */
+:where(.tn-choice,.tn-optrow):has(:focus-visible),
+:where(.tn-chip,.tn-tab,.tn-acc>summary,.tn-check,.tn-radio,.tn-switch,.tn-row):focus-visible{
+  outline:2px solid var(--tn-accent); outline-offset:2px; border-radius:8px;
+}
+
+/* ================================================================
+   1. tn-choice — 押せる選択カード（JS 0行）
+   <label class="tn-choice"><input type="radio" class="tn-radio" name="x">
+     <b>おまかせ</b><small>その日のおすすめ</small></label>
+   選ばれたかどうかは :has(:checked) が見てくれる。
+   ================================================================ */
+.tn-choice{
+  display:grid; grid-template-columns:auto 1fr; align-items:start;
+  column-gap:var(--tn-gap); row-gap:2px;
+  width:100%; min-height:var(--tn-tap); padding:14px;
+  box-sizing:border-box; cursor:pointer;
+  background:var(--tn-paper); color:var(--tn-ink);
+  border:1px solid var(--tn-line); border-radius:var(--tn-radius);
+  transition:background .15s, border-color .15s;
+}
+.tn-choice > :not(input){ grid-column:2; }
+.tn-choice > input{ grid-row:1; margin:0; margin-top:2px; }
+@supports (margin-top:1lh){ .tn-choice > input{ margin-top:calc((1lh - 22px) / 2) } }
+.tn-choice > small{ color:var(--tn-sub); font-size:13px; line-height:1.5; }
+.tn-choice:has(:checked){
+  background:var(--tn-accent-wash); border-color:var(--tn-accent);
+}
+.tn-choice:has(:disabled){ opacity:.5; cursor:default; }
+@media (hover:hover){ .tn-choice:hover:not(:has(:disabled)){ background:var(--tn-hover); } }
+.tn-choice:active:not(:has(:disabled)){ transform:scale(.99); }
+
+/* ================================================================
+   2. tn-check / tn-radio — チェックと丸。画像もJSも使わない
+   ✓ は疑似要素2本の線を「短い方 → 長い方」の順に伸ばして描く。
+   ※ input 自体は22px。指で押す44pxは必ず親の .tn-optrow / .tn-choice が持つ。
+   <label class="tn-optrow"><input type="checkbox" class="tn-check">同意する</label>
+   ================================================================ */
+.tn-optrow{
+  display:flex; align-items:center; gap:10px;
+  min-height:var(--tn-tap); padding:4px 2px; cursor:pointer;
+}
+.tn-optrow:has(:disabled){ opacity:.45; cursor:default }
+
+.tn-check,.tn-radio{
+  appearance:none; -webkit-appearance:none; background-color:transparent;
+  position:relative; flex:0 0 auto; box-sizing:border-box;
+  width:22px; height:22px; min-width:22px; margin:0; padding:0; cursor:pointer;
+}
+
+.tn-check{
+  border-radius:7px; box-shadow:inset 0 0 0 2px var(--tn-line);
+  background-image:radial-gradient(circle, var(--tn-fill) 50%, transparent 50%);
+  background-position:center; background-repeat:no-repeat; background-size:0 0;
+  transition:box-shadow .15s, background-size 60ms cubic-bezier(1,.35,1,.27);
+}
+.tn-check:checked{
+  box-shadow:inset 0 0 0 2px var(--tn-fill);
+  background-size:44px 44px;
+  transition:box-shadow .15s, background-size .16s ease-out;
+}
+/* ✓ は「線2本を順に伸ばす」書き方もできるが、それだと ::before と ::after を
+   両方使い切ってしまい、44px の当たり判定（下の .tn-hit）を載せる場所が無くなる。
+   つみきは 44px のほうが決まりごとなので、✓ は ::before ひとつ＝角を回した枠で描く。 */
+.tn-check::before{
+  content:""; position:absolute; left:7.5px; top:3.5px;
+  width:5.5px; height:11px; box-sizing:border-box;
+  border:solid var(--tn-on-fill); border-width:0 2.6px 2.6px 0;
+  transform:rotate(45deg) scale(.2); transform-origin:center; opacity:0;
+  transition:transform 120ms cubic-bezier(.5,1.5,.5,1), opacity 90ms ease-out;
+}
+.tn-check:checked::before{ transform:rotate(45deg) scale(1); opacity:1 }
+
+.tn-radio{
+  border-radius:50%; border:2px solid var(--tn-line); transition:border-color .15s;
+}
+.tn-radio::before{
+  content:""; position:absolute; inset:50% auto auto 50%;
+  width:0; height:0; border-radius:50%; background:var(--tn-fill);
+  transform:translate(-50%,-50%); transition:width .12s ease-out, height .12s ease-out;
+}
+.tn-radio:checked{ border-color:var(--tn-fill) }
+.tn-radio:checked::before{ width:12px; height:12px }
+
+.tn-check:disabled,.tn-radio:disabled{ cursor:default }
+.tn-check:disabled:not(:checked),.tn-radio:disabled:not(:checked){ opacity:.45 }
+
+/* ================================================================
+   3. tn-switch — 入／切のつまみ（input[type=checkbox] 1個だけ）
+   ================================================================ */
+.tn-switch{
+  appearance:none; -webkit-appearance:none;
+  position:relative; flex:0 0 auto; vertical-align:middle;
+  width:52px; height:32px; margin:0; border-radius:999px; cursor:pointer;
+  background:var(--tn-line); transition:background-color .18s ease;
+}
+.tn-switch::before{                      /* つまみ。見た目は ::before に統一し
+                                            ::after は当たり判定(.tn-hit)に空けておく */
+  content:""; position:absolute; top:3px; left:3px;
+  width:26px; height:26px; border-radius:50%; background:var(--tn-paper);
+  box-shadow:0 1px 3px rgba(0,0,0,.25);
+  transition:left .18s ease;
+}
+.tn-switch:checked{ background:var(--tn-fill); }
+.tn-switch:checked::before{ left:23px; }
+.tn-switch:disabled{ opacity:.45; cursor:default; }
+
+/* ================================================================
+   4. tn-acc — 開いて読むところ（details / summary。JS 0行）
+   <details class="tn-acc"><summary>くわしく</summary><p>…</p></details>
+   ================================================================ */
+.tn-acc{
+  width:100%; box-sizing:border-box; overflow:hidden;
+  background:var(--tn-paper); border:1px solid var(--tn-line);
+  border-radius:var(--tn-radius);
+}
+.tn-acc > summary{
+  display:flex; align-items:center; gap:8px;
+  min-height:var(--tn-tap); padding:14px 16px;
+  font-weight:700; list-style:none; cursor:pointer;
+}
+.tn-acc > summary::-webkit-details-marker{ display:none; }
+.tn-acc > summary::after{                /* ▾ を線2本で作る（画像不要） */
+  content:""; width:.5em; height:.5em; margin-inline-start:auto;
+  border-right:2px solid currentColor; border-bottom:2px solid currentColor;
+  transform:translateY(-2px) rotate(45deg); transition:transform .18s ease-out;
+}
+.tn-acc[open] > summary::after{ transform:translateY(2px) rotate(225deg); }
+.tn-acc > :not(summary){ margin:0 16px 16px; }
+@media (hover:hover){ .tn-acc > summary:hover{ background:var(--tn-hover); } }
+
+/* ================================================================
+   5. tn-sheet — ダイアログ（<dialog>。Escで閉じる・背面固定はブラウザ任せ）
+   出す: el.showModal()   閉じる: el.close()
+   ================================================================ */
+.tn-sheet{
+  border:0; padding:0; max-width:min(560px, calc(100% - 32px));
+  width:100%; box-sizing:border-box;
+  background:var(--tn-paper); color:var(--tn-ink);
+  border-radius:var(--tn-radius);
+  box-shadow:0 10px 40px rgba(0,0,0,.18);
+}
+.tn-sheet::backdrop{ background:rgba(0,0,0,.45); }
+.tn-sheet > .tn-sheet-body{ padding:20px; }
+/* 幅600px以下では下からせり上がる「シート」にする */
+@media (max-width:600px){
+  .tn-sheet{
+    max-width:100%; margin:auto auto 0; 
+    border-radius:var(--tn-radius) var(--tn-radius) 0 0;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+}
+
+/* ================================================================
+   6. tn-kv — 明細（<dl>。合計・内訳・レシート）
+   ================================================================ */
+.tn-kv{
+  display:grid; grid-template-columns:1fr auto;
+  column-gap:16px; row-gap:8px; margin:0;
+}
+.tn-kv dt{ color:var(--tn-sub); }
+.tn-kv dd{ margin:0; justify-self:end; font-variant-numeric:tabular-nums; }
+.tn-kv .tn-total{ font-weight:700; color:var(--tn-ink); }
+
+/* ================================================================
+   7. tn-meter / tn-bar / tn-spin / tn-skel — 量と待ち時間
+   <meter class="tn-meter" value=".8" low=".3" high=".7" optimum=".1">
+   → しきい値を超えると自動で色が変わる（JSで色を出し分けなくていい）
+   ================================================================ */
+.tn-meter{
+  appearance:none; -webkit-appearance:none;
+  width:100%; height:10px; border:0; border-radius:999px; overflow:hidden;
+  background:var(--tn-line);
+}
+.tn-meter::-webkit-meter-bar{ background:var(--tn-line); border:0; border-radius:999px; }
+.tn-meter::-webkit-meter-optimum-value        { background:var(--tn-good);   border-radius:999px; }
+.tn-meter::-webkit-meter-suboptimum-value     { background:var(--tn-warn);   border-radius:999px; }
+.tn-meter::-webkit-meter-even-less-good-value { background:var(--tn-danger); border-radius:999px; }
+.tn-meter::-moz-meter-bar{ background:var(--tn-good); border-radius:999px; }
+.tn-meter:-moz-meter-sub-optimum::-moz-meter-bar{ background:var(--tn-warn); }
+.tn-meter:-moz-meter-sub-sub-optimum::-moz-meter-bar{ background:var(--tn-danger); }
+
+.tn-bar{
+  appearance:none; -webkit-appearance:none;
+  position:relative; width:100%; height:8px; border:0; border-radius:999px;
+  overflow:hidden; background:var(--tn-line);
+}
+.tn-bar::-webkit-progress-bar{ background:var(--tn-line); }
+.tn-bar::-webkit-progress-value{ background:var(--tn-accent); border-radius:999px; }
+.tn-bar::-moz-progress-bar{ background:var(--tn-accent); }
+.tn-bar:indeterminate::before{
+  content:""; position:absolute; inset:0; background:var(--tn-accent);
+  transform-origin:0 50%; animation:tn-run 1s linear infinite;
+}
+@keyframes tn-run{
+  0%{ transform:translateX(0) scaleX(0) }
+  40%{ transform:translateX(0) scaleX(.4) }
+  100%{ transform:translateX(100%) scaleX(.5) }
+}
+
+.tn-spin{                                  /* ぐるぐる（画像もJSも無し） */
+  width:32px; height:32px; border-radius:50%;
+  border:3px solid var(--tn-line); border-top-color:var(--tn-accent);
+  animation:tn-turn .8s linear infinite;
+}
+@keyframes tn-turn{ to{ transform:rotate(360deg) } }
+
+.tn-skel{                                  /* 読み込み中の灰色の板 */
+  border-radius:12px; background:var(--tn-line); position:relative; overflow:hidden;
+}
+.tn-skel::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(100deg, transparent 20%,
+             color-mix(in srgb, var(--tn-paper) 70%, transparent) 50%, transparent 80%);
+  animation:tn-sweep 1.1s linear infinite;
+}
+@keyframes tn-sweep{ from{ transform:translateX(-100%) } to{ transform:translateX(100%) } }
+
+@media (prefers-reduced-motion:reduce){
+  .tn-spin,.tn-skel::after,.tn-bar:indeterminate::before{ animation:none }
+  /* 止めるのは tn の部品だけ。アプリ全体に !important を撃たない
+     （@layer の中の !important は層の外＝アプリ側の指定に勝ってしまう）。
+     JS側の動きは tn.js の TN.reduced() が別に見ている。 */
+  [class*="tn-"], [class*="tn-"] *{ transition-duration:.01ms }
+}
+
+/* ================================================================
+   8. tn-note — おしらせの囲み。1色から淡い面を color-mix で作る
+   ================================================================ */
+.tn-note{
+  padding:14px 16px; margin:0; border-radius:var(--tn-radius);
+  background:var(--tn-accent-wash);
+  border:1px solid color-mix(in srgb, var(--tn-accent) 25%, transparent);
+}
+.tn-note.tn-good  { background:color-mix(in srgb, var(--tn-good)   12%, transparent);
+                    border-color:color-mix(in srgb, var(--tn-good)   28%, transparent); }
+.tn-note.tn-warn  { background:color-mix(in srgb, var(--tn-warn)   14%, transparent);
+                    border-color:color-mix(in srgb, var(--tn-warn)   32%, transparent); }
+.tn-note.tn-danger{ background:color-mix(in srgb, var(--tn-danger) 10%, transparent);
+                    border-color:color-mix(in srgb, var(--tn-danger) 28%, transparent); }
+.tn-note > :first-child{ margin-top:0 } .tn-note > :last-child{ margin-bottom:0 }
+
+/* ================================================================
+   9. tn-chip / tn-tabs — 絞り込みと切り替え（どちらも44px）
+   ================================================================ */
+.tn-chip{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-height:var(--tn-tap); padding:0 16px; box-sizing:border-box;
+  font:inherit; font-size:14px; font-weight:700; line-height:1;
+  color:var(--tn-ink); background:var(--tn-paper);
+  border:1px solid var(--tn-line); border-radius:999px;
+  cursor:pointer; white-space:nowrap;
+}
+.tn-chip.on{ color:var(--tn-fill); background:var(--tn-accent-wash); border-color:var(--tn-fill); }
+.tn-chip:disabled{ opacity:.45; cursor:default; }
+.tn-chips{ display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;
+           scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.tn-chips::-webkit-scrollbar{ display:none }
+
+.tn-tabs{ display:flex; gap:4px; border-bottom:1px solid var(--tn-line); overflow-x:auto;
+          scrollbar-width:none } .tn-tabs::-webkit-scrollbar{ display:none }
+.tn-tab{
+  position:relative; flex:0 0 auto;
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:64px; min-height:var(--tn-tap); padding:0 16px;
+  font:inherit; font-weight:600; color:var(--tn-sub);
+  background:none; border:0; cursor:pointer; white-space:nowrap;
+}
+.tn-tab.on{ color:var(--tn-fill); font-weight:700 }
+.tn-tab.on::after{
+  content:""; position:absolute; inset-inline:12px; bottom:0;
+  height:3px; border-radius:3px 3px 0 0; background:currentColor;
+}
+
+/* ================================================================
+   10. tn-table — 表。横に長いときは自分だけ横スクロールさせる
+   <div class="tn-scroll"><table class="tn-table">…</table></div>
+   ================================================================ */
+.tn-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch }
+.tn-table{ border-collapse:collapse; width:100%; min-width:max-content }
+.tn-table thead{ border-bottom:1px solid var(--tn-line) }
+.tn-table th{ color:var(--tn-sub); font-weight:600; text-align:left;
+              padding:8px 12px; white-space:nowrap }
+.tn-table td{ padding:12px; vertical-align:middle }
+.tn-table tbody tr + tr{ border-top:1px solid var(--tn-line) }
+.tn-table .tn-num{ text-align:right; font-variant-numeric:tabular-nums }
+
+/* ================================================================
+   11. tn-row — 一覧の1行（押せる行）。押した波紋を親の中に閉じ込める
+   ※ isolation:isolate を必ず付ける。付けないと波紋が背景の下に潜って見えない
+   ================================================================ */
+.tn-row{
+  position:relative; isolation:isolate; overflow:hidden;
+  display:flex; align-items:center; gap:10px;
+  width:100%; min-height:var(--tn-tap); padding:12px 14px;
+  box-sizing:border-box; text-align:left; font:inherit; color:inherit;
+  background:none; border:0; border-radius:var(--tn-radius); cursor:pointer;
+}
+.tn-row::before{
+  content:""; position:absolute; left:50%; top:50%; z-index:-1;
+  width:120%; aspect-ratio:1; border-radius:50%;
+  background:var(--tn-ink); opacity:0;
+  transform:translate(-50%,-50%); transition:all 260ms ease-out;
+}
+.tn-row:active::before{ width:0; height:0; opacity:.14; transition:none }
+.tn-row.on{ background:var(--tn-accent-wash); color:var(--tn-fill) }
+
+/* ================================================================
+   12. 文字まわり — 蛍光ペンと注記
+   ================================================================ */
+.tn-mark{
+  padding-inline:.1em;
+  background:linear-gradient(transparent 58%, var(--tn-accent-wash) 58%);
+}
+.tn-hint{ margin:4px 0 0; font-size:13px; line-height:1.5; color:var(--tn-sub) }
+.tn-hint.tn-danger{ color:var(--tn-danger) }
+
+/* ================================================================
+   13. tn-toast — 一瞬出て消える知らせ（93本中53本が自作していた）
+   <div class="tn-toast" id="toast"></div>
+   出す: t.textContent='保存しました'; t.classList.add('on');
+   消す: setTimeout(()=>t.classList.remove('on'), 2200);
+   ================================================================ */
+.tn-toast{
+  position:fixed; left:50%; z-index:2000;
+  bottom:calc(env(safe-area-inset-bottom) + 24px);
+  max-width:min(92vw, 420px); padding:12px 18px;
+  box-sizing:border-box; text-align:center; line-height:1.5;
+  color:var(--tn-paper); background:rgba(28,28,30,.94);
+  border-radius:999px; box-shadow:0 6px 24px rgba(0,0,0,.28);
+  transform:translate(-50%, 12px); opacity:0; pointer-events:none;
+  transition:transform .22s ease, opacity .22s ease;
+}
+.tn-toast.on{ transform:translate(-50%, 0); opacity:1 }
+
+/* ================================================================
+   14. tn-empty — まだ何も無いときの画面（93本中55本が自作していた）
+   <div class="tn-empty"><span class="tn-empty-em">📄</span>
+     まだ1枚もありません。<br>ここから最初の1枚を。</div>
+   ================================================================ */
+.tn-empty{
+  text-align:center; color:var(--tn-sub);
+  font-size:14px; line-height:1.8; padding:44px 20px;
+}
+.tn-empty-em{
+  display:block; font-size:40px; line-height:1;
+  margin-bottom:10px; opacity:.85;
+}
+
+/* ================================================================
+   15. tn-seg — ひとつながりの切り替え（93本中20本が自作していた）
+   タブと違い「枠の中で選ぶ」型。等分に伸びる。
+   <div class="tn-seg"><button class="on">日</button><button>週</button></div>
+   ================================================================ */
+.tn-seg{
+  display:flex; gap:4px; padding:4px; box-sizing:border-box;
+  background:var(--tn-hover); border-radius:999px;
+}
+.tn-seg > button{
+  flex:1 1 0; min-width:0; min-height:var(--tn-tap);
+  padding:0 12px; font:inherit; font-size:14px; font-weight:700;
+  color:var(--tn-sub); background:transparent; border:0; border-radius:999px;
+  cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  transition:background .15s, color .15s;
+}
+.tn-seg > button.on{
+  color:var(--tn-fill); background:var(--tn-paper);
+  box-shadow:0 1px 3px rgba(0,0,0,.12);
+}
+.tn-seg > button:disabled{ opacity:.45; cursor:default }
+
+/* ================================================================
+   16. tn-badge — 種類や状態の小さな札（93本中11本が自作していた）
+   ================================================================ */
+.tn-badge{
+  display:inline-flex; align-items:center; flex:0 0 auto;
+  padding:2px 9px; border-radius:999px;
+  font-size:11px; font-weight:800; letter-spacing:.02em; line-height:1.6;
+  color:var(--tn-fill); background:var(--tn-accent-wash);
+}
+.tn-badge.tn-good  { color:var(--tn-good-ink); background:color-mix(in srgb, var(--tn-good)   14%, transparent) }
+.tn-badge.tn-warn  { color:var(--tn-warn-ink); background:color-mix(in srgb, var(--tn-warn)   16%, transparent) }
+.tn-badge.tn-danger{ color:var(--tn-danger); background:color-mix(in srgb, var(--tn-danger) 12%, transparent) }
+.tn-badge.tn-quiet { color:var(--tn-sub);    background:var(--tn-hover) }
+
+/* ================================================================
+   17. tn-field / tn-input — 入力ひと組（ラベル＋欄＋補足）
+   つみきの決まり「入力欄は16px以上・高さ44px」をここで守る。
+   iOSは16px未満の入力欄に触ると画面を勝手に拡大するので下げない。
+   ================================================================ */
+.tn-field{ display:flex; flex-direction:column; gap:5px }
+.tn-field > label{
+  font-size:12px; font-weight:700; color:var(--tn-sub);
+  letter-spacing:.02em; padding-inline-start:2px;
+}
+.tn-input,.tn-textarea,.tn-select{
+  width:100%; box-sizing:border-box; font:inherit; font-size:16px;
+  color:var(--tn-ink); background:var(--tn-paper);
+  border:1px solid var(--tn-line); border-radius:10px;
+  padding:11px 12px; min-height:var(--tn-tap);
+}
+.tn-textarea{ resize:vertical; line-height:1.6 }
+.tn-select{
+  appearance:none; -webkit-appearance:none; padding-inline-end:34px;
+  /* ▾ は背景のグラデーション2本で描く（画像もSVGも読み込まない） */
+  background-image:
+    linear-gradient(45deg,  transparent 50%, currentColor 50%, currentColor 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 50%, currentColor 50%, currentColor 58%, transparent 58%);
+  background-size:6px 6px, 6px 6px;
+  background-position:right 18px center, right 13px center;
+  background-repeat:no-repeat;
+}
+.tn-input:focus,.tn-textarea:focus,.tn-select:focus{
+  outline:none; border-color:var(--tn-fill);
+}
+.tn-input:disabled,.tn-textarea:disabled,.tn-select:disabled{
+  opacity:.55; cursor:default;
+}
+.tn-input.tn-danger,.tn-textarea.tn-danger,.tn-select.tn-danger{ border-color:var(--tn-danger) }
+
+/* ================================================================
+   18. tn-search — さがす欄（虫めがねは疑似要素の丸と線で描く）
+   <div class="tn-search"><input class="tn-input" type="search" placeholder="さがす"></div>
+   ================================================================ */
+.tn-search{ position:relative }
+.tn-search > .tn-input{ padding-inline-start:38px }
+.tn-search::before{                     /* レンズ */
+  content:""; position:absolute; left:14px; top:50%; margin-top:-8px;
+  width:11px; height:11px; box-sizing:border-box;
+  border:2px solid var(--tn-sub); border-radius:50%; opacity:.9;
+}
+.tn-search::after{                      /* 柄 */
+  content:""; position:absolute; left:24px; top:50%; margin-top:2px;
+  width:5px; height:2px; border-radius:2px;
+  background:var(--tn-sub); transform:rotate(45deg); opacity:.9;
+}
+.tn-search > .tn-input::-webkit-search-decoration,
+.tn-search > .tn-input::-webkit-search-cancel-button{ -webkit-appearance:none }
+
+/* ================================================================
+   19. tn-hit — 見た目はそのままで「押せる範囲」だけ44pxに広げる
+   つみきの決まり「タップ44px」を、22pxのチェックや24pxの×ボタンで守るための道具。
+   透明な板を疑似要素で敷くだけなので、並びも大きさもずれない。
+
+   <button class="row-del tn-hit">×</button>
+   <input type="checkbox" class="tn-check tn-hit">
+
+   使えない場所・注意:
+   - その要素が ::after を自分で使っていると付けられない。
+     tn-check / tn-radio / tn-switch は、そのために ::after を空けてある。
+   - 透明な板が左右上下にはみ出す。**11px以内に別の押せるものがあると
+     そちらのタップを横取りする。** 隣り合うときは片方だけに付ける。
+   - 親に overflow:hidden があると板も切られる（＝広がらない）。
+   ================================================================ */
+.tn-hit{ position:relative }
+.tn-hit::after{
+  content:""; position:absolute; left:50%; top:50%;
+  width:max(100%, var(--tn-tap)); height:max(100%, var(--tn-tap));
+  transform:translate(-50%,-50%);
+}
+/* 行の端にあるものは、外へはみ出すぶんを内側に寄せたいことがある */
+.tn-hit.tn-hit-left::after { left:0;  transform:translateY(-50%) }
+.tn-hit.tn-hit-right::after{ left:auto; right:0; transform:translateY(-50%) }
+}
+</style>
+<script>
+/* ================================================================
+   つみき用「動きの下ごしらえ」JS  v1  (2026-09-09)
+
+   tn.css の相棒。CSS では書けない2つだけを持つ。
+     1. rnd()    …… 決定論の擬似乱数（Math.random() の置き換え）
+     2. reveal() …… 見えたら再生・押したらもう一度
+
+   考え方の出どころ: lieflat-charts（PolyForm Noncommercial）。
+   ライセンスが非商用なので**コードは写していない**。借りたのは
+   「デモの乱数は決定論にする」「再生前に必ずタイマーを掃除する」
+   という2つの考え方だけで、中身はつみき用に書き直したもの。
+   調査 → ~/Library/Mobile Documents/com~apple~CloudDocs/Kodai/00_Tsumiki/17_調べもの・道具/道具としらべ/単発まとめ/V1/メモ/lieflat-charts_調査と採用可否_2026-09-08.md
+
+   使い方: 単一HTMLの <script> にこのまま貼る（or python3 inject_tn.py <HTML>）。
+   ぶら下がる名前は window.TN の1つだけ。既存コードとぶつからない。
+   ================================================================ */
+(function (global) {
+  'use strict';
+
+  /* ── 1 · 決定論の擬似乱数 ────────────────────────────────
+     Math.random() を使わない。リロードのたびに形が変わると、
+     スクショも録画も「前と同じか」の見比べも全部あてにならなくなる。
+     つみきは「架空データの複製から画面を撮る」運用（お返事カード・IG投稿）
+     をしているので、ここが変わると成果物が毎回ちがう絵になる。
+
+     同じ (i, k) を渡せば、いつ・どの端末で呼んでも同じ 0〜1 が返る。
+     i = 何番目か、k = 用途の区別（x座標なら 0、y座標なら 1、など）。
+
+     ※ 参考にした式（`((i*73856093)^(k*19349663))%1000/1000`）は
+       **k=0 のとき 0.000 / 0.093 / 0.186 … と等差の直線になる**（実測）。
+       既定の k=0 でいちばん使うのに散らばらないので、ここは採らずに
+       32bit のかき混ぜ（xor と乗算を交互に）に置き換えてある。     */
+  function rnd(i, k) {
+    var h = Math.imul((i | 0) + 0x9e3779b9, 0x85ebca6b);
+    h ^= Math.imul(((k === undefined ? 0 : k) | 0) + 0xc2b2ae35, 0x27d4eb2f);
+    h ^= h >>> 15; h = Math.imul(h, 0x2545f491);
+    h ^= h >>> 13; h = Math.imul(h, 0x3d73373b);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  }
+
+  /* lo〜hi に散らす（rnd の範囲つき版） */
+  function rndIn(i, k, lo, hi) {
+    return lo + rnd(i, k) * (hi - lo);
+  }
+
+  /* 配列から決定論的に1つ選ぶ（アイコン・色・名前のダミー割り当て用） */
+  function pick(list, i, k) {
+    if (!list || !list.length) return undefined;
+    return list[Math.floor(rnd(i, k) * list.length) % list.length];
+  }
+
+  /* 配列を決定論的に並べ替える（シャッフルしたいが毎回同じ順がいいとき） */
+  function shuffle(list, k) {
+    return list
+      .map(function (v, i) { return [rnd(i, k), v]; })
+      .sort(function (a, b) { return a[0] - b[0]; })
+      .map(function (p) { return p[1]; });
+  }
+
+  /* ── 2 · 見えたら再生・押したらもう一度 ──────────────────
+     画面に入ってから描く。入場アニメが「スクロールする前に終わっていた」
+     を防ぐ。押すともう一度。
+
+     肝は**再生前にタイマーを全部消すこと**。消さないと、連打したぶん
+     setInterval が積み上がって、だんだん速くなる／二重に描かれる。
+
+       TN.reveal('chart', function (el, ctx) {
+         el.innerHTML = '';
+         ctx.keep(setInterval(tick, 16));   // ← 自分で作ったタイマーは keep に預ける
+         if (ctx.reduced) { drawInstantly(el); return; }   // 動きを減らす設定のとき
+         drawWithAnimation(el);
+       });
+
+     opt: { threshold: 0.3, replay: true, once: true }
+       threshold … どれだけ見えたら再生するか（0〜1）
+       replay    … クリックで再生し直すか（既定 true）
+       once      … 一度再生したら監視をやめるか（既定 true）             */
+
+  var kept = new Map();   // 要素 → そこで動いているタイマーの控え
+
+  function clearKept(el) {
+    var list = kept.get(el) || [];
+    for (var i = 0; i < list.length; i++) {
+      clearTimeout(list[i]);
+      clearInterval(list[i]);
+    }
+    kept.set(el, []);
+  }
+
+  function reduced() {
+    return !!(global.matchMedia &&
+      global.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  function reveal(target, draw, opt) {
+    var el = typeof target === 'string' ? document.getElementById(target) : target;
+    if (!el || typeof draw !== 'function') return null;
+
+    var o = opt || {};
+    var threshold = o.threshold === undefined ? 0.3 : o.threshold;
+    var replay = o.replay === undefined ? true : o.replay;
+    var once = o.once === undefined ? true : o.once;
+    var fallback = o.fallback === undefined ? 1200 : o.fallback;
+    var drawn = false;
+
+    function go() {
+      drawn = true;
+      clearKept(el);   // ← ここで kept.get(el) は必ず空配列になる
+      draw(el, {
+        rnd: rnd,
+        reduced: reduced(),
+        keep: function (id) { kept.get(el).push(id); return id; }
+      });
+    }
+
+    // 動きを減らす設定なら、監視もアニメもせずその場で1回だけ描く
+    if (reduced() || !global.IntersectionObserver) {
+      go();
+    } else {
+      var io = new IntersectionObserver(function (entries) {
+        if (!entries[0].isIntersecting) return;
+        go();
+        if (once) io.disconnect();
+      }, { threshold: threshold });
+      io.observe(el);
+
+      /* 保険。**画面に寸法が無いところでは IntersectionObserver は永久に発火しない**
+         （Claude のブラウザペインは innerWidth/innerHeight とも 0・2026-09-09 実測。
+          スクショ用のヘッドレス、PDF書き出し、display:none の iframe も同じ）。
+         そのまま放っておくと図が白いまま焼き付く。だから寸法が無いときだけ、
+         少し待ってから描く。ふつうのブラウザの「下のほうにある要素」は
+         寸法があるので、ここは通らない＝スクロールするまで待つ挙動のまま。 */
+      if (fallback) {
+        setTimeout(function () {
+          if (drawn) return;
+          if (!global.innerWidth || !global.innerHeight) go();
+        }, fallback);
+      }
+    }
+
+    if (replay) {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', go);
+    }
+    return go;   // 呼び出し側から手で再生したいとき用
+  }
+
+  /* 止める（要素を消す前に呼ぶ。タイマーの置き去りを防ぐ） */
+  reveal.stop = function (target) {
+    var el = typeof target === 'string' ? document.getElementById(target) : target;
+    if (el) clearKept(el);
+  };
+
+  global.TN = global.TN || {};
+  global.TN.rnd = rnd;
+  global.TN.rndIn = rndIn;
+  global.TN.pick = pick;
+  global.TN.shuffle = shuffle;
+  global.TN.reveal = reveal;
+  global.TN.reduced = reduced;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<!-- /tsumiki-native-parts -->
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- 消費＝袋／投資＝芽／貯蓄＝貯金箱／浪費＝きらめき -->
+  <symbol id="ic0" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></symbol>
+  <symbol id="ic1" viewBox="0 0 24 24"><path d="M12 21v-9"/><path d="M12 12c0-4 3-6 7-6 0 4-3 6-7 6z"/><path d="M12 14c0-3-2.4-5-6-5 0 3 2.4 5 6 5z"/></symbol>
+  <symbol id="ic2" viewBox="0 0 24 24"><path d="M4 12.5C4 9 7.2 7 11.5 7c1.6 0 3 .3 4.2.8L18.5 6v3.2c.9.8 1.5 1.8 1.7 3H21v3h-1.3c-.5 1-1.3 1.9-2.2 2.5V20h-3v-1.3c-.9.2-1.9.3-3 .3-.8 0-1.6-.1-2.4-.2V20h-3v-2.2C4.8 16.5 4 14.6 4 12.5z"/><path d="M10 9.5h3"/></symbol>
+  <symbol id="ic3" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></symbol>
+  <symbol id="ic-wallet" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><rect x="4" y="8" width="16" height="11" rx="2.5"/><path d="M16 13.5h1.5"/></symbol>
+  <symbol id="ic-left" viewBox="0 0 24 24"><ellipse cx="12" cy="6.5" rx="7" ry="2.5"/><path d="M5 6.5v5c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-5"/><path d="M5 11.5v5c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-5"/></symbol>
+  <symbol id="ic-tune" viewBox="0 0 24 24"><path d="M5 7h9M18 7h1M5 17h3M12 17h7"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="ic-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 7.8v.2"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="ic-ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="ic-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M5 4v4h4"/></symbol>
+  <symbol id="ic-note" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></symbol>
+</svg>
+
+<div class="wrap">
+  <header>
+    <h1>よつわけ <span id="sync-note"></span></h1>
+    <button class="iconbtn" id="info-btn" aria-label="4つの意味" aria-expanded="false"><svg class="i" aria-hidden="true"><use href="#ic-info"/></svg></button>
+    <button class="iconbtn" id="tune-btn" aria-label="比率"><svg class="i" aria-hidden="true"><use href="#ic-tune"/></svg></button>
+  </header>
+  <div class="hint" id="hint">
+    <span><b>消費</b> 暮らし</span><span><b>投資</b> 自分を育てる</span><span><b>貯蓄</b> 蓄え</span><span><b>浪費</b> 楽しみ</span>
+  </div>
+
+  <div class="layout">
+    <section class="side">
+      <div class="income">
+        <label for="income"><svg class="i" aria-hidden="true"><use href="#ic-wallet"/></svg>収入</label>
+        <span class="yen">¥</span>
+        <input id="income" class="num" type="text" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="0" aria-label="今月の収入">
+      </div>
+      <button class="band" id="band" aria-label="比率を変える">
+        <div class="bar" id="band-bar"></div>
+        <div class="lbl" id="band-lbl"></div>
+      </button>
+      <div class="total">
+        <span class="k"><svg class="i" aria-hidden="true"><use href="#ic-left"/></svg>残り</span>
+        <span class="v num" id="total-left"></span>
+      </div>
+      <div class="boxes" id="boxes"></div>
+    </section>
+
+    <section class="memo" id="memo">
+      <h2><svg class="i" aria-hidden="true" id="memo-ic"><use href="#ic0"/></svg><span id="memo-name"></span><span class="bud num" id="memo-bud"></span></h2>
+      <ul class="rows" id="rows"></ul>
+      <div class="empty" id="empty" hidden><svg class="i" aria-hidden="true"><use href="#ic-note"/></svg></div>
+      <form class="add" id="new-row" autocomplete="off">
+        <input class="name" id="new-name" type="text" maxlength="60" enterkeyhint="next" aria-label="項目">
+        <input class="amt num" id="new-amt" type="text" inputmode="numeric" maxlength="13" placeholder="¥" enterkeyhint="done" aria-label="金額">
+        <button class="plus" type="submit" aria-label="追加"><svg class="i" aria-hidden="true"><use href="#ic-plus"/></svg></button>
+      </form>
+      <div class="sum"><span>予定</span><span class="num" id="memo-sum"></span></div>
+    </section>
+  </div>
+</div>
+
+<dialog class="tn-sheet" id="sheet">
+  <div class="tn-sheet-body">
+    <h3 class="sheet-h"><svg class="i" aria-hidden="true"><use href="#ic-tune"/></svg>比率<button class="iconbtn x" id="sheet-x" aria-label="閉じる"><svg class="i" aria-hidden="true"><use href="#ic-x"/></svg></button></h3>
+    <div class="ratio" id="ratio"></div>
+    <div class="sheet-foot">
+      <button class="quiet" id="ratio-reset"><svg class="i" aria-hidden="true"><use href="#ic-reset"/></svg>6:2:1:1</button>
+      <div class="clear" id="clear">
+        <button class="quiet ok" id="clear-ok"><svg class="i" aria-hidden="true"><use href="#ic-ok"/></svg>消す</button>
+        <button class="quiet" id="clear-no" hidden>やめる</button>
+        <button class="quiet go" id="clear-go"><svg class="i" aria-hidden="true"><use href="#ic-x"/></svg>メモを全部消す</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+'use strict';
+var $ = function(s){ return document.querySelector(s); };
+var TEST = decodeURIComponent(location.href).indexOf('_テスト') >= 0;   /* 複製は同期しない・別のキー */
+var KEY = 'yotsuwake-v1' + (TEST ? '-test' : '');
+var BOXES = [
+  {name:'消費', ph:'家賃'},
+  {name:'投資', ph:'本'},
+  {name:'貯蓄', ph:'先取り'},
+  {name:'浪費', ph:'旅行'}
+];
+var BOOK = [6,2,1,1];
+var SYNC = null;
+var uidN = 0;
+var MAXAMT = 999999999;
+var state = load();
+var cur = 0;
+
+function blank(){ return {income:0, ratio:BOOK.slice(), items:[[],[],[],[]]}; }
+function clean(d){
+  var s = blank();
+  if (!d || typeof d !== 'object') return s;
+  s.income = Math.min(MAXAMT, Math.max(0, Math.floor(+d.income || 0)));
+  if (Array.isArray(d.ratio) && d.ratio.length === 4){
+    var r = d.ratio.map(function(v){ return Math.max(0, Math.min(10, Math.round(+v || 0))); });
+    if (r.reduce(sum, 0) === 10) s.ratio = r;
+  }
+  if (Array.isArray(d.items)) for (var i = 0; i < 4; i++){
+    s.items[i] = (Array.isArray(d.items[i]) ? d.items[i] : []).filter(function(x){ return x && typeof x === 'object'; })
+      .map(function(x){ return {id: String(x.id || uid()), name: String(x.name || '').slice(0, 60), amt: Math.min(MAXAMT, Math.max(0, Math.floor(+x.amt || 0)))}; });
+  }
+  return s;
+}
+function load(){ try { return clean(JSON.parse(localStorage.getItem(KEY))); } catch (e) { return blank(); } }
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} if (SYNC) SYNC.touched(); }
+function hasData(){ return state.income > 0 || state.items.some(function(a){ return a.length; }); }
+function sum(a, b){ return a + b; }
+function uid(){ return Date.now().toString(36) + '-' + (++uidN).toString(36); }
+function yen(n){ return (n < 0 ? '−¥' : '¥') + Math.abs(n).toLocaleString('ja-JP'); }
+/* 全角の数字も半角にそろえてから拾う。上限は 999,999,999 */
+function digits(s){
+  var t = String(s).replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/[^\d]/g, '').slice(0, 9);
+  return Math.min(MAXAMT, parseInt(t, 10) || 0);
+}
+function composing(e){ return e.isComposing || e.keyCode === 229; }
+function fmtInput(n){ return n ? n.toLocaleString('ja-JP') : ''; }
+
+/* 収入を比率で割る（端数は大きい順に配って合計を収入にそろえる） */
+function budgets(){
+  var inc = state.income, r = state.ratio;
+  var raw = r.map(function(v){ return inc * v / 10; });
+  var b = raw.map(Math.floor), rest = inc - b.reduce(sum, 0);
+  raw.map(function(v, i){ return {i:i, f:v - Math.floor(v)}; }).sort(function(a, c){ return c.f - a.f; })
+     .slice(0, rest).forEach(function(o){ b[o.i]++; });
+  return b;
+}
+function used(i){ return state.items[i].reduce(function(a, x){ return a + x.amt; }, 0); }
+
+/* くるくる回る数字：前の値の桁（右からそろえる）から次の値へ回す */
+function roll(el, text){
+  if (el._t === text) return;
+  var prev = el._t || '';
+  el._t = text;
+  el.textContent = '';
+  el.classList.add('roll');
+  var sr = document.createElement('span'); sr.className = 'sr'; sr.textContent = text; el.appendChild(sr);
+  var cols = [], n = text.length, pn = prev.length;
+  for (var k = 0; k < n; k++){
+    var ch = text[k];
+    if (/\d/.test(ch)){
+      var dg = document.createElement('span'); dg.className = 'dg'; dg.setAttribute('aria-hidden', 'true');
+      var col = document.createElement('span'); col.className = 'col';
+      for (var d = 0; d <= 9; d++){ var s = document.createElement('span'); s.textContent = d; col.appendChild(s); }
+      dg.appendChild(col); el.appendChild(dg);
+      var pc = prev[pn - (n - k)];
+      var from = /\d/.test(pc || '') ? +pc : 0;
+      col.style.transition = 'none';
+      col.style.transform = 'translateY(' + (-from * 10) + '%)';
+      cols.push([col, +ch]);
+    } else {
+      var c = document.createElement('span'); c.className = 'ch'; c.setAttribute('aria-hidden', 'true'); c.textContent = ch; el.appendChild(c);
+    }
+  }
+  void el.offsetWidth;
+  cols.forEach(function(p){ p[0].style.transition = ''; p[0].style.transform = 'translateY(' + (-p[1] * 10) + '%)'; });
+}
+
+/* ---------- 箱 ---------- */
+var boxEls = [];
+function buildBoxes(){
+  var wrap = $('#boxes');
+  BOXES.forEach(function(b, i){
+    var el = document.createElement('button');
+    el.className = 'box'; el.type = 'button';
+    el.style.setProperty('--bc', 'var(--c' + i + ')');
+    el.innerHTML = '<div class="nm"><svg class="i" aria-hidden="true"><use href="#ic' + i + '"/></svg>' + b.name + '<span class="r num"></span></div>' +
+      '<div class="big num"></div><div class="of num"></div><div class="meter"><i></i></div><span class="pill num"></span>';
+    el.addEventListener('click', function(){ select(i); });
+    wrap.appendChild(el);
+    boxEls.push(el);
+  });
+}
+function select(i){
+  cur = i;
+  renderBoxes();
+  renderMemo();
+  if (matchMedia('(max-width:899.98px)').matches){
+    var m = $('#memo'), top = m.getBoundingClientRect().top;
+    if (top > innerHeight * .7) m.scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
+  }
+}
+function renderBoxes(){
+  var b = budgets();
+  boxEls.forEach(function(el, i){
+    var u = used(i), left = b[i] - u, over = left < 0;
+    el.setAttribute('aria-pressed', i === cur ? 'true' : 'false');
+    el.classList.toggle('over', over);
+    el.querySelector('.r').textContent = state.ratio[i];
+    roll(el.querySelector('.big'), yen(left));
+    el.querySelector('.of').textContent = '／' + yen(b[i]);
+    el.querySelector('.meter i').style.width = (b[i] ? Math.min(100, u / b[i] * 100) : (u ? 100 : 0)) + '%';
+    el.querySelector('.pill').textContent = yen(-left).replace('¥', '+¥') + ' オーバー';
+    el.setAttribute('aria-label', BOXES[i].name + ' 残り ' + yen(left) + ' 予算 ' + yen(b[i]));
+  });
+  var all = state.income - state.items.reduce(function(a, arr, i){ return a + used(i); }, 0);
+  var t = $('#total-left');
+  roll(t, yen(all));
+  t.classList.toggle('over', all < 0);
+  /* 帯 */
+  var bar = $('#band-bar'), lbl = $('#band-lbl');
+  if (!bar.children.length){
+    for (var i = 0; i < 4; i++){
+      var seg = document.createElement('i'); seg.style.background = 'var(--c' + i + ')'; bar.appendChild(seg);
+      var s = document.createElement('span'); lbl.appendChild(s);
+    }
+  }
+  state.ratio.forEach(function(v, i){
+    bar.children[i].style.flex = v + ' 1 0';
+    bar.children[i].style.display = v ? '' : 'none';
+    lbl.children[i].style.flex = v + ' 1 0';
+    lbl.children[i].style.display = v ? '' : 'none';
+    lbl.children[i].textContent = v;
+  });
+}
+
+/* ---------- メモ ---------- */
+var rowsEl = $('#rows');
+function renderMemo(){
+  var memo = $('#memo');
+  memo.style.setProperty('--bc', 'var(--c' + cur + ')');
+  $('#memo-ic').innerHTML = '<use href="#ic' + cur + '"/>';
+  $('#memo-name').textContent = BOXES[cur].name;
+  $('#new-name').placeholder = BOXES[cur].ph;
+  rowsEl.textContent = '';
+  state.items[cur].forEach(function(it){ rowsEl.appendChild(rowEl(it)); });
+  $('#empty').hidden = state.items[cur].length > 0;
+  renderMemoSum();
+}
+function renderMemoSum(){
+  var b = budgets()[cur];
+  $('#memo-bud').textContent = yen(b);
+  $('#memo-sum').textContent = yen(used(cur));
+}
+var TRASH = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<g class="lid"><path d="M3 6h18"/><path d="M9 6V4.5h6V6"/></g>' +
+  '<path class="can" d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+function rowEl(it){
+  var li = document.createElement('li'); li.className = 'row'; li.dataset.id = it.id;
+  li.innerHTML = '<input class="name" type="text" maxlength="60" aria-label="項目" enterkeyhint="done">' +
+    '<input class="amt num" type="text" inputmode="numeric" maxlength="13" aria-label="金額" enterkeyhint="done">' +
+    '<div class="del"><div class="ask"><button class="yes" type="button" aria-label="消す"><span><svg class="i" aria-hidden="true"><use href="#ic-ok"/></svg></span></button>' +
+    '<button class="no" type="button" aria-label="やめる"><span><svg class="i" aria-hidden="true"><use href="#ic-x"/></svg></span></button></div>' +
+    '<button class="trash" type="button" aria-label="削除">' + TRASH + '</button></div>';
+  var nm = li.querySelector('.name'), am = li.querySelector('.amt');
+  nm.value = it.name; am.value = it.amt ? '¥' + fmtInput(it.amt) : '';
+  var trashBtn = li.querySelector('.trash');
+  function label(){ trashBtn.setAttribute('aria-label', (it.name || '項目') + 'を削除'); }
+  label();
+  nm.addEventListener('input', function(){ it.name = nm.value.slice(0, 60); label(); save(); });
+  am.addEventListener('focus', function(){ am.value = it.amt ? String(it.amt) : ''; });
+  function amtIn(e){ if (e && composing(e)) return; it.amt = digits(am.value); save(); renderBoxes(); renderMemoSum(); }
+  am.addEventListener('input', amtIn);
+  am.addEventListener('compositionend', function(){ amtIn(); });
+  am.addEventListener('blur', function(){ am.value = it.amt ? '¥' + fmtInput(it.amt) : ''; });
+  [nm, am].forEach(function(x){ x.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !composing(e)){ e.preventDefault(); x.blur(); } }); });
+  var del = li.querySelector('.del'), can = li.querySelector('.can'), timer = null;
+  function setOpen(on){
+    del.classList.toggle('open', on); li.classList.toggle('asking', on);
+    can.setAttribute('d', on ? 'M19 13.5v6.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V13.5' : 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6');
+    clearTimeout(timer); if (on) timer = setTimeout(function(){ setOpen(false); }, 4000);
+  }
+  trashBtn.addEventListener('click', function(){ setOpen(!del.classList.contains('open')); });
+  li.querySelector('.no').addEventListener('click', function(){ setOpen(false); });
+  li.querySelector('.yes').addEventListener('click', function(){
+    clearTimeout(timer);
+    var arr = state.items[cur], k = arr.indexOf(it);
+    if (k >= 0) arr.splice(k, 1);
+    save(); renderBoxes(); renderMemo();
+  });
+  return li;
+}
+$('#new-row').addEventListener('submit', function(e){
+  e.preventDefault();
+  var nm = $('#new-name'), am = $('#new-amt');
+  var name = nm.value.trim(), amt = digits(am.value);
+  if (!name && !amt){ nm.focus(); return; }
+  state.items[cur].push({id: uid(), name: name.slice(0, 60), amt: amt});
+  nm.value = ''; am.value = '';
+  save(); renderBoxes(); renderMemo();
+  nm.focus();
+});
+$('#new-name').addEventListener('keydown', function(e){ if (e.key === 'Enter' && !composing(e)){ e.preventDefault(); $('#new-amt').focus(); } });
+(function(am){
+  am.addEventListener('focus', function(){ var n = digits(am.value); am.value = n ? String(n) : ''; });
+  am.addEventListener('blur', function(){ var n = digits(am.value); am.value = n ? '¥' + fmtInput(n) : ''; });
+})($('#new-amt'));
+
+/* ---------- 収入 ---------- */
+var inc = $('#income');
+function paintIncome(){ if (document.activeElement !== inc) inc.value = fmtInput(state.income); }
+function incIn(e){
+  if (e && composing(e)) return;
+  state.income = digits(inc.value);
+  save(); renderBoxes(); renderMemoSum();
+}
+inc.addEventListener('input', incIn);
+inc.addEventListener('compositionend', function(){ incIn(); });
+inc.addEventListener('focus', function(){ inc.value = state.income ? String(state.income) : ''; });
+inc.addEventListener('blur', function(){ inc.value = fmtInput(state.income); });
+inc.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !composing(e)){ e.preventDefault(); inc.blur(); } });
+
+/* ---------- 比率（合計が10になるよう、ほかの3つを元の割合で配り直す） ---------- */
+var sheet = $('#sheet'), ratioEl = $('#ratio'), base = null, baseIdx = -1, sliders = [];
+function buildRatio(){
+  BOXES.forEach(function(b, i){
+    var n = document.createElement('div'); n.className = 'n'; n.style.setProperty('--bc', 'var(--c' + i + ')');
+    n.innerHTML = '<svg class="i" aria-hidden="true"><use href="#ic' + i + '"/></svg>' + b.name;
+    var r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 10; r.step = 1;
+    r.style.setProperty('--bc', 'var(--c' + i + ')'); r.setAttribute('aria-label', b.name);
+    var v = document.createElement('div'); v.className = 'v num';
+    r.addEventListener('input', function(){ if (!base || baseIdx !== i){ base = state.ratio.slice(); baseIdx = i; } setRatio(i, +r.value); });
+    ratioEl.appendChild(n); ratioEl.appendChild(r); ratioEl.appendChild(v);
+    sliders.push([r, v]);
+  });
+}
+function setRatio(i, v){
+  var r = base.slice(), others = [0,1,2,3].filter(function(k){ return k !== i; });
+  var rest = 10 - v, w = others.map(function(k){ return base[k]; });
+  if (w.reduce(sum, 0) === 0) w = [1,1,1];
+  var tot = w.reduce(sum, 0), raw = w.map(function(x){ return rest * x / tot; });
+  var fl = raw.map(Math.floor), left = rest - fl.reduce(sum, 0);
+  raw.map(function(x, j){ return {j:j, f:x - Math.floor(x)}; }).sort(function(a, c){ return c.f - a.f; })
+     .slice(0, left).forEach(function(o){ fl[o.j]++; });
+  r[i] = v; others.forEach(function(k, j){ r[k] = fl[j]; });
+  state.ratio = r;
+  save(); paintRatio(); renderBoxes(); renderMemoSum();
+}
+function paintRatio(){ sliders.forEach(function(p, i){ p[0].value = state.ratio[i]; p[1].textContent = state.ratio[i]; }); }
+function openSheet(){ base = null; baseIdx = -1; paintRatio(); resetClear(); sheet.showModal(); }
+$('#tune-btn').addEventListener('click', openSheet);
+$('#band').addEventListener('click', openSheet);
+$('#sheet-x').addEventListener('click', function(){ sheet.close(); });
+sheet.addEventListener('click', function(e){ if (e.target === sheet) sheet.close(); });
+$('#ratio-reset').addEventListener('click', function(){ base = null; baseIdx = -1; state.ratio = BOOK.slice(); save(); paintRatio(); renderBoxes(); renderMemoSum(); });
+var clear = $('#clear');
+var armT = null;
+function resetClear(){ clearTimeout(armT); clear.classList.remove('ask'); $('#clear-no').hidden = true; }
+$('#clear-go').addEventListener('click', function(){
+  var ok = $('#clear-ok'); ok.disabled = true;
+  clear.classList.add('ask'); $('#clear-no').hidden = false;
+  clearTimeout(armT); armT = setTimeout(function(){ ok.disabled = false; }, 500);
+});
+$('#clear-no').addEventListener('click', resetClear);
+$('#clear-ok').addEventListener('click', function(){
+  state.items = [[],[],[],[]];
+  save(); resetClear(); renderBoxes(); renderMemo(); sheet.close();
+});
+$('#info-btn').addEventListener('click', function(){
+  var on = $('#hint').classList.toggle('on'); this.setAttribute('aria-expanded', on ? 'true' : 'false');
+});
+
+function applyAll(){ paintIncome(); paintRatio(); renderBoxes(); renderMemo(); }
+
+/* ================= クラウド同期 =================
+   Supabase の yotsuwake_state（id='kodai' の1行）に {updatedAt, data} を置く。さきゆき（sakiyuki_state）と同じ仕組み。
+   ・保存したら少し待って送る／開いたとき・画面に戻ったときに新しい方を取る／ほかの端末の変更はリアルタイムで受ける
+   ・一度も同期していない端末に別の中身があったら、クラウドの方を出し、元の中身は控えのキーに残す
+   ・ファイル名に「_テスト」が入った複製では同期しない */
+SYNC = (function(){
+  var URL_ = 'https://okbjqtdirrathscctyvx.supabase.co';
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rYmpxdGRpcnJhdGhzY2N0eXZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjI4NTIsImV4cCI6MjA5NTg5ODg1Mn0.T-1AOK6vCD6uGdqrVGXjPui3L6WPSNrnygS-IHyfZ6Y';
+  var sb = (!TEST && window.supabase && window.supabase.createClient) ? window.supabase.createClient(URL_, ANON) : null;
+  window.sb = sb;
+  var TABLE = 'yotsuwake_state', ID = 'kodai', META = KEY + '-sync-meta';
+  var timer = null, retry = null, pending = false, lastPushed = '', subscribed = false, pulled = false;
+  var loadedT = localT();                 /* 開いた時点の手元の時刻（最初の取得はこれと比べる） */
+  var note = $('#sync-note');
+  function paint(on){ note.textContent = TEST ? 'テスト（同期なし）' : !sb ? 'この端末に保存' : on ? '同期中' : 'オフライン'; }
+  function localT(){ try { return (JSON.parse(localStorage.getItem(META)) || {}).updatedAt || 0; } catch (e) { return 0; } }
+  function setT(t){ try { localStorage.setItem(META, JSON.stringify({updatedAt: t})); } catch (e) {} }
+  function backup(){ try { localStorage.setItem(KEY + '-before-sync', JSON.stringify({at: Date.now(), data: state})); } catch (e) {} }
+  function later(){ clearTimeout(retry); retry = setTimeout(function(){ if (pending){ if (pulled) push(); else pull(); } }, 8000); }
+  function push(){
+    if (!sb || !pending) return;
+    if (!pulled){ pull(); return; }      /* 最初の取得が済むまでは送らない（空の中身でクラウドを上書きしない） */
+    pending = false; clearTimeout(timer);
+    var body = {updatedAt: localT() || Date.now(), data: state};
+    lastPushed = body.updatedAt;
+    sb.from(TABLE).upsert({id: ID, state: body, updated_at: new Date().toISOString()})
+      .then(function(r){ if (r && r.error){ pending = true; paint(false); later(); } else paint(true); },
+            function(){ pending = true; paint(false); later(); });
+  }
+  function touched(){
+    setT(Date.now());
+    if (!sb) return;
+    pending = true; clearTimeout(timer); timer = setTimeout(push, 400);
+  }
+  function editing(){ var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'range'); }
+  function apply(body){
+    state = clean(body.data);
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    setT(body.updatedAt || Date.now());
+    applyAll();
+  }
+  function subscribe(){
+    if (subscribed) return;
+    subscribed = true;
+    sb.channel('yotsuwake-rt')
+      .on('postgres_changes', {event: '*', schema: 'public', table: TABLE, filter: 'id=eq.' + ID}, function(p){
+        var b = p.new && p.new.state;
+        if (!b || !b.data || b.updatedAt === lastPushed) return;            /* 自分が送ったもの */
+        if ((b.updatedAt || 0) <= localT() || pending || editing()) return;
+        apply(b);
+      })
+      .subscribe();
+  }
+  var pulling = false;
+  function pull(){
+    if (!sb){ paint(false); return; }
+    if (pulling) return;                  /* 取得を重ねない（重なると古い時刻で比べてしまう） */
+    pulling = true;
+    sb.from(TABLE).select('state').eq('id', ID).maybeSingle().then(function(res){
+      pulling = false;
+      if (!res || res.error){ paint(false); later(); return; }
+      paint(true);
+      var body = res.data && res.data.state;
+      var has = !!(body && body.data && typeof body.data === 'object');
+      var rt = has ? (body.updatedAt || 0) : 0;
+      if (!pulled){
+        /* 最初の取得：開いた時点の手元より新しければクラウドを出す。開いてから打った分は控えに残す */
+        pulled = true;
+        if (has && rt > loadedT){
+          if (localT() !== loadedT && JSON.stringify(clean(body.data)) !== JSON.stringify(state)) backup();
+          else if (!loadedT && hasData()) backup();
+          clearTimeout(timer); pending = false;
+          apply(body);
+        } else if (localT() > rt || (!has && hasData())){
+          if (!localT()) setT(Date.now());
+          pending = true; push();
+        }
+      } else {
+        var lt = localT();
+        if (has && rt > lt){
+          if (pending || editing()){ /* 送る前の手元の変更がある＝こちらを先に送る */ }
+          else apply(body);
+        } else if (lt > rt){
+          pending = true; push();
+        }
+      }
+      subscribe();
+    }, function(){ pulling = false; paint(false); later(); });
+  }
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') pull(); else push(); });
+  window.addEventListener('online', function(){ if (pending && pulled) push(); else pull(); });
+  window.addEventListener('pagehide', push);
+  paint(false);
+  return {touched: touched, pull: pull};
+})();
+
+/* ================= 最初の描画（ここでは保存しない） ================= */
+buildBoxes();
+buildRatio();
+applyAll();
+SYNC.pull();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
