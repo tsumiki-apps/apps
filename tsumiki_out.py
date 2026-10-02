@@ -3,7 +3,7 @@
 """やり取りで作った物を置く場所を決める（セッションごとに1つのフォルダ）。
 
     python3 ~/制作物/tsumiki_out.py 返信.png            このセッションのフォルダに置く場所
-    python3 ~/制作物/tsumiki_out.py 返信.png --new      前の物を残して「返信 (2).png」に置く
+    python3 ~/制作物/tsumiki_out.py 返信.png --new      前の物を残して「返信(2).png」に置く
     python3 ~/制作物/tsumiki_out.py --dir               このセッションのフォルダ（無ければ作る）
     python3 ~/制作物/tsumiki_out.py --name              フォルダ名だけ
     python3 ~/制作物/tsumiki_out.py --session 名前 …    フォルダ名を自分で決める（最初の1回だけ効く）
@@ -19,7 +19,7 @@
     無ければ Claude Code の題名（/rename の題名 → 自動の題名）。
   ・**名前は最初に置いた時点で固定する**（控え＝~/.cache/tsumiki/out_sessions.json、キーはセッションID）。
     自動の題名は途中で変わることがあり、変わるたびにフォルダが増えないようにするため。
-  ・同じ名前のフォルダが別のセッションのもの（または本人が作ったもの）なら「名前 (2)」にする。
+  ・同じ名前のフォルダが別のセッションのもの（または本人が作ったもの）なら「名前(2)」にする。
   ・種類のフォルダは作らない（2026-09-27 本人）。フォルダの中はファイルだけ。
   ・同じセッションで同じ名前を聞けば同じ場所（直して上書き）。前の物を残したいときは --new。
   ・2026-09-27 より前の物は、つみきは Kodai/00_Tsumiki の番号フォルダ、Apple は Kodai/02_Apple/2026、
@@ -49,6 +49,10 @@ ROOT = os.environ.get('TSUMIKI_OUT_ROOT') or os.path.expanduser(
 MAP_FILE = os.environ.get('TSUMIKI_OUT_MAP') or os.path.expanduser('~/.cache/tsumiki/out_sessions.json')
 ARCHIVE = '_これまでの制作物'   # 2026-09-27 に廃止した保管庫の名前。新しいセッションに使わせない
 READ_TIMEOUT = 5.0
+# 空白は「_」にする（2026-10-03）。iPad のファイルアプリは、パスのフォルダ名に空白があると
+# shareddocuments:// で中まで進めず「最近使った項目」で止まる（本人の iPad で、空白ありのフォルダは
+# 止まり、空白なしのフォルダは作ったばかりのファイルでも開けた）。iPhone は空白があっても開ける
+SPACE_RE = re.compile(r'[ \u3000]+')
 # 札の頭に Claude Code が付ける動きの印（✳ ✻ など）と点字の回転
 SPIN_RE = re.compile(r'^[\s⠀-⣿✳✻✽✶✢·•*⏺◐◓◑◒]+')
 
@@ -76,7 +80,8 @@ def clean_name(s):
     s = SPIN_RE.sub('', s).strip()
     s = re.sub(r'[/:\\\n\r\t]+', '・', s)
     s = s.lstrip('.').strip()
-    return s[:60].strip()
+    s = SPACE_RE.sub('_', s)
+    return s[:60].strip('_ ')
 
 
 def tmux(*args):
@@ -197,7 +202,7 @@ def session_dir(forced, notes):
             taken = {v['name'] for k, v in m.items() if k != key}
             name, n = want, 2
             while name in taken or (not got or got['name'] != name) and exists(os.path.join(ROOT, name)):
-                name = '%s (%d)' % (want, n)
+                name = '%s(%d)' % (want, n)     # 空白を入れない（→ SPACE_RE）
                 n += 1
             if got and got['name'] != name:
                 notes.append('フォルダ名を「%s」→「%s」に決め直しました（前のフォルダはそのまま）' % (got['name'], name))
@@ -211,12 +216,12 @@ def session_dir(forced, notes):
 
 
 def free_name(d, fname):
-    """前の物を残す名前：返信.png → 返信 (2).png → 返信 (3).png"""
+    """前の物を残す名前：返信.png → 返信(2).png → 返信(3).png（空白を入れない → SPACE_RE）"""
     stem, ext = os.path.splitext(fname)
     n = 2
     cand = fname
     while exists(os.path.join(d, cand)):
-        cand = '%s (%d)%s' % (stem, n, ext)
+        cand = '%s(%d)%s' % (stem, n, ext)
         n += 1
     return cand
 
@@ -245,7 +250,7 @@ def main(argv):
         print('\n'.join(names))
         return 0
     if '--versions' in flags:
-        return fail('版（V）はやめました（2026-09-27）。前の物を残すときは <ファイル名> --new で「名前 (2)」になります')
+        return fail('版（V）はやめました（2026-09-27）。前の物を残すときは <ファイル名> --new で「名前(2)」になります')
 
     # 前の書き方：<プロジェクト> [<成果物>] <ファイル名>。ファイル名らしい最後の1つだけを使う
     if len(args) > 1:
@@ -268,6 +273,10 @@ def main(argv):
         print(d)
     else:
         fname = unicodedata.normalize('NFC', args[0]).strip()
+        if SPACE_RE.search(fname):
+            old = fname
+            fname = SPACE_RE.sub('_', fname)
+            notes.append('名前の空白は「_」にしました（iPad のファイルアプリで開けないため）：%s → %s' % (old, fname))
         if not fname or '/' in fname or fname in ('.', '..'):
             return fail('ファイル名として使えません: %r' % args[0])
         try:
