@@ -167,13 +167,31 @@ header h1{font-size:20px;font-weight:700;margin:0;flex:1;display:flex;align-item
 .memo h2 .i{color:var(--bc)}
 .memo h2 .bud{margin-left:auto;font-size:14px;font-weight:400;color:var(--ink-mid)}
 .rows{list-style:none;margin:0;padding:0}
-.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,38%) 44px;align-items:center;gap:6px;border-bottom:1px solid var(--line);min-height:52px}
+.row{display:grid;grid-template-columns:44px minmax(0,1fr) minmax(84px,36%) 44px;align-items:center;column-gap:4px;border-bottom:1px solid var(--line);min-height:52px}
+/* 別の箱へ移す：行の頭の丸（いまの箱の色）を押すと、ほかの3つの箱が出る */
+.mv{width:44px;height:44px;border:0;background:transparent;display:flex;align-items:center;justify-content:center;border-radius:99px;margin-left:-8px}
+.mv span{width:28px;height:28px;border-radius:99px;display:flex;align-items:center;justify-content:center;transition:background .12s var(--ease)}
+.mv span::after{content:"";width:12px;height:12px;border-radius:99px;background:var(--bc)}
+.row.moving .mv span{background:var(--surface-2)}
+.to{grid-column:1/-1;display:none;flex-wrap:wrap;gap:6px;padding:0 0 10px 36px}
+.row.moving .to{display:flex}
+.to button{height:44px;border:0;border-radius:99px;padding:0 14px;display:flex;align-items:center;gap:7px;font-size:14px;font-weight:500;background:var(--surface-2);color:var(--ink)}
+.to button::before{content:"";width:10px;height:10px;border-radius:99px;background:var(--tc)}
+.to button:active{transform:scale(.96)}
+.box.got{border-color:var(--bc);transition:none}
+/* 移したあとの知らせ（元に戻す） */
+.moved{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 16px);z-index:50;transform:translate(-50%,12px);opacity:0;pointer-events:none;
+  width:min(calc(100% - 32px),420px);min-height:52px;display:flex;align-items:center;gap:8px;padding:4px 6px 4px 18px;border-radius:16px;
+  background:var(--ink);color:var(--paper);font-size:15px;box-shadow:var(--shadow);transition:opacity .2s var(--ease),transform .2s var(--ease)}
+.moved.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.moved .msg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.moved button{height:44px;border:0;background:transparent;color:var(--paper);font-weight:700;padding:0 12px;border-radius:12px;text-decoration:underline;text-underline-offset:3px;flex:none}
 .row input{border:0;background:transparent;font-size:16px;padding:10px 4px;min-width:0;width:100%;border-radius:8px;outline:none}
 .row input:focus{background:var(--surface-2);box-shadow:inset 0 0 0 1.5px var(--line-2)}
 .row .amt{text-align:right;font-weight:500}
 .empty{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--ink-soft);padding:20px 0 12px;font-size:14px}
 .empty svg{width:56px;height:56px;color:var(--ghost);stroke-width:1.4}
-.add{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,38%) 44px;gap:6px;margin-top:12px}
+.add{display:grid;grid-template-columns:minmax(0,1fr) minmax(84px,36%) 44px;gap:6px;margin-top:12px}
 .add input{border:1px solid var(--line);background:var(--paper);border-radius:12px;font-size:16px;padding:0 12px;height:44px;min-width:0;width:100%;outline:none}
 .add input:focus{border-color:var(--accent)}
 .add .amt{text-align:right}
@@ -969,6 +987,8 @@ header h1{font-size:20px;font-weight:700;margin:0;flex:1;display:flex;align-item
   </div>
 </div>
 
+<div class="moved" id="moved" role="status" aria-live="polite"><span class="msg" id="moved-msg"></span><button type="button" id="moved-undo">元に戻す</button></div>
+
 <dialog class="tn-sheet" id="sheet">
   <div class="tn-sheet-body">
     <h3 class="sheet-h"><svg class="i" aria-hidden="true"><use href="#ic-tune"/></svg>比率<button class="iconbtn x" id="sheet-x" aria-label="閉じる"><svg class="i" aria-hidden="true"><use href="#ic-x"/></svg></button></h3>
@@ -1154,15 +1174,31 @@ var TRASH = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="cur
   '<path class="can" d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
 function rowEl(it){
   var li = document.createElement('li'); li.className = 'row'; li.dataset.id = it.id;
-  li.innerHTML = '<input class="name" type="text" maxlength="60" aria-label="項目" enterkeyhint="done">' +
+  li.innerHTML = '<button class="mv" type="button" aria-expanded="false"><span></span></button>' +
+    '<input class="name" type="text" maxlength="60" aria-label="項目" enterkeyhint="done">' +
     '<input class="amt num" type="text" inputmode="numeric" maxlength="24" aria-label="金額" enterkeyhint="done">' +
     '<div class="del"><div class="ask"><button class="yes" type="button" aria-label="消す"><span><svg class="i" aria-hidden="true"><use href="#ic-ok"/></svg></span></button>' +
     '<button class="no" type="button" aria-label="やめる"><span><svg class="i" aria-hidden="true"><use href="#ic-x"/></svg></span></button></div>' +
-    '<button class="trash" type="button" aria-label="削除">' + TRASH + '</button></div>';
+    '<button class="trash" type="button" aria-label="削除">' + TRASH + '</button></div>' +
+    '<div class="to"></div>';
+  li.style.setProperty('--bc', 'var(--c' + cur + ')');
+  var mv = li.querySelector('.mv'), to = li.querySelector('.to');
+  BOXES.forEach(function(b, i){
+    if (i === cur) return;
+    var t = document.createElement('button'); t.type = 'button'; t.textContent = b.name;
+    t.style.setProperty('--tc', 'var(--c' + i + ')');
+    t.addEventListener('click', function(){ moveItem(it, i); });
+    to.appendChild(t);
+  });
+  mv.addEventListener('click', function(){
+    var on = !li.classList.contains('moving');
+    closeMoving();
+    if (on){ li.classList.add('moving'); mv.setAttribute('aria-expanded', 'true'); }
+  });
   var nm = li.querySelector('.name'), am = li.querySelector('.amt');
   nm.value = it.name; am.value = it.amt ? '¥' + fmtInput(it.amt) : '';
   var trashBtn = li.querySelector('.trash');
-  function label(){ trashBtn.setAttribute('aria-label', (it.name || '項目') + 'を削除'); }
+  function label(){ trashBtn.setAttribute('aria-label', (it.name || '項目') + 'を削除'); mv.setAttribute('aria-label', (it.name || '項目') + 'を別の箱へ'); }
   label();
   nm.addEventListener('input', function(){ it.name = nm.value.slice(0, 60); label(); save(); });
   am.addEventListener('focus', function(){ am.value = it.amt ? String(it.amt) : ''; });
@@ -1177,7 +1213,7 @@ function rowEl(it){
     can.setAttribute('d', on ? 'M19 13.5v6.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V13.5' : 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6');
     clearTimeout(timer); if (on) timer = setTimeout(function(){ setOpen(false); }, 4000);
   }
-  trashBtn.addEventListener('click', function(){ setOpen(!del.classList.contains('open')); });
+  trashBtn.addEventListener('click', function(){ closeMoving(); setOpen(!del.classList.contains('open')); });
   li.querySelector('.no').addEventListener('click', function(){ setOpen(false); });
   li.querySelector('.yes').addEventListener('click', function(){
     clearTimeout(timer);
@@ -1187,6 +1223,36 @@ function rowEl(it){
   });
   return li;
 }
+function closeMoving(){
+  document.querySelectorAll('.row.moving').forEach(function(r){ r.classList.remove('moving'); r.querySelector('.mv').setAttribute('aria-expanded', 'false'); });
+}
+document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeMoving(); });
+document.addEventListener('click', function(e){ if (!e.target.closest('.row.moving')) closeMoving(); }, true);
+var undoInfo = null, movedT = null;
+function moveItem(it, to){
+  var from = cur, arr = state.items[from], k = arr.indexOf(it);
+  if (k < 0) return;
+  arr.splice(k, 1);
+  state.items[to].push(it);
+  save(); renderBoxes(); renderMemo();
+  var bx = boxEls[to]; bx.classList.add('got'); setTimeout(function(){ bx.classList.remove('got'); }, 700);
+  undoInfo = {id: it.id, from: from, to: to, index: k};
+  $('#moved-msg').textContent = (it.name || '項目') + ' → ' + BOXES[to].name;
+  $('#moved').classList.add('on');
+  clearTimeout(movedT); movedT = setTimeout(hideMoved, 5000);
+}
+function hideMoved(){ $('#moved').classList.remove('on'); undoInfo = null; }
+$('#moved-undo').addEventListener('click', function(){
+  var u = undoInfo; if (!u) return;
+  var dst = state.items[u.to], j = -1;
+  for (var x = 0; x < dst.length; x++) if (dst[x].id === u.id){ j = x; break; }
+  if (j >= 0){
+    var it = dst.splice(j, 1)[0];
+    state.items[u.from].splice(Math.min(u.index, state.items[u.from].length), 0, it);
+    save(); renderBoxes(); renderMemo();
+  }
+  clearTimeout(movedT); hideMoved();
+});
 $('#new-row').addEventListener('submit', function(e){
   e.preventDefault();
   var nm = $('#new-name'), am = $('#new-amt');
