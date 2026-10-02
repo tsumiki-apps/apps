@@ -512,6 +512,19 @@ function tmuxStdin(args, input) {
 // 「✂ 7 lines hidden」にしてしまう＝スマホにそもそも届かなくなるため、
 // 畳まれない程度に高く固定する。
 const ROWS = 45;
+// 全画面の描き方（2026-10-03）。Claude Code を CLAUDE_CODE_NO_FLICKER=1 で起動すると、tmux の
+// 履歴に流さず窓の中に会話を自分で描く。幅を変えると**会話全体**を新しい幅で描き直す
+// （今の描き方は見えている45行だけ。上へ流れた分は書かれたときの幅で固まり、iPhone で書かれた
+// 部分が iPad でも51桁のまま残った）。窓の高さを400行にして、画面側が読む量（lines=400）と揃える。
+// このアプリから作る Claude の席だけに使う。印（FULL_OPT）の付いた席だけを400行にする。
+// ⚠️ 今の描き方の席を400行にしてはいけない。中身が窓に収まった瞬間に会話を最初から描き直し、
+//    同じ会話が2本並ぶ（反証役が実測）。だから起動に失敗して黙って今の描き方に戻った席・
+//    Claude を終えた席（裏画面でなくなる）は、印を外して45行に戻す（→ seatRows）
+// 止めるときは LaunchAgent に TSUMIKI_FULLSCREEN=0（今ある席はそのまま）
+const FULLSCREEN = process.env.TSUMIKI_FULLSCREEN !== '0';
+const FULL_OPT = '@tsumiki_full';
+const ROWS_FULL = 400;
+const FULL_ENV = 'CLAUDE_CODE_NO_FLICKER=1 ';
 const COLS_MIN = 40;
 const COLS_MAX = 160;   // 大きい iPad の横向き（index.html の measureCols と同じ上限）
 const COLS_DEFAULT = 60;
@@ -537,6 +550,54 @@ async function windowWidth(name) {
   return Number.isFinite(n) ? n : 0;
 }
 
+// その席の高さ。全画面の印があれば400行、無ければ45行。
+// 全画面の Claude は端末の裏画面（alternate screen）で動く＝`#{alternate_on}` が1。
+// 印があるのに裏画面でない＝起動に失敗して黙って今の描き方に戻った・Claude を /exit してシェルに戻った。
+// そのまま400行だと、そこで今の描き方の Claude（claude --resume など）を動かしたとき会話が2本並ぶので、
+// 印を外して45行に戻す。
+// ⚠️ 履歴の行数（history_size）では見分けられない。400行の窓は埋まるまで履歴に流さないので、
+//    戻っても出力が400行を超えるまで0のまま（反証役が実測）。
+// ⚠️ 作った直後は Claude が立ち上がるまで裏画面ではない。席を作ってから FULL_GRACE_S は見ない
+const FULL_GRACE_S = 40;
+async function seatRows(name) {
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':',
+    `#{${FULL_OPT}}|#{alternate_on}|#{session_created}|#{window_height}`]);
+  if (!r.ok) return { rows: ROWS, height: 0 };
+  const [full, alt, created, h] = r.out.trim().split('|');
+  const height = Number(h) || 0;
+  if (full !== '1') return { rows: ROWS, height };
+  if (alt === '1' || Date.now() / 1000 - Number(created) < FULL_GRACE_S) return { rows: ROWS_FULL, height };
+  await tmux(['set-option', '-u', '-t', name, FULL_OPT]);
+  console.log(`full ${name} 裏画面でなくなった（今の描き方に戻った・Claude を終えた）ので45行に戻す`);
+  return { rows: ROWS, height };
+}
+
+// 高さを合わせる（幅はそのまま）。全画面の席の400行と、そこから外れた席の45行戻し。
+// ⚠️ 今の描き方の席は、高さだけでは動かさない（Mac のターミナルで繋いだ高さを、幅が同じなのに
+//    取り上げない＝前からの動きのまま。幅を変えるときの resizeWindow でだけ45行に戻る）
+async function fitHeight(name, rowsInfo, wasFull) {
+  const { rows, height } = rowsInfo;
+  if (!height || height === rows) return;
+  if (rows !== ROWS_FULL && !wasFull) return;
+  await tmux(['resize-window', '-t', '=' + name + ':', '-y', String(rows)]);
+  await tmux(['set-window-option', '-t', '=' + name + ':', 'window-size', 'latest']);
+  resizedAt.set(name, Date.now());
+  forgetScreen(name);
+}
+
+// 画面を見ているあいだ、ときどき全画面の席の高さを確かめる（幅が変わらないと resizeWindow が
+// 走らないため）。Mac のターミナルで繋いで高さが縮んだあとも、ここで400行に戻る。席ごとに10秒に1回
+const fullCheckedAt = new Map();
+async function checkFull(name) {
+  const now = Date.now();
+  if (now - (fullCheckedAt.get(name) || 0) < 10000) return;
+  fullCheckedAt.set(name, now);
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', `#{${FULL_OPT}}`]);
+  const wasFull = r.ok && r.out.trim() === '1';
+  if (!wasFull) return;
+  await fitHeight(name, await seatRows(name), true);
+}
+
 async function resizeWindow(name, cols) {
   if (!NAME_RE.test(name)) return;
   const want = clampCols(cols);
@@ -546,9 +607,10 @@ async function resizeWindow(name, cols) {
   // 別のクライアントが来ると幅はそちらに合わせて変わってしまう。そのとき
   // 覚えている値のせいで直しにいかず、スマホでは崩れたまま残っていた
   // （2026-09-01 点検で判明）。実際の幅を見て決める
-  if (await windowWidth(name) === want) { sized.set(name, want); return; }
+  if (await windowWidth(name) === want) { sized.set(name, want); return checkFull(name); }
   sized.set(name, want);
-  await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(want), '-y', String(ROWS)]);
+  const { rows } = await seatRows(name);
+  await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(want), '-y', String(rows)]);
   // resize-window はその窓を window-size manual に切り替える。そのままだと
   // MacBook のターミナルから繋いだときも 60桁のままになってしまうので、
   // 「最後に繋いだ相手に合わせる」既定に戻す（いまの寸法はそのまま残る）
@@ -758,10 +820,17 @@ function kindOf(cmd) {
 
 // いま見えている画面だけ（状態判定はこちらを使う。履歴を混ぜると
 // 一度出た「Do you want…」がいつまでも残って返答待ちに見えてしまう）
+// 空行の長い並びは1行に詰める（2026-10-03）。全画面の描き方（CLAUDE_CODE_NO_FLICKER）では
+// 窓の高さいっぱいに描くので、会話が短いうちは本文と入力欄のあいだに数百行の空行が入る。
+// そのままだと「下から16行」に質問が入らず、番号で聞いているのに待機に見えた（試験の席で実測）
+function squeezeBlank(text) {
+  return text.replace(/\n(?:[ \t]*\n){3,}/g, '\n\n');
+}
+
 async function captureScreen(name) {
   if (!NAME_RE.test(name)) return null;
   const r = await tmux(['capture-pane', '-p', '-t', '=' + name + ':']);
-  return r.ok ? r.out.replace(/\s+$/, '') : null;
+  return r.ok ? squeezeBlank(r.out.replace(/\s+$/, '')) : null;
 }
 
 // 履歴込み（画面表示はこちら）
@@ -873,7 +942,7 @@ function forgetSeat(name) {
 async function captureHistory(name, lines) {
   if (!NAME_RE.test(name)) return null;
   const r = await tmux(['capture-pane', '-p', '-t', '=' + name + ':', '-S', '-' + Math.max(1, Math.min(2000, lines))]);
-  return r.ok ? r.out.replace(/\s+$/, '') : null;
+  return r.ok ? squeezeBlank(r.out.replace(/\s+$/, '')) : null;
 }
 
 // ------------------------------------- 入力欄に出ている「次の指示の下書き」
@@ -2480,6 +2549,7 @@ const server = http.createServer(async (req, res) => {
       const body = (async () => {
         // 見ている端末に入る桁数。画面側が実測して送ってくる（送ってこなければ触らない）
         if (url.searchParams.has('cols')) await resizeWindow(name, url.searchParams.get('cols'));
+        else await checkFull(name);
         const text = await captureHistory(name, lines);
         if (text === null) return null;
         const { status, quietMs } = judge(name, (await captureScreenShared(name)) || '');
@@ -2738,9 +2808,11 @@ const server = http.createServer(async (req, res) => {
       sized.set(name, cols);
       forgetSeat(name);     // 同じ名前の前の住人の姿・画面を持ち越さない
       prev.delete(name);
-      const r = await tmux(['new-session', '-d', '-s', name, '-x', String(cols), '-y', String(ROWS),
+      const full = FULLSCREEN && body.run === 'claude';
+      const r = await tmux(['new-session', '-d', '-s', name, '-x', String(cols), '-y', String(full ? ROWS_FULL : ROWS),
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (!r.ok) { sized.delete(name); return json(res, 500, { error: r.err.slice(0, 200) }); }
+      if (full) await tmux(['set-option', '-t', name, FULL_OPT, '1']);
       if (body.run === 'claude') {
         // スマホからは「これ実行していい？」に毎回答えるのが現実的でないので、
         // このアプリから作るセッションは最初から編集をバイパスで起動する。
@@ -2749,7 +2821,7 @@ const server = http.createServer(async (req, res) => {
         // 素の設定で起動する（起動できないより、いつも通り起動するほうがまし）
         const model = String(body.model || '');
         const known = MODELS.indexOf(model) >= 0;
-        const cmd = known ? CLAUDE_CMD + ' --model ' + model : CLAUDE_CMD;
+        const cmd = (full ? FULL_ENV : '') + (known ? CLAUDE_CMD + ' --model ' + model : CLAUDE_CMD);
         // どのモデルで始めたかを席に書いておく（一覧の札に出すため）。
         // ここだけ `=名前` の指定が使えないので素の名前で指す。名前は NAME_RE を
         // 通っていて、tmux は完全一致を先に見るので、別の席に付くことはない。
@@ -2778,13 +2850,14 @@ const server = http.createServer(async (req, res) => {
       forgetSeat(name);
       prev.delete(name);
       const cwd = path.join(os.homedir(), '制作物');
-      const r = await tmux(['new-session', '-d', '-s', name, '-x', String(COLS_DEFAULT), '-y', String(ROWS),
+      const r = await tmux(['new-session', '-d', '-s', name, '-x', String(COLS_DEFAULT), '-y', String(FULLSCREEN ? ROWS_FULL : ROWS),
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
+      if (r.ok && FULLSCREEN) await tmux(['set-option', '-t', name, FULL_OPT, '1']);
       if (!r.ok) {
         sized.delete(name);
         return json(res, 500, { error: r.err.slice(0, 200), msg: '席を作れませんでした（' + r.err.slice(0, 80) + '）' });
       }
-      await tmux(['send-keys', '-t', '=' + name + ':', '-l', CLAUDE_CMD + " '/task-minaoshi'"]);
+      await tmux(['send-keys', '-t', '=' + name + ':', '-l', (FULLSCREEN ? FULL_ENV : '') + CLAUDE_CMD + " '/task-minaoshi'"]);
       await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       console.log('minaoshi ' + name);
       // ショートカットは msg だけを画面に出す（成功も失敗も同じ鍵）
