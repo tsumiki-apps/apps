@@ -513,7 +513,7 @@ function tmuxStdin(args, input) {
 // 畳まれない程度に高く固定する。
 const ROWS = 45;
 const COLS_MIN = 40;
-const COLS_MAX = 120;
+const COLS_MAX = 160;   // 大きい iPad の横向き（index.html の measureCols と同じ上限）
 const COLS_DEFAULT = 60;
 
 function clampCols(v) {

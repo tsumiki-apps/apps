@@ -3670,6 +3670,20 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var filePend = {};           // 次の便でまとめて聞く名前
   var fileTimer = null;
   var FILE_RETRY_MS = 60000;   // 「無い」と分かった名前を、もう一度聞くまでの間
+  // 光っている名前の答えを聞き直す間（2026-10-02）。押した瞬間にファイルアプリへ飛ぶには
+  // 手元の答えで開く先を決めるしかない（→ fileOpenNow）。答えが古いと、あとからできた
+  // 同じ名前の別物を取りこぼすので、画面に出ているあいだは30秒ごとに新しくする
+  var FILE_HIT_FRESH_MS = 30000;
+  var FILE_OPEN_FRESH_MS = 90000;   // これより古い答えでは、その場で開かない（聞き直す）
+  // いまの画面で光らせた名前。画面の字が変わらないと描き直し（＝聞き直しの入口）が走らないので、
+  // 巡回のついでにここを見て古い答えを聞き直す（→ fileFreshen）。描き直すたびに作り直す
+  var fileShown = {};
+  var fileFreshAt = 0;
+  function fileFreshen() {
+    if (Date.now() - fileFreshAt < 10000) return;
+    fileFreshAt = Date.now();
+    Object.keys(fileShown).forEach(fileAskLater);
+  }
   var FILE_ASK_MAX = 200;      // 1便で聞く数（サーバーも200で切る。溢れた分は次の便へ）
   var FILE_ASK_BYTES = 8000;   // 1便の名前の長さ（URL にしたとき）。サーバーの上限16KBの半分
   var FILE_IDX_MAX = 3000;     // 覚えておく名前の数。超えたら全部忘れて聞き直す
@@ -3709,7 +3723,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function fileKnown(name) {
     var e = fileIdx[name];
     if (!e) return false;
-    if (e.hit) return true;
+    if (e.hit) return Date.now() - e.at < FILE_HIT_FRESH_MS;
     return Date.now() - e.at < FILE_RETRY_MS;
   }
 
@@ -3752,7 +3766,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         var now = Date.now();
         names.forEach(function (n) {
           delete fileAsking[n];
-          if (found[n]) { fileIdx[n] = { hit: found[n], at: now }; hit = true; }
+          if (found[n]) {
+            // もう光っていた名前の聞き直しでは描き直さない（30秒ごとに画面が組み直されないように）
+            if (!(fileIdx[n] && fileIdx[n].hit)) hit = true;
+            fileIdx[n] = { hit: found[n], at: now };
+          }
+          // 光っていた名前は、1回見つからなかっただけでは消さない。索引の探索は締め切りで
+          // 途中までになることが多く、印の無いものは回によって漏れる（光ったり消えたりする）。
+          // 答えの中身は据え置き、聞いた時刻だけ進める（その場で開くかどうかは押した時に見る）
+          else if (fileIdx[n] && fileIdx[n].hit) fileIdx[n].at = now;
           else if (!unsure) fileIdx[n] = { hit: null, at: now };
         });
         if (hit) { fileRedrawWanted = true; fileRedraw(); }
@@ -3977,7 +3999,40 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       + (FILES_BASE + rel).split('/').map(encodeURIComponent).join('/');
   }
 
+  // ⚠️ ファイルアプリへは**押したその場で**飛ぶ（2026-10-02 本人「iPad だと中のプレビューになる」）。
+  //    Safari は指で押した直後でないと別のアプリへの切り替えを黙って止める。前は押してから
+  //    サーバーに聞き直し（最大8秒）、返事を待ってから飛んでいたので、返事が遅い iPad では
+  //    切り替えが止められ、1.8秒後の戻し（プレビュー）だけが出ていた。光っている名前は
+  //    もう答えを持っているので、それで1つに決まれば聞き直さずに飛ぶ。
+  //    聞き直しは後ろで行い、消えていたら戻ってきたときに知らせる
+  function fileOpenNow(name, ctx) {
+    var e = fileIdx[name];
+    var h = e && e.hit;
+    // 古い答えでは開かない。README の「同じ名前は1つに決めない」：8/31 の履歴で押すと
+    // 9/15 の別物が開いた事故があり、開く先は新しい答えで決める（反証役 2026-10-02）
+    if (!h || Date.now() - e.at > FILE_OPEN_FRESH_MS) return false;
+    // 候補が全部そろっていないとき（total が多い）は、ほかに古い版があるかもしれない＝聞き直す
+    if (!h.list || !h.list.length || h.total > h.list.length) return false;
+    var p = filePick(h.list, ctx);
+    if (!p.one) return false;
+    var rel = p.one.rel;
+    openInFiles(rel);
+    // 後ろで聞き直し、新しい答えで選び直して**違う物になったときだけ**知らせる。
+    // 「見つからない」では知らせない：探索は途中までのことが多く、在る物でも漏れる
+    api('/api/lookup?max=60&names=' + encodeURIComponent(name), null, 8000)
+      .then(function (d) {
+        var g = d && d.found && d.found[name];
+        if (!g || !g.list || !g.list.length) return;
+        fileIdx[name] = { hit: g, at: Date.now() };
+        var q = filePick(g.list, ctx);
+        if (!q.one || q.one.rel !== rel) toast('同じ名前の別の版があります。もう一度押してください');
+      })
+      .catch(function () {});
+    return true;
+  }
+
   function fileOpen(name, ctx) {
+    if (fileOpenNow(name, ctx)) return;
     api('/api/lookup?max=60&names=' + encodeURIComponent(name), null, 8000)
       .then(function (d) {
         var h = d && d.found && d.found[name];
@@ -4064,7 +4119,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           // 始まりがこの行・終わりが今足した行＝またいでいる（手前の行で終わるものは前の周で拾った）
           if (a >= head.length || b <= joined.length - body.length) continue;
           got = true;
-          if (!fileHit(m[0])) { fileAskLater(m[0]); continue; }
+          fileAskLater(m[0]);     // 光っている名前も、答えが古ければ聞き直す
+          if (!fileHit(m[0])) continue;
+          fileShown[m[0]] = 1;
           parts.forEach(function (pt) {
             var from = Math.max(a, pt.at), to = Math.min(b, pt.at + pt.len);
             if (from >= to) return;
@@ -4181,6 +4238,23 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // 押したとき。光らせたあとで消された・動かされたかもしれないので、もう一度聞く
   function pathOpen(p) {
+    // 光っているパスはもう置き場を知っている＝押したその場で飛ぶ（理由は fileOpenNow）
+    var known = pathIdx[p] && pathIdx[p].rel;
+    if (known) {
+      openInFiles(known);
+      // 後ろで確かめる（resolve は1件ずつ stat するので、在る物を「無い」とは言わない）。
+      // 移動・削除されていたら、戻ってきたときに知らせる。ファイルアプリは黙って手前を開くため
+      api('/api/resolve?paths=' + encodeURIComponent(p), null, 8000)
+        .then(function (d) {
+          if (!d || d.stale) return;
+          var h = d.found && d.found[p];
+          if (!h) { pathIdx[p] = { rel: null, at: Date.now() }; return toast('移動したか消えています'); }
+          pathIdx[p] = { rel: h.rel, at: Date.now() };
+          if (h.rel !== known) toast('場所が変わっていました。もう一度押してください');
+        })
+        .catch(function () {});
+      return;
+    }
     api('/api/resolve?paths=' + encodeURIComponent(p), null, 8000)
       .then(function (d) {
         var h = d && d.found && d.found[p];
@@ -4226,8 +4300,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 未知の名前はここでは札にせず、聞きに行くだけ＝答えが返った回に光る
     RE_FILE.lastIndex = 0;
     while ((m = RE_FILE.exec(text))) {
-      if (fileHit(m[0])) push(m.index, m[0], 'file');
-      else fileAskLater(m[0]);
+      fileAskLater(m[0]);       // 光っている名前も、答えが古ければ聞き直す（fileKnown）
+      if (fileHit(m[0])) { push(m.index, m[0], 'file'); fileShown[m[0]] = 1; }
     }
     RE_SITE.lastIndex = 0;
     while ((m = RE_SITE.exec(text))) {
@@ -4503,6 +4577,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   function renderScreen(text) {
     fileRedrawWanted = false;   // この描き直しで、分かっている名前は全部光る
+    fileShown = {};
     // 桁数は「取りに行ったとき」に決まるが、起動直後は保存しておいた画面を先に出す＝
     // まだ分かっていない。そのときは今この場で測る（同じ端末・同じ幅なので前回と同じ値になる）
     var cols = paneCols || measureCols();
@@ -4644,7 +4719,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
     var avail = el.out.clientWidth - pad + 8 - 16;       // #out padding / .blk margin / .blk padding
     if (!(per > 0) || !(avail > 0)) return 0;
-    return Math.max(40, Math.min(120, Math.floor(avail / per)));
+    // 上限は server.js の COLS_MAX と同じ。大きい iPad の横向きで120桁に頭打ちしないよう160（2026-10-02）
+    return Math.max(40, Math.min(160, Math.floor(avail / per)));
   }
 
   // --------------------------------- プレビュー付きの質問のときだけ、端末を広く借りる
@@ -4675,13 +4751,29 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       sentWide = wantWide;
       wideAt = Date.now();
     }
-    return sentWide ? WIDE_COLS : measureCols();
+    // 絵つきの質問で広げるときも、もともと120桁より広い画面（iPad 横）は狭めない
+    return sentWide ? Math.max(WIDE_COLS, measureCols()) : measureCols();
   }
   // いま出ている画面が「何桁で」描かれたものか。URL の折り返しを見分けるのに要る
   var paneCols = 0;
   // この端末が最後に「この幅で」と送った桁数と、次の取得で送り直すかの印
   var claimedCols = 0;
   var claimCols = true;
+  // 画面に触れた・キーを打った端末が幅を取り返す（2026-10-02 本人「iPad でも iPhone と同じ折り返しになる」）。
+  // 前は席を開いた・表に戻した・送信したときだけ取り返していたので、iPad を開いたまま
+  // iPhone を触ると51桁になり、iPad で読んだりなでたりしても51桁のまま残っていた。
+  // 触ったときだけなので、2台を置いておくだけでは幅を取り合わない（→ refreshPane の説明）。
+  // 同じ幅ならサーバーは何もしない（resizeWindow が実際の幅を見て止まる）
+  ['pointerdown', 'keydown'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (claimCols) return;
+      // 札・キー・選択肢のボタンは外す。キーは1本ずつ送るので、そのあいだにリサイズが
+      // 割り込むと描き直しが挟まる。送ったあとは tick(true) で取り返すので漏れない
+      if (e.type === 'pointerdown' && e.target && e.target.closest && e.target.closest('button')) return;
+      var c = sentWide ? Math.max(WIDE_COLS, measureCols()) : measureCols();   // 切り替えの時計は動かさない
+      if (c && (c !== claimedCols || c !== paneCols)) claimCols = true;
+    }, { passive: true, capture: true });
+  });
 
   var lastText = null;
   var touching = false;
@@ -4710,7 +4802,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 狭まるたびに描き直して、起動の見出しが履歴に何枚も積もった（2026-09-28 実測：
     // 51↔60 を10回往復で見出し1→6枚）。送るのは、席を開いた・表に戻した・送信した
     // 直後（force）と、この端末の幅が変わったとき（回転・広げる/戻す）だけ
-    var claim = cols && (force || claimCols || cols !== claimedCols);
+    // 幅が変わったとき（回転・絵つきの質問で広げる/戻す）に送るのは、**いま幅を持っている端末だけ**
+    // （paneCols＝実際の幅が、自分が最後に送った幅と同じ）。置いてあるだけの iPhone が、
+    // 絵つきの質問のたびに 120→51 を送って iPad を51桁に戻していた（反証役 2026-10-02）
+    var claim = cols && (force || claimCols || (cols !== claimedCols && paneCols === claimedCols));
     if (claim) { claimedCols = cols; claimCols = false; paneCols = cols; }
     var asked = current;
     return api('/api/pane?name=' + encodeURIComponent(current) + '&lines=400'
@@ -4730,6 +4825,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       // 「押したのに何も起きない」になる。次の取得（2秒後）で追いつく
       if (text !== lastText && !touching) { lastText = text; renderScreen(text); }
       else fileRedraw();        // 光らせる描き直しを待たせていたら、いま安全か見る
+      fileFreshen();
       if (stick) el.out.scrollTop = el.out.scrollHeight;
       if (panes[current] !== text) { panes[current] = text; snapDirty = true; }
       saveSnap();
