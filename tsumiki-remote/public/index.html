@@ -3980,19 +3980,40 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var FILES_BASE = '/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Kodai/';
 
   function openInFiles(rel) {
-    var left = false;
-    function gone() { left = true; }
+    var left = false, fellBack = false;
+    // ⚠️ iPad はファイルアプリへの切り替えが遅く、1.8秒の見張りが「開けなかった」と取り違えて
+    //    中のプレビューを出し、そのあとでファイルアプリへ移っていた。戻るとプレビューの画面になる
+    //    （2026-10-03 本人「つみきリモートに戻ったとき、セッションの画面に普通に戻して」）。
+    //    戻しを出したあとも LATE_MS まで見張り、画面が隠れたら＝結局ファイルアプリへ移ったら、
+    //    出したプレビューを閉じて元の席の画面に戻す。
+    //    遅い段では blur を数えない（プレビューの枠に指が入るだけで blur が立つため）
+    var LATE_MS = 12000;
+    function gone(e) {
+      if (fellBack) {
+        if (e && e.type === 'blur') return;
+        if (e && e.type === 'visibilitychange' && !document.hidden) return;
+        fellBack = false;
+        if (!viewer.hidden && viewerRel === rel) document.getElementById('viewerback').onclick();
+        return done();
+      }
+      left = true;
+    }
+    function done() {
+      document.removeEventListener('visibilitychange', gone);
+      window.removeEventListener('pagehide', gone);
+      window.removeEventListener('blur', gone);
+    }
     document.addEventListener('visibilitychange', gone);
     window.addEventListener('pagehide', gone);
     window.addEventListener('blur', gone);
     setTimeout(function () {
-      document.removeEventListener('visibilitychange', gone);
-      window.removeEventListener('pagehide', gone);
-      window.removeEventListener('blur', gone);
-      if (left) return;
-      toast('ファイルアプリで開けませんでした');
+      if (left) return done();
       // shortcut・動画などは中で見られない（サーバーの PREVIEW_EXT の外）＝知らせるだけ
-      if (RE_VIEWABLE.test(rel)) openPreview(rel);
+      if (!RE_VIEWABLE.test(rel)) { toast('ファイルアプリで開けませんでした'); return done(); }
+      toast('ファイルアプリで開けませんでした');
+      openPreview(rel);
+      fellBack = true;
+      setTimeout(function () { if (fellBack) { fellBack = false; done(); } }, LATE_MS);
     }, 1800);
     // パスの区切りは残し、名前の日本語・空白・# などだけ符号化する
     location.href = 'shareddocuments://'
