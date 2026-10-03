@@ -52,7 +52,7 @@ READ_TIMEOUT = 5.0
 # 空白は「_」にする（2026-10-03）。iPad のファイルアプリは、パスのフォルダ名に空白があると
 # shareddocuments:// で中まで進めず「最近使った項目」で止まる（本人の iPad で、空白ありのフォルダは
 # 止まり、空白なしのフォルダは作ったばかりのファイルでも開けた）。iPhone は空白があっても開ける
-SPACE_RE = re.compile(r'[ \u3000]+')
+SPACE_RE = re.compile(r'[\s_]*\s[\s_]*')   # 空白（全角・NBSP・タブも）と、その前後の _ をまとめて1つの _ に
 # 札の頭に Claude Code が付ける動きの印（✳ ✻ など）と点字の回転
 SPIN_RE = re.compile(r'^[\s⠀-⣿✳✻✽✶✢·•*⏺◐◓◑◒]+')
 
@@ -81,7 +81,7 @@ def clean_name(s):
     s = re.sub(r'[/:\\\n\r\t]+', '・', s)
     s = s.lstrip('.').strip()
     s = SPACE_RE.sub('_', s)
-    return s[:60].strip('_ ')
+    return s[:60].rstrip('_ ')     # 頭の _ は落とさない（ARCHIVE の守りが効くように）
 
 
 def tmux(*args):

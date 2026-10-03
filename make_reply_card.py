@@ -390,6 +390,8 @@ def main():
     check_text(card)
 
     slug = card.get("slug") or jpath.stem
+    # 空白は「_」に（iPad のファイルアプリは空白のあるフォルダの中まで進めない。tsumiki_out.py と同じ決まり）
+    slug = re.sub(r"[\s_]*\s[\s_]*", "_", slug).strip("_ ") or "card"
     outdir = Path(sys.argv[2]).expanduser() if len(sys.argv) > 2 \
         else Path.home() / "つみき出力" / f"{slug}"
     work = outdir / "_もと"
