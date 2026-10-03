@@ -206,6 +206,13 @@ PEERS={"open":True,"peers":[{"d":a["d"],"k":a["k"],"name":NM[a["staff_id"]],"mar
                 for a in sorted(avail,key=lambda a:(a["d"],a["k"],a["mark"]=="t",a["staff_id"]))],
        "needs":[{"d":key(d),"k":sl["k"],"need":sl["need"]} for d in range(1,LAST+1) for sl in SLOTS]}
 
+# みんなのシフト（kibo_staff_team）。知らせた月だけ open:true。本番と同じく名前と時間だけ・合計は時間の多い順
+TEAM={"open":True,"view":"full",
+      "assign":[{"d":a["d"],"k":a["k"],"name":NM[a["staff_id"]],"from":a["from"],"to":a["to"],"me":a["staff_id"]==ME}
+                for a in sorted(assign,key=lambda a:(a["d"],a["k"],a["from"],a["staff_id"]))],
+      "totals":[{"name":x["name"],"days":x["fixed_days"],"min":x["fixed_min"],"me":x["id"]==ME}
+                for x in sorted(staff_fx,key=lambda x:-x["fixed_min"]) if x["fixed_days"]]}
+
 SREQ=[{"id":"q1","d":key(9),"k":"night","kind":"drop","status":"open","note":""}]
 SSCENES={
  "empty":  smonth(),
@@ -221,7 +228,7 @@ SSCENES={
 SMOCK = """<script>
 /* ===== 撮影用のニセの通信（本番のデータベースには一切つながらない。名前もお店も架空） ===== */
 (function(){
-  var LOGIN=%s, SCENES=%s, PEERS=%s;
+  var LOGIN=%s, SCENES=%s, PEERS=%s, TEAM=%s;
   var q=new URLSearchParams(location.search);
   var scene=q.get('scene')||'filled';
   try{
@@ -241,7 +248,10 @@ SMOCK = """<script>
     var body = fn==='kibo_staff_login' ? LOGIN
              : fn==='kibo_staff_month' ? SCENES[scene]
              : fn==='kibo_staff_peers' ? (q.get('peers')==='0' ? null
-                 : (SCENES[scene]||{}).editable===false ? {open:false,peers:[],needs:[]} : PEERS) : {ok:true};
+                 : (SCENES[scene]||{}).editable===false ? {open:false,peers:[],needs:[]} : PEERS)
+             : fn==='kibo_staff_team' ? ((SCENES[scene]||{}).published && q.get('team')!=='0'
+                 ? (q.get('team')==='table' ? Object.assign({},TEAM,{view:'table',totals:[]}) : TEAM)
+                 : {open:false,view:'full',assign:[],totals:[]}) : {ok:true};
     var res=new Response(JSON.stringify(body),{status:200, headers:{'Content-Type':'application/json'}});
     // peersdelay=ミリ秒：みんなの希望だけ遅らせる（電波の弱い店内の再現）
     var dl=fn==='kibo_staff_peers' ? +(q.get('peersdelay')||0) : 0;
@@ -250,7 +260,7 @@ SMOCK = """<script>
 })();
 </script>
 """ % (json.dumps(SLOGIN,ensure_ascii=False), json.dumps(SSCENES,ensure_ascii=False),
-       json.dumps(PEERS,ensure_ascii=False))
+       json.dumps(PEERS,ensure_ascii=False), json.dumps(TEAM,ensure_ascii=False))
 
 (OUT/"_テスト用_senya-staff.html").write_text(
     '<meta charset="utf-8">\n'+SMOCK+(TOOLS/"tsumiki-senya.html").read_text(encoding="utf-8"), encoding="utf-8")
