@@ -1933,6 +1933,20 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
 
+  // ---------------------------------- 変換が切れたときの足あと（2026-10-04）
+  //
+  // 本人「入力欄で、たまに変換ができなくなる。アプリを終わらせて開き直すと直る」。
+  // 好きなときに起こせず、直前に何をしたかも本人には分からないので、アプリ自身に覚えさせる。
+  // 入力欄のまわりで起きたこと（コピー・札で字を入れた・書きかけの差し替え・焦点・裏に回った）を
+  // 名前だけ直近30件持っておき、「変換なしで仮名がそのまま入った」のを見たら Mac のログに送る。
+  // ⚠️ 打った字は送らない・持たない（名前と時刻だけ）。
+  var imeTrail = [];
+  var imeSentAt = 0;
+  function imeNote(what) {
+    imeTrail.push(Math.round(performance.now() / 100) / 10 + 's ' + what);
+    if (imeTrail.length > 30) imeTrail.shift();
+  }
+
   // 席ごとの短いメモ（送り先バーの右の欄）。{ 席の名前: 文字 }。
   // 正本は Mac 側（/api/memo）。ここは、打っている最中と届くまでの手元の写し
   var memos = {};
@@ -2563,9 +2577,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
     // 素のシェルに日本語で話しかけてしまう事故を、入力欄の文言で防ぐ
     var cur = sessions.filter(function (s) { return s.name === current; })[0];
-    el.cmd.placeholder = (cur && cur.kind === 'shell')
+    var ph = (cur && cur.kind === 'shell')
       ? 'コマンドを入力…（AIではありません）'
       : '指示を入力…';
+    if (el.cmd.placeholder !== ph) { imeNote('入力欄の文言を変えた'); el.cmd.placeholder = ph; }
     pickBtn.disabled = !cur;
 
     // 入力欄の真上に「いまの送り先」を出す。番号はタブの番号と揃える
@@ -2617,6 +2632,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     el.memo.value = memos[current] || '';
     el.memoText.hidden = true;
     el.memo.hidden = false;
+    imeNote('メモ欄に焦点');
     el.memo.focus();
     // 続きから書けるように、文字の最後にカーソルを置く（頭に戻ると打ち直しになる）
     try { el.memo.setSelectionRange(el.memo.value.length, el.memo.value.length); } catch (e) {}
@@ -2922,6 +2938,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     setSent(name, '');
   }
   function clearBox() {
+    imeNote('入力欄を空にした');
     el.cmd.value = ''; atts = []; loadedText = null; destCheck = null;
     renderAtts(); autoGrow(); renderSug();
   }
@@ -2937,6 +2954,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return had;
   }
   function loadDraft(name) {
+    imeNote('書きかけを読み込んだ');
     var d = readDrafts()[name] || null;
     var born = seatCreated(name);
     checkedBorn = born;
@@ -2955,6 +2973,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 入力欄の中身（字と札）をそのまま name の書きかけにする。name に書きかけがあれば下に足す（どちらも消さない）。
   // 札は差し替えずに持ち越す＝置いている途中の札も、置き終わればこちらに付く
   function moveBoxTo(name) {
+    imeNote('書きかけを移した');
     var d = readDrafts()[name] || null;
     var born = seatCreated(name);
     if (d && !draftStale(d, born)) {
@@ -2988,6 +3007,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 本人が打ち始めたので退避しておいた預かり。本物だったなら入力欄の下に足して戻す
     var h = takeHidden(current);
     if (h && !draftStale(h, now) && (h.t || (h.a && h.a.length))) {
+      imeNote('隠した書きかけを戻した');
       if (h.t) el.cmd.value = el.cmd.value ? el.cmd.value + '\n' + h.t : h.t;
       atts = atts.concat(unpackAtts(h.a));
       renderAtts(); autoGrow(); renderSug();
@@ -5086,6 +5106,45 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     clearTimeout(draftTimer);
     draftTimer = setTimeout(saveDraft, 500);
   });
+  // 足あと（→ imeNote）。変換が効いていれば、仮名は必ず変換中（isComposing）として入ってくる。
+  // 変換中でないのに仮名が insertText で入った＝キーボードの変換が切れている、とみなす
+  var imeComposing = false;
+  var imeKana = 0, imeKanaAt = 0;   // 変換なしで続けて入った仮名の数と、最後の時刻
+  var imeCompAt = 0;                // いまの変換が始まった時刻
+  el.cmd.addEventListener('compositionstart', function () { imeComposing = true; imeCompAt = Date.now(); imeNote('変換はじめ'); });
+  el.cmd.addEventListener('compositionend', function () { imeComposing = false; imeCompAt = 0; imeNote('変換おわり'); });
+  el.cmd.addEventListener('focus', function () { imeNote('入力欄に焦点'); });
+  el.cmd.addEventListener('blur', function () { imeComposing = false; imeCompAt = 0; imeNote('入力欄から焦点が外れた'); });
+  el.cmd.addEventListener('input', function (e) {
+    if (imeComposing || e.isComposing || e.inputType !== 'insertText') return;
+    // 1字ずつ・3秒以内に2回続いたときだけ。予測変換で次の言葉を選んだときも変換中でない insertText で
+    // 入るが、そちらは何字かまとめて入る（1字の候補を1回選んだだけでは数えない）
+    if (!/^[\u3041-\u3096\u30a1-\u30fa\u30fc]$/.test(e.data || '')) { imeKana = 0; return; }
+    var nowK = Date.now();
+    imeKana = (nowK - imeKanaAt < 3000) ? imeKana + 1 : 1;
+    imeKanaAt = nowK;
+    if (imeKana < 2) return;
+    imeReport('変換なしで仮名が入った');
+  });
+  // もう1つの壊れ方＝「変換中のまま終わらない」（候補が出ず確定もしない）。変換中の入力が
+  // 始まってから60秒たっても compositionend が来ないときに残す（ふつうの変換は数秒で確定する）
+  el.cmd.addEventListener('input', function (e) {
+    if (!(imeComposing || e.isComposing)) return;
+    if (imeCompAt && Date.now() - imeCompAt > 60 * 1000) imeReport('変換が60秒終わらない');
+  });
+  function imeReport(kind) {
+    imeNote(kind);
+    if (Date.now() - imeSentAt < 5 * 60 * 1000) return;   // 1回切れたら打つたびに出るので5分に1回
+    imeSentAt = Date.now();
+    api('/api/imelog', { method: 'POST', body: JSON.stringify({
+      kind: kind, trail: imeTrail.slice(), ua: navigator.userAgent,
+      standalone: !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)),
+      // http で開いていると navigator.clipboard が無く、コピーは毎回 legacyCopy を通る（→ copyText）
+      secure: !!window.isSecureContext, clip: !!(navigator.clipboard && navigator.clipboard.writeText),
+      up: Math.round(performance.now() / 1000)
+    }) }, 8000).catch(function () {});
+  }
+  document.addEventListener('visibilitychange', function () { imeNote(document.hidden ? '裏に回った' : '表に戻った'); });
 
   // ---------------------------------- 次の指示の候補（入力欄の薄い字の下書き）
   //
@@ -5143,6 +5202,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       }
     }
     destCheck = null;
+    imeNote('送信');
     var keepText = el.cmd.value, keepAtts = atts, sentSeat = draftSeat, sentBorn = seatCreated(draftSeat);
     el.cmd.value = '';
     autoGrow();                 // 1行に戻す
@@ -5157,6 +5217,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       var sentGone = !seatAlive(sentSeat) || (sentBorn && seatCreated(sentSeat) && seatCreated(sentSeat) !== sentBorn);
       if (draftSeat !== sentSeat && sentGone) {
         // 宛先の席が無くなっていた＝その席の預かりに戻しても画面から出せない。見えている入力欄に戻す（②）
+        imeNote('送れなかった字を戻した');
         el.cmd.value = el.cmd.value ? keepText + '\n' + el.cmd.value : keepText;
         atts = keepAtts.concat(atts);
         renderAtts(); autoGrow(); renderSug();
@@ -5176,7 +5237,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       }
       // 書いている途中に戻ってきたときは、いま打っている字を消さない
       var back = false;
-      if (!el.cmd.value) { el.cmd.value = keepText; autoGrow(); back = true; }
+      if (!el.cmd.value) { imeNote('送れなかった字を戻した'); el.cmd.value = keepText; autoGrow(); back = true; }
       if (!atts.length) { atts = keepAtts; renderAtts(); }
       saveDraft();
       // ⚠️ トーストは1枠しかない（後から出したものが前を塗り潰す）。理由を混ぜないと
@@ -5341,6 +5402,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         var when = d ? ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) : '';
         var b = sheetItem(x.t, when, function () {
           closeSheet();
+          imeNote('出した指示から字を入れた');
           var draft = el.cmd.value;
           el.cmd.value = draft + (draft && !/\n$/.test(draft) ? '\n' : '') + x.t;
           autoGrow();
@@ -5372,6 +5434,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 許可の札だけは**依頼の下に**置き、カーソルをその上に残す。空の入力欄で先頭に入れると
     // 最初の一言が「画面操作許可」になり、Claude Code の題名がそれになっていた（2026-09-29）
     if (b === el.kperm || b.dataset.snip) {
+      imeNote('札で字を入れた');
       var draft = el.cmd.value;
       var isPerm = !b.dataset.snip;
       if (isPerm && !draft.trim()) draft = '';
@@ -5555,16 +5618,25 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return ok;
   }
 
+  // ⚠️ 写すのは navigator.clipboard が先。legacyCopy は断られたときだけ（2026-10-04）。
+  // 以前は毎回 legacyCopy も走らせていた＝押すたびに見えない入力欄（readonly＋contentEditable）へ
+  // 焦点を移し、そのまま DOM から外していた。打っている入力欄から焦点を奪って戻すこの動きが、
+  // 「入力欄でたまに変換ができなくなり、開き直すまで戻らない」の一番の疑い（仮説・実機では未確認。
+  // 9/27 に .txt の中身を写す札を足してから、コピーを押す回数が増えた時期とは合う）。
+  // 足あと（imeNote）の「コピー（見えない入力欄）」が切れる直前に出るかで確かめる。
+  // 引き換え：writeText が断られたときの legacyCopy は押したその場の外で走るので、前より通りにくい
+  // （そのときは各札の「長押しで選んでください」の逃げ道に落ちる）
   function copyText(s) {
     if (!s) return Promise.reject(new Error('コピーするものがありません'));
-    var ok = legacyCopy(s);
+    var legacy = function () {
+      imeNote('コピー（見えない入力欄）');
+      return legacyCopy(s) ? Promise.resolve() : Promise.reject(new Error('コピーできません'));
+    };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(s).catch(function (e) {
-        if (ok) return;                 // 片方が通っていればそれでいい
-        throw e;
-      });
+      imeNote('コピー');
+      return navigator.clipboard.writeText(s).catch(legacy);
     }
-    return ok ? Promise.resolve() : Promise.reject(new Error('コピーできません'));
+    return legacy();
   }
 
   // どうしても写せなかったとき用。その字を「選んだ状態」にしておく＝
@@ -5657,6 +5729,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         item = new ClipboardItem({ 'text/plain': p.then(function (t) { return new Blob([t], { type: 'text/plain' }); }) });
       } catch (e) { item = null; }
       if (item) {
+        imeNote('コピー（あとから届く中身）');
         navigator.clipboard.write([item]).then(function () { fileCopyDone(b); }, function () {
           // 断られた（中身が取れなかった・許可が無い）。取れていればもう一度だけ普通に写す
           p.then(function (t) { return copyText(t); })
@@ -5994,6 +6067,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         function () { closeSheet(); doRename(name, ''); }, { icon: 'undo', iconCls: 'dark' });
     }
     // シートを開いた指の動きの中で呼ぶ＝iPhone でもキーボードが出る
+    imeNote('名札の欄に焦点');
     try { input.focus(); } catch (e) {}
   }
 
@@ -7476,6 +7550,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   try {
     var draft = localStorage.getItem(DRAFT);
     if (draft && !el.cmd.value) {
+      imeNote('前の版の書きかけを戻した');
       var d = null;
       try { d = JSON.parse(draft); } catch (e) {}
       if (d && typeof d === 'object') {

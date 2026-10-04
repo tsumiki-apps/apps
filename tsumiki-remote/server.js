@@ -2744,6 +2744,19 @@ const server = http.createServer(async (req, res) => {
     // 空文字を送ると名札を外す＝Claude Code の自動題名に戻る
     // 席ごとの短いメモ。**tmux には触らない**（この席に何も送らない）。
     // 空の字で送られてきたら「消した」＝その席のメモを落とす
+    // 入力欄で変換が切れたときの足あと（2026-10-04）。iPhone が「変換なしで仮名が入った」のを見たら、
+    // 直前に起きたことの名前を送ってくる。打った字は来ない。ログに1行残すだけ
+    if (p === '/api/imelog' && req.method === 'POST') {
+      const body = (await readBody(req, 8 * 1024)) || {};
+      // 制御文字（改行・ESC など）は空白に＝ログの1行を偽れない・端末の色を変えられない
+      const clean = (x, n) => String(x == null ? '' : x).replace(/[\x00-\x1f\x7f\u2028\u2029]/g, ' ').slice(0, n);
+      const trail = (Array.isArray(body.trail) ? body.trail : []).slice(-30).map((x) => clean(x, 40));
+      console.log(`ime ${clean(body.kind, 30) || '変換が切れた'}（起動から${Number(body.up) || 0}秒・`
+        + `${body.standalone ? 'ホーム画面' : 'Safari'}・${body.secure ? 'https' : 'http'}・`
+        + `${body.clip ? 'clipboardあり' : 'clipboardなし'}） 直前: ${trail.join(' → ')} ／ ${clean(body.ua, 200)}`);
+      return json(res, 200, { ok: true });
+    }
+
     if (p === '/api/memo' && req.method === 'POST') {
       const body = await readBody(req);
       const name = String(body.name || '');
