@@ -216,8 +216,9 @@ async function loadJobs(){
   js.forEach(j=>{const b=document.createElement('button');b.textContent=j.title;b.className=job&&job.id===j.id?'cur':'';
     b.onclick=()=>open(j.id);$('jobs').appendChild(b)});
 }
+function resetTiles(){['subA','subB'].forEach(i=>$(i).textContent='選ぶ');['barA','barB'].forEach(i=>$(i).style.width=0)}
 async function open(id){
-  loaded.prox=loaded.caps=loaded.pc='';
+  loaded.prox=loaded.caps=loaded.pc='';resetTiles();
   try{job=await api('/api/job/'+id);try{localStorage.setItem('dsync.job',id)}catch(e){}
     capsDirty=false;render(true);loadJobs()}catch(e){job=null;render(true)}
 }
@@ -226,7 +227,7 @@ function setDone(id,on){$(id).classList.toggle('done',on)}
 function render(first){
   showErr(job&&job.error);
   const st=job?job.step||2:1, busy=job&&job.busy;
-  $('title').value=job?job.title:($('title').value||'');
+  if(document.activeElement!==$('title'))$('title').value=job?job.title:($('title').value||'');
   $('startBtn').hidden=!!job;
   setDone('s1',!!job);
   $('s2').hidden=!job; setDone('s2',!!(job&&job.has_a&&job.has_b));
@@ -237,7 +238,7 @@ function render(first){
   const synced=job&&job.offset!==undefined&&job.offset!==null;
   $('s3').hidden=!(job&&job.has_a&&job.has_b);
   $('b3').hidden=busy!=='同期'; $('v3').hidden=!synced||busy==='同期';
-  $('syncBtn').hidden=!!busy||(synced&&!job.error);
+  $('syncBtn').hidden=!!busy||(synced&&!(job.error||'').startsWith('同期'));
   if(busy==='同期')$('bar3').style.width=((job.progress||0)*100)+'%';
   const pk=synced?job.id+'|'+job.auto_offset+'|'+job.confidence:'';
   if(synced&&pk!==loaded.prox){
@@ -288,12 +289,13 @@ $('newBtn').onclick=()=>{job=null;loaded.prox=loaded.caps=loaded.pc='';try{local
 const up={};
 function upload(k,file){
   const ext=(file.name.split('.').pop()||'mov').toLowerCase();
-  up[k]=true; const K=k.toUpperCase();
+  up[k]=true; const K=k.toUpperCase(); $('f'+K).disabled=true;
   return new Promise((res,rej)=>{
     const x=new XMLHttpRequest();
     const jid=job.id;
     x.open('PUT','/api/job/'+jid+'/upload/'+k);x.setRequestHeader('X-Ext',ext);x.setRequestHeader('X-DSync','1');
-    x.upload.onprogress=e=>{if(e.lengthComputable){$('bar'+K).style.width=(e.loaded/e.total*100)+'%';$('sub'+K).textContent=Math.round(e.loaded/e.total*100)+'%'}};
+    x.upload.onprogress=e=>{if(e.lengthComputable&&job&&job.id===jid){$('bar'+K).style.width=(e.loaded/e.total*100)+'%';$('sub'+K).textContent=Math.round(e.loaded/e.total*100)+'%'}};
+    x.onloadend=()=>{$('f'+K).disabled=false};
     x.onload=()=>{up[k]=false;
       if(!job||job.id!==jid){res();return}  // 送っている間に別の作業へ移った
       if(x.status<300){job=JSON.parse(x.responseText);$('sub'+K).textContent='✓';res()}

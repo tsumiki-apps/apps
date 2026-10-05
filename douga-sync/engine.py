@@ -60,11 +60,15 @@ def probe(path):
         except (TypeError, ValueError):
             return 0.0
     vdur = float(v.get("duration") or d["format"]["duration"])
+    fst = st(d["format"])
     return {
         "dur": float(d["format"]["duration"]),
         "vdur": vdur,
         # 音が映像より遅れて始まる分（音の配列の0秒＝映像のこの秒）
         "astart": round(st(a) - st(v), 4) if a else 0.0,
+        # ffmpeg はファイル全体の始まり（音と映像の早いほう）を0秒に置く。そこから映像・音が何秒あとか
+        "vlead": round(st(v) - fst, 4),
+        "alead": round(st(a) - fst, 4) if a else 0.0,
         "w": w, "h": h,
         "hlg": v.get("color_transfer") in ("arib-std-b67", "smpte2084"),
         "audio": a is not None,
@@ -250,6 +254,7 @@ def _kind(ch):
 def wrap(text, n=CAP_LINE):
     """2行に。言葉の途中で切らないよう、句読点のあと・ひらがなから漢字やカタカナへ
     変わるところ（「新しい｜スケジュール帳」）を候補にし、真ん中に近い所で折る。"""
+    text = " ".join(text.split())   # 改行は空白に（PIL は改行を測れない）
     if len(text) <= n:
         return [text]
     mid = len(text) // 2
@@ -316,17 +321,25 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
     make_background(title, bg)
     make_pip_assets(plate, mask)
     dur = a_info["dur"]
-    track = build_caption_track(caps, dur, job_dir / "caps")
+    # 字幕の時刻は A の音の頭が0秒（文字起こしの都合）。書き出しの時間軸へ直す
+    al = a_info.get("alead", 0.0)
+    track = build_caption_track([{**c, "start": c["start"] + al, "end": c["end"] + al} for c in caps],
+                                dur, job_dir / "caps")
 
     mx, my, mw, mh = MAIN
     px, py = pip_rect()
-    b_start, b_end = offset, offset + b_info.get("vdur", b_info["dur"])
+    # 時刻の基準：offset は「A の映像の何秒目で B の映像が始まるか」。
+    # 書き出しの時間軸は A のファイルの始まりが0秒なので、A の映像は vlead 秒あとに始まる。
+    # B もファイルの始まりが0秒として読まれるので、B の映像の頭（vlead）を差し引いてずらす。
+    da, dv = a_info.get("vlead", 0.0), b_info.get("vlead", 0.0)
+    b_start = offset + da
+    b_end = b_start + b_info.get("vdur", b_info["dur"])
     show = f"between(t,{max(b_start, 0):.3f},{b_end:.3f})"
-    # B を A の時間軸へずらす（マイナスなら頭を切る）
-    if offset >= 0:
-        b_in = ["-itsoffset", f"{offset:.3f}", "-i", str(b_path)]
+    shift = offset + da - dv
+    if shift >= 0:
+        b_in = ["-itsoffset", f"{shift:.3f}", "-i", str(b_path)]
     else:
-        b_in = ["-ss", f"{-offset:.3f}", "-i", str(b_path)]
+        b_in = ["-ss", f"{-shift:.3f}", "-i", str(b_path)]
 
     fc = (
         f"[1:v]fps=30,scale={mw}:{mh}:force_original_aspect_ratio=increase,"
@@ -368,7 +381,7 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
     rc = p.wait()
     th.join(5)
     if rc != 0:
-        raise RuntimeError("".join(errbuf)[-1500:])
+        raise RuntimeError("".join(errbuf)[-1500:].strip() or f"ffmpeg が止まりました（{rc}）")
 
 
 def save_to_photos(path):
@@ -394,7 +407,7 @@ def diff_pairs(before, after):
     for op, i1, i2, j1, j2 in sm.get_opcodes():
         if op != "replace":
             continue
-        core = max(i2 - i1, j2 - j1)   # 実際に直した字数（前後の字を足す前）
+        core = i2 - i1   # 直された元の字数（前後の字を足す前）。1字なら誤爆しやすい
         # 1字だけの直しは前後の字を足して、別の場所で誤爆しにくくする
         if i2 - i1 == 1 and j2 - j1 == 1:
             if i1 > 0 and j1 > 0 and before[i1 - 1] == after[j1 - 1]:
@@ -465,10 +478,10 @@ def remove_pair(learn_dir, a, b):
 
 def apply_lexicon(caps, lex):
     """覚えた置き換えを当てる（元の文に1回だけ・長い物から。置き換えた先をもう一度置き換えない）。
-    1字だけの直し（ちは→ちわ など）は誤爆しやすいので、2回以上直したものだけ。"""
+    置き換える元が1字（す→した など）は使わない。元の直しが1字（ちは→ちわ）なら2回以上直したものだけ。"""
     import re
     rules = {p["from"]: p["to"] for p in lex.get("pairs", [])
-             if p.get("core", len(p["from"])) >= 2 or p["n"] >= 2}
+             if len(p["from"]) >= 2 and (p.get("core", 1) >= 2 or p["n"] >= 2)}
     if not rules:
         return caps
     pat = re.compile("|".join(re.escape(k) for k in sorted(rules, key=len, reverse=True)))
@@ -484,6 +497,6 @@ def whisper_prompt(lex, limit=40):
     for p in lex.get("pairs", []):
         w = p["to"].strip("、。 　")
         # 前後の字を足しただけの切れ端（「ちわ」など）は渡さない。2字以上を直した言葉だけ
-        if p.get("core", len(p["from"])) >= 2 and len(w) >= 2 and w not in words:
+        if min(p.get("core", 1), len(p["from"])) >= 2 and len(w) >= 2 and w not in words:
             words.append(w)
     return ("用語：" + "、".join(words[:limit]) + "。") if words else None

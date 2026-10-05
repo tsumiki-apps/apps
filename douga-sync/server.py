@@ -8,10 +8,12 @@
 """
 import json
 import os
+import shutil
 import re
 import threading
 import time
 import traceback
+import uuid
 from urllib.parse import unquote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,6 +24,17 @@ HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("DSYNC_ROOT") or Path.home() / "Movies" / "動画同期")
 ROOT.mkdir(parents=True, exist_ok=True)
 LEARN = ROOT / "学習"
+# 受け付ける名前。DSYNC_HOSTS（カンマ区切り・LaunchAgent で渡す）に tailnet の名前を入れる。
+# リポジトリには名前を書かない。未設定なら *.ts.net を通す。
+HOSTS = {h.strip() for h in (os.environ.get("DSYNC_HOSTS") or "").split(",") if h.strip()}
+MAX_UPLOAD = 8 * 1024 ** 3   # 1本 8GB まで
+
+
+def host_ok(headers):
+    host = (headers.get("Host") or "").rsplit(":", 1)[0]
+    if host in ("127.0.0.1", "localhost"):
+        return True
+    return host in HOSTS if HOSTS else host.endswith(".ts.net")
 PORT = int(os.environ.get("DSYNC_PORT") or 8790)
 LOCK = threading.Lock()
 
@@ -110,10 +123,15 @@ def do_caption(jid):
 def do_render(jid):
     d = jpath(jid)
     job = load(jid)
-    out = d / "完成.mp4"
-    engine.render(d, src(jid, "a"), src(jid, "b"), job["a_info"], job["b_info"],
-                  job["offset"], job["title"], job.get("captions") or [], out,
-                  progress=lambda f: update(jid, progress=round(f, 3)))
+    tmp = d / "完成.tmp.mp4"   # 書き終わってから入れ替える（途中で止まっても壊れた完成版を出さない）
+    try:
+        engine.render(d, src(jid, "a"), src(jid, "b"), job["a_info"], job["b_info"],
+                      job["offset"], job["title"], job.get("captions") or [], tmp,
+                      progress=lambda f: update(jid, progress=round(f, 3)))
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(d / "完成.mp4")
     update(jid, rendered=time.time(), step=6, saved=False)
 
 
@@ -130,11 +148,8 @@ class H(BaseHTTPRequestHandler):
     def allowed(self):
         """書き換える要求は、この画面から来たものだけ受ける。
         独自の見出し X-DSync は他のサイトからは付けられない（付けると事前確認が要り、ここは答えない）。
-        Host も 127.0.0.1 か tailnet の名前（*.ts.net）だけ。"""
-        host = (self.headers.get("Host") or "").split(":")[0]
-        if host not in ("127.0.0.1", "localhost") and not host.endswith(".ts.net"):
-            return False
-        return self.headers.get("X-DSync") == "1"
+        Host も 127.0.0.1 か tailnet の名前だけ。"""
+        return host_ok(self.headers) and self.headers.get("X-DSync") == "1"
 
     def log_message(self, fmt, *a):
         pass
@@ -198,8 +213,7 @@ class H(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        host = (self.headers.get("Host") or "").split(":")[0]
-        if host not in ("127.0.0.1", "localhost") and not host.endswith(".ts.net"):
+        if not host_ok(self.headers):
             return self.send_json({"error": "forbidden"}, 403)
         try:
             p = self.path.split("?")[0]
@@ -240,7 +254,7 @@ class H(BaseHTTPRequestHandler):
                     left -= len(chunk)
                 self.rfile.readline()
         left = int(self.headers.get("Content-Length") or -1)
-        if left < 0:
+        if left < 0 or left > MAX_UPLOAD:
             return False
         while left > 0:
             chunk = self.rfile.read(min(1 << 20, left))
@@ -267,7 +281,11 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "作業中です。終わってから選び直してください"}, 409)
             ext = (self.headers.get("X-Ext") or "mov").lower()
             ext = ext if re.fullmatch(r"[a-z0-9]{2,4}", ext) else "mov"
-            part = d / f"recv_{k}.part"
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > MAX_UPLOAD or (n and shutil.disk_usage(d).free < n * 1.2 + 2 * 1024 ** 3):
+                self.close_connection = True
+                return self.send_json({"error": "大きすぎるか、Mac の空きが足りません"}, 413)
+            part = d / f"recv_{k}.{uuid.uuid4().hex}.part"   # 同時に送っても混ざらないよう毎回別の名前
             with open(part, "wb") as f:
                 ok = self.read_body_to(f)
             if not ok:
@@ -282,8 +300,10 @@ class H(BaseHTTPRequestHandler):
                 for old in d.glob(f"src_{k}.*"):
                     old.unlink()
                 part.rename(d / f"src_{k}.{ext}")
-                for key in ("offset", "auto_offset", "confidence", "captions", "captions_shown",
-                            "rendered", "saved", "learned", "error"):
+                drop = ["offset", "auto_offset", "confidence", "rendered", "saved", "learned", "error"]
+                if k == "a":   # 字幕は A の音から作るので、B の差し替えでは残す
+                    drop += ["captions", "captions_shown"]
+                for key in drop:
                     job.pop(key, None)
                 job.update({f"has_{k}": True, "step": 2})
                 save(jid, job)
@@ -327,8 +347,8 @@ class H(BaseHTTPRequestHandler):
             jid, act = m.groups()
             job = load(jid)
             body = self.body_json()
-            if job.get("busy") and act not in ("title",):
-                return self.send_json({"error": "作業中です"}, 409)
+            if job.get("busy"):
+                return self.send_json({"error": f"{job['busy']}の最中です"}, 409)
             if act == "title":
                 # タイトルが変わったら、前の完成版は古い
                 t = (body.get("title") or job["title"]).strip()[:40]
@@ -347,13 +367,13 @@ class H(BaseHTTPRequestHandler):
                     background(jid, "文字起こし", lambda: do_caption(jid), offset=off, step=4, **stale)
             elif act == "captions":
                 caps = [{"start": float(c["start"]), "end": float(c["end"]),
-                         "text": str(c["text"]).strip()} for c in body["captions"]]
+                         "text": " ".join(str(c["text"]).split())} for c in body["captions"]]
                 caps = [c for c in caps if c["text"]]
                 n = engine.log_corrections(LEARN, jid, job.get("captions_shown") or [], caps)
                 # 次に保存したとき同じ直しを二重に数えないよう、今の字幕を「表示した物」に
                 job = update(jid, captions=caps, captions_shown=caps, learned=n)
             elif act == "render":
-                background(jid, "書き出し", lambda: do_render(jid))
+                background(jid, "書き出し", lambda: do_render(jid), rendered=None, saved=False)
             elif act == "photos":
                 background(jid, "写真に保存", lambda: do_photos(jid))
             else:
