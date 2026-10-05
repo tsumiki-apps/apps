@@ -36,7 +36,8 @@
      iOS はキーボードが出ると文書を勝手にスクロールし、閉じても戻さないことがある。
      すると画面全体が下にズレたように見える（上端を触ったときに起きやすい）。
      中身のスクロールは #out / nav / #keys が各自持っているので、これで困らない。
-     ※ overflow:hidden だけでは iOS に効かない。位置を固定するのが要点（2026-08-11） */
+     ※ overflow:hidden だけでは iOS に効かない。位置を固定するのが要点（2026-08-11）
+     キーボードが出ている間だけは fitKeyboard（JS）が top と height を見えている範囲に合わせる（2026-10-05） */
   body{
     background:var(--bg);color:var(--fg);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;
@@ -435,11 +436,22 @@
   /* position:relative ＝ トーストの位置の基準。footer が伸び縮みしても
      トーストが必ずその真上に乗るようにするため（.toast のコメント参照） */
   footer{flex:0 0 auto;padding:6px 10px max(6px, env(safe-area-inset-bottom));position:relative}
+  /* キーボードが出ている間は下のホームバーがキーボードに隠れる＝その余白は要らない（fitKeyboard が html に kb を付ける）。
+     600px 以上は footer の余白の作りが別なので触らない */
+  @media (max-width:599px){ html.kb footer{padding-bottom:6px} }
+  /* 見える範囲が狭い（横向き・入力欄が何行も伸びた）ときは、上のヘッダーと札の行を畳んで
+     入力欄と画面を残す。送り先は入力欄の真上の #dest で分かる（fitKeyboard が kbtight を付ける）。
+     横に札の列を置く広い形では札は高さを食わないので、ヘッダーだけ畳む */
+  html.kbtight header, html.kbtight #tabs{display:none}
+  @media (min-width:900px), (min-width:600px) and (max-height:520px){
+    html.kbtight #tabs{display:flex}
+  }
 
   /* 送り先バー。iOS はキーボードを出すとき画面全体を押し上げるので、ヘッダーも
      タブ行も画面の上へ消える＝打っている最中に「いま誰に送ろうとしているのか」
      が分からなくなる。入力欄の真上＝キーボードのすぐ上に置けば、押し上げられても
      必ず一緒についてくるので、打っている間ずっと見える（2026-08-11）。
+     ※ 2026-10-05 から押し上げではなく fitKeyboard で土台を縮める。狭いときはヘッダーと札を畳むので、やはりここが頼り。
      点の色はタブと同じ意味：グレー=待機／紫の点滅=作業中／オレンジ=返答待ち／青=中断 */
   #dest{
     /* 右は0＝メモ欄の右端を本文の枠・送信ボタンの右端に揃える（2026-09-28・本人の指示）。
@@ -876,6 +888,9 @@
   #sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);
     display:flex;align-items:flex-end}
   #sheet[hidden]{display:none}
+  /* 下から出る紙の中の欄（名前を変える）も、キーボードの上に浮くバーの裏に隠れないよう、
+     見えている範囲に合わせる（値は fitKeyboard が入れる） */
+  html.kb #sheet{top:var(--vvTop,0px);bottom:auto;height:var(--vvH,100%)}
   .sheetbox{
     width:100%;background:#14161b;border-top-left-radius:18px;border-top-right-radius:18px;
     border-top:1px solid var(--line);padding:14px 12px calc(14px + env(safe-area-inset-bottom));
@@ -7606,6 +7621,62 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
       .catch(function () { /* http で開いている・対応していない。普通に動く */ });
   }
+
+  // キーボードが出ている間、画面の土台（body）を「実際に見えている範囲」に合わせる。
+  // 土台は 100dvh 固定で、キーボードが出ると iOS が全体を押し上げて入力欄を見せていた。
+  // iOS 26 ではキーボードの上に浮いたバー（＾∨✓）が出るが、押し上げはそのぶんを数えず、
+  // 入力欄がバーの裏に隠れた（2026-10-05・本人のスクショ）。visualViewport はキーボードと
+  // バーを除いた見えている範囲なので、その高さと位置に土台を置けば入力欄がバーの真上に来る。
+  // 文字を打つ欄に焦点があるときだけ合わせる：閉じたあと visualViewport が小さいまま
+  // 戻らないことがあり、そのとき下に隙間が残らないように、焦点が無ければ必ず元に戻す。
+  (function () {
+    var vv = window.visualViewport;
+    if (!vv) return;
+    var bs = document.body.style, root = document.documentElement;
+    var hd = document.querySelector('header'), ft = document.querySelector('footer');
+    var last = '', topH = 0;
+    function typing() {
+      var a = document.activeElement;
+      if (!a) return false;
+      if (a.tagName === 'TEXTAREA' || a.isContentEditable) return true;
+      return a.tagName === 'INPUT' && !/^(button|checkbox|radio|file|range|submit|reset|color)$/i.test(a.type);
+    }
+    function fitKeyboard() {
+      // 40px：外付けキーボードで浮いたバーだけが出るときもこれを超える。拡大は起きない（打つ欄は16px）
+      var open = typing() && vv.height < window.innerHeight - 40;
+      if (!open) {
+        if (last) {
+          bs.top = ''; bs.height = ''; last = '';
+          root.classList.remove('kb', 'kbtight');
+          root.style.removeProperty('--vvTop'); root.style.removeProperty('--vvH');
+        }
+        return;
+      }
+      var t = Math.round(vv.offsetTop), h = Math.round(vv.height);
+      // 畳んでいないときに上の段（ヘッダー＋札の行）の高さを覚えておく。横に札の列を置く形では札は高さを食わない
+      if (!root.classList.contains('kbtight')) {
+        topH = hd.offsetHeight + (getComputedStyle(document.body).display === 'grid' ? 0 : el.tabs.offsetHeight);
+      }
+      var tight = h < topH + ft.offsetHeight + 120;   // 画面（#out）に最低120pxは残す
+      var key = t + ',' + h + ',' + tight;
+      if (key === last) return;   // キーボードが動く間は何度も来る＝同じ値なら書き直さない（揺れの元を減らす）
+      last = key;
+      var stick = atBottom();   // 縮める前に一番下を見ていたら、縮めたあとも一番下に
+      bs.top = t + 'px';
+      bs.height = h + 'px';
+      root.style.setProperty('--vvTop', t + 'px');
+      root.style.setProperty('--vvH', h + 'px');
+      root.classList.add('kb');
+      root.classList.toggle('kbtight', tight);
+      if (stick) el.out.scrollTop = el.out.scrollHeight;
+    }
+    vv.addEventListener('resize', fitKeyboard);
+    vv.addEventListener('scroll', fitKeyboard);
+    document.addEventListener('focusin', fitKeyboard);
+    document.addEventListener('focusout', function () { setTimeout(fitKeyboard, 0); });
+    // 入力欄が伸び縮みしたら、狭いときの畳み方を選び直す
+    el.cmd.addEventListener('input', function () { last = ''; fitKeyboard(); });
+  })();
 
   // 最後に見た内容を先に描く。つながっていれば1秒以内に本物へ入れ替わるので、
   // 出しても損はなく、つながっていないときだけ意味が出る
