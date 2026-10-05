@@ -1941,7 +1941,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 名前だけ直近30件持っておき、「変換なしで仮名がそのまま入った」のを見たら Mac のログに送る。
   // ⚠️ 打った字は送らない・持たない（名前と時刻だけ）。
   var imeTrail = [];
-  var imeSentAt = 0;
+  var imeSentAt = {};   // 報告の種類ごと（誤報が1つ出ても、ほかの種類の報告を止めない）
   function imeNote(what) {
     imeTrail.push(Math.round(performance.now() / 100) / 10 + 's ' + what);
     if (imeTrail.length > 30) imeTrail.shift();
@@ -5131,11 +5131,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   el.cmd.addEventListener('input', function (e) {
     if (!(imeComposing || e.isComposing)) return;
     if (imeCompAt && Date.now() - imeCompAt > 60 * 1000) imeReport('変換が60秒終わらない');
+    // 候補が出ないまま下線つきの仮名が1文ぶん伸び続ける形（2026-10-05 本人のスクショ）。
+    // e.data は変換中の字の全体。ライブ変換なら変換中でも漢字が混ざるので、**仮名と記号だけ**で
+    // 20字を超えたときに絞る（ライブ変換で1文まるごと打つのは普通なので、字数だけでは誤報になる）
+    else if (/^[\u3041-\u3096\u30a1-\u30fa\u30fc\u3001\u3002\uff01\uff1f!?]{20,}$/.test(e.data || '')) imeReport('仮名のまま変換中が20字を超えた');
   });
   function imeReport(kind) {
     imeNote(kind);
-    if (Date.now() - imeSentAt < 5 * 60 * 1000) return;   // 1回切れたら打つたびに出るので5分に1回
-    imeSentAt = Date.now();
+    if (Date.now() - (imeSentAt[kind] || 0) < 5 * 60 * 1000) return;   // 1回切れたら打つたびに出るので種類ごとに5分に1回
+    imeSentAt[kind] = Date.now();
     api('/api/imelog', { method: 'POST', body: JSON.stringify({
       kind: kind, trail: imeTrail.slice(), ua: navigator.userAgent,
       standalone: !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)),
@@ -5145,6 +5149,32 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }) }, 8000).catch(function () {});
   }
   document.addEventListener('visibilitychange', function () { imeNote(document.hidden ? '裏に回った' : '表に戻った'); });
+
+  // ⚠️ 裏に回るときは打つ欄から焦点を外す（2026-10-05）。
+  // 本人「他のアプリで開いたあと戻って来たら変換できなくなってます」。スクショでは入力欄に焦点が
+  // 残ったままキーボードが出ていて、打った仮名は1文まるごと下線（変換中）なのに候補が1つも出ない。
+  // 焦点を持ったまま裏に回ると、戻ったとき iPhone のキーボードと入力欄のつながりが古いまま
+  // 残る（WebKit の既知の挙動。この Mac では本物のキーボードで起こせないので実機では未確認）。
+  // 外しておけば、戻ったあと入力欄を押した時点でつながりが作り直される。
+  // 引き換え：戻ったときキーボードは閉じている（入力欄を1回押す）。変換中の字は外したときに確定される
+  function imeDropFocus(why) {
+    var a = document.activeElement;
+    if (!a || !(a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable)) return;
+    imeNote(why);
+    // 変換中の字を blur で確定するか捨てるかは実機で未確認。捨てられたら、そのあとの saveDraft が
+    // 短い字で書きかけを上書きしてしまうので、外す前の字に戻す（頭が同じで短くなったときだけ）
+    var before = a === el.cmd ? a.value : null;
+    try { a.blur(); } catch (e) {}
+    if (before != null && a.value !== before && before.indexOf(a.value) === 0) {
+      imeNote('外したときに消えた字を戻した');
+      a.value = before;
+    }
+  }
+  document.addEventListener('visibilitychange', function () {
+    // 裏に回る前に外し切れなかった（外す前に止められた）ときは、戻った瞬間に外す
+    imeDropFocus(document.hidden ? '裏に回る前に焦点を外した' : '戻ったときに焦点を外した');
+  });
+  window.addEventListener('pagehide', function () { imeDropFocus('閉じる前に焦点を外した'); });
 
   // ---------------------------------- 次の指示の候補（入力欄の薄い字の下書き）
   //
