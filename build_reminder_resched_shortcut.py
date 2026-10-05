@@ -7,6 +7,7 @@
   期限切れを見る.shortcut       … 探して並べるだけ。**何も書き換えない**
   まとめてリスケ.shortcut       … 探す → 時刻を選ぶ（1時間後／今夜20時／朝9時）→ 全部の期限をその時刻へ
   朝9時へ.shortcut              … 探す → 全部の期限を次の朝9:00へ（選ばない。0〜9時に押せばその朝）
+  タグ「固定」の物（毎日・毎週の決まった時刻の物）は動かさない。
   どれも最後に探し直して「残りの期限切れ N件」を出す。「今夜20時」は20時を過ぎて押すと明日の20時。
 
 --mac-test … Mac で `shortcuts run` して確かめる版（_テスト〜）を作る。**本物のリマインダーは触らない**:
@@ -27,6 +28,7 @@ import plistlib, uuid, sys, subprocess, pathlib, tempfile, shutil
 
 HERE = pathlib.Path(__file__).parent
 TEST_TITLE = "_テスト期限切れ"
+FIXED_TAG = "固定"
 
 def U(): return str(uuid.uuid4()).upper()
 
@@ -52,16 +54,20 @@ def att(u, name):
 # 出力名（loctable の Default Output Name）。解決は UUID で行われるので名前のずれは動作に響かない
 O_DATE, O_ADJ, O_FMT, O_FOUND, O_MENU, O_CNT = "日付", "調整後の日付", "フォーマット済みの日付", "リマインダー", "メニューの結果", "数"
 
-def fil(title_only, only_title=False, alarms=True):
+def fil(title_only, only_title=False, alarms=True, fixed=False):
     """未完了 かつ 期限が過去3650日以内（＝今より前。今日のこれからの時刻は入らない＝Mac で実測）かつ 通知あり。
     only_title=True は題名だけ（片付け用。完了済みも消す）。
-    alarms=False は「通知なしの期限切れ」＝対象外にした物を数える用（黙って外さず、件数を見せる）"""
+    alarms=False は「通知なしの期限切れ」＝対象外にした物を数える用（黙って外さず、件数を見せる）。
+    タグ「固定」の付いた物も外す（fixed=True でその件数を数える）"""
     t = [] if only_title else [
         {"Property": "Is Completed", "Operator": 4, "Values": {"Unit": 4, "Bool": False}, "Removable": True},
         {"Property": "Due Date", "Operator": 1001, "Values": {"Unit": 16, "Number": "3650"}, "Removable": True},
         # 時刻なし（終日）の物は「今日」でも期限切れに入ってしまう（2026-10-05 Mac で実測）。
         # 時刻つきの物には通知が付き、時刻なしの物には付かないので、通知ありだけにする
-        {"Property": "Has Alarms", "Operator": 4, "Values": {"Unit": 4, "Bool": alarms}, "Removable": True}]
+        {"Property": "Has Alarms", "Operator": 4, "Values": {"Unit": 4, "Bool": alarms}, "Removable": True},
+        # タグ「固定」の物（毎日・毎週の決まった時刻の物）は動かさない。fixed=True は逆に固定だけを数える用。
+        # ショートカットからは「繰り返し」が見えないので、本人がタグで印を付ける（2026-10-05）
+        {"Property": "Tags", "Operator": 99 if fixed else 999, "Values": {"Unit": 4, "String": FIXED_TAG}, "Removable": True}]
     if title_only:
         t.insert(0, {"Property": "Title", "Operator": 4, "Values": {"Unit": 4, "String": TEST_TITLE}, "Removable": True})
     return {"Value": {"WFActionParameterFilterPrefix": 1, "WFContentPredicateBoundedDate": False,
@@ -101,7 +107,10 @@ def build(kind, test=False):
         u_s = A("is.workflow.actions.filter.reminders",
                 {"WFContentItemFilter": fil(test, alarms=False), "WFContentItemLimitEnabled": False}, U())
         u_sc = A("is.workflow.actions.count", {"WFCountType": "Items", "Input": att(u_s, O_FOUND)}, U())
-        return ["\n（時刻なしで対象外 ", (u_sc, O_CNT), "件）"]
+        u_x = A("is.workflow.actions.filter.reminders",
+                {"WFContentItemFilter": fil(test, fixed=True), "WFContentItemLimitEnabled": False}, U())
+        u_xc = A("is.workflow.actions.count", {"WFCountType": "Items", "Input": att(u_x, O_FOUND)}, U())
+        return ["\n（#固定で対象外 ", (u_xc, O_CNT), "件・時刻なしで対象外 ", (u_sc, O_CNT), "件）"]
 
     if kind == "clean":   # 題名 _テスト期限切れ の物を消す（OS が件数と題名つきで削除の確認を出す）
         u_f = A("is.workflow.actions.filter.reminders",
