@@ -18,7 +18,7 @@ VERIFIED に出どころを書いたものだけ通し、それ以外は ✗ に
 正本: ~/Library/Shortcuts/Shortcuts.sqlite（複製を読む・本体は触らない。-wal も一緒に写す）
 複製の置き場は ~/.cache/tsumiki/（0600）。**/tmp に置かない**（他の利用者から読める）。
 """
-import plistlib, sqlite3, collections, sys, os, re, shutil, subprocess
+import plistlib, sqlite3, collections, sys, os, re, shutil, subprocess, unicodedata
 
 CACHE_DIR = os.path.expanduser("~/.cache/tsumiki")
 DB = os.path.join(CACHE_DIR, "shortcut_library.sqlite")
@@ -58,6 +58,22 @@ VERIFIED = {
         ("WFDictionaryFieldValue", "同上（Authorization が届かなければ 401 になる。200 が返っている）"),
     ("is.workflow.actions.downloadurl", "WFJSONValues"):
         ("WFDictionaryFieldValue", "同上（固定値の token / action は届いている。**差し込みは届かない** → 下の禁止）"),
+    # 2026-10-05 Mac の shortcuts run で、題名 _テスト〜 の架空データだけを使って実測（Watch・iPhone は未確認）
+    ("is.workflow.actions.filter.reminders", "WFContentItemFilter"):
+        ("WFContentPredicateTableTemplate", "Mac実測: 題名・未完了・期限（1001/16）で架空の2件だけが出た。"
+         "Has Alarms=true で「今日・時刻なし・通知なし」の架空1件が外れ、本物（読むだけ）の時刻つき期限切れ10件は全部残った"),
+    ("is.workflow.actions.filter.reminders", "WFContentItemLimitEnabled"):
+        ("bool", "Mac実測: 同上（False で件数の上限なし）"),
+    ("is.workflow.actions.setters.reminders", "WFInput"):
+        ("WFTextTokenAttachment", "Mac実測: 繰り返しの Repeat Item で1件ずつ。一覧を丸ごと渡すと「項目を選択」で止まる"),
+    ("is.workflow.actions.setters.reminders", "Mode"):
+        ("str", "Mac実測: 'Set' で期限が書き換わった（loctable の ${Mode}）"),
+    ("is.workflow.actions.setters.reminders", "WFContentItemPropertyName"):
+        ("str", "Mac実測: 'Due Date' で期限と通知が一緒に動いた（通知センターで時刻どおりに出た）"),
+    ("is.workflow.actions.setters.reminders", "WFReminderContentItemDueDate"):
+        ("WFTextTokenString", "Mac実測: 日付の調整の出力を差し込んで、その時刻になった"),
+    ("is.workflow.actions.removereminders", "WFInputReminders"):
+        ("WFTextTokenAttachment", "Mac実測: 探した架空の物だけが削除の確認に並び、消えた"),
 }
 
 def die(msg, code=2):
@@ -66,11 +82,15 @@ def die(msg, code=2):
 
 # --ref <署名前の plist> … ライブラリに無いアクションの実動例として足す（公開ショートカットの記録など）。
 #   出どころは呼ぶ側が控えておく（例: build_health_shortcut.py の REF）。何本でも。
-args, REFS = [], []
+# --self <名前> … 自分の台本が作って取り込んだショートカット。実例から外す（自作を自作で照合しない）。
+#   名前が「_テスト」で始まる物は、指定がなくてもいつも外す。何本でも。
+args, REFS, SELF = [], [], set()
 _it = iter(sys.argv[1:])
 for _a in _it:
     if _a == "--ref":
         REFS.append(next(_it, ""))
+    elif _a == "--self":
+        SELF.add(unicodedata.normalize("NFC", next(_it, "")))
     else:
         args.append(_a)
 if not args:
@@ -108,8 +128,16 @@ if not copied:
 
 lib = collections.defaultdict(set)
 types = collections.defaultdict(collections.Counter)
-for (data,) in sqlite3.connect(DB).execute("select ZDATA from ZSHORTCUTACTIONS"):
+# 2026-10-05: 自作のテスト版を取り込んだら、その中身が「実例」に数えられて ✗ 0 が出た（反証役の指摘）
+_excluded = collections.Counter()
+for (data, sname) in sqlite3.connect(DB).execute(
+        "select a.ZDATA, s.ZNAME from ZSHORTCUTACTIONS a left join ZSHORTCUT s on a.ZSHORTCUT = s.Z_PK"):
     if not data:
+        continue
+    sname = unicodedata.normalize("NFC", sname or "")
+    # 取り込み直すと「名前 1」のように数字が付く。後ろの「 数字」を落として比べる
+    if sname.startswith("_テスト") or re.sub(r"\s+\d+$", "", sname) in SELF:
+        _excluded[sname] += 1
         continue
     try:
         acts = plistlib.loads(data)
@@ -135,6 +163,9 @@ for _r in REFS:
             lib[i].add(k)
             types[(i, k)][v.get("WFSerializationType") if isinstance(v, dict) else type(v).__name__] += 1
 
+if _excluded:
+    print(f"  － 自作なので実例から外した: {'・'.join(sorted(_excluded))}")
+
 # ---- システムの文字列 --------------------------------------------
 if not os.path.exists(LIST):
     lines = set()
@@ -154,6 +185,14 @@ if os.path.exists(LOC):
                 sysstr.add(_m.group(1))
             for _m in re.finditer(r"\$\{(WF[A-Za-z]+)\}", _k):
                 sysstr.add(_m.group(1))
+
+# 探す条件の項目名（ContentKit の文言表の「(Content Property Name)」）
+PROPS = set()
+_ck = "/System/Library/PrivateFrameworks/ContentKit.framework/Versions/A/Resources/Localizable.loctable"
+if os.path.exists(_ck):
+    for _k in (plistlib.load(open(_ck, "rb")).get("en") or {}):
+        if _k.endswith(" (Content Property Name)"):
+            PROPS.add(_k[: -len(" (Content Property Name)")])
 
 def stype(v):
     return v.get("WFSerializationType") if isinstance(v, dict) else type(v).__name__
@@ -179,7 +218,7 @@ for n, a in enumerate(acts):
         if k == "UUID":
             continue
         # ① キー名
-        if k not in lib.get(i, ()) and k not in sysstr:
+        if k not in lib.get(i, ()) and k not in sysstr and (i, k) not in VERIFIED:
             ng.append(f"#{n} {i} の {k}：キー名がどちらにも無い")
             continue
         # ② 直列化の型
@@ -204,6 +243,16 @@ for n, a in enumerate(acts):
                 ng.append(f"#{n} {i} の WFCondition：{v} は意味が分かっていない値")
             else:
                 print(f"  ・#{n} WFCondition={v} → 「{COND[v]}」")
+        # ③' 探す条件（filter.*）の中身。Operator と Property まで降りる
+        if isinstance(v, dict) and v.get("WFSerializationType") == "WFContentPredicateTableTemplate":
+            for t in (v.get("Value") or {}).get("WFActionParameterFilterTemplates") or []:
+                op, prop = t.get("Operator"), t.get("Property")
+                if op not in COND:
+                    ng.append(f"#{n} {i} の条件 {prop}：Operator {op} は意味が分かっていない値")
+                else:
+                    print(f"  ・#{n} 条件 {prop} の Operator={op} → 「{COND[op]}」")
+                if prop not in PROPS:
+                    ng.append(f"#{n} {i} の条件：Property '{prop}' は ContentKit の項目名に無い")
         # ④ 辞書の中身（キーの型だけ見て通さない）
         if isinstance(v, dict) and v.get("WFSerializationType") == "WFDictionaryFieldValue":
             for it in (v.get("Value") or {}).get("WFDictionaryFieldValueItems") or []:
