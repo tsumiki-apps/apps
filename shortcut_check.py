@@ -85,6 +85,8 @@ VERIFIED = {
         ("bool", "Mac実測: True で控えが完了済みになった"),
     ("is.workflow.actions.setters.reminders", "WFReminderContentItemNotes"):
         ("WFTextTokenString", "Mac実測: 'Notes' で前回の控えのメモが「使用済み」に書き換わった"),
+    ("is.workflow.actions.ask", "WFAskActionDefaultAnswerDateAndTime"):
+        ("WFTextTokenString", "Mac実測 2026-10-05: WFInputType 'Date and Time' で日時のつまみが出て、初めの値が差し込んだ時刻（今+1時間）になった"),
     ("is.workflow.actions.removereminders", "WFInputReminders"):
         ("WFTextTokenAttachment", "Mac実測: 探した架空の物だけが削除の確認に並び、消えた"),
 }
