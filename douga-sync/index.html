@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>動画同期</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f5f4f0;--surface:#fffefb;--surface-2:#efece5;--ink:#1d1a15;--ink-mid:#5b554a;--ink-soft:#666154;
+  --ghost:#887f70;--line:#e2ded4;--line-2:#d8d3c7;--accent:#b06f26;--accent-2:#8a5a24;--accent-wash:#f0e4d1;
+  --good-wash:#dde9dd;--good-ink:#416845;--warn-wash:#f2e0d4;--warn-ink:#974624;
+  --btn-bg:var(--accent-2);--btn-ink:var(--paper);
+  --shadow:0 1px 2px rgba(40,32,18,.05),0 10px 26px -16px rgba(40,32,18,.18);
+  --ease:cubic-bezier(0.2,0,0,1);
+  --night:#0f0d07;--night-ink:#efe8da;--night-veil:rgba(15,13,7,.6);
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0f0d07;--surface:#211d14;--surface-2:#2b2619;--ink:#efe8da;--ink-mid:#a89e8b;--ink-soft:#9f988a;
+  --line:#36301f;--line-2:#443d2b;--accent:#d59a4d;--accent-2:#e0ab63;--accent-wash:#362a19;
+  --good-wash:#23301f;--good-ink:#7fae82;--warn-wash:#39251a;--warn-ink:#d9825a;
+  --btn-bg:var(--accent);--btn-ink:#1d1a15;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -18px rgba(0,0,0,.65);
+}}
+*{box-sizing:border-box;margin:0}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.7 "Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;min-height:100dvh}
+main{max-width:640px;margin:0 auto;padding:16px 16px calc(48px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;gap:8px;padding:8px 0 16px}
+header h1{font-size:20px;font-weight:700;flex:1;display:flex;align-items:center;gap:8px}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.card{background:var(--surface);border-radius:20px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px}
+.card[hidden]{display:none}
+.card h2{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.num{width:28px;height:28px;border-radius:9999px;background:var(--surface-2);color:var(--ink-mid);font-size:14px;font-weight:700;display:grid;place-items:center;flex:none}
+.done .num{background:var(--good-wash);color:var(--good-ink)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=text],textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;min-height:44px;width:100%}
+textarea{resize:none;line-height:1.5;min-height:44px}
+button,.btn{font:inherit;font-size:15px;font-weight:500;min-height:44px;min-width:44px;border-radius:12px;border:0;padding:0 14px;background:var(--surface-2);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;text-decoration:none;transition:transform 120ms var(--ease),opacity 120ms var(--ease)}
+button:active,.btn:active{transform:scale(.97)}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--btn-bg);color:var(--btn-ink);font-weight:700;width:100%;margin-top:12px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile{position:relative;border:1.5px dashed var(--line-2);border-radius:20px;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--ink-mid);cursor:pointer;padding:12px;text-align:center;overflow:hidden}
+.tile svg.i{width:40px;height:40px;stroke-width:1.5}
+.tile.ok{border-style:solid;border-color:var(--good-ink);color:var(--good-ink);background:var(--good-wash)}
+.tile input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:16px}
+.tile .lbl{font-weight:700;font-size:15px}
+.tile .sub{font-size:13px}
+.bar{height:6px;border-radius:9999px;background:var(--surface-2);overflow:hidden;width:100%}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width 200ms var(--ease)}
+.busy{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 0;color:var(--ink-mid);font-size:14px}
+.spin{width:28px;height:28px;border:3px solid var(--line-2);border-top-color:var(--accent);border-radius:9999px;animation:sp 900ms linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+.pair figure{position:relative}
+video{width:100%;display:block;border-radius:12px;background:var(--night)}
+.pair figcaption{position:absolute;left:6px;top:6px;background:var(--night-veil);color:var(--night-ink);border-radius:9999px;padding:2px 8px;font-size:12px;display:flex;gap:4px;align-items:center}
+.pair figcaption svg.i{width:14px;height:14px}
+.off{font-size:28px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:12px 0 4px}
+.off small{font-size:14px;color:var(--ink-mid);font-weight:500}
+.nudge{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.nudge button{padding:0 4px;font-size:14px;font-variant-numeric:tabular-nums}
+.ctl{display:flex;gap:8px;align-items:center;margin-top:8px}
+.ctl input[type=range]{flex:1;font-size:16px;accent-color:var(--accent-2);min-height:44px}
+.on{background:var(--accent-wash);color:var(--accent-2)}
+.banner{border-radius:8px;padding:12px;font-size:14px;margin-top:12px;display:flex;gap:8px;align-items:flex-start}
+.banner.warn{background:var(--warn-wash);color:var(--warn-ink)}
+.banner.good{background:var(--good-wash);color:var(--good-ink)}
+.caps{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-height:60dvh;overflow-y:auto}
+.cap{display:grid;grid-template-columns:56px 1fr 44px;gap:8px;align-items:start}
+.cap textarea.ed{border-color:var(--accent-2)}
+.cap .del{min-width:44px;padding:0;color:var(--ink-soft);background:transparent}
+.lex{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.lexr{display:grid;grid-template-columns:1fr auto 1fr auto 44px;gap:8px;align-items:center;font-size:15px;border-bottom:1px solid var(--line);padding:2px 0}
+.lexr s{color:var(--ink-soft)}
+.lexr .n{font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.lexr button{background:transparent;color:var(--ink-soft);padding:0}
+details summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:700;font-size:17px;min-height:44px}
+details summary::-webkit-details-marker{display:none}
+.empty{color:var(--ink-soft);font-size:14px;padding:8px 0}
+.cap button{min-width:56px;padding:0 4px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink-mid)}
+.jobs{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px}
+.jobs button{flex:none;border-radius:9999px;font-size:14px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jobs button.cur{background:var(--accent-wash);color:var(--accent-2)}
+.final{max-width:320px;margin:0 auto}
+.two{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
+.two .primary{margin:0}
+@media (min-width:900px){main{max-width:760px}.final{max-width:360px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:0s!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-title" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 0 1-13.7 5.6L4 15.5M4 20v-4.5h4.5"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 14h4M13 14h4M7 10.5h10"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7H4V2M4.5 7A8 8 0 1 1 4 13"/></symbol>
+  <symbol id="i-photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5L12 3l4.5 4.5M5 13v6h14v-6"/></symbol>
+</svg>
+<main>
+  <header>
+    <h1><svg class="i"><use href="#i-film"/></svg>動画同期</h1>
+    <button id="newBtn" aria-label="新しく作る"><svg class="i"><use href="#i-plus"/></svg></button>
+  </header>
+  <div class="jobs" id="jobs"></div>
+
+  <section class="card" id="s1">
+    <h2><span class="num">1</span><svg class="i"><use href="#i-title"/></svg>タイトル</h2>
+    <input type="text" id="title" maxlength="40" placeholder="新機能のご紹介" enterkeyhint="done">
+    <button class="primary" id="startBtn">次へ</button>
+  </section>
+
+  <section class="card" id="s2" hidden>
+    <h2><span class="num">2</span><svg class="i"><use href="#i-film"/></svg>動画</h2>
+    <div class="tiles">
+      <label class="tile" id="tA"><svg class="i"><use href="#i-person"/></svg><span class="lbl">人</span><span class="sub" id="subA">選ぶ</span><div class="bar"><i id="barA"></i></div><input type="file" accept="video/*" id="fA"></label>
+      <label class="tile" id="tB"><svg class="i"><use href="#i-phone"/></svg><span class="lbl">画面</span><span class="sub" id="subB">選ぶ</span><div class="bar"><i id="barB"></i></div><input type="file" accept="video/*" id="fB"></label>
+    </div>
+  </section>
+
+  <section class="card" id="s3" hidden>
+    <h2><span class="num">3</span><svg class="i"><use href="#i-sync"/></svg>同期</h2>
+    <div class="busy" id="b3" hidden><div class="spin"></div><span id="b3t">音を照らし合わせています</span><div class="bar"><i id="bar3"></i></div></div>
+    <button class="primary" id="syncBtn" hidden><svg class="i"><use href="#i-sync"/></svg>同期</button>
+    <div id="v3" hidden>
+      <div class="pair">
+        <figure><video id="pa" playsinline preload="auto"></video><figcaption><svg class="i"><use href="#i-person"/></svg>人</figcaption></figure>
+        <figure><video id="pb" playsinline preload="auto" muted></video><figcaption><svg class="i"><use href="#i-phone"/></svg>画面</figcaption></figure>
+      </div>
+      <div class="ctl">
+        <button id="play" aria-label="再生"><svg class="i"><use href="#i-play"/></svg></button>
+        <input type="range" id="seek" min="0" max="1000" value="0" aria-label="位置">
+        <button id="snd" aria-label="画面の音も重ねる"><svg class="i"><use href="#i-sound"/></svg></button>
+      </div>
+      <div class="off" id="off">0.000<small> 秒</small></div>
+      <div class="nudge">
+        <button data-d="-0.1">−0.1</button>
+        <button data-d="-0.0333">−1コマ</button>
+        <button id="reset" aria-label="自動の値に戻す"><svg class="i"><use href="#i-undo"/></svg></button>
+        <button data-d="0.0333">+1コマ</button>
+        <button data-d="0.1">+0.1</button>
+      </div>
+      <div class="banner warn" id="lowconf" hidden><svg class="i"><use href="#i-warn"/></svg><span>合っていないかもしれません。再生して確かめ、ずれていればボタンで直してください</span></div>
+      <button class="primary" id="okSync"><svg class="i"><use href="#i-check"/></svg>合っている</button>
+    </div>
+  </section>
+
+  <section class="card" id="s4" hidden>
+    <h2><span class="num">4</span><svg class="i"><use href="#i-cap"/></svg>字幕</h2>
+    <div class="busy" id="b4"><div class="spin"></div><span>文字起こし中</span></div>
+  </section>
+
+  <section class="card" id="s5" hidden>
+    <h2><span class="num">5</span><svg class="i"><use href="#i-cap"/></svg>字幕の確認</h2>
+    <video id="pc" playsinline preload="auto" controls style="max-height:40dvh;width:auto;max-width:100%;margin:0 auto"></video>
+    <div class="caps" id="caps"></div>
+    <button class="primary" id="renderBtn"><svg class="i"><use href="#i-export"/></svg>書き出す</button>
+  </section>
+
+  <section class="card" id="s6" hidden>
+    <h2><span class="num">6</span><svg class="i"><use href="#i-export"/></svg>完成</h2>
+    <div class="busy" id="b6" hidden><div class="spin"></div><span id="b6t">書き出し中</span><div class="bar"><i id="bar6"></i></div></div>
+    <div class="banner good" id="learned" hidden><svg class="i"><use href="#i-book"/></svg><span id="learnedT"></span></div>
+    <div id="v6" hidden>
+      <div class="final"><video id="fin" playsinline controls></video></div>
+      <div class="two">
+        <button class="primary" id="photosBtn"><svg class="i"><use href="#i-photos"/></svg><span id="photosT">写真に保存</span></button>
+        <a class="btn" id="dl" aria-label="ダウンロード" download><svg class="i"><use href="#i-down"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <details id="lexBox">
+      <summary><svg class="i"><use href="#i-book"/></svg>覚えた言葉<span class="num" id="lexN" style="margin-left:auto">0</span></summary>
+      <div class="lex" id="lex"></div>
+    </details>
+  </section>
+
+  <div class="banner warn" id="err" hidden><svg class="i"><use href="#i-warn"/></svg><span id="errT"></span></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let job=null, pollT=null, offset=0, capsDirty=false;
+const loaded={prox:'',caps:'',pc:''};  // 何を読み込み済みか（裏で作業が終わったら読み込み直す）
+// 押した瞬間に押せなくする（応答が返るまでの二度押しを防ぐ）
+const guard=fn=>async function(){if(this.disabled)return;this.disabled=true;try{await fn()}finally{this.disabled=false;render(false)}};
+const api=async(path,opt={})=>{
+  const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json','X-DSync':'1',...(opt.headers||{})}});
+  const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j;
+};
+const post=(path,body={})=>api(path,{method:'POST',body:JSON.stringify(body)});
+const fmt=t=>{t=Math.max(0,t);const m=Math.floor(t/60),s=(t%60).toFixed(1);return m+':'+(s<10?'0':'')+s};
+const showErr=m=>{$('err').hidden=!m;$('errT').textContent=m||''};
+
+async function loadJobs(){
+  const js=await api('/api/jobs');
+  $('jobs').innerHTML='';
+  js.forEach(j=>{const b=document.createElement('button');b.textContent=j.title;b.className=job&&job.id===j.id?'cur':'';
+    b.onclick=()=>open(j.id);$('jobs').appendChild(b)});
+}
+async function open(id){
+  loaded.prox=loaded.caps=loaded.pc='';
+  try{job=await api('/api/job/'+id);try{localStorage.setItem('dsync.job',id)}catch(e){}
+    capsDirty=false;render(true);loadJobs()}catch(e){job=null;render(true)}
+}
+function setDone(id,on){$(id).classList.toggle('done',on)}
+
+function render(first){
+  showErr(job&&job.error);
+  const st=job?job.step||2:1, busy=job&&job.busy;
+  $('title').value=job?job.title:($('title').value||'');
+  $('startBtn').hidden=!!job;
+  setDone('s1',!!job);
+  $('s2').hidden=!job; setDone('s2',!!(job&&job.has_a&&job.has_b));
+  if(job){
+    $('tA').classList.toggle('ok',!!job.has_a);$('tB').classList.toggle('ok',!!job.has_b);
+    if(job.has_a&&!up.a)$('subA').textContent='✓';if(job.has_b&&!up.b)$('subB').textContent='✓';
+  }
+  const synced=job&&job.offset!==undefined&&job.offset!==null;
+  $('s3').hidden=!(job&&job.has_a&&job.has_b);
+  $('b3').hidden=busy!=='同期'; $('v3').hidden=!synced||busy==='同期';
+  $('syncBtn').hidden=!!busy||(synced&&!job.error);
+  if(busy==='同期')$('bar3').style.width=((job.progress||0)*100)+'%';
+  const pk=synced?job.id+'|'+job.auto_offset+'|'+job.confidence:'';
+  if(synced&&pk!==loaded.prox){
+    loaded.prox=pk; offset=job.offset; showOff();
+    const v=Date.now();
+    $('pa').src='/files/'+job.id+'/proxy_a.mp4?v='+v; $('pb').src='/files/'+job.id+'/proxy_b.mp4?v='+v;
+    $('lowconf').hidden=(job.confidence??1)>=0.5;
+  }
+  setDone('s3',st>=4);
+  $('s4').hidden=!(busy==='文字起こし');
+  const hasCaps=job&&job.captions&&busy!=='文字起こし'&&st>=5;
+  $('s5').hidden=!hasCaps; setDone('s5',st>=6);
+  const ck=hasCaps?job.id+'|'+JSON.stringify(job.captions_shown||[]).length+'|'+job.captions.length:'';
+  if(hasCaps&&ck!==loaded.caps&&(!capsDirty||first)){loaded.caps=ck;capsDirty=false;drawCaps()}
+  if(hasCaps&&loaded.pc!==pk){loaded.pc=pk;$('pc').src='/files/'+job.id+'/proxy_a.mp4?v='+Date.now()}
+  const rend=busy==='書き出し', fin=job&&job.rendered;
+  $('s6').hidden=!(rend||fin||busy==='写真に保存');
+  $('b6').hidden=!rend; $('v6').hidden=!fin||rend;
+  if(rend)$('bar6').style.width=((job.progress||0)*100)+'%';
+  if(fin&&$('fin').dataset.v!=String(job.rendered)){
+    const u='/files/'+job.id+'/'+encodeURIComponent('完成.mp4')+'?v='+job.rendered;
+    $('fin').src=u;$('fin').dataset.v=job.rendered;$('dl').href=u;$('dl').download=job.title+'.mp4';
+  }
+  $('learned').hidden=!(job&&job.learned);
+  if(job&&job.learned)$('learnedT').textContent='+'+job.learned+' 件 覚えました';
+  if(fin){
+    $('photosBtn').disabled=!!busy||job.saved;
+    $('photosT').textContent=busy==='写真に保存'?'保存中':job.saved?'保存しました':'写真に保存';
+  }
+  $('okSync').disabled=$('renderBtn').disabled=!!busy;
+  clearTimeout(pollT);
+  if(busy){const id=job.id;pollT=setTimeout(async function poll(){
+    try{const j=await api('/api/job/'+id);if(job&&job.id===id){job=j;render(false)}}
+    catch(e){if(job&&job.id===id)pollT=setTimeout(poll,2000)}},1000)}
+}
+
+// 1 タイトル
+$('startBtn').onclick=guard(async()=>{
+  try{job=await post('/api/job',{title:$('title').value});try{localStorage.setItem('dsync.job',job.id)}catch(e){}
+    render(true);loadJobs()}catch(e){showErr(e.message)}
+});
+$('title').addEventListener('change',async()=>{if(job){job=await post('/api/job/'+job.id+'/title',{title:$('title').value});loadJobs()}});
+$('newBtn').onclick=()=>{job=null;loaded.prox=loaded.caps=loaded.pc='';try{localStorage.removeItem('dsync.job')}catch(e){}$('title').value='';
+  ['subA','subB'].forEach(i=>$(i).textContent='選ぶ');['barA','barB'].forEach(i=>$(i).style.width=0);
+  $('pa').removeAttribute('src');$('pb').removeAttribute('src');render(true);loadJobs();window.scrollTo(0,0)};
+
+// 2 動画
+const up={};
+function upload(k,file){
+  const ext=(file.name.split('.').pop()||'mov').toLowerCase();
+  up[k]=true; const K=k.toUpperCase();
+  return new Promise((res,rej)=>{
+    const x=new XMLHttpRequest();
+    const jid=job.id;
+    x.open('PUT','/api/job/'+jid+'/upload/'+k);x.setRequestHeader('X-Ext',ext);x.setRequestHeader('X-DSync','1');
+    x.upload.onprogress=e=>{if(e.lengthComputable){$('bar'+K).style.width=(e.loaded/e.total*100)+'%';$('sub'+K).textContent=Math.round(e.loaded/e.total*100)+'%'}};
+    x.onload=()=>{up[k]=false;
+      if(!job||job.id!==jid){res();return}  // 送っている間に別の作業へ移った
+      if(x.status<300){job=JSON.parse(x.responseText);$('sub'+K).textContent='✓';res()}
+      else{$('sub'+K).textContent='やり直す';let m='送れませんでした';try{m=JSON.parse(x.responseText).error||m}catch(e){}rej(new Error(m))}};
+    x.onerror=()=>{up[k]=false;$('sub'+K).textContent='やり直す';rej(new Error('送れませんでした'))};
+    x.send(file);
+  });
+}
+['a','b'].forEach(k=>$('f'+k.toUpperCase()).addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f)return; e.target.value='';
+  const jid=job.id;
+  try{showErr('');await upload(k,f);if(!job||job.id!==jid)return;
+    if(job.has_a&&job.has_b&&!up.a&&!up.b){job=await post('/api/job/'+job.id+'/sync');render(true)} else render(false);
+  }catch(err){showErr(err.message)}
+}));
+
+// 3 同期の確認：A を基準に B を offset ずらして再生
+const pa=$('pa'),pb=$('pb');
+function showOff(){$('off').innerHTML=(offset>=0?'+':'−')+Math.abs(offset).toFixed(3)+'<small> 秒</small>';syncB(true)}
+function syncB(force){
+  const t=pa.currentTime-offset;
+  if(t<0||t>pb.duration){if(!pb.paused)pb.pause();pb.currentTime=Math.max(0,Math.min(t,pb.duration||0));return}
+  if(force||Math.abs(pb.currentTime-t)>0.08)pb.currentTime=t;
+  if(!pa.paused&&pb.paused)pb.play().catch(()=>{});
+}
+$('play').onclick=()=>{if(pa.paused){pa.play();syncB(true)}else{pa.pause();pb.pause()}};
+pa.addEventListener('play',()=>$('play').innerHTML='<svg class="i"><use href="#i-pause"/></svg>');
+pa.addEventListener('pause',()=>{pb.pause();$('play').innerHTML='<svg class="i"><use href="#i-play"/></svg>'});
+pa.addEventListener('timeupdate',()=>{if(pa.duration)$('seek').value=pa.currentTime/pa.duration*1000;syncB(false)});
+$('seek').addEventListener('input',e=>{if(pa.duration){pa.currentTime=e.target.value/1000*pa.duration;syncB(true)}});
+$('snd').onclick=()=>{pb.muted=!pb.muted;$('snd').classList.toggle('on',!pb.muted)};
+document.querySelectorAll('.nudge [data-d]').forEach(b=>b.onclick=()=>{offset=Math.round((offset+parseFloat(b.dataset.d))*1000)/1000;showOff()});
+$('reset').onclick=()=>{offset=job.auto_offset;showOff()};
+$('syncBtn').onclick=guard(async()=>{try{showErr('');job=await post('/api/job/'+job.id+'/sync')}catch(e){showErr(e.message)}});
+$('okSync').onclick=guard(async()=>{
+  pa.pause();
+  try{job=await post('/api/job/'+job.id+'/confirm',{offset});render(true);
+    $(job.busy?'s4':'s5').scrollIntoView({behavior:'smooth'})}catch(e){showErr(e.message)}
+});
+
+// 5 字幕の確認
+function drawCaps(){
+  const box=$('caps');box.innerHTML='';
+  job.captions.forEach((c,i)=>{
+    const r=document.createElement('div');r.className='cap';
+    const b=document.createElement('button');b.textContent=fmt(c.start);b.setAttribute('aria-label','ここから再生');
+    b.onclick=()=>{const v=$('pc');v.currentTime=c.start;v.play()};
+    const t=document.createElement('textarea');t.rows=1;t.value=c.text;
+    const shown=(job.captions_shown||[]).find(x=>Math.abs(x.start-c.start)<0.01);
+    const mark=()=>t.classList.toggle('ed',!!shown&&shown.text!==t.value);
+    const fit=()=>{t.style.height='auto';t.style.height=t.scrollHeight+'px'};
+    t.oninput=()=>{c.text=t.value;capsDirty=true;fit();mark()};
+    const x=document.createElement('button');x.className='del';x.setAttribute('aria-label','この字幕を消す');
+    x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+    x.onclick=()=>{job.captions.splice(job.captions.indexOf(c),1);capsDirty=true;drawCaps()};
+    r.append(b,t,x);box.appendChild(r);mark();requestAnimationFrame(fit);
+  });
+}
+$('renderBtn').onclick=guard(async()=>{
+  try{await post('/api/job/'+job.id+'/captions',{captions:job.captions});capsDirty=false;
+    loadLex();job=await post('/api/job/'+job.id+'/render');render(true);$('s6').scrollIntoView({behavior:'smooth'})}catch(e){showErr(e.message)}
+});
+
+// 覚えた言葉
+async function loadLex(){
+  const lex=await api('/api/lexicon');const box=$('lex');box.innerHTML='';
+  $('lexN').textContent=lex.pairs.length;
+  if(!lex.pairs.length){box.innerHTML='<div class="empty">—</div>';return}
+  lex.pairs.forEach(p=>{
+    const r=document.createElement('div');r.className='lexr';
+    const a=document.createElement('s');a.textContent=p.from;
+    const ar=document.createElement('span');ar.textContent='→';ar.setAttribute('aria-hidden','true');
+    const b=document.createElement('span');b.textContent=p.to;
+    const x=document.createElement('button');x.setAttribute('aria-label','忘れる');x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+    x.onclick=async()=>{await post('/api/lexicon/remove',{from:p.from,to:p.to});loadLex()};
+    const n=document.createElement('span');n.className='n';n.textContent='×'+p.n;
+    r.append(a,ar,b,n,x);box.appendChild(r);
+  });
+}
+loadLex();
+
+// 6 写真へ
+$('photosBtn').onclick=guard(async()=>{try{job=await post('/api/job/'+job.id+'/photos')}catch(e){showErr(e.message)}});
+
+(async()=>{let id=new URLSearchParams(location.search).get('job');if(!id)try{id=localStorage.getItem('dsync.job')}catch(e){}
+  if(id)await open(id);else{render(true);loadJobs()}})();
+</script>
+</body>
+</html>
