@@ -73,6 +73,18 @@ VERIFIED = {
         ("str", "Mac実測: 'Due Date' で期限と通知が一緒に動いた（通知センターで時刻どおりに出た）"),
     ("is.workflow.actions.setters.reminders", "WFReminderContentItemDueDate"):
         ("WFTextTokenString", "Mac実測: 日付の調整の出力を差し込んで、その時刻になった"),
+    # 2026-10-05 「元に戻す」で Mac 実測（架空データ）：控えを作る→動かす→戻す→控えを消す。
+    #   同じ題名で期限の違う囮・止まって残った控えのまねを置いても、動かした物だけが戻った
+    ("is.workflow.actions.properties.reminders", "WFInput"):
+        ("WFTextTokenAttachment", "Mac実測: Repeat Item から題名・期限が取れ、控えの題名と期限になった"),
+    ("is.workflow.actions.properties.reminders", "WFContentItemPropertyName"):
+        ("str", "Mac実測: 'Title'・'Due Date'・'Notes'"),
+    ("is.workflow.actions.addnewreminder", "WFCalendarItemNotes"):
+        ("WFTextTokenString", "Mac実測: 控えのメモに入った（DB の ZNOTES で確認）"),
+    ("is.workflow.actions.setters.reminders", "WFReminderContentItemIsCompleted"):
+        ("bool", "Mac実測: True で控えが完了済みになった"),
+    ("is.workflow.actions.setters.reminders", "WFReminderContentItemNotes"):
+        ("WFTextTokenString", "Mac実測: 'Notes' で前回の控えのメモが「使用済み」に書き換わった"),
     ("is.workflow.actions.removereminders", "WFInputReminders"):
         ("WFTextTokenAttachment", "Mac実測: 探した架空の物だけが削除の確認に並び、消えた"),
 }

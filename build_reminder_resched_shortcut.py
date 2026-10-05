@@ -6,6 +6,8 @@
 作るもの（下ほど部品が増える。**上から順に実機で通す**）:
   期限切れを見る.shortcut       … 探して並べるだけ。**何も書き換えない**
   まとめてリスケ.shortcut       … 探す → 時刻を選ぶ（1時間後／今夜20時／朝9時）→ 全部の期限をその時刻へ
+  リスケを戻す.shortcut         … 直前の「まとめてリスケ／朝9時へ」で動かした物を元の期限へ戻す
+                                  （動かすときに、同じ題名・元の期限の控えを完了済みで作っておき、それを見て戻す）
   朝9時へ.shortcut              … 探す → 全部の期限を次の朝9:00へ（選ばない。0〜9時に押せばその朝）
   タグ「固定」の物（毎日・毎週の決まった時刻の物）は動かさない。
   どれも最後に探し直して「残りの期限切れ N件」を出す。「今夜20時」は20時を過ぎて押すと明日の20時。
@@ -29,6 +31,10 @@ import plistlib, uuid, sys, subprocess, pathlib, tempfile, shutil
 HERE = pathlib.Path(__file__).parent
 TEST_TITLE = "_テスト期限切れ"
 FIXED_TAG = "固定"
+MARK = "リスケの控え（消さないでください）"   # 控えのリマインダーのメモ。元に戻すときはこれで探す
+BACK = "↩ "                                  # 控えの題名の頭（本物の完了と見分ける）
+STAMP = "yyyy/MM/dd HH:mm"
+USED = "リスケの控え・使用済み"               # 次に動かしたとき、前回の控えをこれに書き換える（元に戻すの対象から外す）
 
 def U(): return str(uuid.uuid4()).upper()
 
@@ -53,6 +59,7 @@ def att(u, name):
 
 # 出力名（loctable の Default Output Name）。解決は UUID で行われるので名前のずれは動作に響かない
 O_DATE, O_ADJ, O_FMT, O_FOUND, O_MENU, O_CNT = "日付", "調整後の日付", "フォーマット済みの日付", "リマインダー", "メニューの結果", "数"
+O_DET, O_NEWREM, O_REP, O_TEXT = "リマインダーの詳細", "新規リマインダー", "テキストを置き換え", "テキスト"
 
 def fil(title_only, only_title=False, alarms=True, fixed=False):
     """未完了 かつ 期限が過去3650日以内（＝今より前。今日のこれからの時刻は入らない＝Mac で実測）かつ 通知あり。
@@ -67,7 +74,9 @@ def fil(title_only, only_title=False, alarms=True, fixed=False):
         {"Property": "Has Alarms", "Operator": 4, "Values": {"Unit": 4, "Bool": alarms}, "Removable": True},
         # タグ「固定」の物（毎日・毎週の決まった時刻の物）は動かさない。fixed=True は逆に固定だけを数える用。
         # ショートカットからは「繰り返し」が見えないので、本人がタグで印を付ける（2026-10-05）
-        {"Property": "Tags", "Operator": 99 if fixed else 999, "Values": {"Unit": 4, "String": FIXED_TAG}, "Removable": True}]
+        {"Property": "Tags", "Operator": 99 if fixed else 999, "Values": {"Unit": 4, "String": FIXED_TAG}, "Removable": True},
+        # 控え（作ってから完了にする前に止まった物）は動かさない
+        {"Property": "Notes", "Operator": 999, "Values": {"Unit": 4, "String": "リスケの控え"}, "Removable": True}]
     if title_only:
         t.insert(0, {"Property": "Title", "Operator": 4, "Values": {"Unit": 4, "String": TEST_TITLE}, "Removable": True})
     return {"Value": {"WFActionParameterFilterPrefix": 1, "WFContentPredicateBoundedDate": False,
@@ -75,7 +84,7 @@ def fil(title_only, only_title=False, alarms=True, fixed=False):
             "WFSerializationType": "WFContentPredicateTableTemplate"}
 
 def build(kind, test=False):
-    """kind: "look"（見るだけ）／"menu"（選んで書く）／"morning"（朝9時へ書く）／"clean"（テストの片付け）"""
+    """kind: "look"（見るだけ）／"menu"（選んで書く）／"morning"（朝9時へ書く）／"undo"（直前の分を元に戻す）／"clean"（テストの片付け）"""
     acts = []
     def A(i, p=None, u=None):
         q = dict(p or {})
@@ -112,10 +121,78 @@ def build(kind, test=False):
         u_xc = A("is.workflow.actions.count", {"WFCountType": "Items", "Input": att(u_x, O_FOUND)}, U())
         return ["\n（#固定で対象外 ", (u_xc, O_CNT), "件・時刻なしで対象外 ", (u_sc, O_CNT), "件）"]
 
+    RI = {"Value": {"Type": "Variable", "VariableName": "Repeat Item"}, "WFSerializationType": "WFTextTokenAttachment"}
+    RI2 = {"Value": {"Type": "Variable", "VariableName": "Repeat Item 2"}, "WFSerializationType": "WFTextTokenAttachment"}
+
+    def detail(src, prop):
+        """リマインダーの詳細（題名・期限）を取る"""
+        return A("is.workflow.actions.properties.reminders", {"WFInput": src, "WFContentItemPropertyName": prop}, U())
+
+    def controls(mark=MARK):
+        """控え（完了済み・メモに mark）を探す。テスト版は題名でも絞る。
+        mark="リスケの控え" なら使用済みも含めて全部"""
+        t = [{"Property": "Is Completed", "Operator": 4, "Values": {"Unit": 4, "Bool": True}, "Removable": True},
+             {"Property": "Notes", "Operator": 99, "Values": {"Unit": 4, "String": mark}, "Removable": True}]
+        if test:
+            t.insert(0, {"Property": "Title", "Operator": 4, "Values": {"Unit": 4, "String": BACK + TEST_TITLE}, "Removable": True})
+        return A("is.workflow.actions.filter.reminders", {"WFContentItemFilter": {"Value": {
+            "WFActionParameterFilterPrefix": 1, "WFContentPredicateBoundedDate": False,
+            "WFActionParameterFilterTemplates": t}, "WFSerializationType": "WFContentPredicateTableTemplate"},
+            "WFContentItemLimitEnabled": False}, U())
+
+    if kind == "undo":
+        # 先に件数を見せて「戻す／やめる」を選ばせる（書き換えてから確認、にしない）
+        u_c = controls()
+        u_cc = A("is.workflow.actions.count", {"WFCountType": "Items", "Input": att(u_c, O_FOUND)}, U())
+        gm, items = U(), ["戻す", "やめる"]
+        A("is.workflow.actions.choosefrommenu", {"WFMenuPrompt": ts(["直前に動かした ", (u_cc, O_CNT), "件を元に戻す？"]),
+                                                 "WFControlFlowMode": 0, "WFMenuItems": items, "GroupingIdentifier": gm})
+        A("is.workflow.actions.choosefrommenu", {"WFMenuItemTitle": items[0], "GroupingIdentifier": gm, "WFControlFlowMode": 1})
+        g = U()
+        A("is.workflow.actions.repeat.each", {"WFInput": att(u_c, O_FOUND), "GroupingIdentifier": g, "WFControlFlowMode": 0})
+        # 控え：題名「↩ 元の題名」・期限＝元の期限・メモ＝MARK＋動かした先の時刻
+        u_ct, u_d, u_n = detail(RI, "Title"), detail(RI, "Due Date"), detail(RI, "Notes")
+        u_t = A("is.workflow.actions.text.replace", {"WFInput": ts([(u_ct, O_DET)]), "WFReplaceTextFind": "^" + BACK,
+                "WFReplaceTextReplace": "", "WFReplaceTextRegularExpression": True}, U())
+        u_to = A("is.workflow.actions.text.replace", {"WFInput": ts([(u_n, O_DET)]), "WFReplaceTextFind": "^[^）]*）",
+                 "WFReplaceTextReplace": "", "WFReplaceTextRegularExpression": True}, U())
+        # 同じ題名の未完了のうち、**今の期限が「動かした先の時刻」と同じ物だけ**を戻す（題名だけで選ぶと別の物を壊す）
+        u_m = A("is.workflow.actions.filter.reminders", {
+            "WFContentItemFilter": {"Value": {"WFActionParameterFilterPrefix": 1, "WFContentPredicateBoundedDate": False,
+                "WFActionParameterFilterTemplates": [
+                    {"Property": "Title", "Operator": 4, "Values": {"Unit": 4, "String": ts([(u_t, O_REP)])}, "Removable": True},
+                    {"Property": "Is Completed", "Operator": 4, "Values": {"Unit": 4, "Bool": False}, "Removable": True}]},
+                "WFSerializationType": "WFContentPredicateTableTemplate"},
+            "WFContentItemLimitEnabled": False}, U())
+        g2 = U()
+        A("is.workflow.actions.repeat.each", {"WFInput": att(u_m, O_FOUND), "GroupingIdentifier": g2, "WFControlFlowMode": 0})
+        u_cd = detail(RI2, "Due Date")
+        u_cf = A("is.workflow.actions.format.date", {"WFDate": ts([(u_cd, O_DET)]), "WFDateFormatStyle": "Custom",
+                 "WFDateFormat": STAMP, "WFLocale": "en_US"}, U())
+        gi = U()
+        A("is.workflow.actions.conditional", {"WFInput": {"Type": "Variable", "Variable": att(u_cf, O_FMT)},
+            "WFCondition": 4, "WFConditionalActionString": ts([(u_to, O_REP)]), "WFControlFlowMode": 0, "GroupingIdentifier": gi})
+        A("is.workflow.actions.setters.reminders", {"WFInput": RI2, "Mode": "Set",
+            "WFContentItemPropertyName": "Due Date", "WFReminderContentItemDueDate": ts([(u_d, O_DET)])}, U())
+        u_one = A("is.workflow.actions.gettext", {"WFTextActionText": ts("1")}, U())
+        A("is.workflow.actions.appendvariable", {"WFInput": att(u_one, O_TEXT), "WFVariableName": "戻した"})
+        A("is.workflow.actions.conditional", {"WFControlFlowMode": 2, "GroupingIdentifier": gi}, U())
+        A("is.workflow.actions.repeat.each", {"GroupingIdentifier": g2, "WFControlFlowMode": 2}, U())
+        A("is.workflow.actions.repeat.each", {"GroupingIdentifier": g, "WFControlFlowMode": 2}, U())
+        # 控えは消す（使用済みも一緒に。削除の確認が出るのはここだけ）
+        A("is.workflow.actions.removereminders", {"WFInputReminders": att(controls("リスケの控え"), O_FOUND)}, U())
+        u_done = A("is.workflow.actions.count", {"WFCountType": "Items", "Input": {"Value": {"VariableName": "戻した", "Type": "Variable"},
+                   "WFSerializationType": "WFTextTokenAttachment"}}, U())
+        A("is.workflow.actions.showresult", {"Text": ts([(u_done, O_CNT), "件を元の時刻に戻しました"])})
+        A("is.workflow.actions.choosefrommenu", {"WFMenuItemTitle": items[1], "GroupingIdentifier": gm, "WFControlFlowMode": 1})
+        A("is.workflow.actions.choosefrommenu", {"GroupingIdentifier": gm, "WFControlFlowMode": 2}, U())
+        return acts
+
     if kind == "clean":   # 題名 _テスト期限切れ の物を消す（OS が件数と題名つきで削除の確認を出す）
         u_f = A("is.workflow.actions.filter.reminders",
                 {"WFContentItemFilter": fil(True, only_title=True), "WFContentItemLimitEnabled": False}, U())
         A("is.workflow.actions.removereminders", {"WFInputReminders": att(u_f, O_FOUND)}, U())
+        A("is.workflow.actions.removereminders", {"WFInputReminders": att(controls("リスケの控え"), O_FOUND)}, U())   # テストの控えも
         return acts
 
     if test:
@@ -153,13 +230,29 @@ def build(kind, test=False):
     else:
         new = (next_at(9), O_ADJ)
 
+    u_stamp = A("is.workflow.actions.format.date", {"WFDate": ts([new]), "WFDateFormatStyle": "Custom",
+                "WFDateFormat": STAMP, "WFLocale": "en_US"}, U())   # 動かした先の時刻（控えに書く）
+    # 前回の控えは「使用済み」にする（元に戻せるのは直前の1回だけ）。
+    # 消すと毎回「削除しますか」の確認が出て紛らわしいので、消すのは「元に戻す」のときだけ
+    g0 = U()
+    A("is.workflow.actions.repeat.each", {"WFInput": att(controls(), O_FOUND), "GroupingIdentifier": g0,
+                                          "WFControlFlowMode": 0})
+    A("is.workflow.actions.setters.reminders", {"WFInput": RI, "Mode": "Set",
+        "WFContentItemPropertyName": "Notes", "WFReminderContentItemNotes": ts(USED)}, U())
+    A("is.workflow.actions.repeat.each", {"GroupingIdentifier": g0, "WFControlFlowMode": 2}, U())
     # 「リマインダーを編集」は1件ずつしか受け取らない（複数を渡すと「項目を選択」で止まる＝2026-10-05 Mac で実測）
     g = U()
     A("is.workflow.actions.repeat.each", {"WFInput": att(u_found, O_FOUND), "GroupingIdentifier": g,
                                           "WFControlFlowMode": 0})
+    # 控え：同じ題名・元の期限で新しく作り、すぐ完了にして隠す（メモに MARK）
+    u_t, u_d = detail(RI, "Title"), detail(RI, "Due Date")
+    u_k = A("is.workflow.actions.addnewreminder", {
+        "WFCalendarItemTitle": ts([BACK, (u_t, O_DET)]), "WFCalendarItemNotes": ts([MARK, (u_stamp, O_FMT)]), "WFAlertEnabled": "Alert",
+        "WFAlertCondition": "At Time", "WFAlertCustomTime": ts([(u_d, O_DET)]), "WFPriority": "None"}, U())
+    A("is.workflow.actions.setters.reminders", {"WFInput": att(u_k, O_NEWREM), "Mode": "Set",
+        "WFContentItemPropertyName": "Is Completed", "WFReminderContentItemIsCompleted": True}, U())
     A("is.workflow.actions.setters.reminders", {
-        "WFInput": {"Value": {"Type": "Variable", "VariableName": "Repeat Item"},
-                    "WFSerializationType": "WFTextTokenAttachment"},
+        "WFInput": RI,
         "Mode": "Set", "WFContentItemPropertyName": "Due Date",
         "WFReminderContentItemDueDate": ts([new])}, U())
     A("is.workflow.actions.repeat.each", {"GroupingIdentifier": g, "WFControlFlowMode": 2}, U())
@@ -195,9 +288,10 @@ def main():
     if not args:
         sys.exit(__doc__.strip().split("\n")[2])
     out = pathlib.Path(args[0]); out.mkdir(parents=True, exist_ok=True)
-    plan = ((("look", "_テスト見る"), ("menu", "_テスト選ぶ"), ("morning", "_テスト書く"), ("clean", "_テスト片付け"))
-            if test else (("look", "期限切れを見る"), ("menu", "まとめてリスケ"), ("morning", "朝9時へ")))
-    mine = [n for _, n in plan] + ["期限切れを見る", "まとめてリスケ", "朝9時へ", "明日9時へ"]
+    plan = ((("look", "_テスト見る"), ("menu", "_テスト選ぶ"), ("morning", "_テスト書く"), ("undo", "_テスト戻す"),
+             ("clean", "_テスト片付け"))
+            if test else (("look", "期限切れを見る"), ("menu", "まとめてリスケ"), ("morning", "朝9時へ"), ("undo", "リスケを戻す")))
+    mine = [n for _, n in plan] + ["期限切れを見る", "まとめてリスケ", "朝9時へ", "明日9時へ", "元に戻す", "リスケを戻す"]
     tmp = pathlib.Path(tempfile.mkdtemp())
     def stop(msg):
         shutil.rmtree(tmp, ignore_errors=True)
