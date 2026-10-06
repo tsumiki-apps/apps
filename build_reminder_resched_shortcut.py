@@ -5,13 +5,13 @@
 
 作るもの（下ほど部品が増える。**上から順に実機で通す**）:
   期限切れを見る.shortcut       … 探して並べるだけ。**何も書き換えない**
-  まとめてリスケ.shortcut       … 探す → 時刻を選ぶ（1時間後／今夜20時／朝9時）→ 全部の期限をその時刻へ
+  まとめてリスケ.shortcut       … 探す → 時刻を選ぶ（1時間後／今夜23時／翌朝8:30）→ 全部の期限をその時刻へ
   1件ずつリスケ.shortcut        … 期限切れから動かす物をいくつでも選び、1件ずつ日付と時刻のつまみで決める
   リスケを戻す.shortcut         … 直前の「まとめてリスケ／朝9時へ」で動かした物を元の期限へ戻す
                                   （動かすときに、同じ題名・元の期限の控えを完了済みで作っておき、それを見て戻す）
   朝9時へ.shortcut              … 探す → 全部の期限を次の朝9:00へ（選ばない。0〜9時に押せばその朝）
   タグ「固定」の物（毎日・毎週の決まった時刻の物）は動かさない。
-  どれも最後に探し直して「残りの期限切れ N件」を出す。「今夜20時」は20時を過ぎて押すと明日の20時。
+  どれも最後に探し直して「残りの期限切れ N件」を出す。「今夜23時」は23時を過ぎて押すと明日の23時、「翌朝8:30」は0〜8:30 に押すとその朝。
 
 --mac-test … Mac で `shortcuts run` して確かめる版（_テスト〜）を作る。**本物のリマインダーは触らない**:
   題名が「_テスト期限切れ」の物だけを探す。自分でその題名の物を2件（期限は昨日）作ってから探す。
@@ -107,11 +107,11 @@ def build(kind, test=False):
                  "WFLocale": "en_US"}, U())
         return mins([(u_f, O_FMT), " " + hhmm], 0)
 
-    def next_at(h):
-        """これから来る最初の h 時ちょうど。「もし」を使わず、(今 + (24-h) 時間) の日付の h 時にする。
-        例 h=20: 19:59 → 今日20時／20:01 → 明日20時。h=9: 1:00 → 今朝9時／10:00 → 明日9時"""
+    def next_at(h, m=0):
+        """これから来る最初の h:m。「もし」を使わず、(今 + (24時間 − h:m)) の日付の h:m にする。
+        例 23:00: 22:59 → 今日23時／23:01 → 明日23時。8:30: 1:00 → 今朝8:30／9:00 → 明日8:30"""
         u = A("is.workflow.actions.date", {}, U())       # 押した瞬間の「今」（メニューで迷った分を含めない）
-        return day_at((mins([(u, O_DATE)], (24 - h) * 60), O_ADJ), "%02d:00" % h)
+        return day_at((mins([(u, O_DATE)], 24 * 60 - (h * 60 + m)), O_ADJ), "%02d:%02d" % (h, m))
 
     def skipped_note():
         """時刻なし・通知なしの期限切れは動かさない。その件数を見せる"""
@@ -218,16 +218,16 @@ def build(kind, test=False):
 
     new = None
     if kind == "menu":
-        g, items = U(), ["1時間後", "今夜20時", "朝9時"]
+        g, items = U(), ["1時間後", "今夜23時", "翌朝8:30"]   # 本人の希望（2026-10-06）
         A("is.workflow.actions.choosefrommenu", {"WFMenuPrompt": "いつに動かす？", "WFControlFlowMode": 0,
                                                  "WFMenuItems": items, "GroupingIdentifier": g})
         A("is.workflow.actions.choosefrommenu", {"WFMenuItemTitle": items[0], "GroupingIdentifier": g, "WFControlFlowMode": 1})
         u = A("is.workflow.actions.date", {}, U())
         mins([(u, O_DATE)], 60)
         A("is.workflow.actions.choosefrommenu", {"WFMenuItemTitle": items[1], "GroupingIdentifier": g, "WFControlFlowMode": 1})
-        next_at(20)
+        next_at(23)
         A("is.workflow.actions.choosefrommenu", {"WFMenuItemTitle": items[2], "GroupingIdentifier": g, "WFControlFlowMode": 1})
-        next_at(9)
+        next_at(8, 30)
         u_new = A("is.workflow.actions.choosefrommenu", {"GroupingIdentifier": g, "WFControlFlowMode": 2}, U())
         new = (u_new, O_MENU)
     elif kind == "morning":
