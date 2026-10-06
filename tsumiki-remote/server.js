@@ -2751,9 +2751,10 @@ const server = http.createServer(async (req, res) => {
       // 制御文字（改行・ESC など）は空白に＝ログの1行を偽れない・端末の色を変えられない
       const clean = (x, n) => String(x == null ? '' : x).replace(/[\x00-\x1f\x7f\u2028\u2029]/g, ' ').slice(0, n);
       const trail = (Array.isArray(body.trail) ? body.trail : []).slice(-30).map((x) => clean(x, 40));
+      const shapes = (Array.isArray(body.shapes) ? body.shapes : []).slice(-24).map((x) => clean(x, 30));
       console.log(`ime ${clean(body.kind, 30) || '変換が切れた'}（起動から${Number(body.up) || 0}秒・`
         + `${body.standalone ? 'ホーム画面' : 'Safari'}・${body.secure ? 'https' : 'http'}・`
-        + `${body.clip ? 'clipboardあり' : 'clipboardなし'}） 直前: ${trail.join(' → ')} ／ ${clean(body.ua, 200)}`);
+        + `${body.clip ? 'clipboardあり' : 'clipboardなし'}） 直前: ${trail.join(' → ')} ／ 形: ${shapes.join(' ')} ／ ${clean(body.ua, 200)}`);
       return json(res, 200, { ok: true });
     }
 

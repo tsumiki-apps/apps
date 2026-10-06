@@ -5126,10 +5126,37 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var imeComposing = false;
   var imeKana = 0, imeKanaAt = 0;   // 変換なしで続けて入った仮名の数と、最後の時刻
   var imeCompAt = 0;                // いまの変換が始まった時刻
-  el.cmd.addEventListener('compositionstart', function () { imeComposing = true; imeCompAt = Date.now(); imeNote('変換はじめ'); });
-  el.cmd.addEventListener('compositionend', function () { imeComposing = false; imeCompAt = 0; imeNote('変換おわり'); });
+  // 変換は1回ごとに残さず「変換×回数」に数えてまとめる（2026-10-06）。1字ずつ確定する形で打たれると
+  // 30件が変換だけで埋まり、肝心の「その前に何をしたか」が押し出されていた
+  var imeCompN = 0;
+  el.cmd.addEventListener('compositionstart', function () { imeComposing = true; imeCompAt = Date.now(); });
+  el.cmd.addEventListener('compositionend', function () {
+    imeComposing = false; imeCompAt = 0;
+    var last = imeTrail[imeTrail.length - 1] || '';
+    if (/ 変換×\d+$/.test(last)) imeTrail.pop(); else imeCompN = 0;
+    imeNote('変換×' + (++imeCompN));
+  });
   el.cmd.addEventListener('focus', function () { imeNote('入力欄に焦点'); });
   el.cmd.addEventListener('blur', function () { imeComposing = false; imeCompAt = 0; imeNote('入力欄から焦点が外れた'); });
+  // 入力欄に入ってきた出来事の「形」だけを直近24件（2026-10-06）。
+  // 本人のスクショでは仮名が下線なしで確定済み・候補帯が空なのに、上の判定が1回も出なかった＝
+  // 壊れたときの出来事は「変換中でない1字の insertText」とは違う形で来ている。どの形かを次に取る。
+  // 例「iT·c·k1」＝insertText・変換中・仮名1字。字そのものは持たない（種類と字数だけ）
+  var imeShapes = [];
+  function imeShape(tag, e) {
+    var d = (e && e.data) || '';
+    var kind = !d ? '' : /^[\u3041-\u3096\u30a1-\u30fa\u30fc]+$/.test(d) ? 'k'
+      : /[\u4e00-\u9fff]/.test(d) ? 'j' : /^[\x20-\x7e]+$/.test(d) ? 'a' : 'o';
+    var t = tag + ((e && e.inputType) || '').replace('CompositionText', 'Comp').replace(/^insert/, 'i').replace(/^delete/, 'd').slice(0, 14)
+      + ((e && e.isComposing) || imeComposing ? '·c' : '') + (d ? '·' + kind + d.length : '');
+    imeShapes.push(t);
+    if (imeShapes.length > 24) imeShapes.shift();
+  }
+  ['compositionstart', 'compositionupdate', 'compositionend'].forEach(function (n) {
+    el.cmd.addEventListener(n, function (e) { imeShape(n.replace('composition', 'C'), e); });
+  });
+  el.cmd.addEventListener('beforeinput', function (e) { imeShape('b:', e); });
+  el.cmd.addEventListener('input', function (e) { imeShape('', e); });
   el.cmd.addEventListener('input', function (e) {
     if (imeComposing || e.isComposing || e.inputType !== 'insertText') return;
     // 1字ずつ・3秒以内に2回続いたときだけ。予測変換で次の言葉を選んだときも変換中でない insertText で
@@ -5156,7 +5183,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (Date.now() - (imeSentAt[kind] || 0) < 5 * 60 * 1000) return;   // 1回切れたら打つたびに出るので種類ごとに5分に1回
     imeSentAt[kind] = Date.now();
     api('/api/imelog', { method: 'POST', body: JSON.stringify({
-      kind: kind, trail: imeTrail.slice(), ua: navigator.userAgent,
+      kind: kind, trail: imeTrail.slice(), shapes: imeShapes.slice(), ua: navigator.userAgent,
       standalone: !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)),
       // http で開いていると navigator.clipboard が無く、コピーは毎回 legacyCopy を通る（→ copyText）
       secure: !!window.isSecureContext, clip: !!(navigator.clipboard && navigator.clipboard.writeText),
@@ -5250,6 +5277,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
     destCheck = null;
     imeNote('送信');
+    // どの出来事の判定にもかからずに切れたときの網（2026-10-06）。漢字が1字も無く、
+    // ひらがなが12字以上続く指示は、ふつうは打たない＝変換が効いていなかったとみなして足あとを送る
+    if (/[\u3041-\u3096]{12,}/.test(el.cmd.value) && !/[\u4e00-\u9fff]/.test(el.cmd.value)) imeReport('送った指示が仮名だけ');
     var keepText = el.cmd.value, keepAtts = atts, sentSeat = draftSeat, sentBorn = seatCreated(draftSeat);
     el.cmd.value = '';
     autoGrow();                 // 1行に戻す
