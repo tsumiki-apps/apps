@@ -10,7 +10,7 @@
   リスケを戻す.shortcut         … 直前の「まとめてリスケ／朝9時へ」で動かした物を元の期限へ戻す
                                   （動かすときに、同じ題名・元の期限の控えを完了済みで作っておき、それを見て戻す）
   朝9時へ.shortcut              … 探す → 全部の期限を次の朝9:00へ（選ばない。0〜9時に押せばその朝）
-  タグ「固定」の物（毎日・毎週の決まった時刻の物）は動かさない。
+  タグ「固定」の物（毎日・毎週の決まった時刻の物）と、題名に「•」がある物（シフト）は動かさない。
   どれも最後に探し直して「残りの期限切れ N件」を出す。「今夜23時」は23時を過ぎて押すと明日の23時、「翌朝8:30」は0〜8:30 に押すとその朝。
 
 --mac-test … Mac で `shortcuts run` して確かめる版（_テスト〜）を作る。**本物のリマインダーは触らない**:
@@ -32,6 +32,7 @@ import plistlib, uuid, sys, subprocess, pathlib, tempfile, shutil
 HERE = pathlib.Path(__file__).parent
 TEST_TITLE = "_テスト期限切れ"
 FIXED_TAG = "固定"
+SHIFT_MARK = "•"                               # シフトの題名にはさまる点
 MARK = "リスケの控え（消さないでください）"   # 控えのリマインダーのメモ。元に戻すときはこれで探す
 BACK = "↩ "                                  # 控えの題名の頭（本物の完了と見分ける）
 STAMP = "yyyy/MM/dd HH:mm"
@@ -63,7 +64,7 @@ O_DATE, O_ADJ, O_FMT, O_FOUND, O_MENU, O_CNT = "日付", "調整後の日付", "
 O_PICK, O_ASK = "選択した項目", "指定入力"
 O_DET, O_NEWREM, O_REP, O_TEXT = "リマインダーの詳細", "新規リマインダー", "テキストを置き換え", "テキスト"
 
-def fil(title_only, only_title=False, alarms=True, fixed=False):
+def fil(title_only, only_title=False, alarms=True, fixed=False, shift=False):
     """未完了 かつ 期限が過去3650日以内（＝今より前。今日のこれからの時刻は入らない＝Mac で実測）かつ 通知あり。
     only_title=True は題名だけ（片付け用。完了済みも消す）。
     alarms=False は「通知なしの期限切れ」＝対象外にした物を数える用（黙って外さず、件数を見せる）。
@@ -77,6 +78,9 @@ def fil(title_only, only_title=False, alarms=True, fixed=False):
         # タグ「固定」の物（毎日・毎週の決まった時刻の物）は動かさない。fixed=True は逆に固定だけを数える用。
         # ショートカットからは「繰り返し」が見えないので、本人がタグで印を付ける（2026-10-05）
         {"Property": "Tags", "Operator": 99 if fixed else 999, "Values": {"Unit": 4, "String": FIXED_TAG}, "Removable": True},
+        # シフト（「シフトをリマインダーに」で入れた物）は動かさない。題名が「Product Zone • Sales 1」の形なので「•」で見分ける。
+        # shift=True は逆にシフトだけを数える用（2026-10-06 本人の希望・Mac で 99／999 とも実測）
+        {"Property": "Title", "Operator": 99 if shift else 999, "Values": {"Unit": 4, "String": SHIFT_MARK}, "Removable": True},
         # 控え（作ってから完了にする前に止まった物）は動かさない
         {"Property": "Notes", "Operator": 999, "Values": {"Unit": 4, "String": "リスケの控え"}, "Removable": True}]
     if title_only:
@@ -121,7 +125,11 @@ def build(kind, test=False):
         u_x = A("is.workflow.actions.filter.reminders",
                 {"WFContentItemFilter": fil(test, fixed=True), "WFContentItemLimitEnabled": False}, U())
         u_xc = A("is.workflow.actions.count", {"WFCountType": "Items", "Input": att(u_x, O_FOUND)}, U())
-        return ["\n（#固定で対象外 ", (u_xc, O_CNT), "件・時刻なしで対象外 ", (u_sc, O_CNT), "件）"]
+        u_y = A("is.workflow.actions.filter.reminders",
+                {"WFContentItemFilter": fil(test, shift=True), "WFContentItemLimitEnabled": False}, U())
+        u_yc = A("is.workflow.actions.count", {"WFCountType": "Items", "Input": att(u_y, O_FOUND)}, U())
+        return ["\n（#固定で対象外 ", (u_xc, O_CNT), "件・シフトで対象外 ", (u_yc, O_CNT), "件・時刻なしで対象外 ",
+                (u_sc, O_CNT), "件）"]
 
     RI = {"Value": {"Type": "Variable", "VariableName": "Repeat Item"}, "WFSerializationType": "WFTextTokenAttachment"}
     RI2 = {"Value": {"Type": "Variable", "VariableName": "Repeat Item 2"}, "WFSerializationType": "WFTextTokenAttachment"}
