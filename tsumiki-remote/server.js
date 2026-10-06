@@ -2749,9 +2749,10 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/imelog' && req.method === 'POST') {
       const body = (await readBody(req, 8 * 1024)) || {};
       // 制御文字（改行・ESC など）は空白に＝ログの1行を偽れない・端末の色を変えられない
-      const clean = (x, n) => String(x == null ? '' : x).replace(/[\x00-\x1f\x7f\u2028\u2029]/g, ' ').slice(0, n);
+      // 向きを変える見えない字（U+202E など）も空白に＝ログの見た目を入れ替えられない
+      const clean = (x, n) => String(x == null ? '' : x).replace(/[\x00-\x1f\x7f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').slice(0, n);
       const trail = (Array.isArray(body.trail) ? body.trail : []).slice(-30).map((x) => clean(x, 40));
-      const shapes = (Array.isArray(body.shapes) ? body.shapes : []).slice(-24).map((x) => clean(x, 30));
+      const shapes = (Array.isArray(body.shapes) ? body.shapes : []).slice(-60).map((x) => clean(x, 30));
       console.log(`ime ${clean(body.kind, 30) || '変換が切れた'}（起動から${Number(body.up) || 0}秒・`
         + `${body.standalone ? 'ホーム画面' : 'Safari'}・${body.secure ? 'https' : 'http'}・`
         + `${body.clip ? 'clipboardあり' : 'clipboardなし'}） 直前: ${trail.join(' → ')} ／ 形: ${shapes.join(' ')} ／ ${clean(body.ua, 200)}`);

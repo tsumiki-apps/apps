@@ -5128,29 +5128,37 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var imeCompAt = 0;                // いまの変換が始まった時刻
   // 変換は1回ごとに残さず「変換×回数」に数えてまとめる（2026-10-06）。1字ずつ確定する形で打たれると
   // 30件が変換だけで埋まり、肝心の「その前に何をしたか」が押し出されていた
-  var imeCompN = 0;
+  // まとめた項目は「始まり〜終わり 変換×回数」（始まりの時刻を消さない）
+  var imeCompN = 0, imeCompFrom = '';
   el.cmd.addEventListener('compositionstart', function () { imeComposing = true; imeCompAt = Date.now(); });
   el.cmd.addEventListener('compositionend', function () {
     imeComposing = false; imeCompAt = 0;
     var last = imeTrail[imeTrail.length - 1] || '';
-    if (/ 変換×\d+$/.test(last)) imeTrail.pop(); else imeCompN = 0;
+    if (/ 変換×\d+$/.test(last)) imeTrail.pop();
+    else { imeCompN = 0; imeCompFrom = String(Math.round(performance.now() / 100) / 10); }
     imeNote('変換×' + (++imeCompN));
+    var mine = imeTrail.pop();   // 頭に始まりの時刻を足す（「40s〜42s 変換×3」）
+    imeTrail.push(imeCompFrom + 's〜' + mine);
   });
   el.cmd.addEventListener('focus', function () { imeNote('入力欄に焦点'); });
   el.cmd.addEventListener('blur', function () { imeComposing = false; imeCompAt = 0; imeNote('入力欄から焦点が外れた'); });
-  // 入力欄に入ってきた出来事の「形」だけを直近24件（2026-10-06）。
+  // 入力欄に入ってきた出来事の「形」だけを直近60件（2026-10-06）。
   // 本人のスクショでは仮名が下線なしで確定済み・候補帯が空なのに、上の判定が1回も出なかった＝
   // 壊れたときの出来事は「変換中でない1字の insertText」とは違う形で来ている。どの形かを次に取る。
-  // 例「iT·c·k1」＝insertText・変換中・仮名1字。字そのものは持たない（種類と字数だけ）
-  var imeShapes = [];
+  // 例「iComp·c·k1」＝insertCompositionText・変換中・仮名1字。字そのものは持たない（種類と字数だけ）。
+  // 前の出来事から1秒以上あいたら頭に「+3s」。1字ずつ確定する形だと1字で5〜7件出るので60件持つ
+  // ⚠️ これは観測を増やすだけ。変換が切れる原因そのものはまだ分かっていない（直していない）
+  var imeShapes = [], imeShapeAt = 0;
   function imeShape(tag, e) {
+    var nowS = performance.now(), gap = imeShapeAt ? (nowS - imeShapeAt) / 1000 : 0;
+    imeShapeAt = nowS;
     var d = (e && e.data) || '';
     var kind = !d ? '' : /^[\u3041-\u3096\u30a1-\u30fa\u30fc]+$/.test(d) ? 'k'
       : /[\u4e00-\u9fff]/.test(d) ? 'j' : /^[\x20-\x7e]+$/.test(d) ? 'a' : 'o';
     var t = tag + ((e && e.inputType) || '').replace('CompositionText', 'Comp').replace(/^insert/, 'i').replace(/^delete/, 'd').slice(0, 14)
-      + ((e && e.isComposing) || imeComposing ? '·c' : '') + (d ? '·' + kind + d.length : '');
-    imeShapes.push(t);
-    if (imeShapes.length > 24) imeShapes.shift();
+      + (tag.charAt(0) !== 'C' && ((e && e.isComposing) || imeComposing) ? '·c' : '') + (d ? '·' + kind + d.length : '');
+    imeShapes.push((gap >= 1 ? '+' + Math.round(gap) + 's ' : '') + t);
+    if (imeShapes.length > 60) imeShapes.shift();
   }
   ['compositionstart', 'compositionupdate', 'compositionend'].forEach(function (n) {
     el.cmd.addEventListener(n, function (e) { imeShape(n.replace('composition', 'C'), e); });
@@ -5178,6 +5186,28 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 20字を超えたときに絞る（ライブ変換で1文まるごと打つのは普通なので、字数だけでは誤報になる）
     else if (/^[\u3041-\u3096\u30a1-\u30fc\u3001\u3002\u3000\u300c\u300d\u301c\uff5e\uff01\uff1f!? ]{20,}$/.test(e.data || '')) imeReport('仮名のまま変換中が20字を超えた');
   });
+  // どの出来事の判定にもかからずに切れたときの網（2026-10-06）。漢字が1字も無く、ひらがなが合計12字以上で、
+  // 空白と記号を除いた字の7割以上がひらがな（「、」「ー」で切れても数える）＝変換が効いていなかったとみなす。
+  // 入口は3つ：送ったとき・その字を消したとき・裏に回るとき（気づいた本人は送らずに消すことが多い）。
+  // 「はいおねがいします」のような短い返事は12字に届かない。種類を分けて、誤報が他の入口の5分枠を食わないように
+  function imeKanaOnly(v) {
+    if (!v || /[\u4e00-\u9fff]/.test(v)) return false;
+    var hira = (v.match(/[\u3041-\u3096]/g) || []).length;
+    var body = v.replace(/[\s\u3000\u3001\u3002\u30fc\uff01\uff1f!?、。,.ー〜～「」]/g, '').length;
+    return hira >= 12 && hira >= body * 0.7;
+  }
+  function imeKanaNet(v, kind) { if (imeKanaOnly(v)) imeReport(kind); }
+  // 仮名だけの字を続けて半分以上消した（打ち直そうとした）ときは、消し始める前の字で判定する。
+  // 消し始める前の字は beforeinput で取る（送信・書きかけの読み込みなど input の出ない差し替えに引きずられない）
+  var imeDelFrom = null;
+  el.cmd.addEventListener('beforeinput', function (e) {
+    if (!/^delete/.test(e.inputType || '')) { imeDelFrom = null; return; }
+    if (imeDelFrom === null) imeDelFrom = el.cmd.value;
+  });
+  el.cmd.addEventListener('input', function (e) {
+    if (imeDelFrom === null || !/^delete/.test(e.inputType || '')) return;
+    if (el.cmd.value.length <= imeDelFrom.length / 2) { imeKanaNet(imeDelFrom, '仮名だけの字を消した'); imeDelFrom = ''; }
+  });
   function imeReport(kind) {
     imeNote(kind);
     if (Date.now() - (imeSentAt[kind] || 0) < 5 * 60 * 1000) return;   // 1回切れたら打つたびに出るので種類ごとに5分に1回
@@ -5190,7 +5220,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       up: Math.round(performance.now() / 1000)
     }) }, 8000).catch(function () {});
   }
-  document.addEventListener('visibilitychange', function () { imeNote(document.hidden ? '裏に回った' : '表に戻った'); });
+  document.addEventListener('visibilitychange', function () {
+    // 変換が開いたまま裏に回った＝10/5 の仮説（焦点を持ったまま裏に回る）の直接の証拠なので分けて残す
+    imeNote(document.hidden ? (imeComposing ? '変換中のまま裏に回った' : '裏に回った') : '表に戻った');
+    if (document.hidden) imeKanaNet(el.cmd.value, '仮名だけの字のまま裏に回った');
+  });
 
   // ⚠️ 裏に回るときは打つ欄から焦点を外す（2026-10-05）。
   // 本人「他のアプリで開いたあと戻って来たら変換できなくなってます」。スクショでは入力欄に焦点が
@@ -5277,9 +5311,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
     destCheck = null;
     imeNote('送信');
-    // どの出来事の判定にもかからずに切れたときの網（2026-10-06）。漢字が1字も無く、
-    // ひらがなが12字以上続く指示は、ふつうは打たない＝変換が効いていなかったとみなして足あとを送る
-    if (/[\u3041-\u3096]{12,}/.test(el.cmd.value) && !/[\u4e00-\u9fff]/.test(el.cmd.value)) imeReport('送った指示が仮名だけ');
+    imeKanaNet(el.cmd.value, '送った指示が仮名だけ');
     var keepText = el.cmd.value, keepAtts = atts, sentSeat = draftSeat, sentBorn = seatCreated(draftSeat);
     el.cmd.value = '';
     autoGrow();                 // 1行に戻す
