@@ -394,6 +394,8 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+    <symbol id="i-arc" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></symbol>
+    <symbol id="i-unarc" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3.5 8.5A2 2 0 0 1 5.5 6.5h2l1.5-2h6l1.5 2h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></symbol>
     <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
@@ -569,7 +571,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
    曜日ごとに「幸せなこと」を決めておく。今日の分は押すと「できた」の判子が付く。
    データ（1つの JSON）:
      items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付, 10=毎月, 11=期間), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ), tm?:'am'|'pm'|'nt'|'HH:MM'(時間帯・どの種類にも付けられる), dom?:1〜31(毎月だけ・その月に無い日は月末に出す・ymd があればその日から), st?/en?:'YYYY-MM-DD'(期間だけ・この間は毎日),
-            rep?:'w'|'m'|'y'(記念日のくり返し・無ければ毎年。2026-09-17 に記念日は毎年だけにした＝今は作らない。前に作った w/m は出し続け、直すと毎月→日付の毎月・毎週→曜日に移る), base?:'YYYY-MM-DD'(記念日の元の日・月日は md と同じ・この日より前には出さない)} }
+            arc?:true(アーカイブ＝曜日・今日・集計に出さない。元の day は残すので戻すと元の曜日に並ぶ), rep?:'w'|'m'|'y'(記念日のくり返し・無ければ毎年。2026-09-17 に記念日は毎年だけにした＝今は作らない。前に作った w/m は出し続け、直すと毎月→日付の毎月・毎週→曜日に移る), base?:'YYYY-MM-DD'(記念日の元の日・月日は md と同じ・この日より前には出さない)} }
      rain:  { 'YYYY-MM-DD': {on, upd} }          … その日は雨だったか（今日の傘ボタン）
      dels:  { id: 消した時刻 }                 … 消したものが他の端末から甦らないための印
      done:  { 'YYYY-MM-DD|id': {on, upd} }      … その日にできたか
@@ -583,6 +585,7 @@ var sb = (!TEST && window.supabase && window.supabase.createClient) ? window.sup
 
 var DAYS = ['月','火','水','木','金','土','日'];
 var RAIN = 7, ANNIV = 8, ONCE = 9, MONTHLY = 10, PERIOD = 11;
+var ARCH = 12;   /* アーカイブの段（見せるときだけの番号。データは day をそのまま持ち arc:true を付ける） */
 var SPANS = [7, 21, 30, 100];   /* 期間の日数ボタン */
 /* 毎月は「日付」の中の「毎月」で作る（種類のボタン・一覧の行は日付と共有＝ sub:ONCE） */
 var KINDS = [{i:ONCE, ic:'date', nm:'日付'}, {i:MONTHLY, ic:'month', nm:'毎月', sub:ONCE}, {i:PERIOD, ic:'period', nm:'期間'}, {i:RAIN, ic:'rain', nm:'雨の日'}, {i:ANNIV, ic:'gift', nm:'記念日'}];
@@ -614,6 +617,7 @@ function clean(s){
     var YMD = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
     if (day === PERIOD && YMD.test(v.st) && YMD.test(v.en) && v.st <= v.en){ out.items[id].st = v.st; out.items[id].en = v.en; }
     if (typeof v.tm === 'string' && /^(am|pm|nt|([01]\d|2[0-3]):[0-5]\d)$/.test(v.tm)) out.items[id].tm = v.tm;
+    if (v.arc === true) out.items[id].arc = true;
   });
   var d = s.dels && typeof s.dels === 'object' ? s.dels : {};
   Object.keys(d).forEach(function(id){ if (typeof d[id] === 'string') out.dels[id] = d[id]; });
@@ -687,13 +691,18 @@ function sig(s){                                                    /* 中身の
 }
 function itemsOf(s, day){
   return Object.keys(s.items).map(function(id){ return s.items[id]; })
-    .filter(function(v){ return v.day === day; })
+    .filter(function(v){ return v.day === day && !v.arc; })
     .sort(function(x, y){
       var a = day === ANNIV ? x.md || '99' : day === ONCE ? x.ymd || '9999' : day === MONTHLY ? String(x.dom || 99).padStart(2, '0') : day === PERIOD ? x.st || '9999' : '',
           b = day === ANNIV ? y.md || '99' : day === ONCE ? y.ymd || '9999' : day === MONTHLY ? String(y.dom || 99).padStart(2, '0') : day === PERIOD ? y.st || '9999' : '';
       var p = todKey(x.tm), q = todKey(y.tm);
       return (a !== b ? (a < b ? -1 : 1) : 0) || (p !== q ? (p < q ? -1 : 1) : 0) || x.ord - y.ord || (x.id < y.id ? -1 : 1);
     });
+}
+function archived(s){                                              /* アーカイブしたもの（入れた順） */
+  return Object.keys(s.items).map(function(id){ return s.items[id]; })
+    .filter(function(v){ return v.arc; })
+    .sort(function(x, y){ return x.ord - y.ord || (x.id < y.id ? -1 : 1); });
 }
 function todKey(tm){                                                /* 並べる順：午前(0時)→時刻→午後(12時)→時刻→夜(18時)→時刻→時間帯なし */
   return tm === 'am' ? '00:00' : tm === 'pm' ? '12:00' : tm === 'nt' ? '18:00' : tm ? tm + ' ' : '99';
@@ -806,8 +815,8 @@ function thumb(th, cls){
 }
 function mdLabel(md){ return md ? +md.slice(0, 2) + '月' + +md.slice(3) + '日' : ''; }
 function kindOf(i){ return KINDS.filter(function(k){ return k.i === i; })[0]; }
-function dotInner(i){ var k = kindOf(i); return k ? '<svg class="ic" aria-hidden="true"><use href="#p-' + k.ic + '"/></svg>' : DAYS[i]; }
-function dayName(i){ var k = kindOf(i); return k ? k.nm : DAYS[i] + '曜'; }
+function dotInner(i){ if (i === ARCH) return '<svg class="ic" aria-hidden="true"><use href="#i-arc"/></svg>'; var k = kindOf(i); return k ? '<svg class="ic" aria-hidden="true"><use href="#p-' + k.ic + '"/></svg>' : DAYS[i]; }
+function dayName(i){ if (i === ARCH) return 'アーカイブ'; var k = kindOf(i); return k ? k.nm : DAYS[i] + '曜'; }
 function isRainy(key){ var r = state.rain[key || ymd(new Date())]; return !!(r && r.on); }
 function dateLabel(date){                                          /* 今年なら月日だけ */
   if (!date) return '';
@@ -819,6 +828,7 @@ function annivLabel(v){
 }
 function whenLabel(v){ return [v.md ? annivLabel(v) : v.dom ? '毎月' + v.dom + '日' : v.ymd ? dateLabel(v.ymd) : v.st ? dateLabel(v.st) + '〜' + dateLabel(v.en) : '', todLabel(v.tm)].filter(Boolean).join(' '); }
 function display(i){                                                /* 日付・期間は、これからの分を先に・終わった分は新しい順で後ろに（日付の先頭に毎月） */
+  if (i === ARCH) return archived(state);
   var list = itemsOf(state, i);
   if (i === ONCE) return itemsOf(state, MONTHLY).concat(onceOrder(list, i));
   return i === PERIOD ? onceOrder(list, i) : list;
@@ -927,12 +937,12 @@ function renderWeek(){
       '<span class="strip" aria-hidden="true">' + strip + '</span>' +
       '<svg class="ic chev" aria-hidden="true"><use href="#i-chev"/></svg></button>';
   }
-  var kinds = KINDS.filter(function(k){ return k.sub == null; });
+  var kinds = KINDS.filter(function(k){ return k.sub == null; }), hasArc = archived(state).length > 0;
   $('#week').innerHTML = DAYS.map(function(d, i){ return row(i); }).join('') +
-    '<button class="kfold-btn" type="button" id="kfold-btn" aria-expanded="' + kindsOpen + '" aria-controls="kfold" aria-label="' + kinds.map(function(k){ return k.nm + (nowOf[k.i] ? '（今日あり）' : ''); }).join('・') + '">' +
-      '<span class="icons" aria-hidden="true">' + kinds.map(function(k){ return '<svg class="ic' + (nowOf[k.i] ? ' now' : '') + '"><use href="#p-' + k.ic + '"/></svg>'; }).join('') + '</span>' +
+    '<button class="kfold-btn" type="button" id="kfold-btn" aria-expanded="' + kindsOpen + '" aria-controls="kfold" aria-label="' + kinds.map(function(k){ return k.nm + (nowOf[k.i] ? '（今日あり）' : ''); }).join('・') + (hasArc ? '・アーカイブ' : '') + '">' +
+      '<span class="icons" aria-hidden="true">' + kinds.map(function(k){ return '<svg class="ic' + (nowOf[k.i] ? ' now' : '') + '"><use href="#p-' + k.ic + '"/></svg>'; }).join('') + (hasArc ? '<svg class="ic"><use href="#i-arc"/></svg>' : '') + '</span>' +
       '<svg class="ic chev" aria-hidden="true"><use href="#i-chev"/></svg></button>' +
-    '<div class="fold' + (kindsOpen ? ' open' : '') + '" id="kfold"><div class="week"' + (kindsOpen ? '' : ' inert') + '>' + kinds.map(function(k){ return row(k.i); }).join('') + '</div></div>';
+    '<div class="fold' + (kindsOpen ? ' open' : '') + '" id="kfold"><div class="week"' + (kindsOpen ? '' : ' inert') + '>' + kinds.map(function(k){ return row(k.i); }).join('') + (hasArc ? row(ARCH) : '') + '</div></div>';
 }
 var KFOLD_KEY = KEY + '-kinds-open', kindsOpen = false;             /* 開いているかは端末ごとの好み（同期しない）。絵の折りたたみは時々しか使わないので覚えず毎回閉じる */
 try { kindsOpen = localStorage.getItem(KFOLD_KEY) === '1'; } catch (e) {}
@@ -1109,11 +1119,15 @@ function renderDaySheet(){
   $('#day-dot').innerHTML = dotInner(i);
   $('#day-dot').classList.toggle('now', i === RAIN ? isRainy() : i === ANNIV ? hasAnnivToday() : i === ONCE ? hasOnceToday() || hasMonthlyToday() : i === PERIOD ? hasPeriodToday() : i === dayIndex(new Date()));
   $('#day-h').textContent = dayName(i);
+  $('#day-add').hidden = i === ARCH;
   $('#day-list').innerHTML = list.length ? list.map(function(v){
     return '<div class="item" data-id="' + esc(v.id) + '">' + thumb(v.th) +
       '<span class="txt"><span class="nm"><i class="swatch" aria-hidden="true"' + tint(v.id) + '></i>' + esc(v.name) + '</span>' + (whenLabel(v) ? '<span class="sub">' + whenLabel(v) + '</span>' : '') + '</span>' +
       '<span class="acts">' +
-        '<button class="iconbtn" type="button" data-edit aria-label="' + esc(v.name) + 'を直す"><svg class="ic"><use href="#i-pen"/></svg></button>' +
+        (v.arc
+          ? '<button class="iconbtn" type="button" data-arc="0" aria-label="' + esc(v.name) + 'を戻す"><svg class="ic"><use href="#i-unarc"/></svg></button>'
+          : '<button class="iconbtn" type="button" data-edit aria-label="' + esc(v.name) + 'を直す"><svg class="ic"><use href="#i-pen"/></svg></button>' +
+            '<button class="iconbtn" type="button" data-arc="1" aria-label="' + esc(v.name) + 'をアーカイブ"><svg class="ic"><use href="#i-arc"/></svg></button>') +
         delButton(v.name) +
       '</span></div>';
   }).join('') :
@@ -1157,6 +1171,20 @@ $('#day-list').addEventListener('click', function(e){
   if (!row) return;
   var id = row.dataset.id, del = e.target.closest('.del');
   if (e.target.closest('[data-edit]')){ openEdit(id); return; }
+  var ab = e.target.closest('[data-arc]');
+  if (ab){
+    var on = ab.dataset.arc === '1', v = state.items[id];
+    if (!v) return;
+    row.classList.add('gone');
+    setTimeout(function(){
+      if (on) v.arc = true; else delete v.arc;
+      v.upd = nowISO();
+      save(); renderAll();
+      if (openDay === ARCH && !archived(state).length) $('#day-sheet').close();
+      toast(on ? 'アーカイブしました' : DAYS[v.day] ? DAYS[v.day] + '曜に戻しました' : '戻しました');
+    }, 140);
+    return;
+  }
   if (!del) return;
   function setOpen(o){
     del.classList.toggle('open', o);
@@ -1455,6 +1483,7 @@ $('#edit-form').addEventListener('submit', function(e){
   var id = draft.id || uid();
   var col = old ? (old.zcol != null ? old.zcol : tintsOf(state)[id]) : nextTint(state);
   state.items[id] = {id:id, day:day, name:name, th:draft.th, ord: old ? old.ord : Date.now(), upd:t, zcol:col};
+  if (old && old.arc) state.items[id].arc = true;
   var keepOld = old && old.day === day && $('#md').value === draftMd;   /* 開始日・元の日を持たない古いものを、日付を触らずに直したとき */
   if (day === ANNIV){
     state.items[id].md = $('#md').value.slice(5);
