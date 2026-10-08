@@ -20,6 +20,9 @@
     --warn-wash:#f2e0d4; --warn-ink:#974624;
     --btn-bg:var(--accent-2); --btn-ink:var(--paper);
     --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
+    /* 心拍の色分け（低い→高い）。書き出す画像の中だけで使う色で、画面には使わない。
+       帳面の「グラデーションを使わない」の例外（写真の上の線と下の帯は Strava の見た目に合わせる） */
+    --hr-1:#4c9be8; --hr-2:#3cc4a0; --hr-3:#f2c84b; --hr-4:#fc8a2c; --hr-5:#f2453d;
     --ph-a:#2b2619; --ph-b:#0f0d07;   /* 写真を入れる前の下地（夜の帳面の色・白い字が読める）*/
     --quick:120ms; --ease:cubic-bezier(0.2,0,0,1);
   }
@@ -52,8 +55,12 @@
 
   .stage{display:flex;justify-content:center}
   .pv{position:relative;width:min(100%, calc(64dvh * 9 / 16));aspect-ratio:9/16;border-radius:20px;overflow:hidden;
-      background:var(--surface-2);box-shadow:var(--shadow)}
+      background:var(--surface-2);box-shadow:var(--shadow);touch-action:pan-y}
   .pv.has-photo{touch-action:none;cursor:grab}
+  .stack{display:flex;flex-direction:column;align-items:center;width:100%}
+  .dots{display:flex;justify-content:center;gap:6px;margin-top:10px}
+  .dots i{width:6px;height:6px;border-radius:50%;background:var(--line-2);transition:background var(--quick) var(--ease)}
+  .dots i.on{background:var(--accent)}
   .pv canvas{display:block;width:100%;height:100%}
 
   .panel{margin-top:16px;display:flex;flex-direction:column;gap:16px}
@@ -77,8 +84,11 @@
            border:1px solid var(--line);border-radius:12px;outline:none}
   .f input:focus{border-color:var(--accent)}
 
-  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-  .seg button{display:flex;flex-direction:column;align-items:center;gap:4px;min-height:64px;padding:8px;font-size:13px;
+  .seg{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+  .seg.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .seg.two button{flex-direction:row;justify-content:center;min-height:48px;font-size:14px}
+  .seg.two button svg{width:32px;height:22px}
+  .seg button{display:flex;flex-direction:column;align-items:center;gap:4px;min-height:64px;padding:8px 2px;font-size:13px;white-space:nowrap;
               background:var(--surface);border:1px solid var(--line);border-radius:12px;cursor:pointer;color:var(--ink-mid);
               transition:background var(--quick) var(--ease)}
   .seg button svg{width:22px;height:32px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
@@ -111,7 +121,7 @@
     <h1>ととのい</h1>
   </header>
 
-  <div class="stage"><div class="pv" id="pv"><canvas id="cv" width="1080" height="1920" role="img" aria-label="書き出す画像の見本"></canvas></div></div>
+  <div class="stage"><div class="stack"><div class="pv" id="pv"><canvas id="cv" width="1080" height="1920" role="img" aria-label="書き出す画像の見本"></canvas></div><div class="dots" id="dots" aria-hidden="true"></div></div></div>
 
   <div class="panel">
     <div class="picks">
@@ -136,10 +146,17 @@
       <label class="f"><span>Min</span><input id="fMin" inputmode="numeric" placeholder="bpm"></label>
     </div>
 
-    <div class="seg" id="seg">
+    <div class="seg" id="seg" role="group" aria-label="見た目">
       <button type="button" data-l="row" aria-pressed="true"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M5 20c2-3 3 1 5-1s3 1 7-1"/><path d="M5 25h3M10 25h2M14 25h3"/></svg>横一列</button>
       <button type="button" data-l="col" aria-pressed="false"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M8 6h6M8 10h6M8 14h6"/><path d="M5 20c2-3 3 1 5-1s3 1 7-1"/></svg>縦</button>
       <button type="button" data-l="big" aria-pressed="false"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M6 9h10" stroke-width="3.2"/><path d="M5 16c2-3 3 1 5-1s3 1 7-1"/><path d="M7 21h3M12 21h3"/></svg>大きく</button>
+      <button type="button" data-l="band" aria-pressed="false"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M1 19h20"/><path d="M4 23c2-2 3 1 5-1s3 1 9-1"/><path d="M4 27h4M10 27h3M15 27h3"/></svg>帯</button>
+      <button type="button" data-l="line" aria-pressed="false"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M4 17l3-1 2-5 3 10 2-6 2 2h2"/></svg>線</button>
+    </div>
+
+    <div class="seg two" id="segC" role="group" aria-label="線の色">
+      <button type="button" data-c="mono" aria-pressed="true"><svg viewBox="0 0 32 22" aria-hidden="true"><path d="M3 13l5-1 3-7 5 12 3-7 3 3h7"/></svg>単色</button>
+      <button type="button" data-c="hr" aria-pressed="false"><svg viewBox="0 0 32 22" aria-hidden="true"><path d="M3 13l5-1 3-7"/><path d="M11 5l5 12" stroke-dasharray="2 2.5"/><path d="M16 17l3-7 3 3h7" stroke-width="2.6"/></svg>色分け</button>
     </div>
 
     <div class="acts">
@@ -155,7 +172,8 @@
 const $ = id => document.getElementById(id);
 const W = 1080, H = 1920;
 const LINE = '#fc5200';           // 心拍の線（Strava のコースの線と同じ橙）
-const S = { photo:null, pan:{x:.5,y:.5}, curve:null, layout:'row' };
+const S = { photo:null, pan:{x:.5,y:.5}, curve:null, layout:'row', color:'mono' };
+const LAYOUTS = ['row','col','big','band','line'];
 const store = {
   get(k,d){ try{ const v = localStorage.getItem('totonoi.'+k); return v==null ? d : JSON.parse(v); }catch(e){ return d; } },
   set(k,v){ try{ localStorage.setItem('totonoi.'+k, JSON.stringify(v)); }catch(e){} }
@@ -244,7 +262,7 @@ async function readRecord(file){
   if(cv){
     // 曲線の向きだけ先に描けるように 0..1 で持つ（上＝高い心拍）
     const ys=cv.pts.map(p=>p[1]), lo=Math.min(...ys), hi=Math.max(...ys);
-    S.curve=cv.pts.map(p=>[(p[0]-cv.x0)/(cv.x1-cv.x0), (p[1]-lo)/((hi-lo)||1)]);
+    S.curve=cv.pts.map(p=>[(p[0]-cv.x0)/(cv.x1-cv.x0), hi-lo<2 ? .5 : (p[1]-lo)/(hi-lo)]);   // 平らな記録は真ん中に
     draw();
   }
   const sb=findStatsBand(P, cv ? cv.y0 : P.h);
@@ -292,14 +310,25 @@ function fitText(g, s, x, y, weight, size, family, maxW){
   text(g, s, x, y, `${weight} ${z}px ${family}`);
 }
 
+function hrColors(){ const cs=getComputedStyle(document.documentElement); return [1,2,3,4,5].map(n=>cs.getPropertyValue('--hr-'+n).trim() || LINE); }
+
 function curveBlock(w,h,fill){
   return { h, draw(g,y){
     if(!S.curve) return;
     const x0=(W-w)/2, pad=10;
     g.save(); g.beginPath();
     S.curve.forEach((p,i)=>{ const X=x0+p[0]*w, Y=y+pad+p[1]*(h-pad*2); i?g.lineTo(X,Y):g.moveTo(X,Y); });
-    g.lineJoin='round'; g.lineCap='round'; g.lineWidth=fill?7:9; g.strokeStyle=fill?'#fff':LINE; g.stroke();
-    if(fill){ g.shadowColor='transparent'; g.lineTo(x0+w,y+h); g.lineTo(x0,y+h); g.closePath(); g.fillStyle='rgba(255,255,255,.18)'; g.fill(); }
+    g.lineJoin='round'; g.lineCap='round'; g.lineWidth=fill?7:9;
+    const hr=S.color==='hr' ? hrColors() : null;
+    if(fill){ const sc=g.shadowColor; g.shadowColor='transparent'; g.lineTo(x0+w,y+h); g.lineTo(x0,y+h); g.closePath(); g.fillStyle='rgba(255,255,255,.18)'; g.fill(); g.shadowColor=sc; g.beginPath();
+      S.curve.forEach((p,i)=>{ const X=x0+p[0]*w, Y=y+pad+p[1]*(h-pad*2); i?g.lineTo(X,Y):g.moveTo(X,Y); }); }
+    if(hr){
+      // StatMaps のように、心拍の高さで線の色を変える（上＝高い心拍＝赤、下＝低い心拍＝青）
+      //   線の高さ＝心拍なので、縦のグラデーション1本で塗れば点ごとの色分けと同じになる（1本で描くので軽い）
+      const gr=g.createLinearGradient(0,y+pad,0,y+h-pad);
+      [...hr].reverse().forEach((c,i)=>gr.addColorStop(i/4,c));
+      g.strokeStyle=gr; g.stroke();
+    }else{ g.strokeStyle=fill?'#fff':LINE; g.stroke(); }
     g.restore(); } };
 }
 const gap = h => ({h, draw(){}});
@@ -326,6 +355,16 @@ function blocks(v, layout){
     stats.forEach(s=>B.push(label(s[0],32), value(s[0]==='Time'?s[1]:s[1]+' bpm',80), gap(26)));
     if(S.curve) B.push(gap(8), curveBlock(440,200), gap(30));
     B.push(mark(40));
+  }else if(layout==='band'){
+    if(S.curve) B.push(curveBlock(940,220), gap(34));
+    if(stats.length) B.push(rowB(stats,30,70), gap(24));
+    if(v.name) B.push(nameB(v.name,40), gap(10));
+    B.push(mark(26));
+  }else if(layout==='line'){
+    if(S.curve) B.push(curveBlock(940,420), gap(40));
+    if(stats.length) B.push(rowB(stats,28,56), gap(20));
+    if(v.name) B.push(nameB(v.name,36), gap(8));
+    B.push(mark(26));
   }else{
     const t=stats.find(s=>s[0]==='Time'), rest=stats.filter(s=>s[0]!=='Time');
     if(v.name) B.push(nameB(v.name,40), gap(4));
@@ -336,7 +375,7 @@ function blocks(v, layout){
   }
   return B;
 }
-const tops = { row:null, col:200, big:220 };
+const tops = { row:null, col:200, big:220, band:null, line:'mid' };
 
 function paintStack(g, B, top){
   shadowOn(g); let y=top; B.forEach(b=>{ b.draw(g,y); y+=b.h; }); g.shadowColor='transparent';
@@ -351,12 +390,19 @@ function paintPhoto(g){
   g.drawImage(im, (W-dw)*S.pan.x, (H-dh)*S.pan.y, dw, dh);
 }
 
-function stackTop(B){ const h=B.reduce((s,b)=>s+b.h,0); return tops[S.layout]==null ? H-150-h : tops[S.layout]; }
+function stackTop(B){ const h=B.reduce((s,b)=>s+b.h,0), t=tops[S.layout]; return t==null ? H-150-h : t==='mid' ? (H-h)/2 : t; }
 
 function draw(){
   const g=$('cv').getContext('2d'); g.clearRect(0,0,W,H);
   paintPhoto(g);
-  const B=blocks(val(), S.layout); paintStack(g, B, stackTop(B));
+  const B=blocks(val(), S.layout), top=stackTop(B);
+  if(S.layout==='band'){
+    // 下に暗い帯を敷いて、明るい写真でも字が読めるようにする（ステッカーには入れない）
+    const y0=top-140, gr=g.createLinearGradient(0,y0,0,H);
+    gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(.35,'rgba(0,0,0,.45)'); gr.addColorStop(1,'rgba(0,0,0,.7)');
+    g.fillStyle=gr; g.fillRect(0,y0,W,H-y0);
+  }
+  paintStack(g, B, top);
   prepare();
 }
 
@@ -418,12 +464,19 @@ $('fName').addEventListener('change', ()=>{
 });
 function fillNames(){ $('nameList').innerHTML=store.get('names',[]).map(n=>`<option value="${n.replace(/[&"<>]/g,c=>({'&':'&amp;','"':'&quot;','<':'&lt;','>':'&gt;'}[c]))}">`).join(''); }
 
-$('seg').addEventListener('click', e=>{
-  const b=e.target.closest('button'); if(!b) return;
-  S.layout=b.dataset.l; store.set('layout', S.layout);
-  [...$('seg').children].forEach(x=>x.setAttribute('aria-pressed', x===b));
+function setLayout(l){
+  S.layout=l; store.set('layout', l);
+  [...$('seg').children].forEach(x=>x.setAttribute('aria-pressed', x.dataset.l===l));
+  [...$('dots').children].forEach((d,i)=>d.classList.toggle('on', LAYOUTS[i]===l));
   draw();
-});
+}
+$('seg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) setLayout(b.dataset.l); });
+function setColor(c){
+  S.color=c; store.set('color', c);
+  [...$('segC').children].forEach(x=>x.setAttribute('aria-pressed', x.dataset.c===c));
+  draw();
+}
+$('segC').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) setColor(b.dataset.c); });
 
 $('btnShare').addEventListener('click', ()=>share(ready.full, `totonoi_${stamp()}.jpg`, 'image/jpeg'));
 $('btnSticker').addEventListener('click', ()=>share(ready.sticker, `totonoi_sticker_${stamp()}.png`, 'image/png'));
@@ -431,20 +484,34 @@ $('btnSticker').addEventListener('click', ()=>share(ready.sticker, `totonoi_stic
 /* 写真を指でずらす */
 (()=>{
   const pv=$('pv'); let st=null;
-  pv.addEventListener('pointerdown', e=>{ if(!S.photo) return; st={x:e.clientX,y:e.clientY,p:{...S.pan}}; pv.setPointerCapture(e.pointerId); });
-  pv.addEventListener('pointermove', e=>{ if(!st) return;
+  pv.addEventListener('pointerdown', e=>{ if(st) return; st={id:e.pointerId,x:e.clientX,y:e.clientY,t:performance.now(),p:{...S.pan}}; pv.setPointerCapture(e.pointerId); });
+  pv.addEventListener('pointermove', e=>{ if(!st || e.pointerId!==st.id || !S.photo) return;
     const im=S.photo, s=Math.max(W/im.naturalWidth,H/im.naturalHeight), k=W/pv.clientWidth;
     const ox=W-im.naturalWidth*s, oy=H-im.naturalHeight*s, cl=v=>Math.min(1,Math.max(0,v));
     S.pan.x = ox ? cl(st.p.x + (e.clientX-st.x)*k/ox) : .5;
     S.pan.y = oy ? cl(st.p.y + (e.clientY-st.y)*k/oy) : .5;
     draw(); });
-  const end=()=>{ st=null; }; pv.addEventListener('pointerup', end); pv.addEventListener('pointercancel', end);
+  // 横にさっとはらう＝デザインを替える（Strava の共有画面と同じ）。ゆっくり動かす＝写真をずらす
+  pv.addEventListener('pointerup', e=>{
+    if(!st || e.pointerId!==st.id) return; const dx=e.clientX-st.x, dy=e.clientY-st.y, dt=performance.now()-st.t;
+    // 横長の写真は横にずらすのが本当の位置合わせなので、はらう判定を厳しくする
+    const im=S.photo, panX = im && W-im.naturalWidth*Math.max(W/im.naturalWidth,H/im.naturalHeight) < -1;
+    const need = panX ? {d:Math.max(80, pv.clientWidth*.3), t:250} : {d:40, t:450};
+    if(Math.abs(dx)>need.d && Math.abs(dx)>Math.abs(dy)*1.5 && dt<need.t){
+      S.pan=st.p; const i=LAYOUTS.indexOf(S.layout), n=LAYOUTS.length;
+      setLayout(LAYOUTS[(i+(dx<0?1:-1)+n)%n]);
+    }
+    st=null; });
+  pv.addEventListener('pointercancel', e=>{ if(st && e.pointerId===st.id) st=null; });
 })();
 
 /* 始まり */
-S.layout=store.get('layout','row'); if(!(S.layout in tops)) S.layout='row';
+S.layout=store.get('layout','row'); if(!LAYOUTS.includes(S.layout)) S.layout='row';
 [...$('seg').children].forEach(x=>x.setAttribute('aria-pressed', x.dataset.l===S.layout));
+S.color=store.get('color','mono'); if(!['mono','hr'].includes(S.color)) S.color='mono';
+[...$('segC').children].forEach(x=>x.setAttribute('aria-pressed', x.dataset.c===S.color));
 fillNames();
+$('dots').innerHTML=LAYOUTS.map(l=>`<i class="${l===S.layout?'on':''}"></i>`).join('');
 draw();
 Promise.all([
   document.fonts.load(`800 80px ${F.num}`), document.fonts.load(`600 32px ${F.num}`),
