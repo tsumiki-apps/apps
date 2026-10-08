@@ -104,10 +104,11 @@
   .btn.quiet{background:var(--surface-2);color:var(--ink)}
   .btn:disabled{opacity:.45;cursor:default}
 
-  .note{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 12px;border-radius:12px;background:var(--warn-wash);color:var(--warn-ink);font-size:14px}
+  .note{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 12px;border-radius:8px;background:var(--warn-wash);color:var(--warn-ink);font-size:14px}
   .note[hidden]{display:none}
   .note{flex-wrap:wrap}
-  .note span{flex:1 1 160px;min-width:0}
+  .note span{flex:1 1 100%;min-width:0}
+  .note button{flex:1 1 0}
   .note button{min-height:44px;padding:0 12px;border:0;border-radius:12px;background:var(--surface);color:var(--ink);font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap}
   .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);
          max-width:calc(100% - 32px);padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--paper);
@@ -145,7 +146,7 @@
         <input type="file" id="inRec" accept="image/*" aria-label="Zepp Life のスクリーンショットを選ぶ">
       </label>
     </div>
-    <div class="note" id="note" role="alert" hidden><span id="noteMsg"></span><button type="button" id="noteRe">選び直す</button><button type="button" id="noteUse">このまま使う</button></div>
+    <div class="note" id="note" hidden><span id="noteMsg" role="alert"></span><button type="button" id="noteRe">選び直す</button><button type="button" id="noteUse">このまま使う</button></div>
 
     <div class="fields">
       <label class="f wide"><span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>施設</span>
@@ -192,10 +193,12 @@ const store = {
 /* 写真・線・数字は、開き直しても戻るようにこの端末の中に残す（写真は大きいので IndexedDB） */
 const idb = {
   open(){ return this.p || (this.p = new Promise((res,rej)=>{ const r=indexedDB.open('totonoi',1);
-    r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); })); },
+    r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); })
+    .catch(e=>{ this.p=null; throw e; })); },
   async get(k){ try{ const d=await this.open(); return await new Promise(res=>{ const q=d.transaction('kv').objectStore('kv').get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>res(undefined); }); }catch(e){ return undefined; } },
   async set(k,v){ try{ const d=await this.open(), tx=d.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k);
-    tx.onerror=tx.onabort=()=>{ if(!idb.warned){ idb.warned=true; toast('この端末に残せませんでした'); } }; }catch(e){} }
+    tx.onerror=tx.onabort=()=>idb.warn(); }catch(e){ idb.warn(); } },
+  warn(){ if(!this.warned){ this.warned=true; toast('この端末に残せませんでした'); } }
 };
 /* 書き出した画像の「指紋」＝32×32 に縮めた明るさ。選ばれた画像と比べて、ととのいの書き出しかを見分ける
    （縮めて保存し直された画像やステッカーにも当たり、ほかのアプリの 1080×1920 には当たらない） */
@@ -216,18 +219,30 @@ function fprint(src){
 }
 const fpDiff=(a,b)=>a.reduce((s,v,i)=>s+Math.abs(v-b[i]),0)/a.length;
 /* 書き出し（e）と、同じ写真を数字なしで描いた物（b）を組で覚える。ステッカーの b は黒一色 */
-function remember(exp, base){
-  if(!exp) return;
+function pairOf(exp, base){
   const e=fprint(exp), b=base ? fprint(base) : { r:e.r, a:new Array(e.a.length).fill(0) };
-  const list=store.get('fps',[]).filter(x=>x && x.e && !(Math.abs(x.e.r-e.r)<.02 && fpDiff(x.e.a,e.a)<2));   // 同じ書き出しは重ねない
-  store.set('fps', [{e,b}, ...list].slice(0,30));
+  return {e,b};
+}
+/* ステッカーは写真アプリで白地に平らにされることもあるので、黒地と白地の2組を作る */
+function stickerPairs(cv){
+  const white=document.createElement('canvas'); white.width=cv.width; white.height=cv.height;
+  const g=white.getContext('2d'); g.fillStyle='rgb(255,255,255)'; g.fillRect(0,0,cv.width,cv.height); g.drawImage(cv,0,0);
+  const w=pairOf(white, null); w.b.a=w.b.a.map(()=>255);
+  return [pairOf(cv, null), w];
+}
+function remember(pairs){
+  let list=store.get('fps',[]).filter(x=>x && x.e);
+  pairs.forEach(p=>{ list=[p, ...list.filter(x=>!(Math.abs(x.e.r-p.e.r)<.02 && fpDiff(x.e.a,p.e.a)<2))]; });   // 同じ書き出しは重ねない
+  store.set('fps', list.slice(0,30));
 }
 function photoOnly(){ const c=document.createElement('canvas'); c.width=W; c.height=H; paintPhoto(c.getContext('2d')); return c; }
 /* 選ばれた画像が、数字を描いたマスで「書き出し」と「元の写真」のどちらに近いかで決める。
    元の写真を選び直したときは必ず元の写真の側に寄るので、明るい写真や字の少ないデザインでも取り違えない */
 function isOurs(im){
+  const r=im.naturalWidth/im.naturalHeight, list=store.get('fps',[]);
+  if(!list.some(x=>x && x.e && Math.abs(x.e.r-r)<.02)) return false;   // 縦横比の合う書き出しが無ければ、重い指紋は取らない
   const f=fprint(im);
-  return store.get('fps',[]).some(x=>{
+  return list.some(x=>{
     if(!x || !x.e || !x.b || Math.abs(x.e.r-f.r)>=.02 || x.e.a.length!==f.a.length) return false;
     if(fpDiff(x.e.a,f.a) > 12) return false;
     const mask=[]; x.e.a.forEach((v,i)=>{ if(Math.abs(v-x.b.a[i])>8) mask.push(i); });
@@ -485,34 +500,38 @@ async function share(blob, name, type){
   if(!blob){ toast('準備中。もう一度押してください'); return; }
   const file=new File([blob], name, {type});
   if(navigator.canShare && navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file]}); return; }
-    catch(e){ if(e && e.name==='AbortError') return; }
+    try{ await navigator.share({files:[file]}); return true; }
+    catch(e){ if(e && e.name==='AbortError') return false; }
   }
   const a=document.createElement('a'), u=URL.createObjectURL(blob); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u), 4000);
+  return true;
 }
 
 /* ---------- 操作 ---------- */
 /* ととのいで書き出した画像を選ぶと数字が2組重なるので、いったん知らせる（「このまま使う」で使える） */
 let gen=0;   // 操作するたびに進める。開いたときの復元は、その間に操作があったら当てない
 function ask(kind, msg, go){
-  const n=$('note'); n.dataset.kind=kind; n.hidden=false;
+  const n=$('note'); n.dataset.kind=kind; n.hidden=false; $('noteRe').hidden=false; $('noteUse').textContent='このまま使う';
   $('noteMsg').textContent=''; requestAnimationFrame(()=>{ $('noteMsg').textContent=msg; });   // 同じ文でも読み上げ直す
   $('noteUse').onclick=()=>{ n.hidden=true; go(); };
   $('noteRe').onclick=()=>{ n.hidden=true; $(kind==='photo'?'inPhoto':'inRec').click(); };
 }
-function closeNote(kind){ if($('note').dataset.kind===kind) $('note').hidden=true; }
+function closeNote(kind){ const k=$('note').dataset.kind; if(k===kind || k==='new') $('note').hidden=true; }
 const isExportSize = im => im.naturalWidth===W && im.naturalHeight===H;
+/* 「このまま使う」を選んだ 1080×1920 の画像は覚えておき、次からは聞かない */
+function keepOk(im){ const f=fprint(im); store.set('okfps', [f, ...store.get('okfps',[]).filter(x=>x && fpDiff(x.a,f.a)>=2)].slice(0,20)); }
+const isOk = im => { const f=fprint(im); return store.get('okfps',[]).some(x=>x && Math.abs(x.r-f.r)<.02 && fpDiff(x.a,f.a)<2); };
 function usePhoto(f, im){
   closeNote('photo'); gen++;
   S.photo=im; S.pan={x:.5,y:.5}; $('pkPhoto').classList.add('ok'); $('pv').classList.add('has-photo');
-  idb.set('photo', {blob:f, at:Date.now()}); saveState(); draw();
+  S.photoBlob=f; idb.set('photo', {blob:f}); saveState(); draw();
 }
 $('inPhoto').addEventListener('change', async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
   let im; try{ im=await loadImage(f); }catch(err){ toast('写真を開けませんでした'); return; }
   // 指紋が合えば書き出しと分かる。指紋を覚える前の書き出しは、同じ 1080×1920 なら念のため聞く
   if(isOurs(im)) ask('photo', 'ととのいの書き出しです（数字が2組になります）', ()=>usePhoto(f, im));
-  else if(isExportSize(im)) ask('photo', 'ととのいの書き出しかもしれません（数字が2組になります）', ()=>usePhoto(f, im));
+  else if(isExportSize(im) && !isOk(im)) ask('photo', 'ととのいの書き出しかもしれません（数字が2組になります）', ()=>{ keepOk(im); usePhoto(f, im); });
   else usePhoto(f, im);
 });
 
@@ -520,15 +539,17 @@ $('inRec').addEventListener('change', async e=>{
   const f=e.target.files[0]; if(!f) return; e.target.value='';
   let im; try{ im=await loadImage(f); }catch(err){ toast('読み取れませんでした'); return; }
   // 書き出しの線を記録の線と読んでしまうため
-  if(isOurs(im) || isExportSize(im)) ask('rec', 'ととのいの書き出しです（記録は Zepp のスクショを）', ()=>useRecord(f, im));
+  if(isOurs(im)) ask('rec', 'ととのいの書き出しです（記録は Zepp のスクショを）', ()=>useRecord(f, im));
+  else if(isExportSize(im) && !isOk(im)) ask('rec', 'ととのいの書き出しかもしれません（記録は Zepp のスクショを）', ()=>{ keepOk(im); useRecord(f, im); });
   else useRecord(f, im);
 });
 async function useRecord(f, im){
-  closeNote('rec'); gen++;
+  closeNote('rec'); const my=++gen;
   const pk=$('pkRec'); pk.classList.remove('ok'); pk.classList.add('busy'); $('inRec').disabled=true;
   ['fTime','fMax','fMin'].forEach(id=>$(id).value='');     // 前の記録の数字を残さない
   try{
     const r=await readRecord(f, im);
+    if(gen!==my){ pk.classList.remove('busy'); $('inRec').disabled=false; return; }   // 途中で「新しく始める」などが押された
     $('fTime').value=r.time||''; $('fMax').value=r.max||''; $('fMin').value=r.min||'';
     const miss=[!S.curve&&'線', !r.time&&'Time', !r.max&&'Max', !r.min&&'Min'].filter(Boolean);
     toast(miss.length ? `読めなかった：${miss.join('・')}` : '読み取りました');
@@ -566,14 +587,24 @@ function setColor(c){
 }
 $('segC').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b) setColor(b.dataset.c); });
 
-$('btnShare').addEventListener('click', ()=>{ const ok=!!ready.full; share(ready.full, `totonoi_${stamp()}.jpg`, 'image/jpeg'); if(ok) remember($('cv'), photoOnly()); });
-$('btnSticker').addEventListener('click', ()=>{ const ok=!!ready.sticker; share(ready.sticker, `totonoi_sticker_${stamp()}.png`, 'image/png'); if(ok) remember(ready.stickerCv, null); });
+$('btnShare').addEventListener('click', ()=>{ const ok=!!ready.full, p=share(ready.full, `totonoi_${stamp()}.jpg`, 'image/jpeg'); if(!ok) return;
+  const pairs=[pairOf($('cv'), photoOnly())]; p.then(done=>{ if(done) remember(pairs); }); });
+$('btnSticker').addEventListener('click', ()=>{ const ok=!!ready.sticker, p=share(ready.sticker, `totonoi_sticker_${stamp()}.png`, 'image/png'); if(!ok) return;
+  const pairs=stickerPairs(ready.stickerCv); p.then(done=>{ if(done) remember(pairs); }); });
 
+const IDS=['fTime','fMax','fMin','fName'];
+function setAll(x){
+  S.photo=x.photo; S.photoBlob=x.blob; S.curve=x.curve; S.pan=x.pan;
+  IDS.forEach((id,i)=>$(id).value=x.vals[i]);
+  $('pkPhoto').classList.toggle('ok', !!x.photo); $('pv').classList.toggle('has-photo', !!x.photo); $('pkRec').classList.toggle('ok', !!x.curve);
+}
 $('btnNew').addEventListener('click', ()=>{
-  gen++; S.photo=null; S.curve=null; S.pan={x:.5,y:.5};
-  ['fTime','fMax','fMin','fName'].forEach(id=>$(id).value='');
-  $('pkPhoto').classList.remove('ok'); $('pkRec').classList.remove('ok'); $('pv').classList.remove('has-photo'); $('note').hidden=true;
-  idb.set('photo', null); idb.set('state', null); draw(); toast('新しく始めます');
+  const before={ photo:S.photo, blob:S.photoBlob, curve:S.curve, pan:{...S.pan}, vals:IDS.map(id=>$(id).value) };
+  gen++; setAll({ photo:null, blob:null, curve:null, pan:{x:.5,y:.5}, vals:IDS.map(()=>'') });
+  idb.set('photo', null); idb.set('state', null); draw();
+  // まちがえて押したときのために「元に戻す」を出す（確認は挟まない）
+  ask('new', '新しく始めました', ()=>{ gen++; setAll(before); if(before.blob) idb.set('photo', {blob:before.blob}); saveState(); draw(); });
+  $('noteRe').hidden=true; $('noteUse').textContent='元に戻す';
 });
 
 /* 写真を指でずらす */
@@ -616,13 +647,15 @@ document.fonts.ready.then(draw);
 /* 前に開いたときの写真・線・数字を戻す（読むだけ。ここでは書かない） */
 /*   戻すのは18時間以内の物だけ（次のサウナに前回の線が乗らないように）。古い物は「新しく始める」と同じ白紙 */
 (async()=>{
-  const g0=gen, fresh=t=>typeof t==='number' && Date.now()-t < 18*3600*1000;
+  const g0=gen;
   const [ph, st] = await Promise.all([idb.get('photo'), idb.get('state')]);
+  // 期限は最後に触った時刻（state.at）ひとつで決め、写真も線も数字もまとめて戻すか、まとめて捨てる
+  if(!st || typeof st.at!=='number' || Date.now()-st.at >= 18*3600*1000) return;
   let im=null;
-  if(ph && ph.blob && fresh(ph.at)){ try{ im=await loadImage(ph.blob); }catch(e){} }
+  if(ph && ph.blob){ try{ im=await loadImage(ph.blob); }catch(e){} }
   if(gen!==g0) return;                                     // 読み込み中に操作されたら、古い物で上書きしない
-  if(im && !S.photo){ S.photo=im; $('pkPhoto').classList.add('ok'); $('pv').classList.add('has-photo'); }
-  if(st && fresh(st.at)){
+  if(im && !S.photo){ S.photo=im; S.photoBlob=ph.blob; $('pkPhoto').classList.add('ok'); $('pv').classList.add('has-photo'); }
+  {
     const c01=v=>Number.isFinite(+v) ? Math.min(1,Math.max(0,+v)) : .5;
     if(st.pan && im) S.pan={x:c01(st.pan.x), y:c01(st.pan.y)};
     if(Array.isArray(st.curve) && !S.curve){ S.curve=st.curve; $('pkRec').classList.add('ok'); }
