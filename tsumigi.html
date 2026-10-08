@@ -700,13 +700,13 @@ function sig(s){                                                    /* 中身の
   }
   return JSON.stringify(norm(s));
 }
-function itemsOf(s, day){
+function itemsOf(s, day, keepArc){                                  /* keepArc(v) が真なら、アーカイブしたものも入れる */
   return Object.keys(s.items).map(function(id){ return s.items[id]; })
-    .filter(function(v){ return v.day === day && !v.arc; })
+    .filter(function(v){ return v.day === day && (!v.arc || !!(keepArc && keepArc(v))); })
     .sort(function(x, y){
       var a = day === ANNIV ? x.md || '99' : day === ONCE ? x.ymd || '9999' : day === MONTHLY ? String(x.dom || 99).padStart(2, '0') : day === PERIOD ? x.st || '9999' : '',
           b = day === ANNIV ? y.md || '99' : day === ONCE ? y.ymd || '9999' : day === MONTHLY ? String(y.dom || 99).padStart(2, '0') : day === PERIOD ? y.st || '9999' : '';
-      var p = todKey(x.tm), q = todKey(y.tm);
+      var p = todKey(x.tm) + (x.av || '~'), q = todKey(y.tm) + (y.av || '~');
       return (a !== b ? (a < b ? -1 : 1) : 0) || (p !== q ? (p < q ? -1 : 1) : 0) || x.ord - y.ord || (x.id < y.id ? -1 : 1);
     });
 }
@@ -746,13 +746,14 @@ function isMonthDay(dom, ymdStr){                                   /* 31日な�
 }
 function itemsForDate(s, ymdStr, di){                               /* その日に並ぶもの＝曜日＋（雨なら）雨の日＋その日の記念日・日付・毎月 */
   var r = s.rain[ymdStr];
-  return itemsOf(s, di)
-    .concat(r && r.on ? itemsOf(s, RAIN) : [])
-    .concat(itemsOf(s, ANNIV).filter(function(v){ return isAnniv(v, ymdStr); }))
-    .concat(itemsOf(s, ONCE).filter(function(v){ return v.ymd === ymdStr; }))
-    .concat(itemsOf(s, MONTHLY).filter(function(v){ return isMonthDay(v.dom, ymdStr) && !(v.ymd && ymdStr < v.ymd); }))
-    .concat(itemsOf(s, PERIOD).filter(function(v){ return v.st && v.st <= ymdStr && ymdStr <= v.en; }))
-    .sort(function(x, y){ var p = todKey(x.tm), q = todKey(y.tm); return p === q ? 0 : p < q ? -1 : 1; });   /* 時間帯の順（同じなら今までの並び） */
+  var was = function(v){ var d = s.done[ymdStr + '|' + v.id]; return !!(d && d.on); };   /* アーカイブ前に「できた」日は、振り返り・カレンダーに残す */
+  return itemsOf(s, di, was)
+    .concat(r && r.on ? itemsOf(s, RAIN, was) : [])
+    .concat(itemsOf(s, ANNIV, was).filter(function(v){ return isAnniv(v, ymdStr); }))
+    .concat(itemsOf(s, ONCE, was).filter(function(v){ return v.ymd === ymdStr; }))
+    .concat(itemsOf(s, MONTHLY, was).filter(function(v){ return isMonthDay(v.dom, ymdStr) && !(v.ymd && ymdStr < v.ymd); }))
+    .concat(itemsOf(s, PERIOD, was).filter(function(v){ return v.st && v.st <= ymdStr && ymdStr <= v.en; }))
+    .sort(function(x, y){ var p = todKey(x.tm) + (x.av || '~'), q = todKey(y.tm) + (y.av || '~'); return p === q ? 0 : p < q ? -1 : 1; });   /* 時間帯の順→同じ時間帯なら配信の時刻の順（同じなら今までの並び） */
 }
 /* 色番号。zcol を持つものはそれ、持たないもの（色を足す前に作ったもの）は、使われている数がいちばん少ない番号を ord 順に振る。
    保存はしない＝起動時に書き込まない。どの端末でも同じデータなら同じ色になる */
@@ -1185,10 +1186,12 @@ $('#day-list').addEventListener('click', function(e){
   if (e.target.closest('[data-edit]')){ openEdit(id); return; }
   var ab = e.target.closest('[data-arc]');
   if (ab){
-    var on = ab.dataset.arc === '1', v = state.items[id];
-    if (!v) return;
+    var on = ab.dataset.arc === '1';
+    if (!state.items[id]) return;
     row.classList.add('gone');
     setTimeout(function(){
+      var v = state.items[id];                                      /* 140ms の間に同期で state が差し替わることがある */
+      if (!v) return;
       if (on) v.arc = true; else delete v.arc;
       v.upd = nowISO();
       save(); renderAll();
@@ -1329,7 +1332,7 @@ $('#spans').addEventListener('click', function(e){
 });
 $('#freq').addEventListener('change', paintKind);
 ['input', 'change'].forEach(function(ev){ $('#av').addEventListener(ev, function(){ $('#av-clear').hidden = !this.value; }); });
-$('#av-clear').addEventListener('click', function(){ $('#av').value = ''; this.hidden = true; $('#av').focus(); });
+$('#av-clear').addEventListener('click', function(){ $('#av').value = ''; this.hidden = true; });
 $('#tods').addEventListener('change', function(){
   if (pickedTod() === 'at'){ if (!$('#tm').value) setTm('12:00'); dpOpen(true); }
   else dpOpen(false);
@@ -1544,7 +1547,21 @@ document.querySelectorAll('dialog.sheet').forEach(function(d){
 var SYNC = (function(){
   var TABLE = 'tsumigi_state', ID = 'kodai';
   var timer = null, busy = false, again = false, dirty = false, subscribed = false, rtTimer = null;
-  var seenRev = -1, retryMs = 0, retryTimer = null, warnedFull = false;
+  var seenRev = -1, retryMs = 0, retryTimer = null, warnedFull = false, warnedOld = false;
+  /* clean() が知っている欄。ここに無い欄がサーバーにある＝別の端末が新しいアプリで書いた（Watch の受け口と同じ考え） */
+  var KNOWN_TOP = ['items', 'dels', 'done', 'rain'];
+  var KNOWN_ITEM = ['id', 'day', 'name', 'th', 'ord', 'upd', 'md', 'rep', 'base', 'zcol', 'ymd', 'dom', 'st', 'en', 'tm', 'arc', 'av'];
+  function unknownFields(raw){
+    var out = [];
+    if (!raw || typeof raw !== 'object') return out;
+    Object.keys(raw).forEach(function(k){ if (KNOWN_TOP.indexOf(k) < 0) out.push(k); });
+    var it = raw.items && typeof raw.items === 'object' ? raw.items : {};
+    Object.keys(it).forEach(function(id){
+      var v = it[id];
+      if (v && typeof v === 'object') Object.keys(v).forEach(function(k){ if (KNOWN_ITEM.indexOf(k) < 0 && out.indexOf('items.' + k) < 0) out.push('items.' + k); });
+    });
+    return out;
+  }
   var btn = $('#sync');
   function paint(s){
     btn.dataset.s = s;
@@ -1604,6 +1621,7 @@ var SYNC = (function(){
       if (rev === seenRev) return sending ? write(state, rev) : 'same';  /* 前に合わせた版のまま＝手元が最新 */
       return sb.from(TABLE).select('state,rev').eq('id', ID).maybeSingle().then(function(r2){
         if (!r2 || r2.error || !r2.data) throw new Error('state');
+        if (unknownFields(r2.data.state).length) return 'newer';  /* 新しいアプリが足した欄＝この端末のコードが古い。書くと欄ごと消えるので書かない */
         var remote = clean(r2.data.state), rv = +r2.data.rev || 0;
         var merged = merge(state, remote);
         if (sig(merged) !== sig(state)){ state = merged; keep(); renderAll(); }
@@ -1611,6 +1629,11 @@ var SYNC = (function(){
         return write(merged, rv);
       });
     }).then(function(r){
+      if (r === 'newer'){
+        busy = false; paint('err');
+        if (!warnedOld){ warnedOld = true; toast('アプリを読み込み直してください'); }
+        return;
+      }
       if (r === 'conflict'){
         if (n < 5){ step(true, n + 1); return; }
         throw new Error('conflict');
