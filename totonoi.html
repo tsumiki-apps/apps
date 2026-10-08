@@ -52,7 +52,8 @@
 
   .stage{display:flex;justify-content:center}
   .pv{position:relative;width:min(100%, calc(64dvh * 9 / 16));aspect-ratio:9/16;border-radius:20px;overflow:hidden;
-      background:var(--surface-2);box-shadow:var(--shadow);touch-action:none}
+      background:var(--surface-2);box-shadow:var(--shadow)}
+  .pv.has-photo{touch-action:none;cursor:grab}
   .pv canvas{display:block;width:100%;height:100%}
 
   .panel{margin-top:16px;display:flex;flex-direction:column;gap:16px}
@@ -96,9 +97,9 @@
   .toast.on{opacity:1}
 
   @media (min-width:900px){
-    .wrap{max-width:960px;display:grid;grid-template-columns:auto 380px;gap:32px;align-items:start}
+    .wrap{max-width:960px;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:32px;align-items:start}
     header{grid-column:1/-1}
-    .pv{width:calc(78dvh * 9 / 16)}
+    .pv{width:min(100%, calc(78dvh * 9 / 16))}
     .panel{margin-top:0}
   }
 </style>
@@ -110,7 +111,7 @@
     <h1>ととのい</h1>
   </header>
 
-  <div class="stage"><div class="pv" id="pv"><canvas id="cv" width="1080" height="1920"></canvas></div></div>
+  <div class="stage"><div class="pv" id="pv"><canvas id="cv" width="1080" height="1920" role="img" aria-label="書き出す画像の見本"></canvas></div></div>
 
   <div class="panel">
     <div class="picks">
@@ -130,7 +131,7 @@
       <label class="f wide"><span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>施設</span>
         <input id="fName" list="nameList" autocomplete="off" enterkeyhint="done"></label>
       <datalist id="nameList"></datalist>
-      <label class="f"><span>Time</span><input id="fTime" inputmode="numeric" placeholder="43:06"></label>
+      <label class="f"><span>Time</span><input id="fTime" placeholder="43:06" autocomplete="off"></label>
       <label class="f"><span>Max</span><input id="fMax" inputmode="numeric" placeholder="bpm"></label>
       <label class="f"><span>Min</span><input id="fMin" inputmode="numeric" placeholder="bpm"></label>
     </div>
@@ -165,7 +166,7 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'
 /* ---------- 画像を読む ---------- */
 function loadImage(file){
   return new Promise((res,rej)=>{ const u=URL.createObjectURL(file), im=new Image();
-    im.onload=()=>res(im); im.onerror=rej; im.src=u; });
+    im.onload=()=>{ URL.revokeObjectURL(u); res(im); }; im.onerror=e=>{ URL.revokeObjectURL(u); rej(e); }; im.src=u; });
 }
 
 /* Zepp Life のスクショから心拍の線・数字を拾う */
@@ -219,17 +220,26 @@ function findStatsBand(P, stopY){
   return y>top ? {y0:top,y1:y} : null;
 }
 
-let ocrWorker=null;
+let workerP=null;
+const limit=(p,ms)=>Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
+function getWorker(){
+  if(!workerP) workerP=Tesseract.createWorker('eng').catch(e=>{ workerP=null; throw e; });
+  return workerP;
+}
 async function ocr(canvas, chars){
   if(!window.Tesseract) throw new Error('ocr');
-  if(!ocrWorker){ ocrWorker = await Tesseract.createWorker('eng'); }
-  await ocrWorker.setParameters({ tessedit_char_whitelist: chars, tessedit_pageseg_mode: '11' });
-  const r = await ocrWorker.recognize(canvas);
+  let w;
+  try{ w=await limit(getWorker(), 30000); }catch(e){ workerP=null; throw e; }   // 回線が止まったら次は作り直す
+  await w.setParameters({ tessedit_char_whitelist: chars, tessedit_pageseg_mode: '11' });
+  const r = await limit(w.recognize(canvas), 20000);
   return r.data.words.map(o=>({t:o.text, x:o.bbox.x0, y:(o.bbox.y0+o.bbox.y1)/2}));
 }
 
+const okBpm=v=>v>=30 && v<=230;
+
 async function readRecord(file){
   const im=await loadImage(file), P=pixels(im), out={};
+  S.curve=null;                                            // 前の記録の線を残さない
   const cv=findCurve(P);
   if(cv){
     // 曲線の向きだけ先に描けるように 0..1 で持つ（上＝高い心拍）
@@ -242,10 +252,10 @@ async function readRecord(file){
     const pad=Math.round((sb.y1-sb.y0)*.3);
     const words=(await ocr(crop(P,0,sb.y0-pad,P.w,sb.y1-sb.y0+pad*2,2),'0123456789:')).sort((a,b)=>a.x-b.x);
     const t=words.find(o=>/^\d{1,3}:\d{2}(:\d{2})?$/.test(o.t));
-    // 右端の数字が「最大心拍数」（真ん中は平均）
-    const last=words.filter(o=>/^\d{2,3}$/.test(o.t)).pop();
+    // 「時間・平均・最大」の3つが並んでいるときだけ、右端を最大心拍数として使う
+    const ints=words.filter(o=>/^\d{1,3}$/.test(o.t));   // 平均は「9」のように欠けて読めることがある
     if(t) out.time=t.t;
-    if(last && last.x > P.w*2*.6) out.max=+last.t;
+    if(t && ints.length===2 && ints[1].x > P.w*2*.6 && okBpm(+ints[1].t)) out.max=+ints[1].t;
   }
   if(cv){
     // 左の目盛り（170・142…）を読んで、線のいちばん低いところを心拍に直す
@@ -253,13 +263,15 @@ async function readRecord(file){
     const ticks=(await ocr(crop(P,0,yA,x1,yB-yA,3),'0123456789'))
       .filter(o=>/^\d{2,3}$/.test(o.t) && +o.t>=30 && +o.t<=230)
       .map(o=>({v:+o.t, y:yA+o.y/3})).sort((a,b)=>a.y-b.y);
-    if(ticks.length>=2){
+    // 目盛りが3つ以上あり、どれも1本の直線に乗るときだけ信じる（1つ読み違えたら使わない）
+    if(ticks.length>=3){
       const a=ticks[0], b=ticks[ticks.length-1];
-      if(b.v<a.v){
-        const toBpm=y=>a.v+(y-a.y)*(b.v-a.v)/(b.y-a.y);
+      const toBpm=y=>a.v+(y-a.y)*(b.v-a.v)/(b.y-a.y);
+      if(b.v<a.v && ticks.every(k=>Math.abs(toBpm(k.y)-k.v)<=3)){
         const ys=cv.pts.map(p=>p[1]);
-        out.min=Math.round(toBpm(Math.max(...ys)));
-        if(!out.max) out.max=Math.round(toBpm(Math.min(...ys)));
+        const lo=Math.round(toBpm(Math.max(...ys))), hi=Math.round(toBpm(Math.min(...ys)));
+        if(!out.max && okBpm(hi)) out.max=hi;
+        if(okBpm(lo) && (!out.max || lo<out.max)) out.min=lo;
       }
     }
   }
@@ -273,6 +285,12 @@ const val = () => ({ name:$('fName').value.trim(), time:$('fTime').value.trim(),
 function shadowOn(g){ g.shadowColor='rgba(0,0,0,.35)'; g.shadowBlur=14; g.shadowOffsetY=2; }
 
 function text(g, s, x, y, font, align){ g.font=font; g.textAlign=align||'center'; g.textBaseline='alphabetic'; g.fillStyle='#fff'; g.fillText(s,x,y); }
+/* 幅に収まるまで字を小さくする（横につぶさない） */
+function fitText(g, s, x, y, weight, size, family, maxW){
+  let z=size; g.font=`${weight} ${z}px ${family}`;
+  const w=g.measureText(s).width; if(w>maxW) z=Math.floor(size*maxW/w);
+  text(g, s, x, y, `${weight} ${z}px ${family}`);
+}
 
 function curveBlock(w,h,fill){
   return { h, draw(g,y){
@@ -286,13 +304,13 @@ function curveBlock(w,h,fill){
 }
 const gap = h => ({h, draw(){}});
 const label = (s,size) => ({h:size*1.25, draw(g,y){ text(g,s,W/2,y+size,`600 ${size}px ${F.num}`); }});
-const value = (s,size) => ({h:size*1.08, draw(g,y){ text(g,s,W/2,y+size*.92,`800 ${size}px ${F.num}`); }});
-const nameB = (s,size) => ({h:size*1.4, draw(g,y){ text(g,s,W/2,y+size*1.05,`700 ${size}px ${F.jp}`); }});
+const value = (s,size) => ({h:size*1.08, draw(g,y){ fitText(g,s,W/2,y+size*.92,800,size,F.num,960); }});
+const nameB = (s,size) => ({h:size*1.4, draw(g,y){ fitText(g,s,W/2,y+size*1.05,700,size,F.jp,960); }});
 const mark = size => ({h:size*1.3, draw(g,y){ g.save(); g.font=`800 ${size}px ${F.num}`; g.letterSpacing=(size*.12)+'px'; text(g,'TOTONOI',W/2+size*.06,y+size,g.font); g.restore(); }});
 function rowB(items, lab, num){
   const cols=items.length, cw=Math.min(240, 900/cols);
   return { h:lab*1.25+num*1.1, draw(g,y){ items.forEach((it,i)=>{ const x=W/2+(i-(cols-1)/2)*cw;
-    text(g,it[0],x,y+lab,`600 ${lab}px ${F.num}`); text(g,it[1],x,y+lab*1.25+num*.92,`800 ${num}px ${F.num}`); }); } };
+    text(g,it[0],x,y+lab,`600 ${lab}px ${F.num}`); fitText(g,it[1],x,y+lab*1.25+num*.92,800,num,F.num,cw-16); }); } };
 }
 
 function blocks(v, layout){
@@ -344,14 +362,16 @@ function draw(){
 
 /* 押した瞬間に共有を開けるよう、絵が変わるたびに画像を作っておく（iOS は await を挟むと共有が拒否される） */
 const ready={full:null, sticker:null};
+let ver=0;
 function prepare(){
   clearTimeout(prepare.h);
+  ready.full=ready.sticker=null; const v=++ver;            // 作り直している間は「準備中」にし、古い結果は捨てる
   prepare.h=setTimeout(()=>{
-    $('cv').toBlob(b=>{ ready.full=b; }, 'image/jpeg', .92);
+    $('cv').toBlob(b=>{ if(v===ver) ready.full=b; }, 'image/jpeg', .92);
     const B=blocks(val(), S.layout), h=Math.ceil(B.reduce((s,b)=>s+b.h,0))+60;
     const c=document.createElement('canvas'); c.width=W; c.height=h;
     paintStack(c.getContext('2d'), B, 30);
-    c.toBlob(b=>{ ready.sticker=b; }, 'image/png');
+    c.toBlob(b=>{ if(v===ver) ready.sticker=b; }, 'image/png');
   }, 150);
 }
 
@@ -364,30 +384,29 @@ async function share(blob, name, type){
     try{ await navigator.share({files:[file]}); return; }
     catch(e){ if(e && e.name==='AbortError') return; }
   }
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  const a=document.createElement('a'), u=URL.createObjectURL(blob); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u), 4000);
 }
 
 /* ---------- 操作 ---------- */
 $('inPhoto').addEventListener('change', async e=>{
   const f=e.target.files[0]; if(!f) return;
-  try{ S.photo=await loadImage(f); S.pan={x:.5,y:.5}; $('pkPhoto').classList.add('ok'); draw(); }
+  try{ S.photo=await loadImage(f); S.pan={x:.5,y:.5}; $('pkPhoto').classList.add('ok'); $('pv').classList.add('has-photo'); draw(); }
   catch(err){ toast('写真を開けませんでした'); }
   e.target.value='';
 });
 
 $('inRec').addEventListener('change', async e=>{
   const f=e.target.files[0]; if(!f) return; e.target.value='';
-  const pk=$('pkRec'); pk.classList.remove('ok'); pk.classList.add('busy');
+  const pk=$('pkRec'); pk.classList.remove('ok'); pk.classList.add('busy'); $('inRec').disabled=true;
+  ['fTime','fMax','fMin'].forEach(id=>$(id).value='');     // 前の記録の数字を残さない
   try{
     const r=await readRecord(f);
-    if(r.time) $('fTime').value=r.time;
-    if(r.max) $('fMax').value=r.max;
-    if(r.min) $('fMin').value=r.min;
+    $('fTime').value=r.time||''; $('fMax').value=r.max||''; $('fMin').value=r.min||'';
     const miss=[!S.curve&&'線', !r.time&&'Time', !r.max&&'Max', !r.min&&'Min'].filter(Boolean);
     toast(miss.length ? `読めなかった：${miss.join('・')}` : '読み取りました');
     pk.classList.add('ok');
   }catch(err){ toast('読み取れませんでした。数字は手で入れてください'); }
-  pk.classList.remove('busy'); draw();
+  pk.classList.remove('busy'); $('inRec').disabled=false; draw();
 });
 
 ['fTime','fMax','fMin'].forEach(id=>$(id).addEventListener('input', draw));
@@ -423,7 +442,7 @@ $('btnSticker').addEventListener('click', ()=>share(ready.sticker, `totonoi_stic
 })();
 
 /* 始まり */
-S.layout=store.get('layout','row');
+S.layout=store.get('layout','row'); if(!(S.layout in tops)) S.layout='row';
 [...$('seg').children].forEach(x=>x.setAttribute('aria-pressed', x.dataset.l===S.layout));
 fillNames();
 draw();
