@@ -25,10 +25,11 @@ WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 
 # 書き出しの寸法（1080×1920・縦）
 W, H = 1080, 1920
-TITLE_H = 200                       # 上の帯
-MAIN = (72, TITLE_H, 936, 1664)     # 人の動画の枠 x, y, w, h（9:16 ならそのまま収まる）
-PIP_W, PIP_H, PIP_M, PIP_R, PIP_B = 300, 650, 28, 36, 8   # 小窓の幅・高さ・余白・角丸・フチ
-CAP_FONT, CAP_LINE = 58, 15         # 字幕の字の大きさ・1行の字数
+TITLE_H = 190                       # 上の帯（タイトル）
+MAIN = (126, TITLE_H, 828, 1472)    # 人の動画の枠 x, y, w, h（9:16 ならそのまま収まる）
+CAP_TOP = TITLE_H + 1472            # ここから下が字幕の帯（1662〜1920）
+PIP_W, PIP_H, PIP_M, PIP_R, PIP_B = 280, 606, 24, 34, 8   # 小窓の幅・高さ・余白・角丸・フチ
+CAP_FONT, CAP_LINE = 52, 18         # 字幕の字の大きさ・1行の字数
 SR = 8000                           # 同期に使う音の標本化周波数
 
 
@@ -274,19 +275,16 @@ def wrap(text, n=CAP_LINE):
 
 
 def caption_image(text, path):
-    """映像に重ねる白い字＋墨のフチ（1080×1920 の透明画像）。小窓の上に置く。"""
+    """一番下の黒い帯に出す白い字（1080×1920 の透明画像）。帯の上下の真ん中にそろえる。"""
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     lines = wrap(text)
-    mx, my, mw, mh = MAIN
-    _, py = pip_rect()
-    bottom = py - 36
-    lh = int(CAP_FONT * 1.32)
+    lh = int(CAP_FONT * 1.4)
+    mid = (CAP_TOP + H) // 2
+    top = mid - lh * len(lines) // 2
     for k, line in enumerate(lines):
-        f = _fit(d, line, CAP_FONT, mw - 60)
-        y = bottom - (len(lines) - k) * lh + lh // 2
-        d.text((mx + mw // 2, y), line, font=f, fill=PAPER, anchor="mm",
-               stroke_width=7, stroke_fill=INK)
+        f = _fit(d, line, CAP_FONT, W - 80)
+        d.text((W // 2, top + k * lh + lh // 2), line, font=f, fill=PAPER, anchor="mm")
     im.save(path)
 
 
