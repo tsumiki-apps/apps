@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="apple-touch-icon" href="icons/icon-totonoi.png">
+<meta name="apple-mobile-web-app-title" content="ととのい">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>ととのい — サウナの写真に、心拍の記録を重ねる</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&family=Inter:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f5f4f0; --surface:#fffefb; --surface-2:#efece5;
+    --ink:#1d1a15; --ink-mid:#5b554a; --ink-soft:#666154; --ghost:#887f70;
+    --line:#e2ded4; --line-2:#d8d3c7;
+    --accent:#b06f26; --accent-2:#8a5a24; --accent-wash:#f0e4d1;
+    --warn-wash:#f2e0d4; --warn-ink:#974624;
+    --btn-bg:var(--accent-2); --btn-ink:var(--paper);
+    --shadow:0 1px 2px rgba(40,32,18,.05), 0 10px 26px -16px rgba(40,32,18,.18);
+    --ph-a:#2b2619; --ph-b:#0f0d07;   /* 写真を入れる前の下地（夜の帳面の色・白い字が読める）*/
+    --quick:120ms; --ease:cubic-bezier(0.2,0,0,1);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#0f0d07; --surface:#211d14; --surface-2:#2b2619;
+      --ink:#efe8da; --ink-mid:#a89e8b; --ink-soft:#9f988a;
+      --line:#36301f; --line-2:#443d2b;
+      --accent:#d59a4d; --accent-2:#e0ab63; --accent-wash:#362a19;
+      --warn-wash:#39251a; --warn-ink:#d9825a;
+      --btn-bg:#d59a4d; --btn-ink:#1d1a15;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 30px -18px rgba(0,0,0,.65);
+    }
+  }
+  @media (prefers-reduced-motion: reduce){ :root{ --quick:0ms; } }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.6; min-height:100dvh;
+    -webkit-font-smoothing:antialiased;
+  }
+  button,input{font-family:inherit;color:inherit}
+  svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+  .wrap{max-width:520px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 32px)}
+  header{display:flex;align-items:center;gap:8px;min-height:44px;margin-bottom:8px}
+  header h1{font-size:20px;font-weight:700;margin:0;letter-spacing:.04em}
+  header svg.i{color:var(--accent-2)}
+
+  .stage{display:flex;justify-content:center}
+  .pv{position:relative;width:min(100%, calc(64dvh * 9 / 16));aspect-ratio:9/16;border-radius:20px;overflow:hidden;
+      background:var(--surface-2);box-shadow:var(--shadow);touch-action:none}
+  .pv canvas{display:block;width:100%;height:100%}
+
+  .panel{margin-top:16px;display:flex;flex-direction:column;gap:16px}
+  .picks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pick{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:8px 12px;
+        background:var(--surface);border:1px solid var(--line);border-radius:12px;font-size:15px;font-weight:500;cursor:pointer;
+        transition:background var(--quick) var(--ease)}
+  .pick:active{background:var(--surface-2)}
+  .pick input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:16px}
+  .pick .dot{width:8px;height:8px;border-radius:50%;background:var(--line-2)}
+  .pick.ok .dot{background:var(--accent)}
+  .pick.busy .dot{background:var(--accent);animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.25}}
+
+  .fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .f{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .f.wide{grid-column:1/-1}
+  .f span{font-size:13px;color:var(--ink-mid);display:flex;align-items:center;gap:4px}
+  .f span svg.i{width:16px;height:16px}
+  .f input{width:100%;min-width:0;height:44px;padding:0 12px;font-size:16px;background:var(--surface);
+           border:1px solid var(--line);border-radius:12px;outline:none}
+  .f input:focus{border-color:var(--accent)}
+
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .seg button{display:flex;flex-direction:column;align-items:center;gap:4px;min-height:64px;padding:8px;font-size:13px;
+              background:var(--surface);border:1px solid var(--line);border-radius:12px;cursor:pointer;color:var(--ink-mid);
+              transition:background var(--quick) var(--ease)}
+  .seg button svg{width:22px;height:32px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .seg button[aria-pressed="true"]{background:var(--accent-wash);border-color:var(--accent);color:var(--accent-2)}
+
+  .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:12px;border:0;
+       font-size:15px;font-weight:700;white-space:nowrap;cursor:pointer;transition:opacity var(--quick) var(--ease)}
+  .btn.main{background:var(--btn-bg);color:var(--btn-ink)}
+  .btn.quiet{background:var(--surface-2);color:var(--ink)}
+  .btn:disabled{opacity:.45;cursor:default}
+
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);
+         max-width:calc(100% - 32px);padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--paper);
+         font-size:14px;opacity:0;pointer-events:none;transition:opacity 200ms var(--ease);z-index:50}
+  .toast.on{opacity:1}
+
+  @media (min-width:900px){
+    .wrap{max-width:960px;display:grid;grid-template-columns:auto 380px;gap:32px;align-items:start}
+    header{grid-column:1/-1}
+    .pv{width:calc(78dvh * 9 / 16)}
+    .panel{margin-top:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4c-1 1.3 1 2.4 0 3.8M12 4c-1 1.3 1 2.4 0 3.8M16 4c-1 1.3 1 2.4 0 3.8"/><path d="M4 11h16v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 15h16"/></svg>
+    <h1>ととのい</h1>
+  </header>
+
+  <div class="stage"><div class="pv" id="pv"><canvas id="cv" width="1080" height="1920"></canvas></div></div>
+
+  <div class="panel">
+    <div class="picks">
+      <label class="pick" id="pkPhoto">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        写真<i class="dot"></i>
+        <input type="file" id="inPhoto" accept="image/*" aria-label="サウナの写真を選ぶ">
+      </label>
+      <label class="pick" id="pkRec">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-5 3 10 2-5h7"/></svg>
+        記録<i class="dot"></i>
+        <input type="file" id="inRec" accept="image/*" aria-label="Zepp Life のスクリーンショットを選ぶ">
+      </label>
+    </div>
+
+    <div class="fields">
+      <label class="f wide"><span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>施設</span>
+        <input id="fName" list="nameList" autocomplete="off" enterkeyhint="done"></label>
+      <datalist id="nameList"></datalist>
+      <label class="f"><span>Time</span><input id="fTime" inputmode="numeric" placeholder="43:06"></label>
+      <label class="f"><span>Max</span><input id="fMax" inputmode="numeric" placeholder="bpm"></label>
+      <label class="f"><span>Min</span><input id="fMin" inputmode="numeric" placeholder="bpm"></label>
+    </div>
+
+    <div class="seg" id="seg">
+      <button type="button" data-l="row" aria-pressed="true"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M5 20c2-3 3 1 5-1s3 1 7-1"/><path d="M5 25h3M10 25h2M14 25h3"/></svg>横一列</button>
+      <button type="button" data-l="col" aria-pressed="false"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M8 6h6M8 10h6M8 14h6"/><path d="M5 20c2-3 3 1 5-1s3 1 7-1"/></svg>縦</button>
+      <button type="button" data-l="big" aria-pressed="false"><svg viewBox="0 0 22 32" aria-hidden="true"><rect x="1" y="1" width="20" height="30" rx="3"/><path d="M6 9h10" stroke-width="3.2"/><path d="M5 16c2-3 3 1 5-1s3 1 7-1"/><path d="M7 21h3M12 21h3"/></svg>大きく</button>
+    </div>
+
+    <div class="acts">
+      <button class="btn main" id="btnShare" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M6 12H5v8h14v-8h-1"/></svg>保存</button>
+      <button class="btn quiet" id="btnSticker" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v9l-6 7H5z"/><path d="M13 20v-5a2 2 0 0 1 2-2h4"/></svg>ステッカー</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js" defer></script>
+<script>
+const $ = id => document.getElementById(id);
+const W = 1080, H = 1920;
+const LINE = '#fc5200';           // 心拍の線（Strava のコースの線と同じ橙）
+const S = { photo:null, pan:{x:.5,y:.5}, curve:null, layout:'row' };
+const store = {
+  get(k,d){ try{ const v = localStorage.getItem('totonoi.'+k); return v==null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k,v){ try{ localStorage.setItem('totonoi.'+k, JSON.stringify(v)); }catch(e){} }
+};
+
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toast.h); toast.h=setTimeout(()=>t.classList.remove('on'),2400); }
+
+/* ---------- 画像を読む ---------- */
+function loadImage(file){
+  return new Promise((res,rej)=>{ const u=URL.createObjectURL(file), im=new Image();
+    im.onload=()=>res(im); im.onerror=rej; im.src=u; });
+}
+
+/* Zepp Life のスクショから心拍の線・数字を拾う */
+function pixels(im){
+  const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight;
+  const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(im,0,0);
+  return { c, g, w:c.width, h:c.height, d:g.getImageData(0,0,c.width,c.height).data };
+}
+const isRed = (d,k) => d[k]>190 && d[k+1]<130 && d[k+2]<130;
+
+function findCurve(P){
+  const {w,h,d}=P;
+  // 行ごとに赤い点の左端・右端を見て、横に長く続く帯＝グラフを探す
+  const span=new Array(h);
+  for(let y=0;y<h;y++){ let a=-1,b=-1;
+    for(let x=0;x<w;x++){ if(isRed(d,(y*w+x)*4)){ if(a<0)a=x; b=x; } }
+    span[y]=a<0?null:[a,b]; }
+  let best=null;
+  for(let y=0;y<h;){
+    if(!span[y]){ y++; continue; }
+    let y2=y, x0=span[y][0], x1=span[y][1];
+    while(y2+1<h && (span[y2+1] || (span[y2+2]&&y2+2<h))){ y2++; if(span[y2]){ x0=Math.min(x0,span[y2][0]); x1=Math.max(x1,span[y2][1]); } }
+    // 左右の端だけ赤い（ロゴとQRの色など）帯を除くため、赤のある列の数で比べる
+    let cols=0; for(let x=x0;x<=x1;x++){ for(let yy=y;yy<=y2;yy++){ if(isRed(d,(yy*w+x)*4)){ cols++; break; } } }
+    if(cols > w*.4 && (!best || cols > best.cols)) best={y0:y,y1:y2,x0,x1,cols};
+    y=y2+1;
+  }
+  if(!best) return null;
+  const pts=[];
+  for(let x=best.x0;x<=best.x1;x++){ let s=0,n=0;
+    for(let y=best.y0;y<=best.y1;y++){ if(isRed(d,(y*w+x)*4)){ s+=y; n++; } }
+    if(n) pts.push([x, s/n]); }
+  return {...best, pts};
+}
+
+function crop(P,x,y,cw,ch,scale){
+  const c=document.createElement('canvas'); c.width=Math.round(cw*scale); c.height=Math.round(ch*scale);
+  const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height);
+  g.imageSmoothingQuality='high'; g.drawImage(P.c,x,y,cw,ch,0,0,c.width,c.height);
+  return c;
+}
+
+/* 濃い背景の帯（見出し）の下にある、最初の文字の行＝「時間・平均・最大」の数字 */
+function findStatsBand(P, stopY){
+  const {w,d}=P, bright=y=>{ let s=0; for(let x=0;x<w;x+=4){ const k=(y*w+x)*4; s+=d[k]+d[k+1]+d[k+2]; } return s/(3*Math.ceil(w/4)); };
+  let y=0; while(y<stopY && bright(y)>150) y++;           // 上の白い余白を飛ばす
+  while(y<stopY && bright(y)<150) y++;                     // 濃い見出しの帯を抜ける
+  const ink=y=>{ let n=0; for(let x=0;x<w;x+=2){ const k=(y*w+x)*4; if(d[k]+d[k+1]+d[k+2]<200) n++; } return n; };
+  while(y<stopY && ink(y)===0) y++;
+  const top=y; while(y<stopY && ink(y)>0) y++;
+  return y>top ? {y0:top,y1:y} : null;
+}
+
+let ocrWorker=null;
+async function ocr(canvas, chars){
+  if(!window.Tesseract) throw new Error('ocr');
+  if(!ocrWorker){ ocrWorker = await Tesseract.createWorker('eng'); }
+  await ocrWorker.setParameters({ tessedit_char_whitelist: chars, tessedit_pageseg_mode: '11' });
+  const r = await ocrWorker.recognize(canvas);
+  return r.data.words.map(o=>({t:o.text, x:o.bbox.x0, y:(o.bbox.y0+o.bbox.y1)/2}));
+}
+
+async function readRecord(file){
+  const im=await loadImage(file), P=pixels(im), out={};
+  const cv=findCurve(P);
+  if(cv){
+    // 曲線の向きだけ先に描けるように 0..1 で持つ（上＝高い心拍）
+    const ys=cv.pts.map(p=>p[1]), lo=Math.min(...ys), hi=Math.max(...ys);
+    S.curve=cv.pts.map(p=>[(p[0]-cv.x0)/(cv.x1-cv.x0), (p[1]-lo)/((hi-lo)||1)]);
+    draw();
+  }
+  const sb=findStatsBand(P, cv ? cv.y0 : P.h);
+  if(sb){
+    const pad=Math.round((sb.y1-sb.y0)*.3);
+    const words=(await ocr(crop(P,0,sb.y0-pad,P.w,sb.y1-sb.y0+pad*2,2),'0123456789:')).sort((a,b)=>a.x-b.x);
+    const t=words.find(o=>/^\d{1,3}:\d{2}(:\d{2})?$/.test(o.t));
+    // 右端の数字が「最大心拍数」（真ん中は平均）
+    const last=words.filter(o=>/^\d{2,3}$/.test(o.t)).pop();
+    if(t) out.time=t.t;
+    if(last && last.x > P.w*2*.6) out.max=+last.t;
+  }
+  if(cv){
+    // 左の目盛り（170・142…）を読んで、線のいちばん低いところを心拍に直す
+    const m=Math.round(P.w*.06), x1=Math.max(10,cv.x0-4), yA=Math.max(0,cv.y0-m), yB=Math.min(P.h,cv.y1+Math.round(m*.5));
+    const ticks=(await ocr(crop(P,0,yA,x1,yB-yA,3),'0123456789'))
+      .filter(o=>/^\d{2,3}$/.test(o.t) && +o.t>=30 && +o.t<=230)
+      .map(o=>({v:+o.t, y:yA+o.y/3})).sort((a,b)=>a.y-b.y);
+    if(ticks.length>=2){
+      const a=ticks[0], b=ticks[ticks.length-1];
+      if(b.v<a.v){
+        const toBpm=y=>a.v+(y-a.y)*(b.v-a.v)/(b.y-a.y);
+        const ys=cv.pts.map(p=>p[1]);
+        out.min=Math.round(toBpm(Math.max(...ys)));
+        if(!out.max) out.max=Math.round(toBpm(Math.min(...ys)));
+      }
+    }
+  }
+  return out;
+}
+
+/* ---------- 描く ---------- */
+const F = { num:'"Inter", "Helvetica Neue", Arial, sans-serif', jp:'"Zen Maru Gothic", "Hiragino Maru Gothic ProN", sans-serif' };
+const val = () => ({ name:$('fName').value.trim(), time:$('fTime').value.trim(), max:$('fMax').value.trim(), min:$('fMin').value.trim() });
+
+function shadowOn(g){ g.shadowColor='rgba(0,0,0,.35)'; g.shadowBlur=14; g.shadowOffsetY=2; }
+
+function text(g, s, x, y, font, align){ g.font=font; g.textAlign=align||'center'; g.textBaseline='alphabetic'; g.fillStyle='#fff'; g.fillText(s,x,y); }
+
+function curveBlock(w,h,fill){
+  return { h, draw(g,y){
+    if(!S.curve) return;
+    const x0=(W-w)/2, pad=10;
+    g.save(); g.beginPath();
+    S.curve.forEach((p,i)=>{ const X=x0+p[0]*w, Y=y+pad+p[1]*(h-pad*2); i?g.lineTo(X,Y):g.moveTo(X,Y); });
+    g.lineJoin='round'; g.lineCap='round'; g.lineWidth=fill?7:9; g.strokeStyle=fill?'#fff':LINE; g.stroke();
+    if(fill){ g.shadowColor='transparent'; g.lineTo(x0+w,y+h); g.lineTo(x0,y+h); g.closePath(); g.fillStyle='rgba(255,255,255,.18)'; g.fill(); }
+    g.restore(); } };
+}
+const gap = h => ({h, draw(){}});
+const label = (s,size) => ({h:size*1.25, draw(g,y){ text(g,s,W/2,y+size,`600 ${size}px ${F.num}`); }});
+const value = (s,size) => ({h:size*1.08, draw(g,y){ text(g,s,W/2,y+size*.92,`800 ${size}px ${F.num}`); }});
+const nameB = (s,size) => ({h:size*1.4, draw(g,y){ text(g,s,W/2,y+size*1.05,`700 ${size}px ${F.jp}`); }});
+const mark = size => ({h:size*1.3, draw(g,y){ g.save(); g.font=`800 ${size}px ${F.num}`; g.letterSpacing=(size*.12)+'px'; text(g,'TOTONOI',W/2+size*.06,y+size,g.font); g.restore(); }});
+function rowB(items, lab, num){
+  const cols=items.length, cw=Math.min(240, 900/cols);
+  return { h:lab*1.25+num*1.1, draw(g,y){ items.forEach((it,i)=>{ const x=W/2+(i-(cols-1)/2)*cw;
+    text(g,it[0],x,y+lab,`600 ${lab}px ${F.num}`); text(g,it[1],x,y+lab*1.25+num*.92,`800 ${num}px ${F.num}`); }); } };
+}
+
+function blocks(v, layout){
+  const stats=[['Time',v.time],['Max',v.max],['Min',v.min]].filter(s=>s[1]);
+  const B=[];
+  if(layout==='row'){
+    if(v.name) B.push(nameB(v.name,46), gap(18));
+    if(S.curve) B.push(curveBlock(780,190), gap(30));
+    if(stats.length) B.push(rowB(stats,32,64), gap(28));
+    B.push(mark(30));
+  }else if(layout==='col'){
+    if(v.name) B.push(nameB(v.name,44), gap(26));
+    stats.forEach(s=>B.push(label(s[0],32), value(s[0]==='Time'?s[1]:s[1]+' bpm',80), gap(26)));
+    if(S.curve) B.push(gap(8), curveBlock(440,200), gap(30));
+    B.push(mark(40));
+  }else{
+    const t=stats.find(s=>s[0]==='Time'), rest=stats.filter(s=>s[0]!=='Time');
+    if(v.name) B.push(nameB(v.name,40), gap(4));
+    if(t) B.push(label('Time',34), value(t[1],190), gap(28));
+    if(S.curve) B.push(curveBlock(560,180,true), gap(34));
+    if(rest.length) B.push(rowB(rest,30,56), gap(30));
+    B.push(mark(30));
+  }
+  return B;
+}
+const tops = { row:null, col:200, big:220 };
+
+function paintStack(g, B, top){
+  shadowOn(g); let y=top; B.forEach(b=>{ b.draw(g,y); y+=b.h; }); g.shadowColor='transparent';
+}
+
+function paintPhoto(g){
+  if(!S.photo){
+    const gr=g.createLinearGradient(0,0,0,H); const cs=getComputedStyle(document.documentElement); gr.addColorStop(0,cs.getPropertyValue('--ph-a')); gr.addColorStop(1,cs.getPropertyValue('--ph-b'));
+    g.fillStyle=gr; g.fillRect(0,0,W,H); return;
+  }
+  const im=S.photo, s=Math.max(W/im.naturalWidth, H/im.naturalHeight), dw=im.naturalWidth*s, dh=im.naturalHeight*s;
+  g.drawImage(im, (W-dw)*S.pan.x, (H-dh)*S.pan.y, dw, dh);
+}
+
+function stackTop(B){ const h=B.reduce((s,b)=>s+b.h,0); return tops[S.layout]==null ? H-150-h : tops[S.layout]; }
+
+function draw(){
+  const g=$('cv').getContext('2d'); g.clearRect(0,0,W,H);
+  paintPhoto(g);
+  const B=blocks(val(), S.layout); paintStack(g, B, stackTop(B));
+  prepare();
+}
+
+/* 押した瞬間に共有を開けるよう、絵が変わるたびに画像を作っておく（iOS は await を挟むと共有が拒否される） */
+const ready={full:null, sticker:null};
+function prepare(){
+  clearTimeout(prepare.h);
+  prepare.h=setTimeout(()=>{
+    $('cv').toBlob(b=>{ ready.full=b; }, 'image/jpeg', .92);
+    const B=blocks(val(), S.layout), h=Math.ceil(B.reduce((s,b)=>s+b.h,0))+60;
+    const c=document.createElement('canvas'); c.width=W; c.height=h;
+    paintStack(c.getContext('2d'), B, 30);
+    c.toBlob(b=>{ ready.sticker=b; }, 'image/png');
+  }, 150);
+}
+
+function stamp(){ const d=new Date(), p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; }
+
+async function share(blob, name, type){
+  if(!blob){ toast('準備中。もう一度押してください'); return; }
+  const file=new File([blob], name, {type});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); return; }
+    catch(e){ if(e && e.name==='AbortError') return; }
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---------- 操作 ---------- */
+$('inPhoto').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{ S.photo=await loadImage(f); S.pan={x:.5,y:.5}; $('pkPhoto').classList.add('ok'); draw(); }
+  catch(err){ toast('写真を開けませんでした'); }
+  e.target.value='';
+});
+
+$('inRec').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return; e.target.value='';
+  const pk=$('pkRec'); pk.classList.remove('ok'); pk.classList.add('busy');
+  try{
+    const r=await readRecord(f);
+    if(r.time) $('fTime').value=r.time;
+    if(r.max) $('fMax').value=r.max;
+    if(r.min) $('fMin').value=r.min;
+    const miss=[!S.curve&&'線', !r.time&&'Time', !r.max&&'Max', !r.min&&'Min'].filter(Boolean);
+    toast(miss.length ? `読めなかった：${miss.join('・')}` : '読み取りました');
+    pk.classList.add('ok');
+  }catch(err){ toast('読み取れませんでした。数字は手で入れてください'); }
+  pk.classList.remove('busy'); draw();
+});
+
+['fTime','fMax','fMin'].forEach(id=>$(id).addEventListener('input', draw));
+$('fName').addEventListener('input', ()=>{ draw(); const n=$('fName').value; if(n) document.fonts.load(`700 44px ${F.jp}`, n).then(draw, ()=>{}); });
+$('fName').addEventListener('change', ()=>{
+  const n=$('fName').value.trim(); if(!n) return;
+  const list=[n, ...store.get('names',[]).filter(x=>x!==n)].slice(0,20);
+  store.set('names', list); fillNames();
+});
+function fillNames(){ $('nameList').innerHTML=store.get('names',[]).map(n=>`<option value="${n.replace(/[&"<>]/g,c=>({'&':'&amp;','"':'&quot;','<':'&lt;','>':'&gt;'}[c]))}">`).join(''); }
+
+$('seg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  S.layout=b.dataset.l; store.set('layout', S.layout);
+  [...$('seg').children].forEach(x=>x.setAttribute('aria-pressed', x===b));
+  draw();
+});
+
+$('btnShare').addEventListener('click', ()=>share(ready.full, `totonoi_${stamp()}.jpg`, 'image/jpeg'));
+$('btnSticker').addEventListener('click', ()=>share(ready.sticker, `totonoi_sticker_${stamp()}.png`, 'image/png'));
+
+/* 写真を指でずらす */
+(()=>{
+  const pv=$('pv'); let st=null;
+  pv.addEventListener('pointerdown', e=>{ if(!S.photo) return; st={x:e.clientX,y:e.clientY,p:{...S.pan}}; pv.setPointerCapture(e.pointerId); });
+  pv.addEventListener('pointermove', e=>{ if(!st) return;
+    const im=S.photo, s=Math.max(W/im.naturalWidth,H/im.naturalHeight), k=W/pv.clientWidth;
+    const ox=W-im.naturalWidth*s, oy=H-im.naturalHeight*s, cl=v=>Math.min(1,Math.max(0,v));
+    S.pan.x = ox ? cl(st.p.x + (e.clientX-st.x)*k/ox) : .5;
+    S.pan.y = oy ? cl(st.p.y + (e.clientY-st.y)*k/oy) : .5;
+    draw(); });
+  const end=()=>{ st=null; }; pv.addEventListener('pointerup', end); pv.addEventListener('pointercancel', end);
+})();
+
+/* 始まり */
+S.layout=store.get('layout','row');
+[...$('seg').children].forEach(x=>x.setAttribute('aria-pressed', x.dataset.l===S.layout));
+fillNames();
+draw();
+Promise.all([
+  document.fonts.load(`800 80px ${F.num}`), document.fonts.load(`600 32px ${F.num}`),
+  document.fonts.load(`700 44px ${F.jp}`, 'あア亜')
+]).then(draw, draw);
+document.fonts.ready.then(draw);
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
