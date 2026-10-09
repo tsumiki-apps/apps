@@ -32,7 +32,7 @@
 - 「保存版に移行して」と言われたら、行き先（種類で自動）・`<月>_<名前>` のフォルダ・`書類/画像/データ` に分けて移動 → 正本 `docs/置き場.md` の「保存版への移行」。言われない限り移さない。
 
 ## 6. Codex連携
-**2026-10-10 から停止中**（本人の指示）。Codex には頼まず・agmsg も使わない。再開は `bash ~/.claude/backups/codex-off-20261010/restore.sh` のあとこの行を消す。
+**停止中**（A層 §6）。下は再開したとき用。
 Codex は `~/制作物` 専用。agmsg は scripts の inbox.sh / send.sh 経由だけ。CLI を回すときだけデスクトップアプリを閉じる。→ `~/ObsidianVault/Knowledge/claude-codex-integration.md`
 
 ## 7. クラウドで開かれたら止まる
