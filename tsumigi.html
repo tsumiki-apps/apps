@@ -149,6 +149,7 @@ button{-webkit-tap-highlight-color:transparent}
 .t4{background:var(--w4)} .t5{background:var(--w5)} .t6{background:var(--w6)}
 
 /* ---- 空の画面 ---- */
+.howempty{margin:8px 0 0; font-size:15px; color:var(--ink-mid)}
 .empty{display:grid; justify-items:center; gap:14px; padding:8px 0}
 .illust{width:min(100%,200px); height:auto; fill:none; stroke:var(--ink-mid); stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
 .illust .soft{fill:var(--accent-wash); stroke:none}
@@ -878,7 +879,14 @@ function toast(t){
   }, 1800);
 }
 
+var appOld = false;                                                 /* サーバーに知らない欄がある＝この端末のアプリが古い */
 function save(){
+  if (appOld){                                                      /* 保存すると、読み込み直したときにこの変更が新しい欄を消す */
+    try { state = clean(JSON.parse(localStorage.getItem(KEY))); } catch (e) {}
+    renderAll();
+    toast('アプリを読み込み直してください');
+    return;
+  }
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch (e) { toast('端末の容量が足りません'); }
   SYNC.later();
@@ -916,7 +924,10 @@ function renderToday(){
     return '<button type="button" data-how="' + h.v + '" aria-pressed="' + (howSel === h.v) + '">' + (h.ic ? '<svg class="ic" aria-hidden="true"><use href="#' + h.ic + '"/></svg>' : '') + h.nm + '</button>';
   }).join('');
   var list = seg && howSel ? all.filter(function(v){ return v.how === howSel; }) : all;
-  if (!list.length){
+  if (!list.length && all.length){                                  /* 絞った結果だけが0件（今日は何もない、とは分ける） */
+    body.innerHTML = '<div class="empty"><p class="howempty">' + (howSel === 'ear' ? '聴く' : '見る') + 'ものなし</p>' +
+      '<button class="btn" type="button" data-how="">すべて</button></div>';
+  } else if (!list.length){
     body.innerHTML =
       '<div class="empty">' +
         '<svg class="illust" viewBox="0 0 200 120" aria-hidden="true">' +
@@ -1001,14 +1012,17 @@ function toggleDone(t){                                             /* 今日の
   save();
   return date;
 }
-$('#how-seg').addEventListener('click', function(e){
+function pickHow(e){
   var b = e.target.closest('[data-how]');
   if (!b) return;
   howSel = b.dataset.how;
   try { localStorage.setItem(HOW_KEY, howSel); } catch (err) {}
   renderToday();
-});
+  return true;
+}
+$('#how-seg').addEventListener('click', pickHow);
 $('#today-body').addEventListener('click', function(e){
+  if (e.target.closest('[data-how]')){ pickHow(e); return; }
   var t = e.target.closest('[data-done]');
   if (!t || t.disabled) return;
   toggleDone(t);
@@ -1327,7 +1341,8 @@ function openEdit(id, day, date){
   $('#en').value = v && v.en || shiftYmd($('#st').value, SPANS[2] - 1);
   var tm = v && v.tm || '', tv = /:/.test(tm) ? 'at' : tm;
   $('#edit-form').querySelectorAll('input[name="tod"]').forEach(function(inp){ inp.checked = inp.value === tv; });
-  $('#edit-form').querySelectorAll('input[name="how"]').forEach(function(inp){ inp.checked = inp.value === (v && v.how || ''); });
+  var hv = v ? v.how || '' : howSel;                                /* 「聴く」で絞ったまま足したら、保存した後も見えるように */
+  $('#edit-form').querySelectorAll('input[name="how"]').forEach(function(inp){ inp.checked = inp.value === hv; });
   setTm(tv === 'at' ? tm : '');
   $('#av').value = v && v.av || ''; $('#av-clear').hidden = !$('#av').value;
   dpOpen(false);
@@ -1664,7 +1679,8 @@ var SYNC = (function(){
       });
     }).then(function(r){
       if (r === 'newer'){
-        busy = false; paint('err');
+        busy = false; paint('err'); appOld = true;
+        try { if (!sessionStorage.getItem(KEY + '-reloaded')){ sessionStorage.setItem(KEY + '-reloaded', '1'); location.reload(); return; } } catch (e) {}   /* 1回だけ自動で読み込み直す（キャッシュで古いままなら繰り返さない） */
         if (!warnedOld){ warnedOld = true; toast('アプリを読み込み直してください'); }
         return;
       }
