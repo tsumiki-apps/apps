@@ -1128,7 +1128,7 @@ function openSettings(){
     '<div class="field"><label class="fl" for="bankTa">'+ic('bank','ic-sm')+'振込先</label>'+
       '<textarea class="in" id="bankTa" rows="4" placeholder="例：〇〇銀行&#10;〇〇支店&#10;普通 1234567&#10;名義 ヤマダタロウ">'+esc(bankLines().join('\n'))+'</textarea></div>'+
     '<div class="slist">'+
-      srow('rentBtn','home','家賃',db.rent?esc(ymJa(db.rent.from))+'から・'+esc(nm('yuzu'))+' '+yen(rentYuzu(db.rent)):'なし')+
+      srow('rentBtn','home','家賃',db.rent?esc(payLabel(payOfYm(db.rent.from)))+'から・'+esc(nm('yuzu'))+' '+yen(rentYuzu(db.rent)):'なし')+
       srow('billsBtn','receipt','請求書の控え',((db.bills||[]).length)+'枚')+
       srow('notifyBtn','bell','通知',deviceWho()?'この端末：'+esc(nm(deviceWho())):'未設定')+
       srow('shareBtn','link','共有',esc(nm('yuzu'))+'の端末と同期')+
@@ -1297,6 +1297,7 @@ function openRent(){
         '<div class="yenbox"><input class="in num" type="number" inputmode="numeric" id="rentMinus" placeholder="0" value="'+(rt.minus||'')+'" aria-label="'+esc(nm('yuzu'))+'の負担：半分から引く額"><span class="u">¥</span></div></div>'+
       '<div class="field"><label class="fl" for="rentFrom">'+ic('cal','ic-sm')+'開始の月</label><input class="in" type="month" id="rentFrom" value="'+esc(rt.from||'')+'"></div>'+
     '</div>'+
+    '<div class="note" id="rentFirst" aria-live="polite"></div>'+
     '<div class="split" id="rentPrev" aria-live="polite"></div>'+
     '<button class="btn primary wide" type="button" id="rentSave">'+ic('check')+'保存</button>'+
     (db.rent?'<div class="delrow"><span class="dl">'+ic('trash','ic-sm')+'家賃をやめる</span><span id="rentDelHost"></span></div>':''),
@@ -1308,8 +1309,11 @@ function openRent(){
     ov.querySelector('#rentPrev').innerHTML=
       '<div class="pc k"><div class="nm"><span class="dot k"></span><span>'+esc(nm('kodai'))+'</span></div><div class="vl num">'+yen(k)+'</div></div>'+
       '<div class="pc y"><div class="nm"><span class="dot y"></span><span>'+esc(nm('yuzu'))+'</span></div><div class="vl num">'+yen(y)+'</div></div>';
+    // 「開始の月」は使った月。どのお支払いから乗るかを横に出す（9月→10月26日払い）
+    const f=val().from;
+    ov.querySelector('#rentFirst').innerHTML=/^\d{4}-\d{2}$/.test(f)?ic('cal','ic-sm')+'<span>'+(+f.slice(5,7))+'月分（'+payLabel(payOfYm(f))+'）から毎月</span>':'';
   };
-  ['#rentTotal','#rentMinus'].forEach(id=>ov.querySelector(id).addEventListener('input',prev));
+  ['#rentTotal','#rentMinus','#rentFrom'].forEach(id=>ov.querySelector(id).addEventListener('input',prev));
   prev();
   ov.querySelector('#rentSave').onclick=()=>{
     const v=val();
