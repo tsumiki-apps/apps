@@ -307,6 +307,16 @@ button.srow:active{background:var(--surface-2)}
 .rsample{margin:2px 0 8px; font-size:13px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .rline{display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:13px; color:var(--ink-mid)}
 .rline.good{color:var(--good-ink)} .rline.warn{color:var(--warn-ink)}
+.lrow{display:flex; align-items:center; gap:10px; width:100%; min-height:56px; margin-bottom:8px; padding:10px 12px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-md); color:var(--ink); font:inherit; text-align:left; cursor:pointer}
+.lrow>.ic{color:var(--ink-mid)}
+.lck{display:grid; place-items:center; flex:none; width:22px; height:22px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--line-2); color:transparent}
+.lrow.on .lck{background:var(--fill); box-shadow:none; color:var(--on-fill)}
+.lrow[disabled]{cursor:default; opacity:.6}
+.lrow[disabled] .lck{background:var(--good-wash); box-shadow:none; color:var(--good-ink)}
+.lnm{flex:1; min-width:0; display:flex; flex-direction:column}
+.lnm small,.lr small{font-size:12px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.lr{flex:none; display:flex; flex-direction:column; align-items:flex-end; max-width:45%}
+.lr .num{font-weight:700}
 .lead{margin:-4px 0 12px}
 
 /* ---- 請求書 ---- */
@@ -1385,7 +1395,8 @@ function openRename(){
    1枚のPNGにして、LINE等でそのまま送れるようにする。Canvasに直接描くので外部ライブラリ不要。 */
 function bankLines(){ return (db.bank||[]).map(s=>String(s||'').trim()).filter(Boolean).slice(0,6); }
 // 手動で足した明細（光熱費など別カード払い）が1件でもある期間は「カード合計」と呼べない
-function hasManual(p){ return p.items.some(it=>it.src==='manual')||rentItemsOf(p).length>0; }
+function isOffCard(it){ return it.src==='manual'||it.src==='life'; }   // 共同カードに載らない分（手で足したもの・自分用カードの光熱費）
+function hasManual(p){ return p.items.some(isOffCard)||rentItemsOf(p).length>0; }
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 // 幅に収まらない文字列は末尾を「…」に詰める
 function ellipsisText(c,str,maxW){str=String(str||'');if(c.measureText(str).width<=maxW)return str;let s=str;while(s.length&&c.measureText(s+'…').width>maxW)s=s.slice(0,-1);return s+'…';}
@@ -1430,8 +1441,8 @@ function billModel(p){
   const c=calc(p);
   const byDate=(a,b)=>(a.date||'').localeCompare(b.date||'');
   const shareItems=p.items.filter(it=>(it.tag||'share')==='share');
-  const cardShare=shareItems.filter(it=>it.src!=='manual').sort(byDate);
-  const manShare=shareItems.filter(it=>it.src==='manual').sort(byDate);
+  const cardShare=shareItems.filter(it=>!isOffCard(it)).sort(byDate);
+  const manShare=shareItems.filter(isOffCard).sort(byDate);
   const yOf=it=>it.amount-Math.round(it.amount*it.ratio/100); // 個別比率の相手負担
   // 期間の比率でわける分は calc() と同じく「まとめて1回だけ」四捨五入する。
   // カード側を先に計算し、手動側はその残り＝端数のズレが出ないようにする。
@@ -1763,6 +1774,8 @@ async function parseCreditCSV(file){
     if(PAYMENT_RE.test(desc))continue;
     items.push(mkItem(normDate(rawDate), desc, amount, counter));
   }
+  // 「データ処理日」の列があるのは こうだい の自分用カードの明細（共同カードは三井住友のヘッダー無し）
+  if(header.some(h=>h.replace(/\s/g,'').includes('データ処理日'))) items.personal=true;
   return items;
 }
 // ヘッダー無し・列位置固定（三井住友Vpass: 日付,店名,利用者,支払区分,,支払月,利用金額,請求額,…）
@@ -1888,8 +1901,12 @@ async function handleCSV(file){
   const parsed=await parseCreditCSV(file);
   if(!parsed) return;
   if(!parsed.length){ toast('取り込める明細がありませんでした'); return; }
+  if(parsed.personal){ openLifeSheet(parsed); return; }
+  routeCSV(parsed, file.name);
+}
+function routeCSV(parsed, fname){
   // ファイル名にお支払い月があれば、CSVまるごとを「1回のお支払い」として1つの期間に入れる
-  const sym=stmtYmFromName(file.name);
+  const sym=stmtYmFromName(fname);
   if(sym){
     const pay=payDateOf(sym), rg=useRangeOf(pay);
     const dates=parsed.map(t=>t.date).filter(Boolean).sort();
@@ -1907,6 +1924,85 @@ async function handleCSV(file){
   });
   pendingRoute={mode:'import', groups};
   openRouteSheet();
+}
+/* ===== 自分用カードの明細から、ふたりで分けるもの（ガス・水道・電気・通信・家財保険）だけを拾う =====
+   自分用カードの買い物は共同に入れない。拾ったものも「共同にする？」で選んでから入れる */
+const LIFE_RULES=[
+  [/電力|デンリヨク|デンリョク|でんき|電気料|(?<!モンスター)エナジー|TEPCO/i,'電気代','bolt'],
+  [/(?<!ベ)ガス(?!ト|パール|ステ|スタンド)/,'ガス代','flame'],
+  [/水道|スイドウ/,'水道代','drop'],
+  [/ドコモ(?!・?バイク)|docomo|ahamo|NTT|KDDI|au(ひかり|料金)|ソフトバンク|softbank|楽天モバイル|\bUQ\b|ワイモバイル|povo|LINEMO|mineo|\bIIJ|J:COM|JCOM|ジエイコム|ジェイコム|BIGLOBE|\bOCN\b|NURO|フレッツ/i,'通信費','wifi'],
+  [/少額短期保険|家財保険|火災保険/,'家財保険','home']
+];
+function lifeOf(desc){ const d=String(desc||'').normalize('NFKC'); const r=LIFE_RULES.find(x=>x[0].test(d)); return r?{name:r[1],icon:r[2]}:null; }
+// 店名だけ残す（お客様番号などの数字は持たない）
+function lifeOrig(desc){ return String(desc||'').normalize('NFKC').replace(/[0-9０-９][0-9０-９\-－‐ー?？\s]*/g,' ').replace(/\s+/g,' ').trim(); }
+// その月の分がもう入っているか（自分で手で入れたものも、名前・金額・月が同じなら入っているとみなす）
+function lifeHas(p, c){
+  if(!p) return false;
+  if(p.items.some(it=>it.id===c.id)) return true;
+  // 手で入れた分と照らす。同じ名前・金額・月が何件あるかを数で突き合わせる（2回線など同じ額が2件でも消さない）
+  const man=p.items.filter(it=>it.src==='manual'&&it.amount===c.amount&&ymOf(it.date)===c.ym&&(it.desc||'').trim()===c.name).length;
+  return c.nth<=man;
+}
+// 使った日 → そのお支払い日（締め日をまたいだら翌月払いの側）
+function payOfDate(date){
+  const cd=db.closeDay||31, y=+date.slice(0,4), m=+date.slice(5,7), d=+date.slice(8,10);
+  const ym=(d>Math.min(cd,lastDayOf(y,m)))?(m===12?(y+1)+'-01':y+'-'+pad(m+1)):date.slice(0,7);
+  return {ym, pay:payOfYm(ym)};
+}
+function lifePeriod(c){ return db.periods.find(p=>p.pay===c.pay)||db.periods.find(p=>!p.pay&&periodExplicitYm(p)===c.ym)||null; }
+function openLifeSheet(parsed){
+  const cands=[], seen={}, nth={};
+  parsed.forEach(t=>{
+    const L=lifeOf(t.desc); if(!L||!(t.amount>0)||!/^\d{4}-\d{2}-\d{2}$/.test(t.date||'')) return;
+    const {ym,pay}=payOfDate(t.date), p=lifePeriod({ym,pay});
+    const base=t.date+'|'+L.name+'|'+t.amount; seen[base]=(seen[base]||0)+1;
+    const mk=ym+'|'+L.name+'|'+t.amount; nth[mk]=(nth[mk]||0)+1;
+    const c={id:'life_'+hashStr(base+(seen[base]>1?'|'+seen[base]:'')), date:t.date, ym, pay, nth:nth[mk], amount:t.amount, name:L.name, icon:L.icon, orig:lifeOrig(t.desc), pid:p?p.id:null};
+    c.has=lifeHas(p,c);
+    c.done=!!(p&&p.confirmed);   // 確定して知らせた月は、最初は選ばない
+    c.on=!c.has&&!c.done;
+    cands.push(c);
+  });
+  cands.sort((a,b)=>b.date.localeCompare(a.date));
+  const rows=cands.map((c,i)=>{
+    const p=c.pid&&db.periods.find(x=>x.id===c.pid);
+    const to=p?pname(p):ymLabel(c.ym)+'（新しく作る）';
+    return '<button type="button" class="lrow'+(c.on?' on':'')+'" data-i="'+i+'"'+(c.has?' disabled':' aria-pressed="'+c.on+'"')+'>'+
+      '<span class="lck">'+ic('check','ic-sm')+'</span>'+ic(c.icon)+
+      '<span class="lnm"><b>'+esc(c.name)+'</b><small>'+esc(mdShort(c.date)+'・'+c.orig)+'</small></span>'+
+      '<span class="lr"><span class="num">'+yen(c.amount)+'</span><small>'+(c.has?'入っています':esc('→ '+to+(c.done?'・確定済み':'')))+'</small></span></button>';
+  }).join('');
+  openSheet(
+    sheetHead('users','共同にする？')+
+    (cands.length?rows:'<div class="none">'+ic('list')+'<span>ガス・水道・電気・通信・保険は見つかりませんでした</span></div>')+
+    (cands.some(c=>!c.has)?'<button class="btn primary wide" type="button" id="lfGo">'+ic('check')+'共同で入れる</button>':'')+
+    '<button class="btn quiet wide" type="button" id="lfCancel">やめる</button>'
+  );
+  const go=ov.querySelector('#lfGo');
+  const sync=()=>{ if(go) go.disabled=!cands.some(c=>c.on&&!c.has); };
+  ov.querySelectorAll('.lrow:not([disabled])').forEach(el=>el.onclick=()=>{
+    const c=cands[+el.dataset.i]; c.on=!c.on; el.classList.toggle('on',c.on); el.setAttribute('aria-pressed',c.on); sync();
+  });
+  sync();
+  ov.querySelector('#lfCancel').onclick=()=>closeSheet();
+  if(go) go.onclick=()=>{
+    const log={at:nowMs(), entries:[]}, byP=new Map(); let added=0, lastPid=null;
+    cands.filter(c=>c.on&&!c.has).forEach(c=>{
+      let p=(c.pid&&db.periods.find(x=>x.id===c.pid))||lifePeriod(c), created=false;   // 同じ月の2件目は、1件目で作った期間に入れる
+      if(!p){ p=newPeriod(payLabel(c.pay), c.ym); p.pay=c.pay; db.periods.unshift(p); created=true; }
+      if(lifeHas(p,c)) return;
+      p.items.push({id:c.id, src:'life', date:c.date, desc:c.name, amount:c.amount, tag:'share', orig:c.orig});
+      if(!byP.has(p.id)) byP.set(p.id,{periodId:p.id, itemIds:[], createdPeriod:created, name:pname(p), meta:null});
+      byP.get(p.id).itemIds.push(c.id); added++; lastPid=p.id;
+    });
+    if(!added){ closeSheet(); toast('入れるものがありませんでした'); return; }
+    log.entries=[...byP.values()]; db.lastImport=log;
+    db.current=lastPid; curFilter='all';
+    save(); closeSheet(); window.scrollTo(0,0);
+    toast(log.entries.map(e=>e.name+' '+e.itemIds.length+'件').join('・')+'に共同で追加');
+  };
 }
 function groupByYm(items){
   const map=new Map();
