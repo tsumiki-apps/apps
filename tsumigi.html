@@ -314,6 +314,11 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
 .tods.reps{grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:-4px}
 .tile .when{font-size:13px; font-weight:700; line-height:1.4; color:var(--ink-mid); font-variant-numeric:tabular-nums}
 .foot{display:flex; gap:8px; position:sticky; bottom:0; z-index:1; margin:0 -20px; padding:12px 20px; background:var(--surface); border-top:1px solid var(--line)}   /* 保存はいつも見える位置に */
+.seg{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; padding:4px; margin:0 0 14px; border-radius:999px; background:var(--surface-2)}
+.seg button{display:flex; align-items:center; justify-content:center; gap:4px; min-width:0; min-height:44px; padding:0 6px; border:0; border-radius:999px; background:none; color:var(--ink-mid); font:inherit; font-size:15px; font-weight:700; white-space:nowrap; cursor:pointer; transition:background-color .12s var(--ease)}
+.seg button[aria-pressed="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow)}
+.seg .ic{width:18px; height:18px}
+#hows{margin-top:0}
 .av-lbl{flex:none; font-size:15px; color:var(--ink-mid)}
 .field input[type="time"]{-webkit-appearance:none; appearance:none; min-height:44px; text-align:left}
 #av-field .iconbtn{margin-right:-10px}
@@ -400,6 +405,8 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
     <symbol id="i-arc" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></symbol>
     <symbol id="i-unarc" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z"/></symbol>
+    <symbol id="i-ear" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20.5h6M12 16.5v4"/></symbol>
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3.5 8.5A2 2 0 0 1 5.5 6.5h2l1.5-2h6l1.5 2h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></symbol>
     <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
@@ -458,6 +465,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
           <span class="sr" id="score-sr"></span>
         </span>
       </div>
+      <div class="seg" id="how-seg" role="group" aria-label="聴く・見る" hidden></div>
       <div id="today-body"></div>
     </section>
 
@@ -546,6 +554,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
       </label>
       <div class="spans" id="spans" aria-label="日数"></div>
     </div>
+    <div class="tods reps" id="hows" role="radiogroup" aria-label="聴く・見る"></div>
     <div class="tods" id="tods" role="radiogroup" aria-label="時間帯"></div>
     <div class="dp" id="tm-field" hidden>
       <input type="hidden" id="tm">
@@ -581,7 +590,7 @@ dialog.sheet[open]{animation:rise .2s var(--ease)}
    曜日ごとに「幸せなこと」を決めておく。今日の分は押すと「できた」の判子が付く。
    データ（1つの JSON）:
      items: { id: {id, day(0=月…6=日, 7=雨の日, 8=記念日, 9=日付, 10=毎月, 11=期間), name, th:{k:'ic',ic}|{k:'img',src}, ord, upd, md?:'MM-DD'(記念日だけ), zcol?:色番号0〜49, ymd?:'YYYY-MM-DD'(日付だけ), tm?:'am'|'pm'|'nt'|'HH:MM'(時間帯・どの種類にも付けられる), dom?:1〜31(毎月だけ・その月に無い日は月末に出す・ymd があればその日から), st?/en?:'YYYY-MM-DD'(期間だけ・この間は毎日),
-            av?:'HH:MM'(配信＝その日の何時から聴ける・見られるか。時間帯とは別に持つ), arc?:true(アーカイブ＝曜日・今日・集計に出さない。元の day は残すので戻すと元の曜日に並ぶ), rep?:'w'|'m'|'y'(記念日のくり返し・無ければ毎年。2026-09-17 に記念日は毎年だけにした＝今は作らない。前に作った w/m は出し続け、直すと毎月→日付の毎月・毎週→曜日に移る), base?:'YYYY-MM-DD'(記念日の元の日・月日は md と同じ・この日より前には出さない)} }
+            how?:'ear'|'eye'(聴く＝移動しながらでも／見る＝画面を見る。今日の欄の切り替えで絞る), av?:'HH:MM'(配信＝その日の何時から聴ける・見られるか。時間帯とは別に持つ), arc?:true(アーカイブ＝曜日・今日・集計に出さない。元の day は残すので戻すと元の曜日に並ぶ), rep?:'w'|'m'|'y'(記念日のくり返し・無ければ毎年。2026-09-17 に記念日は毎年だけにした＝今は作らない。前に作った w/m は出し続け、直すと毎月→日付の毎月・毎週→曜日に移る), base?:'YYYY-MM-DD'(記念日の元の日・月日は md と同じ・この日より前には出さない)} }
      rain:  { 'YYYY-MM-DD': {on, upd} }          … その日は雨だったか（今日の傘ボタン）
      dels:  { id: 消した時刻 }                 … 消したものが他の端末から甦らないための印
      done:  { 'YYYY-MM-DD|id': {on, upd} }      … その日にできたか
@@ -628,6 +637,7 @@ function clean(s){
     if (day === PERIOD && YMD.test(v.st) && YMD.test(v.en) && v.st <= v.en){ out.items[id].st = v.st; out.items[id].en = v.en; }
     if (typeof v.tm === 'string' && /^(am|pm|nt|([01]\d|2[0-3]):[0-5]\d)$/.test(v.tm)) out.items[id].tm = v.tm;
     if (v.arc === true) out.items[id].arc = true;
+    if (v.how === 'ear' || v.how === 'eye') out.items[id].how = v.how;
     if (typeof v.av === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v.av)) out.items[id].av = v.av;
   });
   var d = s.dels && typeof s.dels === 'object' ? s.dels : {};
@@ -889,13 +899,23 @@ function setCounter(n){
   });
 }
 
+var HOWS = [{v:'', nm:'すべて'}, {v:'ear', ic:'i-ear', nm:'聴く'}, {v:'eye', ic:'i-eye', nm:'見る'}];
+var HOW_KEY = KEY + '-how', howSel = '';                           /* 今日の欄の絞り込み。端末ごとの好み（同期しない） */
+try { howSel = localStorage.getItem(HOW_KEY) || ''; } catch (e) {}
+if (howSel !== 'ear' && howSel !== 'eye') howSel = '';
 function renderToday(){
   var dt = new Date(), di = dayIndex(dt), key = ymd(dt);
   $('#today-dot').textContent = DAYS[di];
   $('#today-h').innerHTML = '<span class="sr">今日 ' + DAYS[di] + '曜日</span>';
   var rainy = isRainy(key);
   $('#rain').setAttribute('aria-pressed', rainy);
-  var list = itemsForDate(state, key, di), body = $('#today-body');
+  var all = itemsForDate(state, key, di), body = $('#today-body');
+  var seg = all.some(function(v){ return v.how; });                /* 今日の中に印のあるものがあるときだけ切り替えを出す */
+  $('#how-seg').hidden = !seg;
+  if (seg) $('#how-seg').innerHTML = HOWS.map(function(h){
+    return '<button type="button" data-how="' + h.v + '" aria-pressed="' + (howSel === h.v) + '">' + (h.ic ? '<svg class="ic" aria-hidden="true"><use href="#' + h.ic + '"/></svg>' : '') + h.nm + '</button>';
+  }).join('');
+  var list = seg && howSel ? all.filter(function(v){ return v.how === howSel; }) : all;
   if (!list.length){
     body.innerHTML =
       '<div class="empty">' +
@@ -981,6 +1001,13 @@ function toggleDone(t){                                             /* 今日の
   save();
   return date;
 }
+$('#how-seg').addEventListener('click', function(e){
+  var b = e.target.closest('[data-how]');
+  if (!b) return;
+  howSel = b.dataset.how;
+  try { localStorage.setItem(HOW_KEY, howSel); } catch (err) {}
+  renderToday();
+});
 $('#today-body').addEventListener('click', function(e){
   var t = e.target.closest('[data-done]');
   if (!t || t.disabled) return;
@@ -1236,6 +1263,10 @@ $('#kinds').innerHTML = KINDS.filter(function(k){ return k.sub == null; }).map(f
   return '<label class="chip"><input type="radio" name="day" value="' + k.i + '" aria-label="' + k.nm + '">' +
     '<svg class="ic" aria-hidden="true"><use href="#p-' + k.ic + '"/></svg>' + k.nm + '</label>';
 }).join('');
+$('#hows').innerHTML = [{v:'', nm:'なし'}].concat(HOWS.slice(1)).map(function(h){
+  return '<label class="chip"><input type="radio" name="how" value="' + h.v + '" aria-label="' + h.nm + '">' +
+    (h.ic ? '<svg class="ic" aria-hidden="true"><use href="#' + h.ic + '"/></svg>' : '') + h.nm + '</label>';
+}).join('');
 $('#tods').innerHTML = TODS.map(function(t){
   return '<label class="chip"><input type="radio" name="tod" value="' + t.v + '" aria-label="' + t.nm + '">' +
     (t.ic ? '<svg class="ic" aria-hidden="true"><use href="#' + t.ic + '"/></svg>' : '') + t.nm + '</label>';
@@ -1296,6 +1327,7 @@ function openEdit(id, day, date){
   $('#en').value = v && v.en || shiftYmd($('#st').value, SPANS[2] - 1);
   var tm = v && v.tm || '', tv = /:/.test(tm) ? 'at' : tm;
   $('#edit-form').querySelectorAll('input[name="tod"]').forEach(function(inp){ inp.checked = inp.value === tv; });
+  $('#edit-form').querySelectorAll('input[name="how"]').forEach(function(inp){ inp.checked = inp.value === (v && v.how || ''); });
   setTm(tv === 'at' ? tm : '');
   $('#av').value = v && v.av || ''; $('#av-clear').hidden = !$('#av').value;
   dpOpen(false);
@@ -1515,6 +1547,8 @@ $('#edit-form').addEventListener('submit', function(e){
   if (day === PERIOD){ state.items[id].st = $('#st').value; state.items[id].en = $('#en').value; }
   var tod = pickedTod();
   if (tod) state.items[id].tm = tod === 'at' ? $('#tm').value.slice(0, 5) : tod;
+  var hw = $('#edit-form').querySelector('input[name="how"]:checked');
+  if (hw && hw.value) state.items[id].how = hw.value;
   if (/^\d{2}:\d{2}/.test($('#av').value)) state.items[id].av = $('#av').value.slice(0, 5);
   save();
   $('#edit-sheet').close();
@@ -1550,7 +1584,7 @@ var SYNC = (function(){
   var seenRev = -1, retryMs = 0, retryTimer = null, warnedFull = false, warnedOld = false;
   /* clean() が知っている欄。ここに無い欄がサーバーにある＝別の端末が新しいアプリで書いた（Watch の受け口と同じ考え） */
   var KNOWN_TOP = ['items', 'dels', 'done', 'rain'];
-  var KNOWN_ITEM = ['id', 'day', 'name', 'th', 'ord', 'upd', 'md', 'rep', 'base', 'zcol', 'ymd', 'dom', 'st', 'en', 'tm', 'arc', 'av'];
+  var KNOWN_ITEM = ['id', 'day', 'name', 'th', 'ord', 'upd', 'md', 'rep', 'base', 'zcol', 'ymd', 'dom', 'st', 'en', 'tm', 'arc', 'av', 'how'];
   function unknownFields(raw){
     var out = [];
     if (!raw || typeof raw !== 'object') return out;
