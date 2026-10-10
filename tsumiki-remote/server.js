@@ -619,16 +619,38 @@ async function resizeWindow(name, cols) {
   forgetScreen(name);                // 幅が変われば画面も変わる＝撮り置きは捨てる
 }
 
+// 絵文字の幅を Claude Code の数え方にそろえる（2026-10-10）。
+// ⚠️ tmux 3.7b は、肌の色（🏻〜🏿）を前の絵文字と1つにまとめる相手の一覧が古く、🤲🏻 ✌🏻 🫶🏻 など
+//    64個を「絵文字2マス＋肌の色2マス＝4マス」と数える（👍🏻 は2マス）。Claude Code は2マスと数えるので、
+//    全画面の描き方（NO_FLICKER）では書き足すたびに位置が2マスずつずれ、行の端ではみ出して
+//    下の罫線が消える・止まったスピナーや古い ❯ 行が残る＝入力欄を見失って送れなくなる（work7 の実物。
+//    51桁の席で 🤲🏻 入りの返事を出させて再現・絵文字なしでは崩れない）。
+//    肌の色を0マスにすると、まとめられた／まとめられないの両方で2マスになる（表の罫線の位置で全行一致を実測）。
+// ⚠️ 単体の ☝ ⛹ ✌ ✍ 🏋 🏌 🕴 🕵 🖐（異体字セレクタ️なし）は tmux 2マス・Claude 1マスでまだずれる。
+//    これを1マスに直すと ✌🏻 が1マスになって逆にずれる（実測）ので直さない。iPhone のキーボードは ✌️ と️付きで入れる
+//    （と思われる・未確認）ので、ずれるのは主に Claude が裸のまま書いたとき。送る文に️を足す案は、`!grep ✌` などの意味を変えるのでやめた（反証役）
+// ⚠️ 正本は ~/.tmux.conf（どの道で tmux が起きても効く）。ここは、何も入っていないときだけの入れ直し
+const EMOJI_WIDTHS = 'U+1F3FB=0,U+1F3FC=0,U+1F3FD=0,U+1F3FE=0,U+1F3FF=0';
+// ⚠️ すでに何か入っていれば触らない。-a なしで入れると配列ごと置き換わり、~/.tmux.conf に足した分を消す（反証役が実測）
+async function fixEmojiWidths() {
+  const cur = await tmux(['show-options', '-s', 'codepoint-widths']);
+  if (cur.ok && /codepoint-widths\[\d+\]/.test(cur.out)) return;
+  const r = await tmux(['set-option', '-s', 'codepoint-widths', EMOJI_WIDTHS]);
+  if (!r.ok && !/no server running|error connecting/i.test(r.err || '')) console.log('codepoint-widths を入れられない: ' + (r.err || '').slice(0, 120));
+}
+
 // 描き崩れた画面を描き直させる（2026-10-10）。
-// ⚠️ Claude Code は狭い幅で（自動更新の表示が出たときなど）描き直しが追いつかず、
+// ⚠️ tmux と Claude Code で文字の幅の数え方が食い違うと（→ EMOJI_WIDTHS）、全画面の描き方では
 //    下の罫線が消えて古い ❯ 行や止まった「…ing」が残ったままになる（work7 の実物：CPU 0.2%＝止まっているのに
 //    スピナーが残り、入力欄の下の罫線が無かった）。そのまま nobox で止めると、何度送っても送れない。
-//    幅を1桁ずらして戻すと SIGWINCH で全体を描き直すので、画面の形が正しく戻る（実測）
+//    幅を1桁ずらして戻すと SIGWINCH で全体を描き直すので、ずれた跡は消える（work7 で実測）。
+// ⚠️ ずれる字がまだ画面に見えていて、その行が端まで届くときは、描き直してもまた崩れる（試験の席で実測）＝万能ではない
 async function redrawSeat(name) {
   if (!NAME_RE.test(name)) return;
   const w = await windowWidth(name);
   if (!w) return;
   const { rows } = await seatRows(name);
+  resizedAt.set(name, Date.now());   // 1回目から「折り返しが変わっただけ」と数えさせる（反証役）
   await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(w + 1), '-y', String(rows)]);
   await new Promise((r) => setTimeout(r, 300));
   await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(w), '-y', String(rows)]);
@@ -983,6 +1005,8 @@ const RE_ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
 // （`────── replace-hello-with-bye ─`・プランを通したあとに実測）。線だけの形しか見ないと
 // 入力欄を見失う（候補の帯が出ない・入力欄の見張りが送信を止める）ので、名前入りも受ける
 // 行頭から引かれた線だけ（字下げのある線は返答の中の表などの線。反証役の指摘で絞った）
+// ⚠️ 線と字が空白なしでくっついた形（`────✔ Update installed…──`）は受けない。描き崩れの跡で、受けると
+//    崩れた画面の古い ❯ 行を入力欄と見て見張りが緩む（2026-10-10 反証役）。崩れは redrawSeat で直す
 const RE_RULE = /^[─━]{10,}(\s+\S.*?\s+[─━]+)?\s*$/;
 const RE_PROMPT = /^❯\s(.*)$/;
 // ⚠️ `❯` の後ろは**ノーブレークスペース（U+00A0）**。ふつうの空白で書いた当てはめは
@@ -2600,7 +2624,8 @@ const server = http.createServer(async (req, res) => {
       // 選ぶ画面（許可など）が開いていたら打たない。続く Enter でいちばん上の答えを選んでしまう（反証役）
       const cmd = await tmux(['display', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
       if (cmd.ok && kindOf(cmd.out.trim()) === 'claude') {
-        const why = choiceOpen(await captureScreen(name));
+        let why = choiceOpen(await captureScreen(name));
+        if (why === 'nobox') { await redrawSeat(name); why = choiceOpen(await captureScreen(name)); }
         if (why) {
           console.log(`login ${name} 止めた（${why}）`);
           return json(res, 409, { error: BLOCK_MSG[why] });
@@ -2852,6 +2877,7 @@ const server = http.createServer(async (req, res) => {
       const r = await tmux(['new-session', '-d', '-s', name, '-x', String(cols), '-y', String(full ? ROWS_FULL : ROWS),
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (!r.ok) { sized.delete(name); return json(res, 500, { error: r.err.slice(0, 200) }); }
+      await fixEmojiWidths();   // 席を作ると tmux が起き直すことがある＝入れ直す
       if (full) await tmux(['set-option', '-t', name, FULL_OPT, '1']);
       if (body.run === 'claude') {
         // スマホからは「これ実行していい？」に毎回答えるのが現実的でないので、
@@ -2892,6 +2918,7 @@ const server = http.createServer(async (req, res) => {
       const cwd = path.join(os.homedir(), '制作物');
       const r = await tmux(['new-session', '-d', '-s', name, '-x', String(COLS_DEFAULT), '-y', String(FULLSCREEN ? ROWS_FULL : ROWS),
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
+      if (r.ok) await fixEmojiWidths();
       if (r.ok && FULLSCREEN) await tmux(['set-option', '-t', name, FULL_OPT, '1']);
       if (!r.ok) {
         sized.delete(name);
@@ -3093,4 +3120,5 @@ process.on('unhandledRejection', (e) => {
 server.listen(PORT, HOST, () => {
   console.log(`つみきリモート: http://${HOST}:${PORT}/?t=${TOKEN}`);
   console.log(`tmux: ${TMUX}`);
+  fixEmojiWidths();   // いま動いている席にも効かせる（tmux がまだ無ければ何もしない）
 });
