@@ -619,6 +619,25 @@ async function resizeWindow(name, cols) {
   forgetScreen(name);                // 幅が変われば画面も変わる＝撮り置きは捨てる
 }
 
+// 描き崩れた画面を描き直させる（2026-10-10）。
+// ⚠️ Claude Code は狭い幅で（自動更新の表示が出たときなど）描き直しが追いつかず、
+//    下の罫線が消えて古い ❯ 行や止まった「…ing」が残ったままになる（work7 の実物：CPU 0.2%＝止まっているのに
+//    スピナーが残り、入力欄の下の罫線が無かった）。そのまま nobox で止めると、何度送っても送れない。
+//    幅を1桁ずらして戻すと SIGWINCH で全体を描き直すので、画面の形が正しく戻る（実測）
+async function redrawSeat(name) {
+  if (!NAME_RE.test(name)) return;
+  const w = await windowWidth(name);
+  if (!w) return;
+  const { rows } = await seatRows(name);
+  await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(w + 1), '-y', String(rows)]);
+  await new Promise((r) => setTimeout(r, 300));
+  await tmux(['resize-window', '-t', '=' + name + ':', '-x', String(w), '-y', String(rows)]);
+  await tmux(['set-window-option', '-t', '=' + name + ':', 'window-size', 'latest']);
+  resizedAt.set(name, Date.now());
+  forgetScreen(name);
+  await new Promise((r) => setTimeout(r, 900));
+}
+
 // tmux は書式出力中のタブを "_" に潰すので、区切りには使えない
 const SEP = '|::|';
 
@@ -2623,6 +2642,12 @@ const server = http.createServer(async (req, res) => {
         }
         if (cmd.ok && kindOf(cmd.out.trim()) === 'claude') {
           let why = choiceOpen(await captureScreen(name));
+          // 入力欄を見失った＝描き崩れのことがある。一度描き直させて見直す（→ redrawSeat）
+          if (why === 'nobox') {
+            await redrawSeat(name);
+            why = choiceOpen(await captureScreen(name));
+            console.log(`send ${name} 入力欄が見えないので描き直した→${why || '通す'}`);
+          }
           if (!why && body.nodraft && await hasDraft(name)) why = 'draft';
           if (why) {
             console.log(`send ${name} 止めた（${why}）`);
