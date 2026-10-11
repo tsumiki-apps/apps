@@ -257,7 +257,7 @@ def main(argv):
         notes.append('置き方が変わりました（2026-09-27）。次からは tsumiki_out.py <ファイル名> [--new] で呼んでください。'
                      'プロジェクト名・成果物名（%s）は使いません' % ' / '.join(args[:-1]))
         args = args[-1:]
-    if args and not re.search(r'\.[A-Za-z0-9]{1,6}$', args[0]):
+    if args and not re.search(r'\.[A-Za-z0-9]{1,8}$', args[0]):
         # プロジェクト名だけで呼ばれた（前の書き方）＝このセッションのフォルダを返す
         notes.append('「%s」はファイル名に見えないので、このセッションのフォルダを返します' % args[0])
         args = []
