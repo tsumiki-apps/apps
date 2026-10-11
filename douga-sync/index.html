@@ -77,10 +77,10 @@ video{width:100%;display:block;border-radius:12px;background:var(--night)}
 .cap{display:grid;grid-template-columns:56px 1fr 44px;gap:8px;align-items:start}
 .cap textarea.ed{border-color:var(--accent-2)}
 .cap .del{min-width:44px;padding:0;color:var(--ink-soft);background:transparent}
-.cap .en{grid-column:2/3;font-size:14px;color:var(--ink-mid);line-height:1.45;margin:-4px 0 2px 12px}
-.sug{grid-column:2/4;display:grid;grid-template-columns:1fr 44px 44px;gap:6px;align-items:center;background:var(--accent-wash);border-radius:8px;padding:4px 4px 4px 12px;font-size:15px;line-height:1.5}
+.cap textarea.en{grid-column:2/3;font-size:16px;color:var(--ink-mid);line-height:1.45;min-height:44px;padding:9px 12px;margin-top:-4px;border-style:dashed}
+.sug{grid-column:2/4;display:grid;grid-template-columns:minmax(0,1fr) 44px 44px;overflow-wrap:anywhere;gap:6px;align-items:center;background:var(--accent-wash);border-radius:8px;padding:4px 4px 4px 12px;font-size:15px;line-height:1.5}
 .sug b{font-weight:700;color:var(--ink)}.sug small{display:block;color:var(--ink-mid);font-size:13px}
-.sug button{background:transparent;color:var(--accent-2);min-width:44px;padding:0}
+.cap .sug button{background:transparent;color:var(--accent-2);min-width:44px;width:44px;padding:0}
 .revbar{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
 .revbar span{font-size:14px;color:var(--ink-mid);flex:1}
 .lex{display:flex;flex-direction:column;gap:4px;margin-top:8px}
@@ -223,6 +223,11 @@ try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
 let job=null, pollT=null, offset=0, capsDirty=false, ver='n';  // ver＝完成の見せ方（n＝そのまま／w＝白背景）
 const loaded={prox:'',caps:'',pc:''};  // 何を読み込み済みか（裏で作業が終わったら読み込み直す）
 // 押した瞬間に押せなくする（応答が返るまでの二度押しを防ぐ）
+// サーバーの状態で job を入れ替える。まだ保存していない字幕の直し（と英語・見直し案）は持ち越す
+function setJob(j){
+  if(job&&j&&job.id===j.id&&capsDirty){j.captions=job.captions;j.review=job.review;j.en=Object.assign({},j.en||{},job.en||{})}
+  job=j;return j;
+}
 const guard=fn=>async function(){if(this.disabled)return;this.disabled=true;try{await fn()}finally{this.disabled=false;render(false)}};
 const api=async(path,opt={})=>{
   const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json','X-DSync':'1',...(opt.headers||{})}});
@@ -272,12 +277,12 @@ function render(first){
   setDone('s3',st>=4);
   $('s4').hidden=!(busy==='文字起こし'||(busy==='見直し'&&!(job.captions&&st>=5)));
   if(busy)$('b4t').textContent=busy==='見直し'?'見直し中':'文字起こし中';
-  if(job){const n=(job.review||[]).length;
+  if(job){const n=job.captions?liveReview().length:0;
     $('revT').textContent=busy==='見直し'?'見直し中…':job.review_error?'見直しできませんでした':n?n+'件':'直す案なし';
     $('revAll').hidden=!n||!!busy;$('revBtn').disabled=!!busy}
   const hasCaps=job&&job.captions&&busy!=='文字起こし'&&st>=5;
   $('s5').hidden=!hasCaps; setDone('s5',st>=6);
-  const ck=hasCaps?job.id+'|'+JSON.stringify(job.captions_shown||[]).length+'|'+job.captions.length+'|'+JSON.stringify(job.review||[]).length+'|'+Object.keys(job.en||{}).length:'';
+  const ck=hasCaps?job.id+'|'+JSON.stringify([job.captions,job.captions_shown,job.review,job.en]):'';
   if(hasCaps&&ck!==loaded.caps&&(!capsDirty||first)){loaded.caps=ck;capsDirty=false;drawCaps()}
   if(hasCaps&&loaded.pc!==pk){loaded.pc=pk;$('pc').src='/files/'+job.id+'/proxy_a.mp4?v='+Date.now()}
   const rend=busy==='書き出し'||busy==='英訳', fin=job&&job.rendered;
@@ -304,7 +309,7 @@ function render(first){
   $('okSync').disabled=$('renderBtn').disabled=!!busy;
   clearTimeout(pollT);
   if(busy){const id=job.id;pollT=setTimeout(async function poll(){
-    try{const j=await api('/api/job/'+id);if(job&&job.id===id){job=j;render(false)}}
+    try{const j=await api('/api/job/'+id);if(job&&job.id===id){setJob(j);render(false)}}
     catch(e){if(job&&job.id===id)pollT=setTimeout(poll,2000)}},1000)}
 }
 
@@ -370,49 +375,60 @@ $('okSync').onclick=guard(async()=>{
 });
 
 // 5 字幕の確認
+const capAt=st=>job.captions.find(x=>Math.abs(x.start-st)<0.001);  // 字幕は start で引き直す（job が入れ替わっても正しい字幕を指す）
+function liveReview(){  // 今の文がまだ案の「直す前」と同じものだけが有効な案
+  return (job.review||[]).filter(v=>{const c=capAt(v.start);return c&&c.text===v.before});
+}
 function drawCaps(){
   const box=$('caps');box.innerHTML='';
-  job.captions.forEach((c,i)=>{
+  const rv=liveReview();
+  job.captions.forEach(c0=>{
+    const st=c0.start;
     const r=document.createElement('div');r.className='cap';
-    const b=document.createElement('button');b.textContent=fmt(c.start);b.setAttribute('aria-label','ここから再生');
-    b.onclick=()=>{const v=$('pc');v.currentTime=c.start;v.play()};
-    const t=document.createElement('textarea');t.rows=1;t.value=c.text;
-    const shown=(job.captions_shown||[]).find(x=>Math.abs(x.start-c.start)<0.01);
+    const b=document.createElement('button');b.textContent=fmt(st);b.setAttribute('aria-label','ここから再生');
+    b.onclick=()=>{const v=$('pc');v.currentTime=st;v.play()};
+    const t=document.createElement('textarea');t.rows=1;t.value=c0.text;
+    const shown=(job.captions_shown||[]).find(x=>Math.abs(x.start-st)<0.01);
     const mark=()=>t.classList.toggle('ed',!!shown&&shown.text!==t.value);
-    const fit=()=>{t.style.height='auto';t.style.height=t.scrollHeight+'px'};
-    t.oninput=()=>{c.text=t.value;capsDirty=true;fit();mark()};
+    const fit=(el)=>{el.style.height='auto';el.style.height=el.scrollHeight+'px'};
+    t.oninput=()=>{const c=capAt(st);if(c)c.text=t.value;capsDirty=true;fit(t);mark()};
     const x=document.createElement('button');x.className='del';x.setAttribute('aria-label','この字幕を消す');
     x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
-    x.onclick=()=>{job.captions.splice(job.captions.indexOf(c),1);capsDirty=true;drawCaps()};
+    x.onclick=()=>{job.captions=job.captions.filter(c=>Math.abs(c.start-st)>=0.001);
+      job.review=(job.review||[]).filter(v=>Math.abs(v.start-st)>=0.001);capsDirty=true;drawCaps();render(false)};
     r.append(b,t,x);
-    const en=(job.en||{})[c.text];
-    if(en){const e=document.createElement('div');e.className='en';e.textContent=en;r.appendChild(e)}
-    const sg=(job.review||[]).find(v=>Math.abs(v.start-c.start)<0.01);
+    const enTxt=(job.en||{})[c0.text];
+    if(enTxt!==undefined&&enTxt!==''){
+      const e=document.createElement('textarea');e.className='en';e.rows=1;e.value=enTxt;e.setAttribute('aria-label','英語の字幕');e.lang='en';
+      e.oninput=()=>{const c=capAt(st);if(c){job.en=job.en||{};job.en[c.text]=e.value}capsDirty=true;fit(e)};
+      r.appendChild(e);requestAnimationFrame(()=>fit(e));
+    }
+    const sg=rv.find(v=>Math.abs(v.start-st)<0.001);
     if(sg){
       const d=document.createElement('div');d.className='sug';
       const tx=document.createElement('div');const bb=document.createElement('b');bb.textContent=sg.after;
       const sm=document.createElement('small');sm.textContent=sg.why;tx.append(bb,sm);
       const ok=document.createElement('button');ok.setAttribute('aria-label','採用');ok.innerHTML='<svg class="i"><use href="#i-check"/></svg>';
       const no=document.createElement('button');no.setAttribute('aria-label','そのまま');no.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
-      const drop=()=>{job.review=job.review.filter(v=>v!==sg);capsDirty=true;loaded.caps='';drawCaps();render(false)};
-      ok.onclick=()=>{c.text=sg.after;drop()};no.onclick=drop;
+      const drop=()=>{job.review=(job.review||[]).filter(v=>v!==sg);capsDirty=true;drawCaps();render(false)};
+      ok.onclick=()=>{const c=capAt(st);if(c&&c.text===sg.before)c.text=sg.after;drop()};no.onclick=drop;
       d.append(tx,ok,no);r.appendChild(d);
     }
-    box.appendChild(r);mark();requestAnimationFrame(fit);
+    box.appendChild(r);mark();requestAnimationFrame(()=>fit(t));
   });
 }
 $('renderBtn').onclick=guard(async()=>{
-  try{await post('/api/job/'+job.id+'/captions',{captions:job.captions,review:job.review||[]});capsDirty=false;
+  try{await post('/api/job/'+job.id+'/captions',{captions:job.captions,review:liveReview(),en:job.en||{}});capsDirty=false;
     loadLex();job=await post('/api/job/'+job.id+'/render');render(true);$('s6').scrollIntoView({behavior:'smooth'})}catch(e){showErr(e.message)}
 });
 
-$('revBtn').onclick=guard(async()=>{try{showErr('');job=await post('/api/job/'+job.id+'/review',{captions:job.captions});capsDirty=false}catch(e){showErr(e.message)}});
-$('revAll').onclick=()=>{(job.review||[]).forEach(sg=>{const c=job.captions.find(c=>Math.abs(c.start-sg.start)<0.01);if(c)c.text=sg.after});
-  job.review=[];capsDirty=true;loaded.caps='';drawCaps();render(false)};
+$('revBtn').onclick=guard(async()=>{try{showErr('');capsDirty=false;job=await post('/api/job/'+job.id+'/review',{captions:job.captions,en:job.en||{}})}catch(e){showErr(e.message)}});
+$('revAll').onclick=()=>{liveReview().forEach(sg=>{const c=capAt(sg.start);if(c)c.text=sg.after});
+  job.review=[];capsDirty=true;drawCaps();render(false)};
 
 $('verN').onclick=()=>{ver='n';render(false)};
 $('verW').onclick=guard(async()=>{ver='w';
-  if(!job.white){try{showErr('');job=await post('/api/job/'+job.id+'/white')}catch(e){showErr(e.message);ver='n'}}});
+  if(!job.white){try{showErr('');setJob(await post('/api/job/'+job.id+'/white'))}catch(e){showErr(e.message);ver='n'}}});
 
 // 覚えた言葉
 async function loadLex(){
@@ -432,7 +448,6 @@ async function loadLex(){
 }
 loadLex();
 
-// 6 写真へ
 
 
 (async()=>{let id=new URLSearchParams(location.search).get('job');if(!id)try{id=localStorage.getItem('dsync.job')}catch(e){}

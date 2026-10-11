@@ -117,8 +117,9 @@ def do_caption(jid):
     lex = engine.load_lexicon(LEARN)
     caps = engine.transcribe(src(jid, "a"), d / "a16k.wav", prompt=engine.whisper_prompt(lex))
     caps = engine.apply_lexicon(caps, lex)
-    update(jid, captions=caps, captions_shown=json.loads(json.dumps(caps)), review=[], review_error=None)
+    update(jid, captions=caps, captions_shown=json.loads(json.dumps(caps)), review=[], review_error=None, en={})
     do_review(jid)
+    do_translate(jid, caps, load(jid)["title"])   # 確認の画面で英語も見られるように先に訳す
     update(jid, step=5)
 
 
@@ -137,19 +138,11 @@ def do_review(jid):
 def do_render(jid):
     d = jpath(jid)
     job = load(jid)
-    # 英語の字幕：仕上がった日本語を訳す（訳が無い字幕があるときだけ Claude に頼む）
+    # 英語の字幕：訳が無い字幕があるときだけ Claude に頼む（訳してある字幕・本人が直した英語はそのまま）
     caps = job.get("captions") or []
-    en = {k: v for k, v in (job.get("en") or {}).items() if any(c["text"] == k for c in caps)}
-    if any(c["text"] not in en for c in caps):
-        update(jid, busy="英訳")
-        try:
-            en.update(engine.translate_captions(caps, job["title"]))
-            update(jid, en=en, en_error=None)
-        except Exception as e:
-            traceback.print_exc()
-            update(jid, en=en, en_error=str(e)[:200])
-        update(jid, busy="書き出し")
-    job["captions"] = [{**c, "en": en.get(c["text"])} for c in caps]
+    en = do_translate(jid, caps, job["title"])
+    update(jid, busy="書き出し")
+    job["captions"] = [{**c, "en": en.get(c["text"]) or None} for c in caps]
     tmp = d / "完成.tmp.mp4"   # 書き終わってから入れ替える（途中で止まっても壊れた完成版を出さない）
     try:
         engine.render(d, src(jid, "a"), src(jid, "b"), job["a_info"], job["b_info"],
@@ -161,6 +154,26 @@ def do_render(jid):
     tmp.replace(d / "完成.mp4")
     (d / "完成_白.mp4").unlink(missing_ok=True)   # 前の白背景版は古いので消す
     update(jid, rendered=time.time(), step=6, white=None)
+
+
+def do_translate(jid, caps, title):
+    """足りない英訳だけを足す。返り値＝{日本語: 英語}（""＝口ぐせだけで訳さない字幕）。"""
+    job = load(jid)
+    en = {k: v for k, v in (job.get("en") or {}).items() if any(c["text"] == k for c in caps)}
+    missing = [c for c in caps if c["text"] not in en]
+    if not missing:
+        update(jid, en=en, en_error=None)
+        return en
+    update(jid, busy="英訳")
+    try:
+        new = engine.translate_captions(caps, title)
+        en.update({k: v for k, v in new.items() if k not in en})
+        lack = sum(1 for c in caps if c["text"] not in en)
+        update(jid, en=en, en_error=(f"{lack}件の英訳が足りません" if lack else None))
+    except Exception as e:
+        traceback.print_exc()
+        update(jid, en=en, en_error=str(e)[:200])
+    return en
 
 
 def do_white(jid):
@@ -420,6 +433,9 @@ class H(BaseHTTPRequestHandler):
                 # 見直しの案は、画面で残したもの（まだ選んでいないもの）だけ持ち越す
                 keep = body.get("review")
                 extra = {"review": keep} if isinstance(keep, list) else {}
+                if isinstance(body.get("en"), dict):   # 画面で直した英語も控える
+                    extra["en"] = {str(k): " ".join(str(v).split()) for k, v in body["en"].items()
+                                   if any(c["text"] == k for c in caps)}
                 job = update(jid, captions=caps, captions_shown=caps, learned=n, **extra)
             elif act == "white":
                 if not job.get("rendered"):
@@ -430,9 +446,11 @@ class H(BaseHTTPRequestHandler):
                     caps = [{"start": float(c["start"]), "end": float(c["end"]),
                              "text": " ".join(str(c["text"]).split())} for c in body["captions"]]
                     update(jid, captions=[c for c in caps if c["text"]])
+                if isinstance(body.get("en"), dict):
+                    update(jid, en={str(k): " ".join(str(v).split()) for k, v in body["en"].items()})
                 background(jid, "見直し", lambda: do_review(jid))
             elif act == "render":
-                background(jid, "書き出し", lambda: do_render(jid), rendered=None)
+                background(jid, "書き出し", lambda: do_render(jid))
             else:
                 return self.send_json({"error": "not found"}, 404)
             self.send_json(load(jid))

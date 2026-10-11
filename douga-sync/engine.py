@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""動画同期の中身：調べる・同期・文字起こし・字幕画像・書き出し・写真へ。
+"""動画同期の中身：調べる・同期・文字起こし・見直し・英訳・字幕画像・音量・書き出し・白背景版。
 
-全部この Mac の中で動く（ffmpeg と mlx-whisper・どちらも無料）。
-A＝人を撮った動画（音は常にこちら）／B＝iPhone の画面録画（外の音つき）。
+ffmpeg と mlx-whisper はこの Mac の中で動く（無料）。見直しと英訳は Claude Code の CLI（本人のプランの中）。
+A＝人を撮った動画（音は常にこちら）／B＝iPhone・iPad の画面録画（外の音つき）。
 offset＝「A の何秒目で B が始まったか」（マイナスなら B のほうが先に始まっている）。
 """
 import json
@@ -626,7 +626,10 @@ def review_captions(caps, title, lex=None, timeout=300):
                        input=prompt, capture_output=True, text=True, timeout=timeout, cwd=work)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or r.stdout)[-500:] or "Claude が答えませんでした")
-    text = json.loads(r.stdout).get("result", "")
+    res = json.loads(r.stdout)
+    if res.get("is_error"):     # 利用枠切れなどは終了コード0でも is_error で返る
+        raise RuntimeError(str(res.get("result") or "Claude がエラーを返しました")[:300])
+    text = res.get("result", "")
     m = re.search(r"\[.*\]", text, re.S)
     if not m:
         return []
@@ -645,12 +648,14 @@ def review_captions(caps, title, lex=None, timeout=300):
 
 # ---------- 英語の字幕 ----------
 # 書き出す直前に、仕上がった日本語の字幕を Claude で英訳する（直した後の日本語と必ずそろう）。
-# 訳は日本語の文をかぎにして job に控え、変わった字幕だけ訳し直す。
+# 訳は日本語の文をかぎにして job に控える。前後の流れを読ませるため全部を訳させ、
+# 控えに無い字幕の訳だけを足す（訳してある字幕・本人が直した英語は変えない）。
 
 TRANSLATE_PROMPT = """You translate Japanese subtitles of an Apple Store product demo video (title: {title}) into English.
 - Natural, concise spoken English for on-screen subtitles. Keep each one short (ideally under 60 characters)
 - Use Apple's official English names for products and features (e.g. iPhone 18 Pro, Portrait mode, Dynamic Island, Camera Control)
-- Drop pure fillers ("はい", "そうそう", "えー") but keep the meaning; never add information
+- Drop fillers ("はい", "そうそう", "えー") but keep the meaning; never add information
+- If a line is only a filler, still include it with "en": ""
 - Use the surrounding lines only as context; translate every numbered line
 Reply with a JSON array only: [{{"i": number, "en": "English"}}].
 
@@ -672,16 +677,19 @@ def translate_captions(caps, title, timeout=300):
                        capture_output=True, text=True, timeout=timeout, cwd=work)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or r.stdout)[-500:] or "Claude が答えませんでした")
-    text = json.loads(r.stdout).get("result", "")
+    res = json.loads(r.stdout)
+    if res.get("is_error"):     # 利用枠切れなどは終了コード0でも is_error で返る
+        raise RuntimeError(str(res.get("result") or "Claude がエラーを返しました")[:300])
+    text = res.get("result", "")
     m = re.search(r"\[.*\]", text, re.S)
     out = {}
     for s in (json.loads(m.group(0)) if m else []):
         try:
-            i, en = int(s["i"]), " ".join(str(s["en"]).split())
+            i, en = int(s["i"]), " ".join(str(s.get("en", "")).split())
         except (KeyError, ValueError, TypeError):
             continue
-        if 0 <= i < len(caps) and en:
-            out[caps[i]["text"]] = en
+        if 0 <= i < len(caps):
+            out[caps[i]["text"]] = en     # ""＝口ぐせだけで訳さない字幕
     return out
 
 
