@@ -74,6 +74,11 @@ video{width:100%;display:block;border-radius:12px;background:var(--night)}
 .cap{display:grid;grid-template-columns:56px 1fr 44px;gap:8px;align-items:start}
 .cap textarea.ed{border-color:var(--accent-2)}
 .cap .del{min-width:44px;padding:0;color:var(--ink-soft);background:transparent}
+.sug{grid-column:2/4;display:grid;grid-template-columns:1fr 44px 44px;gap:6px;align-items:center;background:var(--accent-wash);border-radius:8px;padding:4px 4px 4px 12px;font-size:15px;line-height:1.5}
+.sug b{font-weight:700;color:var(--ink)}.sug small{display:block;color:var(--ink-mid);font-size:13px}
+.sug button{background:transparent;color:var(--accent-2);min-width:44px;padding:0}
+.revbar{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.revbar span{font-size:14px;color:var(--ink-mid);flex:1}
 .lex{display:flex;flex-direction:column;gap:4px;margin-top:8px}
 .lexr{display:grid;grid-template-columns:1fr auto 1fr auto 44px;gap:8px;align-items:center;font-size:15px;border-bottom:1px solid var(--line);padding:2px 0}
 .lexr s{color:var(--ink-soft)}
@@ -112,6 +117,7 @@ details summary::-webkit-details-marker{display:none}
   <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5L12 3l4.5 4.5M5 13v6h14v-6"/></symbol>
 </svg>
 <main>
@@ -164,12 +170,13 @@ details summary::-webkit-details-marker{display:none}
 
   <section class="card" id="s4" hidden>
     <h2><span class="num">4</span><svg class="i"><use href="#i-cap"/></svg>字幕</h2>
-    <div class="busy" id="b4"><div class="spin"></div><span>文字起こし中</span></div>
+    <div class="busy" id="b4"><div class="spin"></div><span id="b4t">文字起こし中</span></div>
   </section>
 
   <section class="card" id="s5" hidden>
     <h2><span class="num">5</span><svg class="i"><use href="#i-cap"/></svg>字幕の確認</h2>
     <video id="pc" playsinline preload="auto" controls style="max-height:40dvh;width:auto;max-width:100%;margin:0 auto"></video>
+    <div class="revbar"><button id="revBtn"><svg class="i"><use href="#i-eye"/></svg>見直し</button><span id="revT"></span><button id="revAll" hidden><svg class="i"><use href="#i-check"/></svg>全部採用</button></div>
     <div class="caps" id="caps"></div>
     <button class="primary" id="renderBtn"><svg class="i"><use href="#i-export"/></svg>書き出す</button>
   </section>
@@ -198,6 +205,8 @@ details summary::-webkit-details-marker{display:none}
 </main>
 <script>
 const $=id=>document.getElementById(id);
+// iPhone のマナーモードでも動画の音を出す（Safari 16.4〜。無い端末では何もしない）
+try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
 let job=null, pollT=null, offset=0, capsDirty=false;
 const loaded={prox:'',caps:'',pc:''};  // 何を読み込み済みか（裏で作業が終わったら読み込み直す）
 // 押した瞬間に押せなくする（応答が返るまでの二度押しを防ぐ）
@@ -248,10 +257,14 @@ function render(first){
     $('lowconf').hidden=(job.confidence??1)>=0.5;
   }
   setDone('s3',st>=4);
-  $('s4').hidden=!(busy==='文字起こし');
+  $('s4').hidden=!(busy==='文字起こし'||(busy==='見直し'&&!(job.captions&&st>=5)));
+  if(busy)$('b4t').textContent=busy==='見直し'?'見直し中':'文字起こし中';
+  if(job){const n=(job.review||[]).length;
+    $('revT').textContent=busy==='見直し'?'見直し中…':job.review_error?'見直しできませんでした':n?n+'件':'直す案なし';
+    $('revAll').hidden=!n||!!busy;$('revBtn').disabled=!!busy}
   const hasCaps=job&&job.captions&&busy!=='文字起こし'&&st>=5;
   $('s5').hidden=!hasCaps; setDone('s5',st>=6);
-  const ck=hasCaps?job.id+'|'+JSON.stringify(job.captions_shown||[]).length+'|'+job.captions.length:'';
+  const ck=hasCaps?job.id+'|'+JSON.stringify(job.captions_shown||[]).length+'|'+job.captions.length+'|'+JSON.stringify(job.review||[]).length:'';
   if(hasCaps&&ck!==loaded.caps&&(!capsDirty||first)){loaded.caps=ck;capsDirty=false;drawCaps()}
   if(hasCaps&&loaded.pc!==pk){loaded.pc=pk;$('pc').src='/files/'+job.id+'/proxy_a.mp4?v='+Date.now()}
   const rend=busy==='書き出し', fin=job&&job.rendered;
@@ -351,13 +364,29 @@ function drawCaps(){
     const x=document.createElement('button');x.className='del';x.setAttribute('aria-label','この字幕を消す');
     x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
     x.onclick=()=>{job.captions.splice(job.captions.indexOf(c),1);capsDirty=true;drawCaps()};
-    r.append(b,t,x);box.appendChild(r);mark();requestAnimationFrame(fit);
+    r.append(b,t,x);
+    const sg=(job.review||[]).find(v=>Math.abs(v.start-c.start)<0.01);
+    if(sg){
+      const d=document.createElement('div');d.className='sug';
+      const tx=document.createElement('div');const bb=document.createElement('b');bb.textContent=sg.after;
+      const sm=document.createElement('small');sm.textContent=sg.why;tx.append(bb,sm);
+      const ok=document.createElement('button');ok.setAttribute('aria-label','採用');ok.innerHTML='<svg class="i"><use href="#i-check"/></svg>';
+      const no=document.createElement('button');no.setAttribute('aria-label','そのまま');no.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+      const drop=()=>{job.review=job.review.filter(v=>v!==sg);capsDirty=true;loaded.caps='';drawCaps();render(false)};
+      ok.onclick=()=>{c.text=sg.after;drop()};no.onclick=drop;
+      d.append(tx,ok,no);r.appendChild(d);
+    }
+    box.appendChild(r);mark();requestAnimationFrame(fit);
   });
 }
 $('renderBtn').onclick=guard(async()=>{
-  try{await post('/api/job/'+job.id+'/captions',{captions:job.captions});capsDirty=false;
+  try{await post('/api/job/'+job.id+'/captions',{captions:job.captions,review:job.review||[]});capsDirty=false;
     loadLex();job=await post('/api/job/'+job.id+'/render');render(true);$('s6').scrollIntoView({behavior:'smooth'})}catch(e){showErr(e.message)}
 });
+
+$('revBtn').onclick=guard(async()=>{try{showErr('');job=await post('/api/job/'+job.id+'/review',{captions:job.captions});capsDirty=false}catch(e){showErr(e.message)}});
+$('revAll').onclick=()=>{(job.review||[]).forEach(sg=>{const c=job.captions.find(c=>Math.abs(c.start-sg.start)<0.01);if(c)c.text=sg.after});
+  job.review=[];capsDirty=true;loaded.caps='';drawCaps();render(false)};
 
 // 覚えた言葉
 async function loadLex(){

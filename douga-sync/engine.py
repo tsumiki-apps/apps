@@ -25,11 +25,13 @@ WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 
 # 書き出しの寸法（1080×1920・縦）
 W, H = 1080, 1920
-TITLE_H = 190                       # 上の帯（タイトル）
-MAIN = (126, TITLE_H, 828, 1472)    # 人の動画の枠 x, y, w, h（9:16 ならそのまま収まる）
-CAP_TOP = TITLE_H + 1472            # ここから下が字幕の帯（1662〜1920）
-PIP_W, PIP_H, PIP_M, PIP_R, PIP_B = 280, 606, 24, 34, 8   # 小窓の幅・高さ・余白・角丸・フチ
-CAP_FONT, CAP_LINE = 52, 18         # 字幕の字の大きさ・1行の字数
+# 形：人の動画を画面全体に敷き、タイトルと字幕は白い札にして上に重ねる（本人が選んだ案3）
+MAIN = (0, 0, W, H)                 # 人の動画の枠 x, y, w, h
+PIP_W, PIP_H, PIP_R, PIP_B = 300, 650, 36, 8   # 小窓の幅・高さ・角丸・フチ
+PIP_RIGHT, PIP_BOTTOM = 36, 1620    # 小窓の右の余白・下の端（字幕の札の上に置く）
+CAP_FONT, CAP_LINE = 54, 16         # 字幕の字の大きさ・1行の字数
+CAP_BOTTOM = 70                     # 字幕の札の下の余白
+PLATE = (255, 255, 255, 230)        # 札の色（白・少しだけ透ける）
 SR = 8000                           # 同期に使う音の標本化周波数
 
 
@@ -215,19 +217,32 @@ def _fit(draw, text, size, maxw):
 
 
 def make_background(title, path):
-    """黒い地＋上の帯のタイトル。"""
-    im = Image.new("RGB", (W, H), (12, 11, 9))
-    d = ImageDraw.Draw(im)
-    f = _fit(d, title, 64, W - 120)
-    d.text((W // 2, TITLE_H // 2 + 4), title, font=f, fill=PAPER, anchor="mm")
+    """下地（白）。人の動画が全面に乗るので、映像の外にはみ出したときだけ見える。"""
+    Image.new("RGB", (W, H), (255, 255, 255)).save(path)
+
+
+def _plate(d, cx, top, lines, size, padx=44, pady=26, radius=None):
+    """白い札に墨の字を真ん中そろえで置く。返り値＝札の下の端。"""
+    lh = int(size * 1.38)
+    fonts = [_fit(d, ln, size, W - 2 * padx - 80) for ln in lines]
+    tw = max(d.textlength(ln, font=fn) for ln, fn in zip(lines, fonts))
+    w, h = int(tw + padx * 2), lh * len(lines) + pady * 2
+    r = radius if radius is not None else min(h // 2, 44)
+    d.rounded_rectangle([cx - w // 2, top, cx + w // 2, top + h], radius=r, fill=PLATE)
+    for k, (ln, fn) in enumerate(zip(lines, fonts)):
+        d.text((cx, top + pady + k * lh + lh // 2), ln, font=fn, fill=INK + (255,), anchor="mm")
+    return top + h
+
+
+def make_title(title, path):
+    """上のタイトルの札（透明の画像）。"""
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    _plate(ImageDraw.Draw(im), W // 2, 52, [title], 56, padx=52, pady=18)
     im.save(path)
 
 
 def pip_rect():
-    mx, my, mw, mh = MAIN
-    x = mx + mw - PIP_M - PIP_W
-    y = my + mh - PIP_M - PIP_H
-    return x, y
+    return W - PIP_RIGHT - PIP_W, PIP_BOTTOM - PIP_H
 
 
 def make_pip_assets(plate_path, mask_path):
@@ -275,16 +290,12 @@ def wrap(text, n=CAP_LINE):
 
 
 def caption_image(text, path):
-    """一番下の黒い帯に出す白い字（1080×1920 の透明画像）。帯の上下の真ん中にそろえる。"""
+    """一番下に重ねる白い札の字幕（1080×1920 の透明画像）。札の下の端を CAP_BOTTOM にそろえる。"""
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     lines = wrap(text)
-    lh = int(CAP_FONT * 1.4)
-    mid = (CAP_TOP + H) // 2
-    top = mid - lh * len(lines) // 2
-    for k, line in enumerate(lines):
-        f = _fit(d, line, CAP_FONT, W - 80)
-        d.text((W // 2, top + k * lh + lh // 2), line, font=f, fill=PAPER, anchor="mm")
+    h = int(CAP_FONT * 1.38) * len(lines) + 26 * 2
+    _plate(d, W // 2, H - CAP_BOTTOM - h, lines, CAP_FONT)
     im.save(path)
 
 
@@ -316,7 +327,9 @@ def build_caption_track(caps, dur, folder):
 def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_path, progress=None):
     job_dir = Path(job_dir)
     bg, plate, mask = job_dir / "bg.png", job_dir / "plate.png", job_dir / "mask.png"
+    ttl = job_dir / "title.png"
     make_background(title, bg)
+    make_title(title, ttl)
     make_pip_assets(plate, mask)
     dur = a_info["dur"]
     # 字幕の時刻は A の音の頭が0秒（文字起こしの都合）。書き出しの時間軸へ直す
@@ -349,8 +362,10 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
         f"[0:v][main]overlay={mx}:{my}:shortest=1[v1];"
         f"[v1][3:v]overlay={px - PIP_B}:{py - PIP_B}:enable='{show}'[v2];"
         f"[v2][pip]overlay={px}:{py}:eof_action=pass:enable='{show}'[v3];"
+        f"[6:v]format=rgba[ttl];"
+        f"[v3][ttl]overlay=0:0[v4];"
         f"[5:v]format=rgba[cap];"
-        f"[v3][cap]overlay=0:0:eof_action=pass,format=yuv420p[out]"
+        f"[v4][cap]overlay=0:0:eof_action=pass,format=yuv420p[out]"
     )
     cmd = [FFMPEG, "-y", "-v", "error", "-progress", "pipe:1", "-nostats",
            "-loop", "1", "-framerate", "30", "-i", str(bg),
@@ -359,6 +374,7 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
            "-loop", "1", "-i", str(plate),
            "-loop", "1", "-i", str(mask),
            "-f", "concat", "-safe", "0", "-i", str(track),
+           "-loop", "1", "-i", str(ttl),
            "-filter_complex", fc,
            "-map", "[out]", "-map", "1:a?",
            "-t", f"{dur:.3f}",
@@ -382,12 +398,24 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
         raise RuntimeError("".join(errbuf)[-1500:].strip() or f"ffmpeg が止まりました（{rc}）")
 
 
-def save_to_photos(path):
-    """Mac の写真アプリへ取り込む（iCloud 写真なら iPhone にも届く）。"""
+def save_to_photos(path, name):
+    """Mac の写真アプリへ取り込む（iCloud 写真なら iPhone にも届く）。
+    AppleScript の待ち時間は既定で2分。大きな動画や写真アプリの起動で超えるので15分に延ばす。
+    写真アプリでの名前がタイトルになるよう、タイトル名の写しを取り込む。"""
+    import re
+    import shutil
+    safe = re.sub(r'[\\/:*?"<>|\n]', "_", name).strip() or "動画"
+    copy = Path(path).with_name(f"{safe}.mp4")
+    shutil.copyfile(path, copy)
     script = ('tell application "Photos"\n'
-              f'  import {{POSIX file "{path}"}} skip check duplicates true\n'
+              '  with timeout of 900 seconds\n'
+              f'    import {{POSIX file "{copy}"}} skip check duplicates true\n'
+              '  end timeout\n'
               'end tell')
-    run(["osascript", "-e", script], timeout=600)
+    try:
+        run(["osascript", "-e", script], timeout=960)
+    finally:
+        copy.unlink(missing_ok=True)
 
 
 # ---------- 直した字幕から学ぶ ----------
@@ -498,3 +526,55 @@ def whisper_prompt(lex, limit=40):
         if min(p.get("core", 1), len(p["from"])) >= 2 and len(w) >= 2 and w not in words:
             words.append(w)
     return ("用語：" + "、".join(words[:limit]) + "。") if words else None
+
+
+# ---------- 字幕の見直し（反証役） ----------
+# 自動の字幕を Claude に読ませ、誤変換・聞き間違い・文として不自然な所だけを直す案を出させる。
+# Claude Code の CLI を使う＝本人の Claude のプランの中で動く（追加の料金はかからない・5時間枠を少し使う）。
+# 設定・フック・道具は読み込まない（Daily への記録や他の作業を起こさない）。直すかどうかは画面で本人が選ぶ。
+
+CLAUDE = "/opt/homebrew/bin/claude"
+REVIEW_PROMPT = """あなたは字幕の校正係です。下はデモ動画（題：{title}）の自動文字起こしの字幕です。
+誤変換・聞き間違い・文字の抜け・文として意味が通らない所だけを直してください。
+- 話し言葉の言い回し（「〜なんですよ」「そうそう」など）は残す。言い換えや要約はしない
+- 製品名・機能名は Apple の正式な表記に（例：iPhone 18 Pro、ポートレートモード、Dynamic Island）
+- 直す必要がない字幕は出さない
+{glossary}
+返事は JSON の配列だけ。各要素は {{"i": 字幕の番号, "after": 直した字幕, "why": 理由を12字以内}}。
+
+字幕：
+{lines}"""
+
+
+def review_captions(caps, title, lex=None, timeout=300):
+    """返り値：[{"start", "before", "after", "why"}]（直す案があるものだけ）"""
+    import re
+    words = []
+    for p in (lex or {}).get("pairs", []):
+        if p["to"] not in words:
+            words.append(p["to"])
+    glossary = ("- 本人がこれまでに直した言葉：" + "、".join(words[:40])) if words else ""
+    lines = "\n".join(f"{i}: {c['text']}" for i, c in enumerate(caps))
+    prompt = REVIEW_PROMPT.format(title=title, glossary=glossary, lines=lines)
+    work = Path.home() / "Movies" / "動画同期" / ".review"   # CLAUDE.md を拾わない空の場所で動かす
+    work.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run([CLAUDE, "-p", "--tools", "", "--setting-sources", "", "--no-session-persistence",
+                        "--model", "sonnet", "--output-format", "json"],
+                       input=prompt, capture_output=True, text=True, timeout=timeout, cwd=work)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout)[-500:] or "Claude が答えませんでした")
+    text = json.loads(r.stdout).get("result", "")
+    m = re.search(r"\[.*\]", text, re.S)
+    if not m:
+        return []
+    out = []
+    for s in json.loads(m.group(0)):
+        try:
+            i = int(s["i"])
+            after = " ".join(str(s["after"]).split())
+        except (KeyError, ValueError, TypeError):
+            continue
+        if 0 <= i < len(caps) and after and after != caps[i]["text"]:
+            out.append({"start": caps[i]["start"], "before": caps[i]["text"],
+                        "after": after, "why": str(s.get("why", ""))[:20]})
+    return out

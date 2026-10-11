@@ -117,7 +117,21 @@ def do_caption(jid):
     lex = engine.load_lexicon(LEARN)
     caps = engine.transcribe(src(jid, "a"), d / "a16k.wav", prompt=engine.whisper_prompt(lex))
     caps = engine.apply_lexicon(caps, lex)
-    update(jid, captions=caps, captions_shown=json.loads(json.dumps(caps)), step=5)
+    update(jid, captions=caps, captions_shown=json.loads(json.dumps(caps)), review=[], review_error=None)
+    do_review(jid)
+    update(jid, step=5)
+
+
+def do_review(jid):
+    """字幕の見直し（反証役）。失敗しても字幕の確認には進める（理由だけ残す）。"""
+    update(jid, busy="見直し")
+    job = load(jid)
+    try:
+        sug = engine.review_captions(job.get("captions") or [], job["title"], engine.load_lexicon(LEARN))
+        update(jid, review=sug, review_error=None)
+    except Exception as e:
+        traceback.print_exc()
+        update(jid, review=[], review_error=str(e)[:200])
 
 
 def do_render(jid):
@@ -136,7 +150,7 @@ def do_render(jid):
 
 
 def do_photos(jid):
-    engine.save_to_photos(str(jpath(jid) / "完成.mp4"))
+    engine.save_to_photos(str(jpath(jid) / "完成.mp4"), load(jid)["title"])
     update(jid, saved=True)
 
 
@@ -371,7 +385,16 @@ class H(BaseHTTPRequestHandler):
                 caps = [c for c in caps if c["text"]]
                 n = engine.log_corrections(LEARN, jid, job.get("captions_shown") or [], caps)
                 # 次に保存したとき同じ直しを二重に数えないよう、今の字幕を「表示した物」に
-                job = update(jid, captions=caps, captions_shown=caps, learned=n)
+                # 見直しの案は、画面で残したもの（まだ選んでいないもの）だけ持ち越す
+                keep = body.get("review")
+                extra = {"review": keep} if isinstance(keep, list) else {}
+                job = update(jid, captions=caps, captions_shown=caps, learned=n, **extra)
+            elif act == "review":
+                if body.get("captions") is not None:
+                    caps = [{"start": float(c["start"]), "end": float(c["end"]),
+                             "text": " ".join(str(c["text"]).split())} for c in body["captions"]]
+                    update(jid, captions=[c for c in caps if c["text"]])
+                background(jid, "見直し", lambda: do_review(jid))
             elif act == "render":
                 background(jid, "書き出し", lambda: do_render(jid), rendered=None, saved=False)
             elif act == "photos":
