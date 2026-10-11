@@ -28,8 +28,10 @@ W, H = 1080, 1920
 # 形：人の動画を画面全体に敷き、タイトルと字幕は白い札にして上に重ねる（本人が選んだ案3）
 MAIN = (0, 0, W, H)                 # 人の動画の枠 x, y, w, h
 PIP_W, PIP_H, PIP_R, PIP_B = 300, 650, 36, 8   # 小窓の幅・高さ・角丸・フチ
-PIP_RIGHT, PIP_BOTTOM = 36, 1620    # 小窓の右の余白・下の端（字幕の札の上に置く）
+PIP_RIGHT, PIP_BOTTOM = 36, 1500    # 小窓の右の余白・下の端（日英の字幕の札の上に置く）
 CAP_FONT, CAP_LINE = 54, 16         # 字幕の字の大きさ・1行の字数
+EN_FONT = 36                        # 英語の字幕の字の大きさ（日本語の下に小さく）
+INK_MID = (91, 85, 74)
 CAP_BOTTOM = 70                     # 字幕の札の下の余白
 PLATE = (255, 255, 255, 230)        # 札の色（白・少しだけ透ける）
 SR = 8000                           # 同期に使う音の標本化周波数
@@ -221,17 +223,48 @@ def make_background(title, path):
     Image.new("RGB", (W, H), (255, 255, 255)).save(path)
 
 
-def _plate(d, cx, top, lines, size, padx=44, pady=26, radius=None):
-    """白い札に墨の字を真ん中そろえで置く。返り値＝札の下の端。"""
-    lh = int(size * 1.38)
-    fonts = [_fit(d, ln, size, W - 2 * padx - 80) for ln in lines]
-    tw = max(d.textlength(ln, font=fn) for ln, fn in zip(lines, fonts))
-    w, h = int(tw + padx * 2), lh * len(lines) + pady * 2
+def _plate_size(d, lines, size, sub=(), padx=44, pady=26):
+    lh, slh = int(size * 1.38), int(EN_FONT * 1.36)
+    gap = 8 if sub else 0
+    return lh * len(lines) + gap + slh * len(sub) + pady * 2
+
+
+def _plate(d, cx, top, lines, size, padx=44, pady=26, radius=None, sub=()):
+    """白い札に墨の字を真ん中そろえで置く（sub＝下に小さく添える英語の行）。返り値＝札の下の端。"""
+    lh, slh = int(size * 1.38), int(EN_FONT * 1.36)
+    maxw = W - 2 * padx - 80
+    fonts = [_fit(d, ln, size, maxw) for ln in lines]
+    sfonts = [_fit(d, ln, EN_FONT, maxw) for ln in sub]
+    tw = max([d.textlength(ln, font=fn) for ln, fn in zip(lines, fonts)] +
+             [d.textlength(ln, font=fn) for ln, fn in zip(sub, sfonts)])
+    h = _plate_size(d, lines, size, sub, padx, pady)
+    w = int(tw + padx * 2)
     r = radius if radius is not None else min(h // 2, 44)
     d.rounded_rectangle([cx - w // 2, top, cx + w // 2, top + h], radius=r, fill=PLATE)
     for k, (ln, fn) in enumerate(zip(lines, fonts)):
         d.text((cx, top + pady + k * lh + lh // 2), ln, font=fn, fill=INK + (255,), anchor="mm")
+    y0 = top + pady + lh * len(lines) + (8 if sub else 0)
+    for k, (ln, fn) in enumerate(zip(sub, sfonts)):
+        d.text((cx, y0 + k * slh + slh // 2), ln, font=fn, fill=INK_MID + (255,), anchor="mm")
     return top + h
+
+
+def wrap_en(d, text, maxw=W - 2 * 44 - 80, maxlines=2):
+    """英語を単語の切れ目で折る（2行まで。収まらなければ最後の行は _fit が縮める）。"""
+    words, lines, cur = text.split(), [], ""
+    f = _font(EN_FONT)
+    for w in words:
+        t = (cur + " " + w).strip()
+        if d.textlength(t, font=f) <= maxw or not cur:
+            cur = t
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    if len(lines) > maxlines:
+        lines = lines[:maxlines - 1] + [" ".join(lines[maxlines - 1:])]
+    return lines
 
 
 def make_title(title, path):
@@ -289,13 +322,14 @@ def wrap(text, n=CAP_LINE):
     return [text[:cut].strip(), text[cut:].strip()]
 
 
-def caption_image(text, path):
+def caption_image(text, path, en=None):
     """一番下に重ねる白い札の字幕（1080×1920 の透明画像）。札の下の端を CAP_BOTTOM にそろえる。"""
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     lines = wrap(text)
-    h = int(CAP_FONT * 1.38) * len(lines) + 26 * 2
-    _plate(d, W // 2, H - CAP_BOTTOM - h, lines, CAP_FONT)
+    sub = wrap_en(d, en) if en else []
+    h = _plate_size(d, lines, CAP_FONT, sub)
+    _plate(d, W // 2, H - CAP_BOTTOM - h, lines, CAP_FONT, sub=sub)
     im.save(path)
 
 
@@ -313,7 +347,7 @@ def build_caption_track(caps, dur, folder):
         if s - t > 0.01:
             lines += [f"file '{blank}'", f"duration {s - t:.3f}"]
         p = folder / f"c{i:04d}.png"
-        caption_image(c["text"], p)
+        caption_image(c["text"], p, c.get("en"))
         lines += [f"file '{p}'", f"duration {e - s:.3f}"]
         t = e
     lines += [f"file '{blank}'", f"duration {max(dur - t, 0.1):.3f}", f"file '{blank}'"]
@@ -558,4 +592,46 @@ def review_captions(caps, title, lex=None, timeout=300):
         if 0 <= i < len(caps) and after and after != caps[i]["text"]:
             out.append({"start": caps[i]["start"], "before": caps[i]["text"],
                         "after": after, "why": str(s.get("why", ""))[:20]})
+    return out
+
+
+# ---------- 英語の字幕 ----------
+# 書き出す直前に、仕上がった日本語の字幕を Claude で英訳する（直した後の日本語と必ずそろう）。
+# 訳は日本語の文をかぎにして job に控え、変わった字幕だけ訳し直す。
+
+TRANSLATE_PROMPT = """You translate Japanese subtitles of an Apple Store product demo video (title: {title}) into English.
+- Natural, concise spoken English for on-screen subtitles. Keep each one short (ideally under 60 characters)
+- Use Apple's official English names for products and features (e.g. iPhone 18 Pro, Portrait mode, Dynamic Island, Camera Control)
+- Drop pure fillers ("はい", "そうそう", "えー") but keep the meaning; never add information
+- Use the surrounding lines only as context; translate every numbered line
+Reply with a JSON array only: [{{"i": number, "en": "English"}}].
+
+Lines:
+{lines}"""
+
+
+def translate_captions(caps, title, timeout=300):
+    """返り値：{日本語: 英語}"""
+    import re
+    if not caps:
+        return {}
+    lines = "\n".join(f"{i}: {c['text']}" for i, c in enumerate(caps))
+    work = Path.home() / "Movies" / "動画同期" / ".review"
+    work.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run([CLAUDE, "-p", "--tools", "", "--setting-sources", "", "--no-session-persistence",
+                        "--model", "sonnet", "--output-format", "json"],
+                       input=TRANSLATE_PROMPT.format(title=title, lines=lines),
+                       capture_output=True, text=True, timeout=timeout, cwd=work)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout)[-500:] or "Claude が答えませんでした")
+    text = json.loads(r.stdout).get("result", "")
+    m = re.search(r"\[.*\]", text, re.S)
+    out = {}
+    for s in (json.loads(m.group(0)) if m else []):
+        try:
+            i, en = int(s["i"]), " ".join(str(s["en"]).split())
+        except (KeyError, ValueError, TypeError):
+            continue
+        if 0 <= i < len(caps) and en:
+            out[caps[i]["text"]] = en
     return out

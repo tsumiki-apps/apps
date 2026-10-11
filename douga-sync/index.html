@@ -74,6 +74,7 @@ video{width:100%;display:block;border-radius:12px;background:var(--night)}
 .cap{display:grid;grid-template-columns:56px 1fr 44px;gap:8px;align-items:start}
 .cap textarea.ed{border-color:var(--accent-2)}
 .cap .del{min-width:44px;padding:0;color:var(--ink-soft);background:transparent}
+.cap .en{grid-column:2/3;font-size:14px;color:var(--ink-mid);line-height:1.45;margin:-4px 0 2px 12px}
 .sug{grid-column:2/4;display:grid;grid-template-columns:1fr 44px 44px;gap:6px;align-items:center;background:var(--accent-wash);border-radius:8px;padding:4px 4px 4px 12px;font-size:15px;line-height:1.5}
 .sug b{font-weight:700;color:var(--ink)}.sug small{display:block;color:var(--ink-mid);font-size:13px}
 .sug button{background:transparent;color:var(--accent-2);min-width:44px;padding:0}
@@ -186,6 +187,7 @@ details summary::-webkit-details-marker{display:none}
   <section class="card" id="s6" hidden>
     <h2><span class="num">6</span><svg class="i"><use href="#i-export"/></svg>完成</h2>
     <div class="busy" id="b6" hidden><div class="spin"></div><span id="b6t">書き出し中</span><div class="bar"><i id="bar6"></i></div></div>
+    <div class="banner warn" id="enErr" hidden><svg class="i"><use href="#i-warn"/></svg><span>英語の字幕を作れませんでした。もう一度書き出してください</span></div>
     <div class="banner good" id="learned" hidden><svg class="i"><use href="#i-book"/></svg><span id="learnedT"></span></div>
     <div id="v6" hidden>
       <div class="final"><video id="fin" playsinline controls></video></div>
@@ -264,11 +266,12 @@ function render(first){
     $('revAll').hidden=!n||!!busy;$('revBtn').disabled=!!busy}
   const hasCaps=job&&job.captions&&busy!=='文字起こし'&&st>=5;
   $('s5').hidden=!hasCaps; setDone('s5',st>=6);
-  const ck=hasCaps?job.id+'|'+JSON.stringify(job.captions_shown||[]).length+'|'+job.captions.length+'|'+JSON.stringify(job.review||[]).length:'';
+  const ck=hasCaps?job.id+'|'+JSON.stringify(job.captions_shown||[]).length+'|'+job.captions.length+'|'+JSON.stringify(job.review||[]).length+'|'+Object.keys(job.en||{}).length:'';
   if(hasCaps&&ck!==loaded.caps&&(!capsDirty||first)){loaded.caps=ck;capsDirty=false;drawCaps()}
   if(hasCaps&&loaded.pc!==pk){loaded.pc=pk;$('pc').src='/files/'+job.id+'/proxy_a.mp4?v='+Date.now()}
-  const rend=busy==='書き出し', fin=job&&job.rendered;
-  $('s6').hidden=!(rend||fin||busy==='写真に保存');
+  const rend=busy==='書き出し'||busy==='英訳', fin=job&&job.rendered;
+  if(rend)$('b6t').textContent=busy==='英訳'?'英語の字幕を作成中':'書き出し中';
+  $('s6').hidden=!(rend||fin);
   $('b6').hidden=!rend; $('v6').hidden=!fin||rend;
   if(rend)$('bar6').style.width=((job.progress||0)*100)+'%';
   if(fin&&$('fin').dataset.v!=String(job.rendered)){
@@ -276,6 +279,7 @@ function render(first){
     $('fin').src=u;$('fin').dataset.v=job.rendered;$('dl').href=u+'&dl=1';
   }
   $('learned').hidden=!(job&&job.learned);
+  $('enErr').hidden=!(job&&job.en_error&&!busy);
   if(job&&job.learned)$('learnedT').textContent='+'+job.learned+' 件 覚えました';
   $('okSync').disabled=$('renderBtn').disabled=!!busy;
   clearTimeout(pollT);
@@ -361,6 +365,8 @@ function drawCaps(){
     x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
     x.onclick=()=>{job.captions.splice(job.captions.indexOf(c),1);capsDirty=true;drawCaps()};
     r.append(b,t,x);
+    const en=(job.en||{})[c.text];
+    if(en){const e=document.createElement('div');e.className='en';e.textContent=en;r.appendChild(e)}
     const sg=(job.review||[]).find(v=>Math.abs(v.start-c.start)<0.01);
     if(sg){
       const d=document.createElement('div');d.className='sug';

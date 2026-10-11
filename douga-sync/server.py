@@ -137,10 +137,23 @@ def do_review(jid):
 def do_render(jid):
     d = jpath(jid)
     job = load(jid)
+    # 英語の字幕：仕上がった日本語を訳す（訳が無い字幕があるときだけ Claude に頼む）
+    caps = job.get("captions") or []
+    en = {k: v for k, v in (job.get("en") or {}).items() if any(c["text"] == k for c in caps)}
+    if any(c["text"] not in en for c in caps):
+        update(jid, busy="英訳")
+        try:
+            en.update(engine.translate_captions(caps, job["title"]))
+            update(jid, en=en, en_error=None)
+        except Exception as e:
+            traceback.print_exc()
+            update(jid, en=en, en_error=str(e)[:200])
+        update(jid, busy="書き出し")
+    job["captions"] = [{**c, "en": en.get(c["text"])} for c in caps]
     tmp = d / "完成.tmp.mp4"   # 書き終わってから入れ替える（途中で止まっても壊れた完成版を出さない）
     try:
         engine.render(d, src(jid, "a"), src(jid, "b"), job["a_info"], job["b_info"],
-                      job["offset"], job["title"], job.get("captions") or [], tmp,
+                      job["offset"], job["title"], job["captions"], tmp,
                       progress=lambda f: update(jid, progress=round(f, 3)))
     except Exception:
         tmp.unlink(missing_ok=True)
