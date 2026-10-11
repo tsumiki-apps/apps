@@ -376,6 +376,33 @@ def build_caption_track(caps, dur, folder):
 
 # ---------- 書き出し ----------
 
+LOUD_I, LOUD_TP, LOUD_LRA = -16.0, -1.5, 11.0   # 音の大きさの目標（スマホ向けの標準・LUFS）
+
+
+def measure_loudness(path):
+    """人の動画の音の大きさを測る（1回目）。返り値は loudnorm の測定値、測れなければ None。"""
+    r = subprocess.run([FFMPEG, "-hide_banner", "-nostats", "-i", str(path), "-vn",
+                        "-af", f"loudnorm=I={LOUD_I}:TP={LOUD_TP}:LRA={LOUD_LRA}:print_format=json",
+                        "-f", "null", "-"], capture_output=True, text=True)
+    t = r.stderr
+    try:
+        d = json.loads(t[t.rindex("{"):t.rindex("}") + 1])
+        if float(d["input_i"]) < -70:      # ほぼ無音（測れない）
+            return None
+        return d
+    except (ValueError, KeyError):
+        return None
+
+
+def loudness_filter(m):
+    """2回目：測った値を使い、音色を変えずに全体の音量だけを目標へそろえる（小さければ上げ、大きすぎれば下げる）。"""
+    if not m:
+        return "anull"
+    return (f"loudnorm=I={LOUD_I}:TP={LOUD_TP}:LRA={LOUD_LRA}:linear=true"
+            f":measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}"
+            f":measured_thresh={m['input_thresh']}:offset={m['target_offset']},aresample=48000")
+
+
 def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_path, progress=None):
     job_dir = Path(job_dir)
     bg, plate, mask = job_dir / "bg.png", job_dir / "plate.png", job_dir / "mask.png"
@@ -419,7 +446,8 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
         f"[6:v]format=rgba[ttl];"
         f"[v3][ttl]overlay=0:0[v4];"
         f"[5:v]format=rgba[cap];"
-        f"[v4][cap]overlay=0:0:eof_action=pass,format=yuv420p[out]"
+        f"[v4][cap]overlay=0:0:eof_action=pass,format=yuv420p[out];"
+        f"[1:a]{loudness_filter(measure_loudness(a_path))}[aout]"
     )
     cmd = [FFMPEG, "-y", "-v", "error", "-progress", "pipe:1", "-nostats",
            "-loop", "1", "-framerate", "30", "-i", str(bg),
@@ -430,7 +458,7 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
            "-f", "concat", "-safe", "0", "-i", str(track),
            "-loop", "1", "-i", str(ttl),
            "-filter_complex", fc,
-           "-map", "[out]", "-map", "1:a?",
+           "-map", "[out]", "-map", "[aout]",
            "-t", f"{dur:.3f}",
            "-c:v", "h264_videotoolbox", "-b:v", "6M",   # 2分半で約115MB（iPhone に落とすのが軽く）
            "-profile:v", "high",
