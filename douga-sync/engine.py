@@ -6,6 +6,7 @@ A＝人を撮った動画（音は常にこちら）／B＝iPhone・iPad の画�
 offset＝「A の何秒目で B が始まったか」（マイナスなら B のほうが先に始まっている）。
 """
 import json
+import re
 import os
 import subprocess
 from pathlib import Path
@@ -174,33 +175,77 @@ def transcribe(a_path, wav_path, prompt=None):
 
 
 def split_captions(segments, max_chars=CAP_LINE * 2):
-    """長い区切りを、言葉の時刻を使って2行以内に割る。"""
+    """Whisper の区切りを字幕1枚ずつに割る。割るのは言葉の切れ目だけ（breaks）。
+    1枚は2行に収まる長さまで。句読点・間（0.6秒以上の無音）・文節の切れ目の順に選ぶ。"""
     out = []
     for seg in segments:
         words = seg.get("words") or [{"word": seg["text"], "start": seg["start"], "end": seg["end"]}]
-        buf, st = "", None
+        text, ts = "", []        # ts[i]＝i 文字目の (始まり, 終わり)。言葉の時刻を字数で割り振る
+        gaps = {}                # 文字の位置 → その前の無音の長さ
+        prev_end = None
         for w in words:
-            t = w["word"].strip()
-            if not t:
+            t = w["word"]
+            if not t.strip():
                 continue
-            if st is None:
-                st = w["start"]
-            buf += t
-            end = w["end"]
-            cut = len(buf) >= max_chars or (len(buf) >= CAP_LINE and t[-1] in "。、！？!?")
-            if cut:
-                out.append({"start": st, "end": end, "text": buf})
-                buf, st = "", None
-        if buf:
-            out.append({"start": st, "end": seg["end"], "text": buf})
+            ws, we = float(w["start"]), float(w["end"])
+            if prev_end is not None and t.strip():
+                gaps[len(text) + (len(t) - len(t.lstrip()))] = ws - prev_end
+            n = len(t)
+            for k in range(n):
+                ts.append((ws + (we - ws) * k / n, ws + (we - ws) * (k + 1) / n))
+            text += t
+            prev_end = we
+        if not text.strip():
+            continue
+        bk = breaks(text)
+        for p, g in gaps.items():
+            if g >= 0.6 and p in bk:
+                bk[p] = min(bk[p], 0)
+        pos = len(text) - len(text.lstrip())
+        while pos < len(text):
+            rest = text[pos:].strip()
+            if not rest:
+                break
+            if fits_lines(rest, 2):
+                cut = len(text)
+            else:
+                best = None
+                for q in sorted(bk):
+                    if q <= pos:
+                        continue
+                    piece = text[pos:q].strip()
+                    if len(piece) < 4:
+                        continue
+                    if not fits_lines(piece, 2):
+                        break
+                    tail = text[q:].strip()
+                    score = bk[q] * 4 + (10 if bk[q] >= 5 else 0) - len(piece) * 0.4 + (6 if len(tail) < 4 else 0)
+                    if best is None or score < best[0]:
+                        best = (score, q)
+                cut = best[1] if best else _hard_cut(text, pos, max_chars)
+            piece = text[pos:cut]
+            lead = len(piece) - len(piece.lstrip())
+            body = piece.strip()
+            if body:
+                i0, i1 = pos + lead, pos + lead + len(body) - 1
+                out.append({"start": ts[i0][0], "end": ts[i1][1], "text": body})
+            pos = cut
     for c in out:
-        c["text"] = c["text"].strip().rstrip("。")
+        c["text"] = re.sub(r"(?<=[^\x00-\x7f]) (?=[^\x00-\x7f])", "", c["text"]).strip().rstrip("。")
         c["start"], c["end"] = round(float(c["start"]), 2), round(float(c["end"]), 2)
     # 次の字幕と重ならず、短すぎないように
     for i, c in enumerate(out):
         nxt = out[i + 1]["start"] if i + 1 < len(out) else c["end"] + 1
         c["end"] = round(min(max(c["end"], c["start"] + 0.8), nxt), 2)
     return [c for c in out if c["text"]]
+
+
+def _hard_cut(text, pos, n):
+    """切れ目が1つも無いほど長い一続き（英字の長い羅列など）だけ、字数で切る。"""
+    q = pos + n
+    while q < len(text) and q > pos + 1 and _alnum(text[q - 1]) and _alnum(text[q]):
+        q += 1
+    return min(q, len(text))
 
 
 # ---------- 画像（タイトル・字幕・小窓のフチ） ----------
@@ -307,37 +352,168 @@ def make_pip_assets(plate_path, mask_path, size=(PIP_W, PIP_H, PIP_R)):
     mask.convert("RGB").save(mask_path)
 
 
-def _kind(ch):
-    o = ord(ch)
-    if 0x3041 <= o <= 0x309F:
-        return "h"          # ひらがな
-    if 0x30A0 <= o <= 0x30FF:
-        return "k"          # カタカナ・ー
-    if 0x4E00 <= o <= 0x9FFF:
-        return "c"          # 漢字
-    return "o"
+# ---------- 言葉の切れ目（字幕を割る・折る所） ----------
+# 言葉の途中では決して切らない。候補は「句読点の後」「BudouX（文節で区切る Google の道具）の切れ目」
+# 「形態素解析（fugashi＋UniDic＝言葉の単位と品詞に分ける）で、自立した言葉が始まる所」だけ。
+# 英字・数字の続き（Intelligence・iPhone18Pro・1.48）の中も切らない。
+
+PUNCT = "、。！？!?,，"
+_INDEP = {"名詞", "代名詞", "動詞", "形容詞", "副詞", "連体詞", "接続詞", "感動詞", "形状詞", "接頭辞"}
+_tools = {}
 
 
-def wrap(text, n=CAP_LINE):
-    """2行に。言葉の途中で切らないよう、句読点のあと・ひらがなから漢字やカタカナへ
-    変わるところ（「新しい｜スケジュール帳」）を候補にし、真ん中に近い所で折る。"""
+def _alnum(ch):
+    return ch.isascii() and (ch.isalnum() or ch in ".'’-&+")
+
+
+def _parser():
+    if "bx" not in _tools:
+        import budoux
+        _tools["bx"] = budoux.load_default_japanese_parser()
+    return _tools["bx"]
+
+
+def _tagger():
+    if "mc" not in _tools:
+        import fugashi
+        _tools["mc"] = fugashi.Tagger()
+    return _tools["mc"]
+
+
+def _morphs(text):
+    """[(始まりの位置, 終わりの位置, 品詞, 品詞の細分類, 辞書の形)]"""
+    out, pos = [], 0
+    for w in _tagger()(text):
+        sfc = w.surface
+        i = text.find(sfc, pos)
+        if i < 0:
+            continue
+        f = w.feature
+        out.append((i, i + len(sfc), f.pos1, f.pos2, f.lemma or ""))
+        pos = i + len(sfc)
+    return out
+
+
+def breaks(text):
+    """折ってよい位置 → 罰点（小さいほど自然）。ここに無い位置では切らない。
+    0＝句読点の後／1＝文節の切れ目／2＝助詞・助動詞の後で次の言葉が始まる所／4＝言葉どうしの境（複合語の中など）／6＝英単語の間の空白"""
+    bk = {}
+
+    def put(p, v):
+        if 0 < p < len(text):
+            bk[p] = min(bk.get(p, 99), v)
+
+    ms = _morphs(text)
+    forbid = set()
+    for k in range(1, len(ms)):
+        s0, e0, p0, q0, l0 = ms[k - 1]
+        s1, e1, p1, q1, l1 = ms[k]
+        if p1 not in _INDEP or q1 in ("助動詞語幹", "数詞") and p0 == "名詞" or p0 == "接頭辞":
+            continue
+        if (q0 == "数詞" or text[e0 - 1].isdigit()) and p1 in ("名詞", "接尾辞"):
+            forbid.add(s1)
+            continue       # 「5｜秒」「3｜機種」「2.5｜倍」数字と単位は離さない
+        if p1 == "動詞" and l1 in ("為る", "出来る") and p0 == "名詞":
+            forbid.add(s1)
+            continue       # 「タップ｜する」「確認｜できる」は1つの言葉
+        if p1 == "動詞" and p0 in ("助詞", "助動詞") and text[s0:e0] in ("に", "と") and \
+                text[s1:e1] in ("つい", "よっ", "より", "対し", "おい", "とっ", "し", "関し", "ついて"):
+            forbid.add(s1)
+            continue       # 「に｜ついて」「に｜よって」「と｜して」は決まった言い回し
+        if p1 == "動詞" and l1 == "言う" and p0 == "助詞" and text[s0:e0] in ("と", "って"):
+            v = 5          # 「と｜いう」はなるべく避ける
+        elif p1 == "動詞" and q1 == "非自立可能" and p0 in ("助詞", "助動詞") and text[e0 - 1] in "てで":
+            v = 3          # 「見て｜いただく」は切れるが、なるべく避ける
+        elif p0 in ("助詞", "助動詞", "感動詞", "接続詞", "副詞"):
+            v = 2
+        elif p0 in ("名詞", "代名詞") and p1 in ("名詞", "接頭辞"):
+            v = 4
+        else:
+            v = 3
+        put(s1, v)
+    p = 0
+    for ph in _parser().parse(text):
+        p += len(ph)
+        put(p, 1)
+    for i, ch in enumerate(text):
+        if ch in PUNCT:
+            put(i + 1, 0)
+        if ch == " " and 0 < i < len(text) - 1:
+            if _alnum(text[i - 1]) and _alnum(text[i + 1]):
+                put(i, 6)
+                put(i + 1, 6)
+    # 形態素の途中・助詞や助動詞（「ね」「よ」の1字の感動詞も）の前では切らない（BudouX の候補もここで落とす）
+    starts = {m[0]: m for m in ms}
+    inside = {i for m in ms for i in range(m[0] + 1, m[1])}
+    for q in list(bk):
+        m = starts.get(q) or starts.get(q + 1 if text[q] == " " else -1)
+        if q in inside or q in forbid or m and (m[2] in ("助詞", "助動詞", "接尾辞") or m[2] == "感動詞" and m[1] - m[0] == 1) \
+                and text[q - 1] not in PUNCT:
+            del bk[q]
+    # 英字・数字の続きの中・行頭に来てはいけない字の前は消す
+    kata = lambda ch: 0x30A1 <= ord(ch) <= 0x30FA or ch in "ーヽヾ・"
+    for q in list(bk):
+        a, b = text[q - 1], text[q]
+        if _alnum(a) and _alnum(b) or kata(a) and kata(b) or b in PUNCT + "ーっゃゅょぁぃぅぇぉッャュョァィゥェォ」』）)":
+            del bk[q]
+        elif a in "「『（(":
+            del bk[q]
+    # 空白の前と後は同じ所（後ろに寄せて片方だけ残す）
+    for q in sorted(bk):
+        if text[q] == " " and q + 1 in bk:
+            bk[q + 1] = min(bk[q + 1], bk.pop(q))
+        elif text[q] == " ":
+            bk[q + 1] = bk.pop(q)
+    return {q: v for q, v in bk.items() if 0 < q < len(text)}
+
+
+def _tw(text, size=CAP_FONT):
+    if "draw" not in _tools:
+        _tools["draw"] = ImageDraw.Draw(Image.new("L", (1, 1)))
+    if ("font", size) not in _tools:
+        _tools[("font", size)] = _font(size)
+    return _tools["draw"].textlength(text, font=_tools[("font", size)])
+
+
+CAP_MAXW = W - 2 * 44 - 80     # 字幕の1行が使える幅（札の内側）
+CAP_SQUEEZE = 1.05             # 行を増やさずに済むなら、この割合まで字を少し縮めて（_fit）収める
+
+
+def fits_lines(text, n):
+    """text を言葉の切れ目で n 行以内に折ったとき、どの行も幅に収まるか。"""
+    return all(_tw(l) <= CAP_MAXW for l in wrap(text, n))
+
+
+def wrap(text, maxlines=3):
+    """字幕を行に折る。言葉の切れ目（breaks）だけで折り、1行に収まるなら1行。
+    2行なら幅がそろい罰点が小さい所。どこで折ってもはみ出すときは行を増やす（最大 maxlines）。"""
     text = " ".join(text.split())   # 改行は空白に（PIL は改行を測れない）
-    if len(text) <= n:
+    if not text or _tw(text) <= CAP_MAXW:
         return [text]
-    mid = len(text) // 2
-    cands = []
-    for i in range(1, len(text)):
-        a, b = text[i - 1], text[i]
-        if a in "、。 　！？":
-            cands.append((i, 0))
-        elif _kind(a) == "h" and _kind(b) in "kco":
-            cands.append((i, 1))
-    ok = [c for c in cands if max(c[0], len(text) - c[0]) <= n + 3]
-    if ok:
-        cut = min(ok, key=lambda c: (abs(c[0] - mid) + c[1] * 2))[0]
-    else:
-        cut = mid
-    return [text[:cut].strip(), text[cut:].strip()]
+    bk = breaks(text)
+    qs = sorted(bk)
+    best = None
+    # 2行：両方収まる中で、罰点＋長さの差が小さいもの
+    for q in qs:
+        l1, l2 = text[:q].strip(), text[q:].strip()
+        w1, w2 = _tw(l1), _tw(l2)
+        over = max(w1, w2) - CAP_MAXW
+        score = (max(w1, w2) > CAP_MAXW * CAP_SQUEEZE) * 1e6 + over * (over > 0) * 10 + bk[q] * 60 + abs(w1 - w2) * 0.35
+        if best is None or score < best[0]:
+            best = (score, [l1, l2])
+    if best and best[0] < 1e6 or maxlines <= 2 or not qs:
+        return best[1] if best else [text]
+    # 3行：2か所で折る
+    best3 = None
+    for i, q1 in enumerate(qs):
+        for q2 in qs[i + 1:]:
+            ls = [text[:q1].strip(), text[q1:q2].strip(), text[q2:].strip()]
+            ws = [_tw(l) for l in ls]
+            over = max(ws) - CAP_MAXW
+            score = (over > 0) * 1e6 + over * (over > 0) * 10 + (bk[q1] + bk[q2]) * 60 + (max(ws) - min(ws)) * 0.25
+            if best3 is None or score < best3[0]:
+                best3 = (score, ls)
+    return best3[1] if best3 and best3[0] < best[0] else best[1]
 
 
 def caption_image(text, path, en=None):
@@ -345,7 +521,8 @@ def caption_image(text, path, en=None):
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     lines = wrap(text)
-    sub = wrap_en(d, en) if en else []
+    # 日本語が3行のときは英語を1行にし、札を小窓（PIP_BOTTOM）より下に収める
+    sub = wrap_en(d, en, maxlines=1 if len(lines) >= 3 else 2) if en else []
     h = _plate_size(d, lines, CAP_FONT, sub)
     _plate(d, W // 2, H - CAP_BOTTOM - h, lines, CAP_FONT, sub=sub)
     im.save(path)
@@ -403,7 +580,75 @@ def loudness_filter(m):
             f":measured_thresh={m['input_thresh']}:offset={m['target_offset']},aresample=48000")
 
 
-def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_path, progress=None):
+FF_SPEEDS = (2, 4, 8)                         # 早送りの速さ（倍）
+
+
+def clean_ff(ff, dur):
+    """早送りの区間をそろえる：時刻順・動画の長さの中・0.3秒未満は捨てる・重なりはつなぐ（速さは前の区間）。"""
+    out = []
+    for r in sorted(ff or [], key=lambda r: float(r["start"])):
+        s, e = max(0.0, float(r["start"])), min(float(dur), float(r["end"]))
+        sp = int(r.get("speed", 4))
+        sp = sp if sp in FF_SPEEDS else 4
+        if e - s < 0.3:
+            continue
+        if out and s <= out[-1]["end"]:
+            out[-1]["end"] = round(max(out[-1]["end"], e), 3)
+        else:
+            out.append({"start": round(s, 3), "end": round(e, 3), "speed": sp})
+    return out
+
+
+def ff_caps(caps, ff):
+    """早送りの区間では音を消すので、その区間の字幕は出さない。
+    半分以上が区間に入る字幕は落とし、はみ出しているだけの字幕は区間の外へ縮める。"""
+    out = []
+    for c in caps:
+        s, e = c["start"], c["end"]
+        inside = sum(max(0.0, min(e, r["end"]) - max(s, r["start"])) for r in ff)
+        if e - s <= 0 or inside >= (e - s) * 0.5:
+            continue
+        for r in ff:
+            if r["start"] <= s < r["end"]:
+                s = r["end"]
+            if r["start"] < e <= r["end"]:
+                e = r["start"]
+        if e - s >= 0.3:
+            out.append({**c, "start": s, "end": e})
+    return out
+
+
+def ff_duration(dur, ff):
+    """早送りをかけたあとの長さ。"""
+    return dur - sum((r["end"] - r["start"]) * (1 - 1 / r["speed"]) for r in ff)
+
+
+def ff_filters(ff):
+    """早送りの区間を (映像の setpts の式, 音のつなぎ方) にする。
+    映像：区間の中の時刻を 1/速さ に縮める（後ろはその分だけ前へ）→ fps=30 で余ったコマを間引く。
+    音：区間の外はそのまま、区間の中は「縮めたあとの長さ」の無音にして、順につなぐ。"""
+    terms = "+".join(f"clip(T-{r['start']:.3f},0,{r['end'] - r['start']:.3f})*{1 - 1 / r['speed']:.6f}"
+                     for r in ff)
+    vexpr = f"setpts='(T-({terms}))/TB',fps=30"
+    segs, t = [], 0.0
+    for r in ff:
+        if r["start"] > t:
+            segs.append((t, r["start"], False))
+        segs.append((r["start"], r["start"] + (r["end"] - r["start"]) / r["speed"], True))
+        t = r["end"]
+    segs.append((t, None, False))
+    n = len(segs)
+    parts = [f"[an]asplit={n}" + "".join(f"[as{i}]" for i in range(n))]
+    for i, (s, e, mute) in enumerate(segs):
+        end = f":end={e:.3f}" if e is not None else ""
+        parts.append(f"[as{i}]atrim=start={s:.3f}{end},asetpts=PTS-STARTPTS"
+                     + (",volume=0" if mute else "") + f"[at{i}]")
+    parts.append("".join(f"[at{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[aout]")
+    return vexpr, ";".join(parts)
+
+
+def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_path, progress=None, ff=None):
+    """書き出す。ff＝早送りの区間（書き出しと同じ時間軸）。返り値＝書き出した動画の長さ（秒）。"""
     job_dir = Path(job_dir)
     bg, plate, mask = job_dir / "bg.png", job_dir / "plate.png", job_dir / "mask.png"
     ttl = job_dir / "title.png"
@@ -415,8 +660,11 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
     dur = a_info["dur"]
     # 字幕の時刻は A の音の頭が0秒（文字起こしの都合）。書き出しの時間軸へ直す
     al = a_info.get("alead", 0.0)
-    track = build_caption_track([{**c, "start": c["start"] + al, "end": c["end"] + al} for c in caps],
-                                dur, job_dir / "caps")
+    # 早送りの区間は確認の動画（映像の頭が0秒＝書き出しと同じ時間軸）で押した時刻なので、そのまま使う
+    ff = clean_ff(ff or [], dur)
+    caps = ff_caps([{**c, "start": c["start"] + al, "end": c["end"] + al} for c in caps], ff)
+    track = build_caption_track(caps, dur, job_dir / "caps")
+    out_dur = ff_duration(dur, ff)
 
     mx, my, mw, mh = MAIN
     px, py = pip_rect(psize)
@@ -446,9 +694,16 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
         f"[6:v]format=rgba[ttl];"
         f"[v3][ttl]overlay=0:0[v4];"
         f"[5:v]format=rgba[cap];"
-        f"[v4][cap]overlay=0:0:eof_action=pass,format=yuv420p[out];"
-        f"[1:a]{loudness_filter(measure_loudness(a_path))}[aout]"
+        f"[v4][cap]overlay=0:0:eof_action=pass,format=yuv420p[vo];"
+        f"[1:a]{loudness_filter(measure_loudness(a_path))}[an]"
     )
+    if ff:
+        vexpr, achain = ff_filters(ff)
+        # 音の時刻を書き出しの0秒からに（音が映像より遅れて始まる動画は頭を無音で埋める）してから切り分ける
+        fc = fc.replace("[an]", ",aresample=48000:async=1:first_pts=0[an]")
+        fc += f";[vo]{vexpr}[out];" + achain
+    else:
+        fc = fc.replace("[vo]", "[out]").replace("[an]", "[aout]")
     cmd = [FFMPEG, "-y", "-v", "error", "-progress", "pipe:1", "-nostats",
            "-loop", "1", "-framerate", "30", "-i", str(bg),
            "-i", str(a_path),
@@ -459,7 +714,7 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
            "-loop", "1", "-i", str(ttl),
            "-filter_complex", fc,
            "-map", "[out]", "-map", "[aout]",
-           "-t", f"{dur:.3f}",
+           "-t", f"{out_dur:.3f}",
            "-c:v", "h264_videotoolbox", "-b:v", "6M",   # 2分半で約115MB（iPhone に落とすのが軽く）
            "-profile:v", "high",
            "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
@@ -472,13 +727,14 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
     for line in p.stdout:
         if line.startswith("out_time_us=") and progress:
             try:
-                progress(min(int(line.split("=")[1]) / 1e6 / dur, 1.0))
+                progress(min(int(line.split("=")[1]) / 1e6 / out_dur, 1.0))
             except ValueError:
                 pass
     rc = p.wait()
     th.join(5)
     if rc != 0:
         raise RuntimeError("".join(errbuf)[-1500:].strip() or f"ffmpeg が止まりました（{rc}）")
+    return out_dur
 
 
 # ---------- 直した字幕から学ぶ ----------

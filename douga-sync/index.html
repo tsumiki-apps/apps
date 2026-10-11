@@ -101,6 +101,19 @@ details summary::-webkit-details-marker{display:none}
 .ver button{border-radius:9999px}
 .hint{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;color:var(--ink-mid);margin-top:8px}
 .hint svg.i{width:18px;height:18px}
+/* 早送り */
+.ff{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.ffh{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:8px}
+.ffctl{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ffctl button{font-variant-numeric:tabular-nums}
+.ffl{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.ffl:empty{display:none}
+.ffr{display:grid;grid-template-columns:minmax(0,1fr) 64px 44px;gap:8px;align-items:center}
+.ffr .rng{justify-content:flex-start;font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;white-space:nowrap}
+.ffr .rng small{color:var(--ink-mid);font-size:13px;margin-left:auto;overflow:hidden;text-overflow:ellipsis}
+.ffr .sp{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent-2);background:var(--accent-wash);padding:0}
+.ffr .del{padding:0;color:var(--ink-soft);background:transparent}
+.cap.ffd textarea{opacity:.45}
 .two{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
 .two .primary{margin:0}
 @media (min-width:900px){main{max-width:760px}.final{max-width:360px}}
@@ -128,6 +141,10 @@ details summary::-webkit-details-marker{display:none}
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-frame" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><rect x="7" y="6" width="10" height="12" rx="2"/></symbol>
+  <symbol id="i-ff" viewBox="0 0 24 24"><path d="M3.5 6.5l8 5.5-8 5.5zM12.5 6.5l8 5.5-8 5.5z"/></symbol>
+  <symbol id="i-in" viewBox="0 0 24 24"><path d="M10 5H6v14h4M13 12h6M16 9l3 3-3 3"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 5h4v14h-4M5 12h6M8 9l3 3-3 3"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4zM16 9.5l5 5M21 9.5l-5 5"/></symbol>
   <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5L12 3l4.5 4.5M5 13v6h14v-6"/></symbol>
 </svg>
 <main>
@@ -186,6 +203,14 @@ details summary::-webkit-details-marker{display:none}
   <section class="card" id="s5" hidden>
     <h2><span class="num">5</span><svg class="i"><use href="#i-cap"/></svg>字幕の確認</h2>
     <video id="pc" playsinline preload="auto" controls style="max-height:40dvh;width:auto;max-width:100%;margin:0 auto"></video>
+    <div class="ff">
+      <div class="ffh"><svg class="i"><use href="#i-ff"/></svg>早送り<svg class="i" style="margin-left:auto;color:var(--ink-soft)" aria-label="音なし"><use href="#i-mute"/></svg></div>
+      <div class="ffctl">
+        <button id="ffA"><svg class="i"><use href="#i-in"/></svg><span id="ffAt">ここから</span></button>
+        <button id="ffB" disabled><span>ここまで</span><svg class="i"><use href="#i-out"/></svg></button>
+      </div>
+      <div class="ffl" id="ffList"></div>
+    </div>
     <div class="revbar"><button id="revBtn"><svg class="i"><use href="#i-eye"/></svg>見直し</button><span id="revT"></span><button id="revAll" hidden><svg class="i"><use href="#i-check"/></svg>全部採用</button></div>
     <div class="caps" id="caps"></div>
     <button class="primary" id="renderBtn"><svg class="i"><use href="#i-export"/></svg>書き出す</button>
@@ -285,6 +310,9 @@ function render(first){
   $('s5').hidden=!hasCaps; setDone('s5',st>=6);
   const ck=hasCaps?job.id+'|'+JSON.stringify([job.captions,job.captions_shown,job.review,job.en]):'';
   if(hasCaps&&ck!==loaded.caps&&(!capsDirty||first)){loaded.caps=ck;capsDirty=false;drawCaps()}
+  if(hasCaps&&(first||$('ffList').dataset.k!==JSON.stringify(ffs()))){if(first)ffStart=null;drawFF()}
+  $('ffA').disabled=!!busy;$('ffB').disabled=!!busy||ffStart===null;
+  document.querySelectorAll('.ffr .sp,.ffr .del').forEach(b=>b.disabled=!!busy);
   if(hasCaps&&loaded.pc!==pk){loaded.pc=pk;$('pc').src='/files/'+job.id+'/proxy_a.mp4?v='+Date.now()}
   const rend=busy==='書き出し'||busy==='英訳', fin=job&&job.rendered;
   if(rend)$('b6t').textContent=busy==='英訳'?'英語の字幕を作成中':'書き出し中';
@@ -376,6 +404,58 @@ $('okSync').onclick=guard(async()=>{
 });
 
 // 5 字幕の確認
+// 早送り：区間は確認の動画の時刻（映像の頭が0秒＝書き出しと同じ）。中は音なしで速く流し、字幕も出さない
+let ffStart=null, ffSpeed=4;
+const SPEEDS=[2,4,8];
+const ffs=()=>(job&&job.ff)||[];
+function inFF(c){  // 半分以上が早送りに入る字幕は出さない（書き出しと同じ決まり）
+  const al=(job.a_info&&job.a_info.alead)||0, s=c.start+al, e=c.end+al, L=e-s;  // 字幕は音の頭が0秒・区間は映像の頭が0秒
+  if(L<=0)return true;
+  return ffs().reduce((a,r)=>a+Math.max(0,Math.min(e,r.end)-Math.max(s,r.start)),0)>=L*0.5;
+}
+function drawFF(){
+  $('ffAt').textContent=ffStart===null?'ここから':fmt(ffStart);
+  $('ffA').classList.toggle('on',ffStart!==null);$('ffB').disabled=ffStart===null;
+  const box=$('ffList');box.innerHTML='';box.dataset.k=JSON.stringify(ffs());
+  ffs().forEach((r,i)=>{
+    const row=document.createElement('div');row.className='ffr';
+    const b=document.createElement('button');b.className='rng';b.setAttribute('aria-label','ここから再生');
+    const L=r.end-r.start;
+    b.textContent=fmt(r.start)+'–'+fmt(r.end);
+    const sm=document.createElement('small');sm.textContent=L.toFixed(1)+'→'+(L/r.speed).toFixed(1)+'秒';b.appendChild(sm);
+    b.onclick=()=>{const v=$('pc');v.currentTime=Math.max(0,r.start-1);v.play()};
+    const sp=document.createElement('button');sp.className='sp';sp.textContent=r.speed+'×';sp.setAttribute('aria-label','速さを変える');
+    sp.onclick=guard(async()=>{const ff=ffs().map(x=>({...x}));ff[i].speed=SPEEDS[(SPEEDS.indexOf(r.speed)+1)%SPEEDS.length];ffSpeed=ff[i].speed;await saveFF(ff)});
+    const x=document.createElement('button');x.className='del';x.setAttribute('aria-label','この早送りを消す');x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+    x.onclick=guard(async()=>{await saveFF(ffs().filter((_,k)=>k!==i))});
+    row.append(b,sp,x);box.appendChild(row);
+  });
+}
+async function saveFF(ff){
+  try{showErr('');setJob(await post('/api/job/'+job.id+'/ff',{ff}))}catch(e){showErr(e.message)}
+  drawFF();drawCaps();
+}
+$('ffA').onclick=()=>{ffStart=Math.round($('pc').currentTime*10)/10;drawFF()};
+$('ffB').onclick=guard(async()=>{
+  const t=Math.round($('pc').currentTime*10)/10;
+  if(ffStart===null||Math.abs(t-ffStart)<0.3)return;  // ほぼ同じ所なら区間にしない（「ここから」は残す）
+  const s0=Math.min(t,ffStart),e=Math.max(t,ffStart);  // 戻ってから押しても前後を入れ替えて使う
+  ffStart=null;await saveFF([...ffs(),{start:s0,end:e,speed:ffSpeed}]);
+});
+// 確認の動画でも、早送りの区間は速く・音なしで流す（書き出しの見え方に近づける）
+// 区間に入った時だけ速さと消音を変え、出たら入る前の状態に戻す（本人が選んだ速さ・音はそのまま）
+let ffIn=null, ffTick=null;  // ffIn＝区間に入る前の {rate, muted}
+function ffCheck(){
+  const v=$('pc'),t=v.currentTime,r=ffs().find(r=>t>=r.start&&t<r.end);
+  if(r&&!ffIn){ffIn={rate:v.playbackRate,muted:v.muted};v.playbackRate=r.speed;v.muted=true}
+  else if(r&&ffIn&&v.playbackRate!==r.speed&&ffs().some(x=>x.speed===v.playbackRate))v.playbackRate=r.speed;  // 隣の区間へ
+  else if(!r&&ffIn){v.playbackRate=ffIn.rate;v.muted=ffIn.muted;ffIn=null}
+}
+$('pc').addEventListener('timeupdate',ffCheck);
+$('pc').addEventListener('seeked',ffCheck);
+// timeupdate は 0.25 秒おきなので、再生中は細かく見て区間の出口を通り過ぎないようにする
+$('pc').addEventListener('play',()=>{clearInterval(ffTick);ffTick=setInterval(ffCheck,50)});
+$('pc').addEventListener('pause',()=>{clearInterval(ffTick);ffCheck()});
 const capAt=st=>job.captions.find(x=>Math.abs(x.start-st)<0.001);  // 字幕は start で引き直す（job が入れ替わっても正しい字幕を指す）
 function liveReview(){  // 今の文がまだ案の「直す前」と同じものだけが有効な案
   return (job.review||[]).filter(v=>{const c=capAt(v.start);return c&&c.text===v.before});
@@ -385,7 +465,7 @@ function drawCaps(){
   const rv=liveReview();
   job.captions.forEach(c0=>{
     const st=c0.start;
-    const r=document.createElement('div');r.className='cap';
+    const r=document.createElement('div');r.className='cap'+(inFF(c0)?' ffd':'');
     const b=document.createElement('button');b.textContent=fmt(st);b.setAttribute('aria-label','ここから再生');
     b.onclick=()=>{const v=$('pc');v.currentTime=st;v.play()};
     const t=document.createElement('textarea');t.rows=1;t.value=c0.text;

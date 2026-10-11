@@ -145,15 +145,15 @@ def do_render(jid):
     job["captions"] = [{**c, "en": en.get(c["text"]) or None} for c in caps]
     tmp = d / "完成.tmp.mp4"   # 書き終わってから入れ替える（途中で止まっても壊れた完成版を出さない）
     try:
-        engine.render(d, src(jid, "a"), src(jid, "b"), job["a_info"], job["b_info"],
+        out_dur = engine.render(d, src(jid, "a"), src(jid, "b"), job["a_info"], job["b_info"],
                       job["offset"], job["title"], job["captions"], tmp,
-                      progress=lambda f: update(jid, progress=round(f, 3)))
+                      progress=lambda f: update(jid, progress=round(f, 3)), ff=job.get("ff"))
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
     tmp.replace(d / "完成.mp4")
     (d / "完成_白.mp4").unlink(missing_ok=True)   # 前の白背景版は古いので消す
-    update(jid, rendered=time.time(), step=6, white=None)
+    update(jid, rendered=time.time(), step=6, white=None, out_dur=round(out_dur, 3))
 
 
 def do_translate(jid, caps, title):
@@ -181,7 +181,7 @@ def do_white(jid):
     job = load(jid)
     tmp = d / "完成_白.tmp.mp4"
     try:
-        engine.make_white(d / "完成.mp4", tmp, job["a_info"]["dur"],
+        engine.make_white(d / "完成.mp4", tmp, job.get("out_dur") or job["a_info"]["dur"],
                           progress=lambda f: update(jid, progress=round(f, 3)))
     except Exception:
         tmp.unlink(missing_ok=True)
@@ -361,7 +361,7 @@ class H(BaseHTTPRequestHandler):
                 part.rename(d / f"src_{k}.{ext}")
                 drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error"]
                 if k == "a":   # 字幕は A の音から作るので、B の差し替えでは残す
-                    drop += ["captions", "captions_shown"]
+                    drop += ["captions", "captions_shown", "ff"]
                 for key in drop:
                     job.pop(key, None)
                 job.update({f"has_{k}": True, "step": 2})
@@ -437,6 +437,13 @@ class H(BaseHTTPRequestHandler):
                     extra["en"] = {str(k): " ".join(str(v).split()) for k, v in body["en"].items()
                                    if any(c["text"] == k for c in caps)}
                 job = update(jid, captions=caps, captions_shown=caps, learned=n, **extra)
+            elif act == "ff":
+                # 早送りの区間（字幕と同じ時刻の基準）。変えるたびにすぐ控える
+                ff = [{"start": float(r["start"]), "end": float(r["end"]), "speed": int(r.get("speed", 4))}
+                      for r in body.get("ff") or []]
+                ff = engine.clean_ff(ff, job["a_info"]["dur"])
+                stale = {"rendered": None} if ff != (job.get("ff") or []) else {}   # 区間が変われば完成版は古い
+                job = update(jid, ff=ff, **stale)
             elif act == "white":
                 if not job.get("rendered"):
                     return self.send_json({"error": "先に書き出してください"}, 400)

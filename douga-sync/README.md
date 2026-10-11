@@ -1,7 +1,7 @@
 # 動画同期（個人用）
 
 人を撮った動画（A）と iPhone の画面録画（B）を、音で自動同期して 1080×1920 の縦動画にする。
-Mac で処理し、iPhone から操作する。全部無料（ffmpeg・mlx-whisper・Tailscale）。
+Mac で処理し、iPhone から操作する。全部無料（ffmpeg・mlx-whisper・BudouX・fugashi・Tailscale）。
 
 - 開く：iPhone で `https://<Macのtailnet名>:8443`（つみきリモートと同じ名前の :8443）（tailnet 限定）
 - 常駐：`~/Library/LaunchAgents/com.tsumiki.douga-sync.plist`（127.0.0.1:8790）
@@ -12,11 +12,14 @@ Mac で処理し、iPhone から操作する。全部無料（ffmpeg・mlx-whisp
   - 画面の「覚えた言葉」から忘れさせられる
 
 ## 手順
-1. タイトル → 2. 動画2本 → 3. 自動同期（±で手直し）→ 4. 文字起こし → 5. 字幕の確認・修正 → 6. 書き出し → 写真に保存
+1. タイトル → 2. 動画2本 → 3. 自動同期（±で手直し）→ 4. 文字起こし → 5. 字幕の確認・修正・早送り → 6. 書き出し → ダウンロード
+
+- 早送り：確認の動画で「ここから」「ここまで」を押した区間を 2×/4×/8× で流す。区間は音なし・字幕なし（半分以上が区間に入る字幕は出さない）
+- 字幕の改行：言葉の切れ目（BudouX の文節＋fugashi の形態素）だけで折る。検査は `.venv/bin/python test_wrap.py [job.json]`
 
 ## 入れ直し
 ```
-python3 -m venv .venv && .venv/bin/pip install mlx-whisper numpy scipy pillow
+python3 -m venv .venv && .venv/bin/pip install mlx-whisper numpy scipy pillow budoux 'fugashi[unidic-lite]'
 brew install ffmpeg
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tsumiki.douga-sync.plist
 tailscale --socket ~/.tsumiki-remote/tailscaled.sock serve --bg --https=8443 http://127.0.0.1:8790
