@@ -378,7 +378,8 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
            "-filter_complex", fc,
            "-map", "[out]", "-map", "1:a?",
            "-t", f"{dur:.3f}",
-           "-c:v", "h264_videotoolbox", "-b:v", "10M", "-profile:v", "high",
+           "-c:v", "h264_videotoolbox", "-b:v", "6M",   # 2分半で約115MB（iPhone に落とすのが軽く）
+           "-profile:v", "high",
            "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out_path)]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -396,26 +397,6 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
     th.join(5)
     if rc != 0:
         raise RuntimeError("".join(errbuf)[-1500:].strip() or f"ffmpeg が止まりました（{rc}）")
-
-
-def save_to_photos(path, name):
-    """Mac の写真アプリへ取り込む（iCloud 写真なら iPhone にも届く）。
-    AppleScript の待ち時間は既定で2分。大きな動画や写真アプリの起動で超えるので15分に延ばす。
-    写真アプリでの名前がタイトルになるよう、タイトル名の写しを取り込む。"""
-    import re
-    import shutil
-    safe = re.sub(r'[\\/:*?"<>|\n]', "_", name).strip() or "動画"
-    copy = Path(path).with_name(f"{safe}.mp4")
-    shutil.copyfile(path, copy)
-    script = ('tell application "Photos"\n'
-              '  with timeout of 900 seconds\n'
-              f'    import {{POSIX file "{copy}"}} skip check duplicates true\n'
-              '  end timeout\n'
-              'end tell')
-    try:
-        run(["osascript", "-e", script], timeout=960)
-    finally:
-        copy.unlink(missing_ok=True)
 
 
 # ---------- 直した字幕から学ぶ ----------

@@ -146,12 +146,7 @@ def do_render(jid):
         tmp.unlink(missing_ok=True)
         raise
     tmp.replace(d / "完成.mp4")
-    update(jid, rendered=time.time(), step=6, saved=False)
-
-
-def do_photos(jid):
-    engine.save_to_photos(str(jpath(jid) / "完成.mp4"), load(jid)["title"])
-    update(jid, saved=True)
+    update(jid, rendered=time.time(), step=6)
 
 
 # ---------- HTTP ----------
@@ -181,7 +176,7 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         return json.loads(self.rfile.read(n) or b"{}")
 
-    def send_file(self, path, ctype):
+    def send_file(self, path, ctype, download=None):
         size = path.stat().st_size
         rng = self.headers.get("Range")
         start, end = 0, size - 1
@@ -204,6 +199,9 @@ class H(BaseHTTPRequestHandler):
         else:
             self.send_response(200)
         self.send_header("Content-Type", ctype)
+        if download:
+            from urllib.parse import quote
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(download + '.mp4')}")
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(end - start + 1))
         self.send_header("Cache-Control", "no-store")
@@ -246,7 +244,11 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(load(m.group(1)))
             m = re.fullmatch(r"/files/([\d-]+)/(proxy_a\.mp4|proxy_b\.mp4|完成\.mp4)", unquote(p))
             if m:
-                return self.send_file(jpath(m.group(1)) / m.group(2), "video/mp4")
+                name = None
+                if "dl=1" in (self.path.split("?", 1) + [""])[1]:
+                    # 保存用：タイトルの名前で「ダウンロード」として渡す（iPhone はファイルに入る）
+                    name = re.sub(r'[\\/:*?"<>|]', "_", load(m.group(1))["title"]).strip() or "動画"
+                return self.send_file(jpath(m.group(1)) / m.group(2), "video/mp4", download=name)
             self.send_json({"error": "not found"}, 404)
         except (KeyError, FileNotFoundError, StopIteration):
             self.send_json({"error": "not found"}, 404)
@@ -314,7 +316,7 @@ class H(BaseHTTPRequestHandler):
                 for old in d.glob(f"src_{k}.*"):
                     old.unlink()
                 part.rename(d / f"src_{k}.{ext}")
-                drop = ["offset", "auto_offset", "confidence", "rendered", "saved", "learned", "error"]
+                drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error"]
                 if k == "a":   # 字幕は A の音から作るので、B の差し替えでは残す
                     drop += ["captions", "captions_shown"]
                 for key in drop:
@@ -366,7 +368,7 @@ class H(BaseHTTPRequestHandler):
             if act == "title":
                 # タイトルが変わったら、前の完成版は古い
                 t = (body.get("title") or job["title"]).strip()[:40]
-                job = update(jid, title=t, **({"rendered": None, "saved": False} if t != job["title"] else {}))
+                job = update(jid, title=t, **({"rendered": None} if t != job["title"] else {}))
             elif act == "sync":
                 if not (job.get("has_a") and job.get("has_b")):
                     return self.send_json({"error": "動画を2本選んでください"}, 400)
@@ -374,7 +376,7 @@ class H(BaseHTTPRequestHandler):
             elif act == "confirm":
                 # 同期を確定。字幕がまだなら文字起こしへ、あればそのまま確認へ
                 off = round(float(body["offset"]), 3)
-                stale = {"rendered": None, "saved": False} if off != job.get("offset") else {}
+                stale = {"rendered": None} if off != job.get("offset") else {}
                 if job.get("captions"):
                     update(jid, offset=off, step=5, **stale)
                 else:
@@ -396,9 +398,7 @@ class H(BaseHTTPRequestHandler):
                     update(jid, captions=[c for c in caps if c["text"]])
                 background(jid, "見直し", lambda: do_review(jid))
             elif act == "render":
-                background(jid, "書き出し", lambda: do_render(jid), rendered=None, saved=False)
-            elif act == "photos":
-                background(jid, "写真に保存", lambda: do_photos(jid))
+                background(jid, "書き出し", lambda: do_render(jid), rendered=None)
             else:
                 return self.send_json({"error": "not found"}, 404)
             self.send_json(load(jid))

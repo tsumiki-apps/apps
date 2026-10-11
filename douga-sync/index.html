@@ -92,6 +92,8 @@ details summary::-webkit-details-marker{display:none}
 .jobs button{flex:none;border-radius:9999px;font-size:14px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jobs button.cur{background:var(--accent-wash);color:var(--accent-2)}
 .final{max-width:320px;margin:0 auto}
+.hint{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;color:var(--ink-mid);margin-top:8px}
+.hint svg.i{width:18px;height:18px}
 .two{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
 .two .primary{margin:0}
 @media (min-width:900px){main{max-width:760px}.final{max-width:360px}}
@@ -187,10 +189,8 @@ details summary::-webkit-details-marker{display:none}
     <div class="banner good" id="learned" hidden><svg class="i"><use href="#i-book"/></svg><span id="learnedT"></span></div>
     <div id="v6" hidden>
       <div class="final"><video id="fin" playsinline controls></video></div>
-      <div class="two">
-        <button class="primary" id="photosBtn"><svg class="i"><use href="#i-photos"/></svg><span id="photosT">写真に保存</span></button>
-        <a class="btn" id="dl" aria-label="ダウンロード" download><svg class="i"><use href="#i-down"/></svg></a>
-      </div>
+      <a class="btn primary" id="dl"><svg class="i"><use href="#i-down"/></svg>ダウンロード</a>
+      <div class="hint"><svg class="i"><use href="#i-photos"/></svg>ファイル → 共有 → ビデオを保存</div>
     </div>
   </section>
 
@@ -273,14 +273,10 @@ function render(first){
   if(rend)$('bar6').style.width=((job.progress||0)*100)+'%';
   if(fin&&$('fin').dataset.v!=String(job.rendered)){
     const u='/files/'+job.id+'/'+encodeURIComponent('完成.mp4')+'?v='+job.rendered;
-    $('fin').src=u;$('fin').dataset.v=job.rendered;$('dl').href=u;$('dl').download=job.title+'.mp4';
+    $('fin').src=u;$('fin').dataset.v=job.rendered;$('dl').href=u+'&dl=1';
   }
   $('learned').hidden=!(job&&job.learned);
   if(job&&job.learned)$('learnedT').textContent='+'+job.learned+' 件 覚えました';
-  if(fin){
-    $('photosBtn').disabled=!!busy||job.saved;
-    $('photosT').textContent=busy==='写真に保存'?'保存中':job.saved?'保存しました':'写真に保存';
-  }
   $('okSync').disabled=$('renderBtn').disabled=!!busy;
   clearTimeout(pollT);
   if(busy){const id=job.id;pollT=setTimeout(async function poll(){
@@ -407,7 +403,7 @@ async function loadLex(){
 loadLex();
 
 // 6 写真へ
-$('photosBtn').onclick=guard(async()=>{try{job=await post('/api/job/'+job.id+'/photos')}catch(e){showErr(e.message)}});
+
 
 (async()=>{let id=new URLSearchParams(location.search).get('job');if(!id)try{id=localStorage.getItem('dsync.job')}catch(e){}
   if(id)await open(id);else{render(true);loadJobs()}})();
