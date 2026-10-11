@@ -27,7 +27,8 @@ WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 W, H = 1080, 1920
 # 形：人の動画を画面全体に敷き、タイトルと字幕は白い札にして上に重ねる（本人が選んだ案3）
 MAIN = (0, 0, W, H)                 # 人の動画の枠 x, y, w, h
-PIP_W, PIP_H, PIP_R, PIP_B = 300, 650, 36, 8   # 小窓の幅・高さ・角丸・フチ
+PIP_W, PIP_H, PIP_R, PIP_B = 300, 650, 36, 8   # 小窓（iPhone 縦）の幅・高さ・角丸・フチ
+PIP_MAX_W, PIP_MAX_H = 520, 650     # 小窓が取れる最大の幅・高さ（画面録画の比率に合わせてこの中に収める）
 PIP_RIGHT, PIP_BOTTOM = 36, 1500    # 小窓の右の余白・下の端（日英の字幕の札の上に置く）
 CAP_FONT, CAP_LINE = 54, 16         # 字幕の字の大きさ・1行の字数
 EN_FONT = 36                        # 英語の字幕の字の大きさ（日本語の下に小さく）
@@ -274,18 +275,35 @@ def make_title(title, path):
     im.save(path)
 
 
-def pip_rect():
-    return W - PIP_RIGHT - PIP_W, PIP_BOTTOM - PIP_H
+def pip_size(b_info=None):
+    """画面録画の縦横比から小窓の大きさを決める（iPhone 縦＝細長い・iPad 縦＝3:4 前後・横向き＝横長）。
+    縦長は高さ 650 を基準に、幅が PIP_MAX_W を超えるなら幅で決める。角丸は短い辺に比例。"""
+    a = (b_info or {}).get("w", PIP_W) / max((b_info or {}).get("h", PIP_H), 1)
+    if a <= 0:
+        a = PIP_W / PIP_H
+    h = PIP_MAX_H
+    w = h * a
+    if w > PIP_MAX_W:
+        w, h = PIP_MAX_W, PIP_MAX_W / a
+    w, h = int(round(w / 2) * 2), int(round(h / 2) * 2)
+    r = max(12, round(min(w, h) * 0.12))
+    return w, h, r
 
 
-def make_pip_assets(plate_path, mask_path):
+def pip_rect(size=(PIP_W, PIP_H, PIP_R)):
+    w, h, _ = size
+    return W - PIP_RIGHT - w, PIP_BOTTOM - h
+
+
+def make_pip_assets(plate_path, mask_path, size=(PIP_W, PIP_H, PIP_R)):
     """小窓のフチ（黒い角丸）と、映像を角丸に切る型。"""
-    plate = Image.new("RGBA", (PIP_W + PIP_B * 2, PIP_H + PIP_B * 2), (0, 0, 0, 0))
+    pw, ph, pr = size
+    plate = Image.new("RGBA", (pw + PIP_B * 2, ph + PIP_B * 2), (0, 0, 0, 0))
     ImageDraw.Draw(plate).rounded_rectangle(
-        [0, 0, plate.width - 1, plate.height - 1], radius=PIP_R + PIP_B, fill=(12, 11, 9, 255))
+        [0, 0, plate.width - 1, plate.height - 1], radius=pr + PIP_B, fill=(12, 11, 9, 255))
     plate.save(plate_path)
-    mask = Image.new("L", (PIP_W, PIP_H), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, PIP_W - 1, PIP_H - 1], radius=PIP_R, fill=255)
+    mask = Image.new("L", (pw, ph), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, pw - 1, ph - 1], radius=pr, fill=255)
     mask.convert("RGB").save(mask_path)
 
 
@@ -364,7 +382,9 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
     ttl = job_dir / "title.png"
     make_background(title, bg)
     make_title(title, ttl)
-    make_pip_assets(plate, mask)
+    psize = pip_size(b_info)
+    make_pip_assets(plate, mask, psize)
+    PW, PH, _ = psize
     dur = a_info["dur"]
     # 字幕の時刻は A の音の頭が0秒（文字起こしの都合）。書き出しの時間軸へ直す
     al = a_info.get("alead", 0.0)
@@ -372,7 +392,7 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
                                 dur, job_dir / "caps")
 
     mx, my, mw, mh = MAIN
-    px, py = pip_rect()
+    px, py = pip_rect(psize)
     # 時刻の基準：offset は「A の映像の何秒目で B の映像が始まるか」。
     # 書き出しの時間軸は A のファイルの始まりが0秒なので、A の映像は vlead 秒あとに始まる。
     # B もファイルの始まりが0秒として読まれるので、B の映像の頭（vlead）を差し引いてずらす。
@@ -389,9 +409,9 @@ def render(job_dir, a_path, b_path, a_info, b_info, offset, title, caps, out_pat
     fc = (
         f"[1:v]fps=30,scale={mw}:{mh}:force_original_aspect_ratio=increase,"
         f"crop={mw}:{mh},{hdr_filter(a_info)}setsar=1[main];"
-        f"[2:v]fps=30,scale={PIP_W}:{PIP_H}:force_original_aspect_ratio=increase,"
-        f"crop={PIP_W}:{PIP_H},{hdr_filter(b_info)}setsar=1,format=yuva420p[pv];"
-        f"[4:v]format=gray,scale={PIP_W}:{PIP_H}[pm];"
+        f"[2:v]fps=30,scale={PW}:{PH}:force_original_aspect_ratio=increase,"
+        f"crop={PW}:{PH},{hdr_filter(b_info)}setsar=1,format=yuva420p[pv];"
+        f"[4:v]format=gray,scale={PW}:{PH}[pm];"
         f"[pv][pm]alphamerge[pip];"
         f"[0:v][main]overlay={mx}:{my}:shortest=1[v1];"
         f"[v1][3:v]overlay={px - PIP_B}:{py - PIP_B}:enable='{show}'[v2];"
