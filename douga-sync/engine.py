@@ -635,3 +635,45 @@ def translate_captions(caps, title, timeout=300):
         if 0 <= i < len(caps) and en:
             out[caps[i]["text"]] = en
     return out
+
+
+# ---------- 白背景版 ----------
+# 仕上がった動画の構図はそのままに、白い地の上に少し小さく置き、角を少しだけ丸くする。
+
+WHITE_M, WHITE_R = 48, 36    # 左右の余白・角丸
+
+
+def make_white(src, dst, dur, progress=None):
+    iw = W - WHITE_M * 2
+    ih = round(iw * H / W / 2) * 2          # 9:16 のまま
+    x, y = WHITE_M, (H - ih) // 2
+    mask = Path(dst).with_name("white_mask.png")
+    m = Image.new("L", (iw, ih), 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, iw - 1, ih - 1], radius=WHITE_R, fill=255)
+    m.convert("RGB").save(mask)
+    fc = (f"color=c=white:s={W}x{H}:r=30[bg];"
+          f"[0:v]scale={iw}:{ih},format=yuva420p[v];"
+          f"[1:v]format=gray,scale={iw}:{ih}[m];[v][m]alphamerge[r];"
+          f"[bg][r]overlay={x}:{y}:shortest=1,format=yuv420p[out]")
+    cmd = [FFMPEG, "-y", "-v", "error", "-progress", "pipe:1", "-nostats",
+           "-i", str(src), "-loop", "1", "-i", str(mask),
+           "-filter_complex", fc, "-map", "[out]", "-map", "0:a?", "-t", f"{dur:.3f}",
+           "-c:v", "h264_videotoolbox", "-b:v", "6M", "-profile:v", "high",
+           "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+           "-c:a", "copy", "-movflags", "+faststart", str(dst)]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    errbuf = []
+    import threading
+    th = threading.Thread(target=lambda: errbuf.append(p.stderr.read()), daemon=True)
+    th.start()
+    for line in p.stdout:
+        if line.startswith("out_time_us=") and progress:
+            try:
+                progress(min(int(line.split("=")[1]) / 1e6 / dur, 1.0))
+            except ValueError:
+                pass
+    rc = p.wait()
+    th.join(5)
+    mask.unlink(missing_ok=True)
+    if rc != 0:
+        raise RuntimeError("".join(errbuf)[-1500:].strip() or f"ffmpeg が止まりました（{rc}）")

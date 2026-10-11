@@ -26,6 +26,9 @@
 *{box-sizing:border-box;margin:0}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
+/* 横には動かさない（縦のスクロールだけ） */
+html,body{overflow-x:hidden;overscroll-behavior-x:none;max-width:100%}
+main,.card{min-width:0;max-width:100%}
 body{background:var(--paper);color:var(--ink);font:400 16px/1.7 "Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;min-height:100dvh}
 main{max-width:640px;margin:0 auto;padding:16px 16px calc(48px + env(safe-area-inset-bottom))}
 header{display:flex;align-items:center;gap:8px;padding:8px 0 16px}
@@ -89,10 +92,12 @@ details summary{list-style:none;cursor:pointer;display:flex;align-items:center;g
 details summary::-webkit-details-marker{display:none}
 .empty{color:var(--ink-soft);font-size:14px;padding:8px 0}
 .cap button{min-width:56px;padding:0 4px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink-mid)}
-.jobs{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px}
-.jobs button{flex:none;border-radius:9999px;font-size:14px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jobs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.jobs button{flex:none;border-radius:9999px;font-size:14px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jobs button.cur{background:var(--accent-wash);color:var(--accent-2)}
 .final{max-width:320px;margin:0 auto}
+.ver{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.ver button{border-radius:9999px}
 .hint{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;color:var(--ink-mid);margin-top:8px}
 .hint svg.i{width:18px;height:18px}
 .two{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
@@ -121,6 +126,7 @@ details summary::-webkit-details-marker{display:none}
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-frame" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><rect x="7" y="6" width="10" height="12" rx="2"/></symbol>
   <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5L12 3l4.5 4.5M5 13v6h14v-6"/></symbol>
 </svg>
 <main>
@@ -190,6 +196,11 @@ details summary::-webkit-details-marker{display:none}
     <div class="banner warn" id="enErr" hidden><svg class="i"><use href="#i-warn"/></svg><span>英語の字幕を作れませんでした。もう一度書き出してください</span></div>
     <div class="banner good" id="learned" hidden><svg class="i"><use href="#i-book"/></svg><span id="learnedT"></span></div>
     <div id="v6" hidden>
+      <div class="ver" role="tablist">
+        <button id="verN" class="on" role="tab"><svg class="i"><use href="#i-film"/></svg>そのまま</button>
+        <button id="verW" role="tab"><svg class="i"><use href="#i-frame"/></svg>白背景</button>
+      </div>
+      <div class="busy" id="bW" hidden><div class="spin"></div><span>白背景版を作成中</span><div class="bar"><i id="barW"></i></div></div>
       <div class="final"><video id="fin" playsinline controls></video></div>
       <a class="btn primary" id="dl"><svg class="i"><use href="#i-down"/></svg>ダウンロード</a>
       <div class="hint"><svg class="i"><use href="#i-photos"/></svg>ファイル → 共有 → ビデオを保存</div>
@@ -209,7 +220,7 @@ details summary::-webkit-details-marker{display:none}
 const $=id=>document.getElementById(id);
 // iPhone のマナーモードでも動画の音を出す（Safari 16.4〜。無い端末では何もしない）
 try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
-let job=null, pollT=null, offset=0, capsDirty=false;
+let job=null, pollT=null, offset=0, capsDirty=false, ver='n';  // ver＝完成の見せ方（n＝そのまま／w＝白背景）
 const loaded={prox:'',caps:'',pc:''};  // 何を読み込み済みか（裏で作業が終わったら読み込み直す）
 // 押した瞬間に押せなくする（応答が返るまでの二度押しを防ぐ）
 const guard=fn=>async function(){if(this.disabled)return;this.disabled=true;try{await fn()}finally{this.disabled=false;render(false)}};
@@ -274,9 +285,18 @@ function render(first){
   $('s6').hidden=!(rend||fin);
   $('b6').hidden=!rend; $('v6').hidden=!fin||rend;
   if(rend)$('bar6').style.width=((job.progress||0)*100)+'%';
-  if(fin&&$('fin').dataset.v!=String(job.rendered)){
-    const u='/files/'+job.id+'/'+encodeURIComponent('完成.mp4')+'?v='+job.rendered;
-    $('fin').src=u;$('fin').dataset.v=job.rendered;$('dl').href=u+'&dl=1';
+  if(fin){
+    if(!job.white&&ver==='w'&&busy!=='白背景')ver='n';
+    $('verN').classList.toggle('on',ver==='n');$('verW').classList.toggle('on',ver==='w');
+    $('bW').hidden=busy!=='白背景';
+    if(busy==='白背景')$('barW').style.width=((job.progress||0)*100)+'%';
+    const w=ver==='w'&&job.white, key=(w?'w'+job.white:'n'+job.rendered);
+    $('fin').parentNode.hidden=$('dl').hidden=busy==='白背景';
+    if($('fin').dataset.v!==key){
+      const u='/files/'+job.id+'/'+encodeURIComponent(w?'完成_白.mp4':'完成.mp4')+'?v='+(w?job.white:job.rendered);
+      $('fin').src=u;$('fin').dataset.v=key;$('dl').href=u+'&dl=1';
+    }
+    $('verW').disabled=$('verN').disabled=!!busy;
   }
   $('learned').hidden=!(job&&job.learned);
   $('enErr').hidden=!(job&&job.en_error&&!busy);
@@ -389,6 +409,10 @@ $('renderBtn').onclick=guard(async()=>{
 $('revBtn').onclick=guard(async()=>{try{showErr('');job=await post('/api/job/'+job.id+'/review',{captions:job.captions});capsDirty=false}catch(e){showErr(e.message)}});
 $('revAll').onclick=()=>{(job.review||[]).forEach(sg=>{const c=job.captions.find(c=>Math.abs(c.start-sg.start)<0.01);if(c)c.text=sg.after});
   job.review=[];capsDirty=true;loaded.caps='';drawCaps();render(false)};
+
+$('verN').onclick=()=>{ver='n';render(false)};
+$('verW').onclick=guard(async()=>{ver='w';
+  if(!job.white){try{showErr('');job=await post('/api/job/'+job.id+'/white')}catch(e){showErr(e.message);ver='n'}}});
 
 // 覚えた言葉
 async function loadLex(){

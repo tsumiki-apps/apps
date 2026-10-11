@@ -159,7 +159,22 @@ def do_render(jid):
         tmp.unlink(missing_ok=True)
         raise
     tmp.replace(d / "完成.mp4")
-    update(jid, rendered=time.time(), step=6)
+    (d / "完成_白.mp4").unlink(missing_ok=True)   # 前の白背景版は古いので消す
+    update(jid, rendered=time.time(), step=6, white=None)
+
+
+def do_white(jid):
+    d = jpath(jid)
+    job = load(jid)
+    tmp = d / "完成_白.tmp.mp4"
+    try:
+        engine.make_white(d / "完成.mp4", tmp, job["a_info"]["dur"],
+                          progress=lambda f: update(jid, progress=round(f, 3)))
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(d / "完成_白.mp4")
+    update(jid, white=time.time())
 
 
 # ---------- HTTP ----------
@@ -255,12 +270,14 @@ class H(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/job/([\d-]+)", p)
             if m:
                 return self.send_json(load(m.group(1)))
-            m = re.fullmatch(r"/files/([\d-]+)/(proxy_a\.mp4|proxy_b\.mp4|完成\.mp4)", unquote(p))
+            m = re.fullmatch(r"/files/([\d-]+)/(proxy_a\.mp4|proxy_b\.mp4|完成\.mp4|完成_白\.mp4)", unquote(p))
             if m:
                 name = None
                 if "dl=1" in (self.path.split("?", 1) + [""])[1]:
                     # 保存用：タイトルの名前で「ダウンロード」として渡す（iPhone はファイルに入る）
                     name = re.sub(r'[\\/:*?"<>|]', "_", load(m.group(1))["title"]).strip() or "動画"
+                    if "白" in m.group(2):
+                        name += "_白背景"
                 return self.send_file(jpath(m.group(1)) / m.group(2), "video/mp4", download=name)
             self.send_json({"error": "not found"}, 404)
         except (KeyError, FileNotFoundError, StopIteration):
@@ -404,6 +421,10 @@ class H(BaseHTTPRequestHandler):
                 keep = body.get("review")
                 extra = {"review": keep} if isinstance(keep, list) else {}
                 job = update(jid, captions=caps, captions_shown=caps, learned=n, **extra)
+            elif act == "white":
+                if not job.get("rendered"):
+                    return self.send_json({"error": "先に書き出してください"}, 400)
+                background(jid, "白背景", lambda: do_white(jid))
             elif act == "review":
                 if body.get("captions") is not None:
                     caps = [{"start": float(c["start"]), "end": float(c["end"]),
