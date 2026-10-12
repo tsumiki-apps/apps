@@ -567,7 +567,7 @@ async function seatRows(name) {
   const height = Number(h) || 0;
   if (full !== '1') return { rows: ROWS, height };
   if (alt === '1' || Date.now() / 1000 - Number(created) < FULL_GRACE_S) return { rows: ROWS_FULL, height };
-  await tmux(['set-option', '-u', '-t', name, FULL_OPT]);
+  await tmux(['set-option', '-u', '-t', '=' + name + ':', FULL_OPT]);
   console.log(`full ${name} 裏画面でなくなった（今の描き方に戻った・Claude を終えた）ので45行に戻す`);
   return { rows: ROWS, height };
 }
@@ -1330,7 +1330,8 @@ async function isHeld(name) {
   return on;
 }
 
-// 保護の札を席そのものから読む。読めないときは**残す側に倒す**（上の isHeld と同じ考え）
+// 保護の札を席そのものから読む。tmux が答えないときは**残す側に倒す**（上の isHeld と同じ考え）。
+// ⚠️ 席がもう無いときは tmux が空で返す＝false。killmany では先に captureScreen がはじくので害はない
 async function isKept(name) {
   if (!NAME_RE.test(name)) return false;
   const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', `#{${KEEP_OPT}}`]);
@@ -2772,10 +2773,12 @@ const server = http.createServer(async (req, res) => {
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const on = body.on !== false;
       // 席に書いてから写しを直す。書けなくても写しは直す（縁の色はすぐ変わって
-      // ほしい）が、その席はサーバーの入れ替えで札が落ちる。素の名前で指す
-      // ＝ `=名前:` は set-option では使えない
-      const w = on ? await tmux(['set-option', '-t', name, HOLD_OPT, '1'])
-                   : await tmux(['set-option', '-t', name, '-u', HOLD_OPT]);
+      // ほしい）が、その席はサーバーの入れ替えで札が落ちる。
+      // ⚠️ 席は `=名前:` で指す（2026-10-12 に直した）。素の名前だと、その席が無いとき
+      //    tmux は**頭が同じ別の席**を探して書く（work1 宛てが work10 に効く。tmux 3.7b で実測）。
+      //    以前ここに「`=名前:` は set-option では使えない」と書いていたが、今の tmux では使える
+      const w = on ? await tmux(['set-option', '-t', '=' + name + ':', HOLD_OPT, '1'])
+                   : await tmux(['set-option', '-t', '=' + name + ':', '-u', HOLD_OPT]);
       if (on) pausedSeat.add(name); else pausedSeat.delete(name);
       console.log(`pause ${name} ${on ? 'on' : 'off'}${w.ok ? '' : ' (席に書けず・写しだけ)'}`);
       forgetScreen(name);   // すぐ見に行くので撮り置きは捨てる
@@ -2791,8 +2794,8 @@ const server = http.createServer(async (req, res) => {
       const on = body.on !== false;
       // 中断と違って写しを持たないので、書けなかったら失敗で返す
       // （「保護したつもりで消える」がいちばん困る）
-      const w = on ? await tmux(['set-option', '-t', name, KEEP_OPT, '1'])
-                   : await tmux(['set-option', '-t', name, '-u', KEEP_OPT]);
+      const w = on ? await tmux(['set-option', '-t', '=' + name + ':', KEEP_OPT, '1'])
+                   : await tmux(['set-option', '-t', '=' + name + ':', '-u', KEEP_OPT]);
       if (!w.ok) return json(res, 500, { error: w.err.slice(0, 200) });
       const last = lastSeat.get(name);
       if (last) last.keep = on;
@@ -2875,12 +2878,13 @@ const server = http.createServer(async (req, res) => {
       const label = cleanLabel(body.label);
       // 中身はログに残さない（お客様の名前を打つ場所になりうる。/api/send と同じ考え）
       console.log(`rename ${name} ${label ? label.length + '文字' : '自動題名に戻す'}`);
-      // 席そのものへの指定は素の名前で指す（`=名前:` は set-option では使えない）。
+      // 席は `=名前:` で指す（素の名前だと、席が無いとき頭が同じ別の席の名札を書き換える。
+      // 2026-10-12 実測・/api/pause の注記と同じ）。
       // 名札は自由な字なので `--` を必ず置く。`-x …` のような字が旗として読まれると
       // 500 になる（/api/send・/api/key で同じ穴を踏んでいる。2026-09-02）
       const r = label
-        ? await tmux(['set-option', '-t', name, '--', TITLE_OPT, label])
-        : await tmux(['set-option', '-t', name, '-u', TITLE_OPT]);
+        ? await tmux(['set-option', '-t', '=' + name + ':', '--', TITLE_OPT, label])
+        : await tmux(['set-option', '-t', '=' + name + ':', '-u', TITLE_OPT]);
       // 席が畳まれた直後にここへ来ることがある。tmux の英語をそのまま出しても
       // 出先では読めないので、その一件だけ日本語にする（/api/new と同じ扱い）
       if (!r.ok) {
@@ -2918,7 +2922,7 @@ const server = http.createServer(async (req, res) => {
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (!r.ok) { sized.delete(name); return json(res, 500, { error: r.err.slice(0, 200) }); }
       await fixEmojiWidths();   // 席を作ると tmux が起き直すことがある＝入れ直す
-      if (full) await tmux(['set-option', '-t', name, FULL_OPT, '1']);
+      if (full) await tmux(['set-option', '-t', '=' + name + ':', FULL_OPT, '1']);
       if (body.run === 'claude') {
         // スマホからは「これ実行していい？」に毎回答えるのが現実的でないので、
         // このアプリから作るセッションは最初から編集をバイパスで起動する。
@@ -2931,7 +2935,7 @@ const server = http.createServer(async (req, res) => {
         // どのモデルで始めたかを席に書いておく（一覧の札に出すため）。
         // ここだけ `=名前` の指定が使えないので素の名前で指す。名前は NAME_RE を
         // 通っていて、tmux は完全一致を先に見るので、別の席に付くことはない。
-        if (known) await tmux(['set-option', '-t', name, MODEL_OPT, model]);
+        if (known) await tmux(['set-option', '-t', '=' + name + ':', MODEL_OPT, model]);
         await tmux(['send-keys', '-t', '=' + name + ':', '-l', cmd]);
         await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
       }
@@ -2959,7 +2963,7 @@ const server = http.createServer(async (req, res) => {
       const r = await tmux(['new-session', '-d', '-s', name, '-x', String(COLS_DEFAULT), '-y', String(FULLSCREEN ? ROWS_FULL : ROWS),
         '-c', fs.existsSync(cwd) ? cwd : os.homedir()]);
       if (r.ok) await fixEmojiWidths();
-      if (r.ok && FULLSCREEN) await tmux(['set-option', '-t', name, FULL_OPT, '1']);
+      if (r.ok && FULLSCREEN) await tmux(['set-option', '-t', '=' + name + ':', FULL_OPT, '1']);
       if (!r.ok) {
         sized.delete(name);
         return json(res, 500, { error: r.err.slice(0, 200), msg: '席を作れませんでした（' + r.err.slice(0, 80) + '）' });

@@ -1981,6 +1981,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    ときではなく）。巡回（1.5秒ごと）は、ここに名前がある席のメモを触らない＝
   //    打っている最中に返事が返ってきても、打つ前の字に戻されない
   var memoPending = {};
+  // 保護の付け外しが Mac に届くまでの手元の値 { 席の名前: true/false }。
+  // 押す前に出た巡回の返事が後から着いても、鍵が一瞬消えたり戻ったりしないように
+  var keepPending = {};
   var memoTimer = null;
   var MEMO_WAIT_MS = 700;      // 打つ手が止まってから送るまで（1文字ごとに送らない）
   var sessions = [];
@@ -3101,6 +3104,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       renderBatt(d.battery);
       renderAuth(d.auth);
       sessions = d.sessions;
+      sessions.forEach(function (s2) {
+        if (keepPending.hasOwnProperty(s2.name)) s2.keep = keepPending[s2.name];
+      });
       // メモの正本は Mac 側。ただし**まだ送れていない手元の字**は上書きしない
       // （打った直後に巡回が返ってくると、打つ前の字に戻ってしまう）
       var gotMemos = d.memos || {};
@@ -6064,14 +6070,25 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // 保護の札を付ける／外す。画面はすぐ変える（返事を待つと1.5秒遅れて見える）
   function doKeep(name, on) {
+    keepPending[name] = on;
     sessions.forEach(function (x) { if (x.name === name) x.keep = on; });
     renderTabs();
+    // 手元の値は、返事のあとの tick(true) で正本を取り直してから降ろす
+    var settle = function () {
+      tick(true);
+      setTimeout(function () { if (keepPending[name] === on) delete keepPending[name]; }, 1600);
+    };
     api('/api/keep', { method: 'POST', body: JSON.stringify({ name: name, on: on }) })
       .then(function () {
         toast(on ? name + ' を保護しました（まとめて終わらせるで残ります）' : name + ' の保護を外しました');
-        tick(true);
+        settle();
       })
-      .catch(function (e) { toast('保護を切り替えられません: ' + e.message, 3600); tick(true); });
+      .catch(function (e) {
+        // 失敗したら手元の値はすぐ捨てる（保護できていないのに鍵を見せない）
+        if (keepPending[name] === on) delete keepPending[name];
+        toast('保護を切り替えられません: ' + e.message, 3600);
+        tick(true);
+      });
   }
 
   // 1件ずつの終了。保護している席なら確認してから
@@ -6460,8 +6477,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 説明文は置かない。何度も見る場所なので、毎回同じ説明が並ぶと
   // 4項目でも「読む画面」になってしまう。押せない項目は灰色で分かるので、
   // 理由（選ばれていない／0件）も言わない。
-  // ただし「この作業場所を終わらせる」だけは確認シートを挟まず即実行なので、
-  // どこが消えるか（席の名前）と危険の合図（⚠️）は文字数を使ってでも残す。
+  // ただし「この作業場所を終わらせる」は確認シートを挟まず即実行なので（保護中の席だけは
+  // 確認を1枚はさむ）、どこが消えるか（席の名前）と危険の合図（⚠️）は文字数を使ってでも残す。
   document.getElementById('menu').onclick = function () {
     openSheet('版 ' + (seenVersion || '?'));
     sheetItem('制作物を見る', '', function () { openFiles(); },
