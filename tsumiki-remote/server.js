@@ -691,6 +691,16 @@ const LABEL_MAX = 40;
 // 席と一緒に生き死にする場所へ移して、入れ替えでも残るようにする。
 const HOLD_OPT = '@tsumiki_hold';
 
+// 保護の札（2026-10-12）。「まとめて終わらせる」で**消さない**ための印。
+// 中断（hold）と分けた理由＝hold は「止めて置いてある・あとで続きを頼む」の意味で、
+// unhold で再開の指示まで送る。ただ残しておきたいだけの席にそれを付けると、
+// 縁が青く光り続けて「あとで戻る席」が見分けられなくなる。
+// 保護は**残すことだけ**を意味する。縁の色も状態も変えず、札に鍵の絵が付くだけ。
+// 置き場は上と同じ席そのもの＝サーバーを入れ替えても残り、席と一緒に消える。
+// ⚠️ 1件ずつの「終了」は止めない（画面側で確認を1枚はさむだけ）。自分で狙って
+//    押したものまで断ると、保護を外す→終わらせる、の2手が毎回要る
+const KEEP_OPT = '@tsumiki_keep';
+
 // 名札に使ってよい形にそろえる。ここを通さないと2つ壊れる：
 //  ・改行や制御文字が入ると tmux の1行1席の出力がずれる
 //  ・区切りの SEP がそのまま入ると、下の split で列がずれて別の席に見える
@@ -799,21 +809,23 @@ function newestFirst(list) {
 async function listSessions() {
   // 名札は**いちばん最後**に置く。中身は人が打つ自由な字なので、万一 SEP が
   // 混じっても、後ろを全部つなぎ直せば前の列（名前・モデル）は無事でいられる
+  // （列を足すときは名札の前に入れて、下の slice の数を1つ増やす）
   const r = await tmux(['list-sessions', '-F',
-    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}${SEP}#{${HOLD_OPT}}${SEP}#{session_created}${SEP}#{${TITLE_OPT}}`]);
+    `#{session_name}${SEP}#{window_name}${SEP}#{session_activity}${SEP}#{${MODEL_OPT}}${SEP}#{${HOLD_OPT}}${SEP}#{session_created}${SEP}#{${KEEP_OPT}}${SEP}#{${TITLE_OPT}}`]);
   if (!r.ok) return { ok: NO_SERVER_RE.test(r.err), sessions: [] };
   const sessions = r.out
     .split('\n')
     .filter(Boolean)
     .map((line) => {
       const cols = line.split(SEP);
-      const [name, window, activity, model, hold, created] = cols;
+      const [name, window, activity, model, hold, created, keep] = cols;
       return { name, window, activity: Number(activity) || 0, model: (model || '').trim(),
                hold: String(hold || '').trim() === '1',
                // 席が生まれた時刻（UNIX秒）。同じ名前で作り直した席を「別の席」と
                // 見分ける印。メモの持ち越しを止めるのに使う（→ memoOf）
                created: Number(created) || 0,
-               label: cleanLabel(cols.slice(6).join(SEP)) };
+               keep: String(keep || '').trim() === '1',
+               label: cleanLabel(cols.slice(7).join(SEP)) };
     });
   // 席に書いてあるほうが正本。メモリの札はその写しなので、一覧を取るたびに
   // 合わせ直す＝サーバーを入れ替えた直後の1回目で、札がひとりでに戻ってくる
@@ -941,6 +953,8 @@ async function seatState(s, deadline) {
     auto,
     // 始めたときに選んだモデル。選ばずに作った席・アプリの外で作った席は空
     model: s.model,
+    // 保護の札（まとめて終わらせるで残す）。一覧が読めなかった周は前の値を引き継ぐ
+    keep: s.keep === undefined ? !!(lastSeat.get(s.name) || {}).keep : !!s.keep,
     // いまの許可のしかた（bypass / auto / manual / accept / plan）。
     // 撮ってある画面から読むだけなので、tmux をもう1本起こす必要はない。
     // ⚠️ 読めない周（起動の途中・箱で覆われた・シェルの席）は**前に読めた値を
@@ -1314,6 +1328,14 @@ async function isHeld(name) {
   const on = r.out.trim() === '1';
   if (on) pausedSeat.add(name); else pausedSeat.delete(name);
   return on;
+}
+
+// 保護の札を席そのものから読む。読めないときは**残す側に倒す**（上の isHeld と同じ考え）
+async function isKept(name) {
+  if (!NAME_RE.test(name)) return false;
+  const r = await tmux(['display-message', '-p', '-t', '=' + name + ':', `#{${KEEP_OPT}}`]);
+  if (!r.ok) return true;
+  return r.out.trim() === '1';
 }
 
 function judge(name, text) {
@@ -2556,7 +2578,7 @@ const server = http.createServer(async (req, res) => {
           // ここで古い名札に戻すと「名前を変えたのに変わらない」になる
           // （席が詰まっている＝いちばん名前で見分けたいとき、に効く）
           const fresh = s.label === undefined ? {}
-            : { label: s.label, title: s.label || base.auto || base.title };
+            : { label: s.label, title: s.label || base.auto || base.title, keep: !!s.keep };
           return Object.assign({}, base, fresh, { stale: true });
         })));
       // メモは**いま並んでいる席のぶんだけ**乗せる（全部だと巡回のたびに
@@ -2758,6 +2780,24 @@ const server = http.createServer(async (req, res) => {
       console.log(`pause ${name} ${on ? 'on' : 'off'}${w.ok ? '' : ' (席に書けず・写しだけ)'}`);
       forgetScreen(name);   // すぐ見に行くので撮り置きは捨てる
       return json(res, 200, { ok: true });
+    }
+
+    // 保護の札を付ける／外す。tmux の中へは何も送らない。
+    // 変わるのは「札に鍵が付くか」と「まとめて終わらせるで残るか」の2つだけ
+    if (p === '/api/keep' && req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name || '');
+      if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      const on = body.on !== false;
+      // 中断と違って写しを持たないので、書けなかったら失敗で返す
+      // （「保護したつもりで消える」がいちばん困る）
+      const w = on ? await tmux(['set-option', '-t', name, KEEP_OPT, '1'])
+                   : await tmux(['set-option', '-t', name, '-u', KEEP_OPT]);
+      if (!w.ok) return json(res, 500, { error: w.err.slice(0, 200) });
+      const last = lastSeat.get(name);
+      if (last) last.keep = on;
+      console.log(`keep ${name} ${on ? 'on' : 'off'}`);
+      return json(res, 200, { ok: true, keep: on });
     }
 
     // 許可のしかた（バイパスかどうか）を切り替える。
@@ -3056,7 +3096,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
-    // まとめて終わらせる。**残すのは2つ＝作業中と中断（hold の印）**。
+    // まとめて終わらせる。**残すのは3つ＝作業中と中断（hold の印）と保護（鍵の印）**。
     // 名前は画面から受け取るが、消す直前にもう一度いまの状態を見て、作業中に
     // なっていたもの・中断の印が付いたものは残す（押してからここに届くまでの
     // 数秒で動き出すことも、別の端末で hold されることもある）。何を残したかは返す。
@@ -3077,6 +3117,7 @@ const server = http.createServer(async (req, res) => {
         // 古く、別の端末で今しがた hold された席を取りこぼす。戻せない道なので、
         // ここだけは1席1回の tmux を余分に払う
         if (await isHeld(name)) { skipped.push({ name, why: '中断' }); continue; }
+        if (await isKept(name)) { skipped.push({ name, why: '保護' }); continue; }
         const st = judge(name, text).status;
         if (st === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         if (st === 'paused') { skipped.push({ name, why: '中断' }); continue; }

@@ -161,6 +161,9 @@
   .tab.waiting .st{color:var(--wait)}
   .tab.paused .st::before{background:var(--pause)}
   .tab.paused .st{color:var(--pause)}
+  /* 保護（まとめて終わらせるで残す）の鍵。色は足さない＝縁と点の色は状態のもの */
+  .tab .lock{display:inline-flex;width:11px;height:11px;color:var(--fg);flex:0 0 auto}
+  .tab .lock svg{width:100%;height:100%}
   .tab[aria-selected="true"]{background:#1f232b;border-color:#3b4250}
   /* 状態の枠。選択中(aria-selected)より後に置いて色で勝たせる＝いま開いている
      タブでも「作業中/返答待ち」が枠から消えない（選択中は背景の明るさで示す）。
@@ -2576,6 +2579,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
                         (chip ? chip.label : KIND[s.kind]) +
                       '</span>' +
                       (pchip ? '<span class="perm ' + pchip.cls + '">' + escapeHtml(pchip.label) + '</span>' : '') +
+                      (s.keep ? '<span class="lock" role="img" aria-label="保護">' + sicSvg('lock') + '</span>' : '') +
                     '</div>' +
                     (orb ? '</div>' : '');
       // 1回目＝切り替え、選ばれている札をもう一度＝その席のメニュー。
@@ -6058,6 +6062,32 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .catch(function (e) { delete killing[name]; toast('終わらせられません: ' + e.message); });
   }
 
+  // 保護の札を付ける／外す。画面はすぐ変える（返事を待つと1.5秒遅れて見える）
+  function doKeep(name, on) {
+    sessions.forEach(function (x) { if (x.name === name) x.keep = on; });
+    renderTabs();
+    api('/api/keep', { method: 'POST', body: JSON.stringify({ name: name, on: on }) })
+      .then(function () {
+        toast(on ? name + ' を保護しました（まとめて終わらせるで残ります）' : name + ' の保護を外しました');
+        tick(true);
+      })
+      .catch(function (e) { toast('保護を切り替えられません: ' + e.message, 3600); tick(true); });
+  }
+
+  // 1件ずつの終了。保護している席なら確認してから
+  function killOrConfirm(name) {
+    var s = null;
+    sessions.forEach(function (x) { if (x.name === name) s = x; });
+    if (!s || !s.keep) return doKill(name);
+    openSheet('保護中の席です');
+    var head = document.createElement('div');
+    head.className = 'sheethead';
+    head.textContent = (s.title || s.name) + '（' + s.name + '）';
+    sheetBody.appendChild(head);
+    sheetItem('終了', '取り消せません', function () { closeSheet(); doKill(name); },
+      { icon: 'power', iconCls: 'stop' });
+  }
+
   // 選ばれている札をもう一度タップしたときのメニュー。⋯（右上）まで行かずに、
   // いま目の前にある1件をその場で片付けるための入口。
   // 中身は必ず「今の一覧」から引き直す（札は1.5秒ごとに作り直されるが、
@@ -6089,14 +6119,19 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         { icon: 'shield', iconCls: 'claude', val: pm ? pm.label : '—' });
     }
 
+    // 保護＝まとめて終わらせるで残す印。押すたびに付け外し（シートは閉じる）
+    sheetItem('保護', '', function () { closeSheet(); doKeep(s.name, !s.keep); },
+      { icon: 'lock', iconCls: s.keep ? 'ok' : 'dark', val: s.keep ? 'オン' : 'オフ' });
+
     // 押したらすぐ終わる。確認シートは挟まない（ここに来るまでに
     //「札をタップ→もう一度タップ」を踏んでいて、題名も目の前に出ている＝
     // 間違った席を畳む余地が小さい。毎回2枚目を出すほうが邪魔）。
     // 取り消せないことは**赤い電源の絵**で示す＝文で言わない。
     // 動いている席のときだけ、右端に赤で「作業中」を出す
-    sheetItem('終了', '', function () { closeSheet(); doKill(s.name); },
+    // ⚠️ 保護している席だけは確認を1枚はさむ（守ると決めた席なので）
+    sheetItem('終了', '', function () { closeSheet(); killOrConfirm(s.name); },
       { icon: 'power', iconCls: 'stop',
-        val: s.status === 'busy' ? '作業中' : '', valCls: 'danger' });
+        val: s.status === 'busy' ? '作業中' : s.keep ? '保護中' : '', valCls: 'danger' });
   }
 
   // 許可のしかたを選ぶ。押すと Mac 側で shift+tab を必要な回数だけ押してくれる
@@ -6204,7 +6239,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .catch(function (e) { toast('名前を変えられません: ' + e.message); });
   }
 
-  // 席が埋まったときの後始末。**残すのは2つ＝作業中と中断（hold の印）**。
+  // 席が埋まったときの後始末。**残すのは3つ＝作業中と中断（hold の印）と保護（鍵の印）**。
   // 中断は自分で貼って自分で剥がす付箋なので、まとめて片付けでも剥がさない。
   // 「あとで戻る席」の印として使っているのに、片付けで消えるなら印の意味が無い
   // （2026-09-05 まで中断も畳んでいた。守りたい席を守れる側に作り直した）。
@@ -6213,18 +6248,21 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    ⇒ 静かな席を確実に残したいときは、先に hold を押して中断にしておけばよい。
   var KEEP_STATUS = { busy: 1, paused: 1 };
 
+  // 保護（鍵の印）は状態ではなく札なので、状態とは別に見る（2026-10-12）
+  function isKeptSeat(s) { return !!KEEP_STATUS[s.status] || !!s.keep; }
+
   function killableList() {
-    return sessions.filter(function (s) { return !KEEP_STATUS[s.status]; });
+    return sessions.filter(function (s) { return !isKeptSeat(s); });
   }
 
   function keptList() {
-    return sessions.filter(function (s) { return !!KEEP_STATUS[s.status]; });
+    return sessions.filter(isKeptSeat);
   }
 
   function confirmKillIdle() {
     var list = killableList();
     if (!list.length) return toast('終わらせるものがありません');
-    openSheet('作業中と中断を残して終わらせますか？');
+    openSheet('作業中・中断・保護を残して終わらせますか？');
 
     // 返答待ち＝あなたの返事を待って止まっている席。消すと質問ごと消えるので
     // オレンジで出して件数も書く。中断はもう消えない側なので、ここには数えない
@@ -6254,12 +6292,13 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       keepBox.className = 'killlist keep';
       var kh = document.createElement('div');
       kh.className = 'killrow keephead';
-      kh.textContent = '残す ' + kept.length + ' 件（作業中・中断）';
+      kh.textContent = '残す ' + kept.length + ' 件（作業中・中断・保護）';
       keepBox.appendChild(kh);
       kept.forEach(function (s) {
         var row = document.createElement('div');
         row.className = 'killrow';
-        row.textContent = '・' + (s.title || s.name) + '（' + s.name + '・' + LABEL[s.status] + '）';
+        row.textContent = '・' + (s.title || s.name) + '（' + s.name + '・' + LABEL[s.status]
+          + (s.keep ? '・保護' : '') + '）';
         keepBox.appendChild(row);
       });
       sheetBody.appendChild(keepBox);
@@ -6325,6 +6364,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     shield: '<path d="M12 3.2 19.4 6v6c0 4.2-3 7.4-7.4 8.8C7.6 19.4 4.6 16.2 4.6 12V6z"/>',
     // 月＝画面を消す（眠らせる）
     moon: '<path d="M20.4 14.8A8.5 8.5 0 0 1 9.2 3.6 8.5 8.5 0 1 0 20.4 14.8z"/>',
+    // 鍵＝保護（まとめて終わらせるで残す）
+    lock: '<rect x="5" y="10.6" width="14" height="9.8" rx="2.2"/>'
+      + '<path d="M8.2 10.6V7.8a3.8 3.8 0 0 1 7.6 0v2.8"/>',
     // ✓＝これで決まり
     check: '<polyline points="4.8 12.6 9.8 17.6 19.2 6.8"/>',
     // 左まわりの矢印＝元に戻す
@@ -6427,7 +6469,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     sheetItem('Mac の画面を消す', '', function () { closeSheet(); doDark(); },
       { icon: 'moon', iconCls: 'dark' });
     sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
-      function () { closeSheet(); doKill(current); },
+      function () { closeSheet(); killOrConfirm(current); },
       { disabled: !current, icon: 'power', iconCls: 'stop' });
     sheetItem('ログインし直す',
       auth && auth.state === 'expired' ? '⚠️ 切れています'
@@ -6435,7 +6477,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       function () { openLoginSheet(); },
       { icon: 'undo', iconCls: 'edit' });
     var killable = killableList();
-    sheetItem('作業中と中断を残して終わらせる', killable.length ? killable.length + ' 件' : '',
+    sheetItem('作業中・中断・保護を残して終わらせる', killable.length ? killable.length + ' 件' : '',
       function () { confirmKillIdle(); },
       { disabled: !killable.length, icon: 'power', iconCls: 'stop' });
   };
