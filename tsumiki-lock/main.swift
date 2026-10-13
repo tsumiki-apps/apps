@@ -159,7 +159,8 @@ func sunTimes(_ p: Place, on day: Date) -> (rise: Date, set: Date)? {
   let cal = Calendar.current
   let start = cal.startOfDay(for: day)
   let n = Double(cal.ordinality(of: .day, in: .year, for: day) ?? 1)
-  let tz = Double(TimeZone.current.secondsFromGMT(for: day)) / 3600
+  // 夏時間が切り替わる日でもずれないよう、ずれは昼の時点で取り、時刻は「時・分」で組み立てる（反証役）
+  let tz = Double(TimeZone.current.secondsFromGMT(for: start.addingTimeInterval(12 * 3600))) / 3600
   let rad = Double.pi / 180
   func at(_ rising: Bool) -> Date? {
     let lngH = p.lon / 15
@@ -176,7 +177,8 @@ func sunTimes(_ p: Place, on day: Date) -> (rise: Date, set: Date)? {
     let h = (rising ? 360 - acos(ch) / rad : acos(ch) / rad) / 15
     let ut = h + ra - 0.06571 * t - 6.622 - lngH
     var local = (ut + tz).truncatingRemainder(dividingBy: 24); if local < 0 { local += 24 }
-    return start.addingTimeInterval(local * 3600)
+    let mins = Int((local * 60).rounded())
+    return cal.date(bySettingHour: mins / 60 % 24, minute: mins % 60, second: 0, of: start)
   }
   guard let r = at(true), let s = at(false) else { return nil }
   return (r, s)
@@ -207,18 +209,20 @@ func fetchWeather(_ p: Place, done: @escaping ([Hour]) -> Void) {
   var c = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
   c.queryItems = [.init(name: "latitude", value: String(format: "%.2f", p.lat)), .init(name: "longitude", value: String(format: "%.2f", p.lon)),
                   .init(name: "hourly", value: "temperature_2m,weather_code,precipitation_probability"),
-                  .init(name: "timezone", value: "auto"), .init(name: "forecast_days", value: "2")]
+                  .init(name: "timeformat", value: "unixtime"), .init(name: "forecast_days", value: "2")]
   var rq = URLRequest(url: c.url!); rq.timeoutInterval = 10
   URLSession.shared.dataTask(with: rq) { d, _, _ in
-    guard let d = d, let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-          let off = o["utc_offset_seconds"] as? Int, let h = o["hourly"] as? [String: Any],
-          let ts = h["time"] as? [String], let tp = h["temperature_2m"] as? [Double],
-          let wc = h["weather_code"] as? [Int] else { return }
-    let pr = h["precipitation_probability"] as? [Int?] ?? []
-    let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm"; f.timeZone = TimeZone(secondsFromGMT: off)
+    // 時刻は UNIX 秒で受け取る（夏時間・暦の設定に左右されない）。値の欠け（null）はその時間だけ飛ばす（反証役）
     var out: [Hour] = []
-    for i in 0..<min(ts.count, tp.count, wc.count) {
-      if let t = f.date(from: ts[i]) { out.append(Hour(at: t, temp: tp[i], code: wc[i], rain: (i < pr.count ? pr[i] : nil) ?? 0)) }
+    if let d = d, let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+       let h = o["hourly"] as? [String: Any], let ts = h["time"] as? [Any],
+       let tp = h["temperature_2m"] as? [Any], let wc = h["weather_code"] as? [Any] {
+      let pr = h["precipitation_probability"] as? [Any] ?? []
+      for i in 0..<min(ts.count, tp.count, wc.count) {
+        guard let t = (ts[i] as? NSNumber)?.doubleValue, let tv = (tp[i] as? NSNumber)?.doubleValue,
+              let c = (wc[i] as? NSNumber)?.intValue else { continue }
+        out.append(Hour(at: Date(timeIntervalSince1970: t), temp: tv, code: c, rain: (i < pr.count ? (pr[i] as? NSNumber)?.intValue : nil) ?? 0))
+      }
     }
     DispatchQueue.main.async { done(out) }
   }.resume()
@@ -231,7 +235,7 @@ func batteryNow() -> (pct: Int, charging: Bool)? {
   for ps in list {
     guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
           let cur = d[kIOPSCurrentCapacityKey] as? Int, let mx = d[kIOPSMaxCapacityKey] as? Int, mx > 0 else { continue }
-    let ac = (d[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue
+    let ac = (d[kIOPSIsChargingKey] as? Bool) ?? false   // 電源につながっていても満充電なら稲妻は出さない
     return (Int((Double(cur) / Double(mx) * 100).rounded()), ac)
   }
   return nil
@@ -345,7 +349,11 @@ struct Curtain: View {
       }
       Spacer(minLength: 24 * u)
       // 数字の板を出しているあいだは札を隠す（板と重なるため。場所は残して真ん中の位置を変えない）
-      chips(u).opacity(usePin && (m.showPad || !touchOK) ? 0 : 1)
+      // 左下の天気（右端 32+354）とぶつからない幅に収める。入らなければ小さい札に（反証役：最狭で 8px）
+      ViewThatFits(in: .horizontal) { chips(u, 1); chips(u, 0.8); chips(u, 0.62) }
+        .frame(maxWidth: max(0, size.width - 2 * (32 + 354 + 24) * u))
+        .frame(height: 58 * u)   // 札が小さくなっても真ん中の指紋の位置は動かさない
+        .opacity(usePin && (m.showPad || !touchOK) ? 0 : 1)
     }
     .padding(.top, 70 * u).padding(.bottom, 80 * u)
     .frame(width: size.width, height: size.height)
@@ -412,7 +420,8 @@ struct Curtain: View {
           .opacity(i < cur ? 0.4 : 1)   // 過ぎた時間は薄く
         }
       }
-      .padding(.leading, 40 * u).padding(.bottom, 34 * u)
+      // 列は中央そろえなので、最初の絵の左端が日の出の記号の左端（40）に来るよう 8 だけ左へ
+      .padding(.leading, 32 * u).padding(.bottom, 34 * u)
     }
   }
   // 天気の絵（本人の選択：案2）：太陽と月は幕と同じ橙、雲は生成り、雨・雪は淡い青
@@ -494,8 +503,9 @@ struct Curtain: View {
   }
 
   // 状態ごとの数（作業の題名は出さない＝お客様の名前が入ることがある）
-  func chips(_ u: CGFloat) -> some View {
-    HStack(spacing: 14 * u) {
+  func chips(_ u0: CGFloat, _ k: CGFloat) -> some View {
+    let u = u0 * k
+    return HStack(spacing: 14 * u) {
       ForEach(["busy", "waiting", "idle", "paused"], id: \.self) { st in
         let n = m.seats.filter { $0.status == st }.count
         if n > 0 {
@@ -754,14 +764,17 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   }
   func locationManager(_ mgr: CLLocationManager, didFailWithError e: Error) {}
 
-  var lastWeather = Date.distantPast, weatherPlace: Place?
+  // 取れたら1時間後、失敗したら5分後にもう一度。12時間取れていない予報は出さない（古い天気を今日のものとして見せない）
+  var lastWeather = Date.distantPast, lastTry = Date.distantPast, weatherPlace: Place?
   func refreshWeather(force: Bool = false) {
     let p = m.place
-    guard force || Date().timeIntervalSince(lastWeather) > 3600 || weatherPlace?.lat != p.lat || weatherPlace?.lon != p.lon else { return }
-    lastWeather = Date(); weatherPlace = p
+    if !m.hours.isEmpty && Date().timeIntervalSince(lastWeather) > 12 * 3600 { m.hours = [] }
+    let moved = weatherPlace?.lat != p.lat || weatherPlace?.lon != p.lon
+    guard force || moved || (Date().timeIntervalSince(lastWeather) > 3600 && Date().timeIntervalSince(lastTry) > 300) else { return }
+    lastTry = Date()
     fetchWeather(p) { [weak self] hs in
       guard let self = self, !hs.isEmpty else { return }
-      self.m.hours = hs
+      self.m.hours = hs; self.lastWeather = Date(); self.weatherPlace = p
     }
   }
 
@@ -877,7 +890,9 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     if !authing && !NSApp.isActive { reassert() }
     // Touch ID は常に待ち受ける（本人の要望）。合言葉の板を出しているあいだは待ち受けない
     // （待ち受け中はキーが確認の窓に取られ、合言葉が打てないため）
-    if !authing && !m.showPin { touch() }
+    // 待ち受けは幕のアプリが前にいるときだけ始める。前にいないまま始めると、確認の窓が閉じたとき
+    // （失敗・Esc）前面が裏のアプリに戻り、打った数字が裏に入りうる（反証役）。前にいなければこの回は戻すだけ
+    if !authing && !m.showPin && NSApp.isActive { touch() }
     if now.timeIntervalSince(lastPoll) >= 3 { lastPoll = now; pollSeats() }
     if tickCount % 60 == 0 { readBattery() }   // 30秒ごと（変わったときだけ描き直す）
   }
@@ -971,6 +986,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
       // 前に出る＝60秒ごとに「ほかのアプリが前に出た」が残り、その一瞬に打ったキーが裏に入りうる
       NSApp.activate(ignoringOtherApps: true)
       self.endAuth(); self.reassert()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.tick() }   // 継ぎ目を 0.3 秒ほどに（0.5秒の tick を待たない）
     }
     // 待ち受け中は確認の窓が前面のまま（幕は上に重なるだけ）。そのあいだ Dock を隠す・切り替えを止める
     // 設定は効かない（Dock が見え、スワイプで裏が動くことがある＝本人のテスト）。それでも前に戻すと
@@ -998,6 +1014,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
           self.lastErr = code
           // 打ち切り・ほかのアプリ（こちらの都合）以外が続いたら、次を始めるまでの間を広げる（2→4→…→60秒）
           if code == .appCancel || code == .systemCancel { self.failStreak = 0 } else { self.failStreak += 1 }
+          NSApp.activate(ignoringOtherApps: true)   // 窓が閉じた瞬間に裏へ前面が渡る間を短く
           self.touchFailed(code)
           self.reassert()
         }
