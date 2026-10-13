@@ -83,11 +83,18 @@ enum Pin {
 
   // 主のスレッドで読む写し。読めなかったとき（failed）は前の値のまま＝覚え違いを作らない
   static var isSet = false
+  // 塩と鍵の写し（主のスレッドだけで触る）。幕の上で合言葉を確かめるときは鍵束を読まず、これと比べる
+  // ＝鍵束が「許可しますか」で止まっても、Mac の前の合言葉は効く（反証役）
+  static var blob: [UInt8]?
   static func refresh(_ done: (() -> Void)? = nil) {
     q.async {
       let r = load()
       DispatchQueue.main.async {
-        switch r { case .ok: isSet = true; case .missing: isSet = false; case .failed: log("鍵束が読めません") }
+        switch r {
+        case .ok(let b): isSet = true; blob = b
+        case .missing: isSet = false; blob = nil
+        case .failed: log("鍵束が読めません")
+        }
         done?()
       }
     }
@@ -100,16 +107,20 @@ enum Pin {
     let blob = Data([UInt8(pin.count)] + salt + derive(pin, salt: salt))
     let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                             kSecAttrService as String: KC_SERVICE, kSecAttrAccount as String: "pin"]
-    SecItemDelete(q as CFDictionary)
+    // ⚠️ 先に消さない。書き換え（Update）を先に試し、無ければ足す。消してから足すと、
+    //    足すのに失敗したとき合言葉が無いのに「ある」ことになり、そのまま掛けられた（反証役）
+    let up = SecItemUpdate(q as CFDictionary, [kSecValueData as String: blob] as CFDictionary)
+    if up == errSecSuccess { return true }
+    guard up == errSecItemNotFound else { return false }
     var add = q
     add[kSecValueData as String] = blob
     add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
     return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
   }
 
-  // q の上で呼ぶ
-  static func check(_ pin: String) -> Bool {
-    guard case .ok(let b) = load() else { return false }
+  // 写し（blob）と比べる。鍵束は読まないので、どのキューで呼んでもよい
+  static func check(_ pin: String, against b: [UInt8]) -> Bool {
+    guard b.count == 49 else { return false }
     let salt = Array(b[1..<17]), want = Array(b[17..<49])
     let got = derive(pin, salt: salt)
     var diff: UInt8 = 0
@@ -285,6 +296,8 @@ final class App: NSObject, NSApplicationDelegate {
   var status: NSStatusItem?
   let key = lockKey()
   var touchOK = false
+  var checkToken: UUID?
+  var lastAuthEnd = Date.distantPast
 
   // 幕の高さ。ふだんは一番上（どのアプリの全画面の窓より上）。
   // Touch ID の確認（coreautha・1000）を出すあいだだけ、その下に下げる
@@ -298,6 +311,8 @@ final class App: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ n: Notification) {
     NSApp.setActivationPolicy(.accessory)
+    // launchd が作る記録は 0644 になる。前に出たアプリの名前や時刻が残るので自分だけに
+    chmod(CONF.appendingPathComponent("lock.log").path, 0o600)
     m.load()
     checkTouch()
     Pin.refresh()
@@ -324,7 +339,8 @@ final class App: NSObject, NSApplicationDelegate {
 
   func isAuthAgent(_ a: NSRunningApplication) -> Bool {
     let n = a.executableURL?.lastPathComponent ?? a.localizedName ?? ""
-    return n == "coreautha" || n == "coreauthd" || (a.bundleIdentifier ?? "").hasPrefix("com.apple.CoreAuth")
+    // 実物は coreautha（com.apple.LocalAuthentication.UIAgent）＝この Mac で確認
+    return n == "coreautha" || a.bundleIdentifier == "com.apple.LocalAuthentication.UIAgent"
   }
 
   // メニューバーの鍵（Mac の前で掛けるとき）
@@ -354,6 +370,7 @@ final class App: NSObject, NSApplicationDelegate {
 
   func lock(by who: String) {
     guard !m.locked else { return }
+    Pin.refresh()
     m.locked = true; m.since = Date(); m.typed = ""; m.note = ""
     m.save()
     log("ロック（\(who)）")
@@ -456,12 +473,30 @@ final class App: NSObject, NSApplicationDelegate {
   }
 
   // 鍵束は別のキューで確かめる（主のスレッドを止めない）
+  // PBKDF2（20万回）は重いので別のキューで。鍵束は読まない（Pin.blob の写しと比べる）
+  let checkQ = DispatchQueue(label: "com.tsumiki.lock.check")
   func tryPin() {
     let t = m.typed
+    guard let b = Pin.blob else {
+      // 写しが無い＝鍵束が読めていない。まちがいとして数えない（数えると正しい合言葉でも待たされる）
+      m.typed = ""
+      m.note = "合言葉を読めません。Touch ID か iPhone で外してください"
+      Pin.refresh()
+      return
+    }
     m.checking = true
-    Pin.q.async {
-      let ok = Pin.check(t)
+    // 万一返ってこなくても、5秒で入力を戻す
+    let token = UUID()
+    checkToken = token
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+      guard let self = self, self.checkToken == token, self.m.checking else { return }
+      self.m.checking = false; self.m.typed = ""; self.m.note = "もう一度どうぞ"
+    }
+    checkQ.async {
+      let ok = Pin.check(t, against: b)
       DispatchQueue.main.async {
+        guard self.checkToken == token else { return }
+        self.checkToken = nil
         self.m.checking = false
         guard self.m.locked else { return }
         if ok { self.unlock(by: "合言葉"); return }
@@ -480,8 +515,10 @@ final class App: NSObject, NSApplicationDelegate {
     }
   }
 
+  // 確認中は幕の高さを下げる（確認の窓＝1000 を上に出すため）。その間は presentationOptions が
+  // 効かない恐れがあるので、確認は10秒まで・終わってから2秒は次を始めない（反証役）
   func touch() {
-    guard m.locked, !authing else { return }
+    guard m.locked, !authing, Date().timeIntervalSince(lastAuthEnd) > 2 else { return }
     checkTouch()
     guard touchOK else { return }
     authing = true
@@ -490,9 +527,9 @@ final class App: NSObject, NSApplicationDelegate {
     c.localizedFallbackTitle = ""   // 「パスワードを入力」は出さない（幕の合言葉を使う）
     authCtx = c
     // 確認は20秒で打ち切る（出しっぱなしにさせない）
-    DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self, weak c] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self, weak c] in
       guard let self = self, let c = c, self.authCtx === c else { return }
-      log("Touch ID の確認を20秒で打ち切り")
+      log("Touch ID の確認を10秒で打ち切り")
       self.endAuth(); self.reassert()
     }
     c.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "幕を外します") { ok, err in
@@ -500,6 +537,7 @@ final class App: NSObject, NSApplicationDelegate {
         guard self.authCtx === c else { return }   // 打ち切ったあとの返事は捨てる
         self.authCtx = nil
         self.authing = false
+        self.lastAuthEnd = Date()
         if ok { self.unlock(by: "Touch ID") }
         else {
           log("Touch ID 通らず: \(err?.localizedDescription ?? "")")
@@ -510,6 +548,7 @@ final class App: NSObject, NSApplicationDelegate {
   }
 
   func endAuth() {
+    if authCtx != nil { lastAuthEnd = Date() }
     authCtx?.invalidate()
     authCtx = nil
     authing = false
@@ -604,8 +643,13 @@ final class App: NSObject, NSApplicationDelegate {
       Pin.q.async {
         let ok = Pin.set(p)
         DispatchQueue.main.async {
-          if ok { Pin.isSet = true; log("合言葉を決め直した"); reply(200, self.snapshot()) }
-          else { reply(500, ["error": "鍵束に書けませんでした"]) }
+          if ok {
+            log("合言葉を決め直した")
+            Pin.refresh { reply(200, self.snapshot()) }
+          } else {
+            Pin.refresh()   // 書けなかったときは「ある／ない」を鍵束から取り直す
+            reply(500, ["error": "鍵束に書けませんでした"])
+          }
         }
       }
     case ("POST", "/try") where KC_SERVICE != "com.tsumiki.lock":

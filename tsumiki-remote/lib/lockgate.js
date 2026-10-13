@@ -130,6 +130,10 @@ function checkAuthData(ad, rpId) {
 }
 
 // 登録：iPhone 側で navigator.credentials.create → getPublicKey()（SPKI）を送ってもらう
+// ⚠️ attestation:none なので、ここの確かめは「本物の認証器で作った」ことを証明しない
+//    （手で組んだ鍵とデータでも通る＝反証役が確認）。登録を守っているのは server.js 側の
+//    「0件・幕のアプリが応答している・幕が外れている」と、2件目からの Face ID だけ。
+//    下の確かめは、壊れた送りものを早めに断るためのもの
 function register(req, body, name) {
   const rpId = rpOf(req);
   if (!rpId) return { error: 'https（…ts.net）で開いたときだけ使えます' };
