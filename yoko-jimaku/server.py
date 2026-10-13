@@ -249,6 +249,8 @@ class H(BaseHTTPRequestHandler):
             p = self.path.split("?")[0]
             if p in ("/", "/index.html"):
                 return self.send_file(HERE / "index.html", "text/html; charset=utf-8")
+            if p in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+                return self.send_file(HERE / "apple-touch-icon.png", "image/png")   # ホーム画面のアイコン
             if p == "/api/lexicon":
                 return self.send_json(engine.load_lexicon(LEARN))
             if p == "/api/jobs":
