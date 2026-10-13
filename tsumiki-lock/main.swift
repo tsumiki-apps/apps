@@ -709,6 +709,9 @@ final class App: NSObject, NSApplicationDelegate {
     authCtx = c
     DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self, weak c] in
       guard let self = self, let c = c, self.authCtx === c else { return }
+      // 先に幕のアプリを前に出してから確認を閉じる。逆だと閉じた瞬間に裏のアプリ（メモなど）が
+      // 前に出る＝60秒ごとに「ほかのアプリが前に出た」が残り、その一瞬に打ったキーが裏に入りうる
+      NSApp.activate(ignoringOtherApps: true)
       self.endAuth(); self.reassert()
     }
     // 待ち受け中は確認の窓が前面のまま（幕は上に重なるだけ）。そのあいだ Dock を隠す・切り替えを止める
@@ -770,7 +773,9 @@ final class App: NSObject, NSApplicationDelegate {
     case .biometryLockout?:
       alertPhone("Touch ID がロックされました（指の失敗が続いたため）", kind: "ロック")
       let round = m.since
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if self.m.locked && self.m.since == round { self.toPin() } }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        if self.m.locked && self.m.since == round { self.toPin(); self.m.note = "Touch ID はロック中です" }
+      }
     case .biometryNotAvailable?, .biometryNotEnrolled?, .userCancel?:
       toPin()
     default:
@@ -782,6 +787,13 @@ final class App: NSObject, NSApplicationDelegate {
   // 鍵束が読めない、のどれでも Touch ID に戻れるように。数え直しは0から（間を広げる数は残す）
   func backToTouch() {
     guard m.locked, m.showPin, touchOK, !m.checking else { return }
+    // Touch ID がロックされている（指の失敗が続いた）と、指紋に戻しても待ち受けられず、
+    // 「使えない」扱いで数字の板が出っぱなしになる（本人のテストで「電卓になった」）。欄のまま知らせる
+    var e: NSError?
+    if !LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e) {
+      m.note = (e as? LAError)?.code == .biometryLockout ? "Touch ID はロック中です" : "Touch ID は使えません"
+      return
+    }
     log("合言葉の欄から指紋へ")
     m.showPin = false; m.showPad = false; m.typed = ""; m.note = ""
     fingerFails = 0
