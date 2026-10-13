@@ -224,23 +224,89 @@ def _plate(d, cx, top, lines, size, padx=44, pady=26, radius=None, sub=(), maxw=
     return top + h
 
 
-def wrap_en(d, text, maxw=None, maxlines=2):
-    """英語を単語の切れ目で折る（2行まで。収まらなければ最後の行は _fit が縮める）。"""
+_EN_ABBR = {"mr.", "mrs.", "ms.", "dr.", "st.", "no.", "vs.", "etc.", "e.g.", "i.e.", "approx.",
+            "u.s.", "jr.", "sr.", "inc.", "co.", "ltd."}
+_EN_WEAK = {"a", "an", "the", "to", "of", "and", "or", "but", "in", "on", "at", "for", "with",
+            "your", "my", "our", "this", "that", "from", "by", "as"}
+
+
+def wrap_en(d, text, maxw=None):
+    """英語を単語の切れ目で折る。字の大きさは変えず、収まる一番少ない行数にして行の長さをそろえる
+    （1行目だけ長く、最後に「so,」1語だけ残るような折り方をしない）。何行でも同じ基準で選び、
+    収まらなければ行を増やす（1行に戻して縮めることはしない）。
+    文の終わり・読点の後で折るのを好み、1語だけの行・冠詞や前置詞で終わる行・
+    数字と次の語（「iPhone 14 ｜ Pro」「229,800 ｜ yen」）の間・「Mr.」などの略語の後は避ける。"""
     maxw = maxw or EN_MAXW
-    words, lines, cur = text.split(), [], ""
+    words = text.split()
+    if not words:
+        return []
     f = _font(EN_FONT)
-    for w in words:
-        t = (cur + " " + w).strip()
-        if d.textlength(t, font=f) <= maxw or not cur:
-            cur = t
-        else:
-            lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    if len(lines) > maxlines:
-        lines = lines[:maxlines - 1] + [" ".join(lines[maxlines - 1:])]
-    return lines
+    n = len(words)
+    memo = {}
+
+    def lw(i, j):
+        if (i, j) not in memo:
+            memo[(i, j)] = d.textlength(" ".join(words[i:j]), font=f)
+        return memo[(i, j)]
+
+    if lw(0, n) <= maxw:
+        return [" ".join(words)]
+
+    def brk(j):
+        """words[j-1] の後で折るときの罰点（負＝好ましい）。"""
+        w = words[j - 1]
+        core = w.rstrip("\"')]}”’»")
+        low = w.lower()
+        p = 0
+        if low in _EN_ABBR:
+            p += 250
+        elif core[-1:] in (".", "?", "!") and not (core[-2:-1].isdigit() and j < n and words[j][:1].isdigit()):
+            p -= 300
+        elif core[-1:] in (",", ";", ":"):
+            p -= 200
+        if low in _EN_WEAK:
+            p += 150
+        if any(ch.isdigit() for ch in w) or words[j][:1].isdigit():
+            p += 200
+        elif w[:1].isupper() and words[j][:1].isupper() and core == w:
+            p += 150                  # 「Pro ｜ Max」「Apple ｜ Watch」固有名詞の続きの中
+        return p
+
+    # 前から詰めたときの行数＝収まる一番少ない行数
+    k0, i = 0, 0
+    while i < n:
+        j = i + 1
+        while j < n and lw(i, j + 1) <= maxw:
+            j += 1
+        k0, i = k0 + 1, j
+    INF = float("inf")
+    for k in (k0, k0 + 1):
+        avg = lw(0, n) / k
+        # best[m][j]＝最初の j 語を m 行に折ったときの最小の点（行の長さと平均の差＋折り目の罰点）
+        best = [[INF] * (n + 1) for _ in range(k + 1)]
+        back = [[0] * (n + 1) for _ in range(k + 1)]
+        best[0][0] = 0
+        for m in range(1, k + 1):
+            for j in range(m, n + 1):
+                for i in range(m - 1, j):
+                    if best[m - 1][i] == INF:
+                        continue
+                    w = lw(i, j)
+                    if w > maxw and j - i > 1:
+                        continue              # 1語だけで幅を超えるときだけは許す（_fit が縮める）
+                    c = best[m - 1][i] + abs(w - avg) + (400 if j - i == 1 else 0)
+                    if j < n:
+                        c += brk(j)
+                    if c < best[m][j]:
+                        best[m][j], back[m][j] = c, i
+        if best[k][n] < INF:
+            out, j = [], n
+            for m in range(k, 0, -1):
+                i = back[m][j]
+                out.append(" ".join(words[i:j]))
+                j = i
+            return out[::-1]
+    return [" ".join(words)]
 
 
 def make_title(title, path):
@@ -421,7 +487,7 @@ def caption_image(text, path, en=None):
     d = ImageDraw.Draw(im)
     lines = wrap(text)
     # 日本語が3行のときは英語を1行にし、札が画面の下を覆いすぎないようにする
-    sub = wrap_en(d, en, maxlines=1 if len(lines) >= 3 else 2) if en else []
+    sub = wrap_en(d, en) if en else []
     h = _plate_size(d, lines, CAP_FONT, sub)
     # 少しはみ出す行（CAP_SQUEEZE の分）は字を縮めて CAP_MAXW に収める
     _plate(d, W // 2, H - CAP_BOTTOM - h, lines, CAP_FONT, sub=sub, maxw=CAP_MAXW)
