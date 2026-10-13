@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import engine
+import thumbnail
 
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("DSYNC_ROOT") or Path.home() / "Movies" / "動画同期")
@@ -154,6 +155,27 @@ def do_render(jid):
     tmp.replace(d / "完成.mp4")
     (d / "完成_白.mp4").unlink(missing_ok=True)   # 前の白背景版は古いので消す
     update(jid, rendered=time.time(), step=6, white=None, out_dur=round(out_dur, 3))
+    try:   # サムネイルも一緒に（失敗しても書き出しは成功のまま。完成動画はもう見られるよう表示はサムネイルの作業に）
+        update(jid, busy="サムネイル")
+        do_thumb(jid)
+    except Exception as e:
+        traceback.print_exc()
+        update(jid, thumb_error=str(e)[:200])
+
+
+def do_thumb(jid, reroll=False):
+    """サムネイル（1280×720）。使うコマは1回目に選んで覚え、色を変えるときは色だけ引き直す。"""
+    d = jpath(jid)
+    job = load(jid)
+    seed = int(job.get("thumb_seed") or 0) + (1 if reroll else 0)
+    tmp = d / "サムネイル.tmp.png"
+    try:
+        at = thumbnail.make(d, tmp, seed=seed, at=job.get("thumb_at"))
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(d / "サムネイル.png")
+    update(jid, thumb=time.time(), thumb_seed=seed, thumb_at=round(at, 2), thumb_error=None)
 
 
 def do_translate(jid, caps, title):
@@ -242,7 +264,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         if download:
             from urllib.parse import quote
-            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(download + '.mp4')}")
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(download)}")
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(end - start + 1))
         self.send_header("Cache-Control", "no-store")
@@ -272,6 +294,8 @@ class H(BaseHTTPRequestHandler):
             p = self.path.split("?")[0]
             if p in ("/", "/index.html"):
                 return self.send_file(HERE / "index.html", "text/html; charset=utf-8")
+            if p in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+                return self.send_file(HERE / "apple-touch-icon.png", "image/png")   # ホーム画面のアイコン
             if p == "/api/lexicon":
                 return self.send_json(engine.load_lexicon(LEARN))
             if p == "/api/jobs":
@@ -283,7 +307,7 @@ class H(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/job/([\d-]+)", p)
             if m:
                 return self.send_json(load(m.group(1)))
-            m = re.fullmatch(r"/files/([\d-]+)/(proxy_a\.mp4|proxy_b\.mp4|完成\.mp4|完成_白\.mp4)", unquote(p))
+            m = re.fullmatch(r"/files/([\d-]+)/(proxy_a\.mp4|proxy_b\.mp4|完成\.mp4|完成_白\.mp4|サムネイル\.png)", unquote(p))
             if m:
                 name = None
                 if "dl=1" in (self.path.split("?", 1) + [""])[1]:
@@ -291,7 +315,9 @@ class H(BaseHTTPRequestHandler):
                     name = re.sub(r'[\\/:*?"<>|]', "_", load(m.group(1))["title"]).strip() or "動画"
                     if "白" in m.group(2):
                         name += "_白背景"
-                return self.send_file(jpath(m.group(1)) / m.group(2), "video/mp4", download=name)
+                    name += "_サムネイル.png" if m.group(2).endswith(".png") else ".mp4"
+                png = m.group(2).endswith(".png")
+                return self.send_file(jpath(m.group(1)) / m.group(2), "image/png" if png else "video/mp4", download=name)
             self.send_json({"error": "not found"}, 404)
         except (KeyError, FileNotFoundError, StopIteration):
             self.send_json({"error": "not found"}, 404)
@@ -359,7 +385,7 @@ class H(BaseHTTPRequestHandler):
                 for old in d.glob(f"src_{k}.*"):
                     old.unlink()
                 part.rename(d / f"src_{k}.{ext}")
-                drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error"]
+                drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error", "thumb", "thumb_at"]
                 if k == "a":   # 字幕は A の音から作るので、B の差し替えでは残す
                     drop += ["captions", "captions_shown", "ff"]
                 for key in drop:
@@ -411,7 +437,7 @@ class H(BaseHTTPRequestHandler):
             if act == "title":
                 # タイトルが変わったら、前の完成版は古い
                 t = (body.get("title") or job["title"]).strip()[:40]
-                job = update(jid, title=t, **({"rendered": None} if t != job["title"] else {}))
+                job = update(jid, title=t, **({"rendered": None, "thumb": None} if t != job["title"] else {}))
             elif act == "sync":
                 if not (job.get("has_a") and job.get("has_b")):
                     return self.send_json({"error": "動画を2本選んでください"}, 400)
@@ -444,6 +470,11 @@ class H(BaseHTTPRequestHandler):
                 ff = engine.clean_ff(ff, job["a_info"]["dur"])
                 stale = {"rendered": None} if ff != (job.get("ff") or []) else {}   # 区間が変われば完成版は古い
                 job = update(jid, ff=ff, **stale)
+            elif act == "thumb":
+                if not job.get("rendered"):
+                    return self.send_json({"error": "先に書き出してください"}, 400)
+                reroll = bool(body.get("reroll"))
+                background(jid, "サムネイル", lambda: do_thumb(jid, reroll))
             elif act == "white":
                 if not job.get("rendered"):
                     return self.send_json({"error": "先に書き出してください"}, 400)

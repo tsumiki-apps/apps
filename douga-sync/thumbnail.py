@@ -1,9 +1,9 @@
 """サムネイル（1280×720）を作る：パステルの地・左上に Apple マーク・左に太字の題名・右に端末の枠に入れた画面録画。
 
-    .venv/bin/python thumbnail.py <作業のフォルダ> [出力.png] [--color 0-3] [--at 秒]
+    .venv/bin/python thumbnail.py <作業のフォルダ> [出力.png] [--color 0-13] [--at 秒] [--seed 何でも]
 
 画面録画（src_b）から見ばえのする1コマを自動で選ぶ（色の多さ・明暗の幅が大きいコマ。頭と終わりの15%は除く）。
---at で秒を指定するとそのコマを使う。縦長＝iPhone の枠（下は切れる）、横長＝iPad の枠。
+--at で秒を指定するとそのコマを使う。地の色は14色からランダム（--seed を変えると引き直し、--color で指定）。縦長＝iPhone の枠（下は切れる）、横長＝iPad の枠。
 """
 import json
 import subprocess
@@ -16,7 +16,21 @@ from PIL import Image, ImageDraw, ImageFont
 import engine
 
 TW, TH = 1280, 720
-COLORS = [(242, 217, 191), (200, 218, 219), (247, 237, 203), (241, 241, 239)]   # ベージュ・青灰・クリーム・薄い灰
+# 地の色：見本と同じ、白に近いくすんだパステル（明るさ・鮮やかさをそろえる）。
+# 見分けにくい色（ピーチ・アプリコット≒ベージュ、バター≒クリーム）は入れない
+COLORS = [
+    (242, 217, 191),   # ベージュ
+    (200, 218, 219),   # 青灰
+    (247, 237, 203),   # クリーム
+    (241, 241, 239),   # 薄い灰
+    (214, 226, 206),   # セージ
+    (241, 214, 210),   # くすんだピンク
+    (222, 216, 236),   # ラベンダー
+    (208, 230, 222),   # ミント
+    (210, 224, 238),   # 空色
+    (233, 224, 208),   # 砂
+    (226, 221, 228),   # 藤鼠
+]
 INK = (29, 29, 31)
 JP_BOLD = "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc"
 LOGO_FONT = "/System/Library/Fonts/SFNS.ttf"        # U+F8FF が Apple マーク
@@ -24,20 +38,21 @@ BEZEL = (22, 22, 24)
 EDGE = (88, 88, 92)
 
 
-def grab(src, t, w=900):
+def grab(src, t, w=900, info=None):
+    vf = f"scale={w}:-2," + (engine.hdr_filter(info) if info else "") + "format=rgb24"   # HDR の録画も書き出しと同じ色に
     raw = subprocess.run([engine.FFMPEG, "-v", "error", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1",
-                          "-vf", f"scale={w}:-2", "-f", "image2pipe", "-vcodec", "png", "-"],
+                          "-vf", vf, "-f", "image2pipe", "-vcodec", "png", "-"],
                          capture_output=True, check=True).stdout
     import io
     return Image.open(io.BytesIO(raw)).convert("RGB")
 
 
-def pick_frame(src, dur, n=14):
+def pick_frame(src, dur, n=14, info=None):
     """見ばえのするコマを選ぶ：色の多さ（彩度）＋明暗の幅。真っ黒・真っ白・ほぼ一色のコマを避ける。"""
     best = None
     for k in range(n):
         t = dur * (0.15 + 0.7 * k / (n - 1))
-        im = grab(src, t, 240)
+        im = grab(src, t, 240, info)
         a = np.asarray(im).astype(float)
         rg, yb = a[..., 0] - a[..., 1], (a[..., 0] + a[..., 1]) / 2 - a[..., 2]
         color = np.sqrt(rg.std() ** 2 + yb.std() ** 2) + 0.3 * np.sqrt(rg.mean() ** 2 + yb.mean() ** 2)
@@ -67,12 +82,49 @@ def wrap_title(text, font, maxw, maxlines=4):
             ws = [tw(l) for l in ls]
             if max(ws) > maxw:
                 continue
-            sc = max(ws) + sum(bk.get(c, 2) * 40 for c in cut)
+            sc = max(ws) + sum(bk.get(c, 2) * 40 + (300 if bk.get(c, 2) >= 4 else 0) for c in cut)   # 複合語の中（予定｜表）は強く避ける
             if best is None or sc < best[0]:
                 best = (sc, ls)
         if best:
             return best[1]
     return [text]
+
+
+def wrap_hard(text, font, maxw):
+    """言葉の切れ目ではどうしても入らない題名（長いカタカナ語・空白の無い英字）だけ、字の境目で詰めて折る。"""
+    d = ImageDraw.Draw(Image.new("L", (1, 1)))
+    lines, cur = [], ""
+    for ch in text:
+        if cur and d.textlength(cur + ch, font=font) > maxw:
+            lines.append(cur.strip())
+            cur = ch
+        else:
+            cur += ch
+    return lines + [cur.strip()] if cur.strip() else lines
+
+
+def clean_title(text):
+    """改行は空白に。ヒラギノに無い字（絵文字・Apple マーク・異体字セレクタ）は取り除く（豆腐を出さない）。"""
+    text = " ".join(str(text).split())
+    out = "".join(ch for ch in text
+                  if not (ord(ch) > 0xFFFF or 0xE000 <= ord(ch) <= 0xF8FF or 0xFE00 <= ord(ch) <= 0xFE0F
+                          or 0x2600 <= ord(ch) <= 0x27BF or ord(ch) == 0x200D))
+    return " ".join(out.split())
+
+
+def pick_color(job_id, seed):
+    """色の番号。作業ごとに順番を混ぜ、seed ごとに次の色へ。前の色と見分けにくい色は飛ばす。"""
+    import random
+    order = random.Random(str(job_id)).sample(range(len(COLORS)), len(COLORS))
+    far = lambda a, b: sum((x - y) ** 2 for x, y in zip(COLORS[a], COLORS[b])) ** 0.5 >= 18
+    cur, pos = order[0], 0
+    for _ in range(int(seed)):
+        for step in range(1, len(order) + 1):
+            nxt = order[(pos + step) % len(order)]
+            if nxt != cur and far(cur, nxt):
+                cur, pos = nxt, (pos + step) % len(order)
+                break
+    return cur
 
 
 def rounded(im, r):
@@ -113,15 +165,17 @@ def shadow(im, blur=18, alpha=70, off=(0, 10)):
     return sh.filter(ImageFilter.GaussianBlur(blur))
 
 
-def make(job_dir, out, color=None, at=None):
+def make(job_dir, out, color=None, at=None, seed=0):
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text())
     src = next(job_dir.glob("src_b.*"))
     bi = job["b_info"]
-    t = at if at is not None else pick_frame(src, bi.get("vdur") or bi["dur"])
-    shot = grab(src, t)
-    portrait = shot.height >= shot.width
-    bg = COLORS[color if color is not None else 0]
+    t = at if at is not None else pick_frame(src, bi.get("vdur") or bi["dur"], info=bi)
+    shot = grab(src, t, info=bi)
+    portrait = shot.height > shot.width * 1.05     # 正方形に近い録画は iPad の枠
+    if color is None:   # ランダム（作業ごとに色の順番を混ぜ、seed で次の色へ。前と見分けにくい色は飛ばす）
+        color = pick_color(job["id"], seed)
+    bg = COLORS[color % len(COLORS)]
     im = Image.new("RGBA", (TW, TH), bg + (255,))
     d = ImageDraw.Draw(im)
 
@@ -134,13 +188,25 @@ def make(job_dir, out, color=None, at=None):
     im.alpha_composite(sh, (x - 40, y - 40))
     im.alpha_composite(dev, (x, y))
 
-    d.text((70, 52), "", font=ImageFont.truetype(LOGO_FONT, 54), fill=INK, anchor="lt")
+    try:
+        d.text((70, 52), "\uf8ff", font=ImageFont.truetype(LOGO_FONT, 54), fill=INK, anchor="lt")
+    except OSError:
+        pass                                       # マークの字が無い環境ではマークだけ省く
     maxw = x - 70 - 48
+    title = clean_title(job["title"]) or "　"
     size = 68
     while True:
         f = ImageFont.truetype(JP_BOLD, size)
-        lines = wrap_title(job["title"], f, maxw)
-        if all(d.textlength(l, font=f) <= maxw for l in lines) or size <= 40:
+        lines = wrap_title(title, f, maxw)
+        if all(d.textlength(l, font=f) <= maxw for l in lines):
+            break
+        if len(wrap_hard(title, f, maxw)) <= 3 and size <= 60:   # 長いカタカナ語などは小さくしすぎず字の境目で折る
+            lines = wrap_hard(title, f, maxw)
+            break
+        if size <= 40:   # 切れ目ではどうしても入らない → 字の境目で折る（それでも5行を超えるなら失敗にする）
+            lines = wrap_hard(title, f, maxw)
+            if len(lines) > 5:
+                raise ValueError("題名が長すぎてサムネイルに入りません")
             break
         size -= 4
     lh = int(size * 1.42)
@@ -155,6 +221,7 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     color = int(args[args.index("--color") + 1]) if "--color" in args else None
     at = float(args[args.index("--at") + 1]) if "--at" in args else None
+    seed = args[args.index("--seed") + 1] if "--seed" in args else 0
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or not args[i - 1].startswith("--"))]
     out = pos[1] if len(pos) > 1 else str(Path(pos[0]) / "サムネイル.png")
-    print(make(pos[0], out, color, at))
+    print(make(pos[0], out, color, at, seed))

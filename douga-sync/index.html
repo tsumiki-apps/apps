@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>動画同期</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="動画同期">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -114,6 +116,9 @@ details summary::-webkit-details-marker{display:none}
 .ffr .sp{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent-2);background:var(--accent-wash);padding:0}
 .ffr .del{padding:0;color:var(--ink-soft);background:transparent}
 .cap.ffd textarea{opacity:.45}
+/* サムネイル */
+.thumb{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
+.thumb img{width:100%;display:block;border-radius:12px;aspect-ratio:16/9;object-fit:cover;background:var(--surface-2)}
 .two{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
 .two .primary{margin:0}
 @media (min-width:900px){main{max-width:760px}.final{max-width:360px}}
@@ -145,6 +150,8 @@ details summary::-webkit-details-marker{display:none}
   <symbol id="i-in" viewBox="0 0 24 24"><path d="M10 5H6v14h4M13 12h6M16 9l3 3-3 3"/></symbol>
   <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 5h4v14h-4M5 12h6M8 9l3 3-3 3"/></symbol>
   <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4zM16 9.5l5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 15.5l4.5-4 4 3.5 3-2.5 6.5 5"/><circle cx="16" cy="9.5" r="1.5"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 7h3.5c4 0 6 10 10 10H21M3 17h3.5c1.6 0 2.8-1.6 3.8-3.6M13.7 9.6c1-2 2.2-2.6 3.8-2.6H21M18 4l3 3-3 3M18 14l3 3-3 3"/></symbol>
   <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5L12 3l4.5 4.5M5 13v6h14v-6"/></symbol>
 </svg>
 <main>
@@ -230,6 +237,17 @@ details summary::-webkit-details-marker{display:none}
       <div class="final"><video id="fin" playsinline controls></video></div>
       <a class="btn primary" id="dl"><svg class="i"><use href="#i-down"/></svg>ダウンロード</a>
       <div class="hint"><svg class="i"><use href="#i-photos"/></svg>ファイル → 共有 → ビデオを保存</div>
+      <div class="thumb">
+        <div class="ffh"><svg class="i"><use href="#i-image"/></svg>サムネイル</div>
+        <div class="busy" id="bT" hidden><div class="spin"></div><span>サムネイルを作成中</span></div>
+        <div class="banner warn" id="thErr" hidden><svg class="i"><use href="#i-warn"/></svg><span id="thErrT"></span></div>
+        <button class="primary" id="thMake" hidden><svg class="i"><use href="#i-image"/></svg>サムネイルを作る</button>
+        <div id="thBox" hidden>
+          <img id="thImg" alt="サムネイル">
+          <div class="two"><a class="btn primary" id="thDl"><svg class="i"><use href="#i-down"/></svg>ダウンロード</a>
+            <button id="thRe" aria-label="色を変える"><svg class="i"><use href="#i-shuffle"/></svg></button></div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -331,6 +349,17 @@ function render(first){
       $('fin').src=u;$('fin').dataset.v=key;$('dl').href=u+'&dl=1';
     }
     $('verW').disabled=$('verN').disabled=!!busy;
+  }
+  if(fin){
+    const th=job.thumb, tb=busy==='サムネイル';
+    $('bT').hidden=!tb||!!th;  // 色を変えている間は今の画像のまま
+    $('thMake').hidden=!!th||tb;$('thMake').disabled=!!busy;
+    $('thErr').hidden=!job.thumb_error||!!th||tb;$('thErrT').textContent=job.thumb_error||'';
+    $('thBox').hidden=!th;$('thRe').disabled=!!busy;$('thRe').classList.toggle('on',tb);
+    if(th&&$('thImg').dataset.v!==String(th)){
+      const u='/files/'+job.id+'/'+encodeURIComponent('サムネイル.png')+'?v='+th;
+      $('thImg').src=u;$('thImg').dataset.v=String(th);$('thDl').href=u+'&dl=1';
+    }
   }
   $('learned').hidden=!(job&&job.learned);
   $('enErr').hidden=!(job&&job.en_error&&!busy);
@@ -510,6 +539,9 @@ $('revBtn').onclick=guard(async()=>{try{showErr('');capsDirty=false;job=await po
 $('revAll').onclick=()=>{liveReview().forEach(sg=>{const c=capAt(sg.start);if(c)c.text=sg.after});
   job.review=[];capsDirty=true;drawCaps();render(false)};
 
+// サムネイル（書き出しのとき一緒に作る。前に書き出した作業はボタンで作る。色だけ引き直せる）
+$('thMake').onclick=guard(async()=>{try{showErr('');setJob(await post('/api/job/'+job.id+'/thumb'))}catch(e){showErr(e.message)}});
+$('thRe').onclick=guard(async()=>{try{showErr('');setJob(await post('/api/job/'+job.id+'/thumb',{reroll:true}))}catch(e){showErr(e.message)}});
 $('verN').onclick=()=>{ver='n';render(false)};
 $('verW').onclick=guard(async()=>{ver='w';
   if(!job.white){try{showErr('');setJob(await post('/api/job/'+job.id+'/white'))}catch(e){showErr(e.message);ver='n'}}});
