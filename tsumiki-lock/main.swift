@@ -209,46 +209,19 @@ struct Curtain: View {
   var body: some View {
     GeometryReader { g in
       let u = min(g.size.width / 1440, g.size.height / 900) // 1440×900 を基準に伸び縮み
+      if !m.showPin && touchOK {
+        standby(g.size, u)
+      } else {
       HStack(spacing: 0) {
         VStack(alignment: .leading, spacing: 0) {
           Text(clock).font(zen(150 * u, true)).foregroundColor(.ink).monospacedDigit()
           Text(day).font(zen(28 * u)).foregroundColor(.mid).padding(.top, 4 * u)
-          // 作業の題名は出さない（お客様の名前が入ることがある）。状態ごとの数だけ
-          HStack(spacing: 14 * u) {
-            ForEach(["busy", "waiting", "idle", "paused"], id: \.self) { st in
-              let n = m.seats.filter { $0.status == st }.count
-              if n > 0 {
-                HStack(spacing: 12 * u) {
-                  Circle().fill(dot(st)).frame(width: 14 * u, height: 14 * u)
-                    .overlay(Circle().stroke(wash(st), lineWidth: 5 * u))
-                  Text(label(st)).font(zen(20 * u)).foregroundColor(.mid)
-                  Text("\(n)").font(zen(24 * u, true)).foregroundColor(.ink).monospacedDigit()
-                }
-                .padding(.horizontal, 20 * u).padding(.vertical, 12 * u)
-                .background(RoundedRectangle(cornerRadius: 14 * u).fill(Color.surface))
-              }
-            }
-          }.padding(.top, 48 * u)
+          chips(u).padding(.top, 48 * u)
           Spacer()
         }
         .padding(.leading, 120 * u).padding(.top, 130 * u)
         .frame(maxWidth: .infinity, alignment: .leading)
 
-        if !m.showPin && touchOK {
-          // 待機の画面：Touch ID だけ。押すか、指を置く前に何かキーを押す
-          VStack(spacing: 36 * u) {
-            LockIcon().frame(width: 72 * u, height: 72 * u)
-            Button(action: onTouch) {
-              ZStack {
-                Circle().fill(Color.surface2)
-                Circle().stroke(Color.accent.opacity(m.armed ? 0.55 : 0), lineWidth: 3 * u)
-                Image(systemName: "touchid").font(.system(size: 76 * u, weight: .light)).foregroundColor(.accent)
-              }.frame(width: 150 * u, height: 150 * u).contentShape(Circle())
-            }.buttonStyle(.plain)
-            Text(m.note).font(zen(18 * u)).foregroundColor(.warn).frame(height: 24 * u)
-          }
-          .frame(width: 520 * u).padding(.trailing, 110 * u)
-        } else {
         VStack(spacing: 30 * u) {
           LockIcon().frame(width: 72 * u, height: 72 * u)
           // 丸は打った数だけ。空の丸を並べると「4桁」に見えて紛らわしく（本人の指摘）、
@@ -273,10 +246,53 @@ struct Curtain: View {
           .opacity(waitLeft > 0 ? 0.35 : 1)
         }
         .frame(width: 520 * u).padding(.trailing, 110 * u)
-        }
       }
       .frame(width: g.size.width, height: g.size.height)
       .background(Color.paper)
+      }
+    }
+  }
+
+  // 待機の画面：全体を中央そろえ。時計は上、Touch ID の丸は画面のちょうど真ん中（本人の指定）、
+  // 状態の札は下。数字の板は Touch ID が通らなかったときだけ（上の HStack の画面）
+  func standby(_ size: CGSize, _ u: CGFloat) -> some View {
+    ZStack {
+      VStack(spacing: 4 * u) {
+        Text(clock).font(zen(120 * u, true)).foregroundColor(.ink).monospacedDigit()
+        Text(day).font(zen(26 * u)).foregroundColor(.mid)
+        Spacer()
+        chips(u)
+      }
+      .padding(.top, 70 * u).padding(.bottom, 80 * u)
+      Button(action: onTouch) {
+        ZStack {
+          Circle().fill(Color.surface2)
+          Circle().stroke(Color.accent.opacity(m.armed ? 0.55 : 0), lineWidth: 3 * u)
+          Image(systemName: "touchid").font(.system(size: 76 * u, weight: .light)).foregroundColor(.accent)
+        }.frame(width: 150 * u, height: 150 * u).contentShape(Circle())
+      }.buttonStyle(.plain)
+      Text(m.note).font(zen(18 * u)).foregroundColor(.warn).offset(y: (75 + 34 + 12) * u)
+    }
+    .frame(width: size.width, height: size.height)
+    .background(Color.paper)
+  }
+
+  // 状態ごとの数（作業の題名は出さない＝お客様の名前が入ることがある）
+  func chips(_ u: CGFloat) -> some View {
+    HStack(spacing: 14 * u) {
+      ForEach(["busy", "waiting", "idle", "paused"], id: \.self) { st in
+        let n = m.seats.filter { $0.status == st }.count
+        if n > 0 {
+          HStack(spacing: 12 * u) {
+            Circle().fill(dot(st)).frame(width: 14 * u, height: 14 * u)
+              .overlay(Circle().stroke(wash(st), lineWidth: 5 * u))
+            Text(label(st)).font(zen(20 * u)).foregroundColor(.mid)
+            Text("\(n)").font(zen(24 * u, true)).foregroundColor(.ink).monospacedDigit()
+          }
+          .padding(.horizontal, 20 * u).padding(.vertical, 12 * u)
+          .background(RoundedRectangle(cornerRadius: 14 * u).fill(Color.surface))
+        }
+      }
     }
   }
 
