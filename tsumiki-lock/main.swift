@@ -791,7 +791,7 @@ final class App: NSObject, NSApplicationDelegate {
     // 「使えない」扱いで数字の板が出っぱなしになる（本人のテストで「電卓になった」）。欄のまま知らせる
     var e: NSError?
     if !LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e) {
-      m.note = (e as? LAError)?.code == .biometryLockout ? "Touch ID はロック中です" : "Touch ID は使えません"
+      m.note = e?.code == LAError.Code.biometryLockout.rawValue ? "Touch ID はロック中です" : "Touch ID は使えません"
       return
     }
     log("合言葉の欄から指紋へ")
