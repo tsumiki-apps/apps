@@ -347,7 +347,10 @@ $('startBtn').onclick=guard(async()=>{
   try{job=await post('/api/job',{title:$('title').value});try{localStorage.setItem('dsync.job',job.id)}catch(e){}
     render(true);loadJobs()}catch(e){showErr(e.message)}
 });
-$('title').addEventListener('change',async()=>{if(job){job=await post('/api/job/'+job.id+'/title',{title:$('title').value});loadJobs()}});
+// タイトルの直し：まだ保存していない字幕の直しは持ち越す（setJob）。作業中などで通らなければ知らせて元に戻す
+$('title').addEventListener('change',async()=>{if(!job)return;
+  try{showErr('');setJob(await post('/api/job/'+job.id+'/title',{title:$('title').value}));loadJobs()}
+  catch(e){showErr(e.message);$('title').value=job.title}});
 $('newBtn').onclick=()=>{job=null;loaded.prox=loaded.caps=loaded.pc='';try{localStorage.removeItem('dsync.job')}catch(e){}$('title').value='';
   ['subA','subB'].forEach(i=>$(i).textContent='選ぶ');['barA','barB'].forEach(i=>$(i).style.width=0);
   $('pa').removeAttribute('src');$('pb').removeAttribute('src');render(true);loadJobs();window.scrollTo(0,0)};

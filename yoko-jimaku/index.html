@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>横動画字幕</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f5f4f0;--surface:#fffefb;--surface-2:#efece5;--ink:#1d1a15;--ink-mid:#5b554a;--ink-soft:#666154;
+  --ghost:#887f70;--line:#e2ded4;--line-2:#d8d3c7;--accent:#b06f26;--accent-2:#8a5a24;--accent-wash:#f0e4d1;
+  --good-wash:#dde9dd;--good-ink:#416845;--warn-wash:#f2e0d4;--warn-ink:#974624;
+  --btn-bg:var(--accent-2);--btn-ink:var(--paper);
+  --shadow:0 1px 2px rgba(40,32,18,.05),0 10px 26px -16px rgba(40,32,18,.18);
+  --ease:cubic-bezier(0.2,0,0,1);
+  --night:#0f0d07;--night-ink:#efe8da;--night-veil:rgba(15,13,7,.6);
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0f0d07;--surface:#211d14;--surface-2:#2b2619;--ink:#efe8da;--ink-mid:#a89e8b;--ink-soft:#9f988a;
+  --line:#36301f;--line-2:#443d2b;--accent:#d59a4d;--accent-2:#e0ab63;--accent-wash:#362a19;
+  --good-wash:#23301f;--good-ink:#7fae82;--warn-wash:#39251a;--warn-ink:#d9825a;
+  --btn-bg:var(--accent);--btn-ink:#1d1a15;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -18px rgba(0,0,0,.65);
+}}
+*{box-sizing:border-box;margin:0}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+/* 横には動かさない（縦のスクロールだけ） */
+html,body{overflow-x:hidden;overscroll-behavior-x:none;max-width:100%}
+main,.card{min-width:0;max-width:100%}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.7 "Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;min-height:100dvh}
+main{max-width:640px;margin:0 auto;padding:16px 16px calc(48px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;gap:8px;padding:8px 0 16px}
+header h1{font-size:20px;font-weight:700;flex:1;display:flex;align-items:center;gap:8px}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.card{background:var(--surface);border-radius:20px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px}
+.card[hidden]{display:none}
+.card h2{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.num{width:28px;height:28px;border-radius:9999px;background:var(--surface-2);color:var(--ink-mid);font-size:14px;font-weight:700;display:grid;place-items:center;flex:none}
+.done .num{background:var(--good-wash);color:var(--good-ink)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=text],textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;min-height:44px;width:100%}
+textarea{resize:none;line-height:1.5;min-height:44px}
+button,.btn{font:inherit;font-size:15px;font-weight:500;min-height:44px;min-width:44px;border-radius:12px;border:0;padding:0 14px;background:var(--surface-2);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;text-decoration:none;transition:transform 120ms var(--ease),opacity 120ms var(--ease)}
+button:active,.btn:active{transform:scale(.97)}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--btn-bg);color:var(--btn-ink);font-weight:700;width:100%;margin-top:12px}
+.tiles{display:grid;grid-template-columns:1fr;gap:12px}
+.tile{position:relative;border:1.5px dashed var(--line-2);border-radius:20px;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--ink-mid);cursor:pointer;padding:12px;text-align:center;overflow:hidden}
+.tile svg.i{width:40px;height:40px;stroke-width:1.5}
+.tile.ok{border-style:solid;border-color:var(--good-ink);color:var(--good-ink);background:var(--good-wash)}
+.tile input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:16px}
+.tile .lbl{font-weight:700;font-size:15px}
+.tile .sub{font-size:13px}
+.bar{height:6px;border-radius:9999px;background:var(--surface-2);overflow:hidden;width:100%}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width 200ms var(--ease)}
+.busy{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 0;color:var(--ink-mid);font-size:14px}
+.spin{width:28px;height:28px;border:3px solid var(--line-2);border-top-color:var(--accent);border-radius:9999px;animation:sp 900ms linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.on{background:var(--accent-wash);color:var(--accent-2)}
+.banner{border-radius:8px;padding:12px;font-size:14px;margin-top:12px;display:flex;gap:8px;align-items:flex-start}
+.banner.warn{background:var(--warn-wash);color:var(--warn-ink)}
+.banner.good{background:var(--good-wash);color:var(--good-ink)}
+#s5 .banner{margin:0 0 12px}
+.caps{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.cap{display:grid;grid-template-columns:56px 1fr 44px;gap:8px;align-items:start}
+.cap textarea.ed{border-color:var(--accent-2)}
+.cap .del{min-width:44px;padding:0;color:var(--ink-soft);background:transparent}
+.cap textarea.en{grid-column:2/3;font-size:16px;color:var(--ink-mid);line-height:1.45;min-height:44px;padding:9px 12px;margin-top:-4px;border-style:dashed}
+.sug{grid-column:2/4;display:grid;grid-template-columns:minmax(0,1fr) 44px 44px;overflow-wrap:anywhere;gap:6px;align-items:center;background:var(--accent-wash);border-radius:8px;padding:4px 4px 4px 12px;font-size:15px;line-height:1.5}
+.sug b{font-weight:700;color:var(--ink)}.sug small{display:block;color:var(--ink-mid);font-size:13px}
+.cap .sug button{background:transparent;color:var(--accent-2);min-width:44px;width:44px;padding:0}
+.revbar{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.revbar span{font-size:14px;color:var(--ink-mid);flex:1}
+.lex{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.lexr{display:grid;grid-template-columns:1fr auto 1fr auto 44px;gap:8px;align-items:center;font-size:15px;border-bottom:1px solid var(--line);padding:2px 0}
+.lexr s{color:var(--ink-soft)}
+.lexr .n{font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.lexr button{background:transparent;color:var(--ink-soft);padding:0}
+details summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:700;font-size:17px;min-height:44px}
+details summary::-webkit-details-marker{display:none}
+.empty{color:var(--ink-soft);font-size:14px;padding:8px 0}
+.cap button{min-width:56px;padding:0 4px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink-mid)}
+.jobs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.jobs button{flex:none;border-radius:9999px;font-size:14px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jobs button.cur{background:var(--accent-wash);color:var(--accent-2)}
+.final video{aspect-ratio:16/9;object-fit:contain}
+.hint{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;color:var(--ink-mid);margin-top:8px}
+.hint svg.i{width:18px;height:18px}
+/* 早送り */
+.ff{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.ffh{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:8px}
+.ffctl{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ffctl button{font-variant-numeric:tabular-nums}
+.ffl{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.ffl:empty{display:none}
+.ffr{display:grid;grid-template-columns:minmax(0,1fr) 64px 44px;gap:8px;align-items:center}
+.ffr .rng{justify-content:flex-start;font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;white-space:nowrap}
+.ffr .rng small{color:var(--ink-mid);font-size:13px;margin-left:auto;overflow:hidden;text-overflow:ellipsis}
+.ffr .sp{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent-2);background:var(--accent-wash);padding:0}
+.ffr .del{padding:0;color:var(--ink-soft);background:transparent}
+.cap.ffd textarea{opacity:.45}
+.two{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
+.two .primary{margin:0}
+@media (min-width:900px){main{max-width:760px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:0s!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-title" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6"/></symbol>
+  <symbol id="i-wide" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M10 9.5l4.5 2.5-4.5 2.5z"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5M20 4v4.5h-4.5"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 14h4M13 14h4M7 10.5h10"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-ff" viewBox="0 0 24 24"><path d="M3.5 6.5l8 5.5-8 5.5zM12.5 6.5l8 5.5-8 5.5z"/></symbol>
+  <symbol id="i-in" viewBox="0 0 24 24"><path d="M10 5H6v14h4M13 12h6M16 9l3 3-3 3"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 5h4v14h-4M5 12h6M8 9l3 3-3 3"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4zM16 9.5l5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5L12 3l4.5 4.5M5 13v6h14v-6"/></symbol>
+</svg>
+<main>
+  <header>
+    <h1><svg class="i"><use href="#i-wide"/></svg>横動画字幕</h1>
+    <button id="newBtn" aria-label="新しく作る"><svg class="i"><use href="#i-plus"/></svg></button>
+  </header>
+  <div class="jobs" id="jobs"></div>
+
+  <section class="card" id="s1">
+    <h2><span class="num">1</span><svg class="i"><use href="#i-title"/></svg>タイトル</h2>
+    <input type="text" id="title" maxlength="40" placeholder="新機能のご紹介" enterkeyhint="done">
+    <button class="primary" id="startBtn">次へ</button>
+  </section>
+
+  <section class="card" id="s2" hidden>
+    <h2><span class="num">2</span><svg class="i"><use href="#i-film"/></svg>動画</h2>
+    <div class="tiles">
+      <label class="tile" id="tA"><svg class="i"><use href="#i-wide"/></svg><span class="lbl">横の動画</span><span class="sub" id="subA">選ぶ</span><div class="bar"><i id="barA"></i></div><input type="file" accept="video/*" id="fA"></label>
+    </div>
+  </section>
+
+  <section class="card" id="s3" hidden>
+    <h2><span class="num">3</span><svg class="i"><use href="#i-cap"/></svg>字幕</h2>
+    <div class="busy" id="b3"><div class="spin"></div><span id="b3t">文字起こし中</span><div class="bar"><i id="bar3"></i></div></div>
+    <button class="primary" id="capBtn" hidden><svg class="i"><use href="#i-retry"/></svg>もう一度</button>
+  </section>
+
+  <section class="card" id="s4" hidden>
+    <h2><span class="num">4</span><svg class="i"><use href="#i-cap"/></svg>字幕の確認</h2>
+    <video id="pc" playsinline preload="auto" controls style="aspect-ratio:16/9;object-fit:contain"></video>
+    <div class="ff">
+      <div class="ffh"><svg class="i"><use href="#i-ff"/></svg>早送り<svg class="i" style="margin-left:auto;color:var(--ink-soft)" aria-label="音なし"><use href="#i-mute"/></svg></div>
+      <div class="ffctl">
+        <button id="ffA"><svg class="i"><use href="#i-in"/></svg><span id="ffAt">ここから</span></button>
+        <button id="ffB" disabled><span>ここまで</span><svg class="i"><use href="#i-out"/></svg></button>
+      </div>
+      <div class="ffl" id="ffList"></div>
+    </div>
+    <div class="revbar"><button id="revBtn"><svg class="i"><use href="#i-eye"/></svg>見直し</button><span id="revT"></span><button id="revAll" hidden><svg class="i"><use href="#i-check"/></svg>全部採用</button></div>
+    <div class="caps" id="caps"></div>
+    <button class="primary" id="renderBtn"><svg class="i"><use href="#i-export"/></svg>書き出す</button>
+  </section>
+
+  <section class="card" id="s5" hidden>
+    <h2><span class="num">5</span><svg class="i"><use href="#i-export"/></svg>完成</h2>
+    <div class="busy" id="b5" hidden><div class="spin"></div><span id="b5t">書き出し中</span><div class="bar"><i id="bar5"></i></div></div>
+    <div class="banner warn" id="enErr" hidden><svg class="i"><use href="#i-warn"/></svg><span>英語の字幕を作れませんでした。もう一度書き出してください</span></div>
+    <div class="banner good" id="learned" hidden><svg class="i"><use href="#i-book"/></svg><span id="learnedT"></span></div>
+    <div id="v5" hidden>
+      <div class="final"><video id="fin" playsinline controls></video></div>
+      <a class="btn primary" id="dl"><svg class="i"><use href="#i-down"/></svg>ダウンロード</a>
+      <div class="hint"><svg class="i"><use href="#i-photos"/></svg>ファイル → 共有 → ビデオを保存</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <details id="lexBox">
+      <summary><svg class="i"><use href="#i-book"/></svg>覚えた言葉<span class="num" id="lexN" style="margin-left:auto">0</span></summary>
+      <div class="lex" id="lex"></div>
+    </details>
+  </section>
+
+  <div class="banner warn" id="err" hidden><svg class="i"><use href="#i-warn"/></svg><span id="errT"></span></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+// iPhone のマナーモードでも動画の音を出す（Safari 16.4〜。無い端末では何もしない）
+try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+let job=null, pollT=null, capsDirty=false;
+const loaded={caps:'',pc:''};  // 何を読み込み済みか（裏で作業が終わったら読み込み直す）
+// 押した瞬間に押せなくする（応答が返るまでの二度押しを防ぐ）
+// サーバーの状態で job を入れ替える。まだ保存していない字幕の直し（と英語・見直し案）は持ち越す
+function setJob(j){
+  if(job&&j&&job.id===j.id&&capsDirty){j.captions=job.captions;j.review=job.review;j.en=Object.assign({},j.en||{},job.en||{})}
+  job=j;return j;
+}
+const guard=fn=>async function(){if(this.disabled)return;this.disabled=true;try{await fn()}finally{this.disabled=false;render(false)}};
+const api=async(path,opt={})=>{
+  const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json','X-YJ':'1',...(opt.headers||{})}});
+  const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j;
+};
+const post=(path,body={})=>api(path,{method:'POST',body:JSON.stringify(body)});
+const fmt=t=>{t=Math.max(0,t);const m=Math.floor(t/60),s=(t%60).toFixed(1);return m+':'+(s<10?'0':'')+s};
+const showErr=m=>{$('err').hidden=!m;$('errT').textContent=m||''};
+
+async function loadJobs(){
+  const js=await api('/api/jobs');
+  $('jobs').innerHTML='';
+  js.forEach(j=>{const b=document.createElement('button');b.textContent=j.title;b.className=job&&job.id===j.id?'cur':'';
+    b.onclick=()=>open(j.id);$('jobs').appendChild(b)});
+}
+function resetTiles(){$('subA').textContent='選ぶ';$('barA').style.width=0}
+async function open(id){
+  loaded.caps=loaded.pc='';resetTiles();
+  try{job=await api('/api/job/'+id);try{localStorage.setItem('yj.job',id)}catch(e){}
+    capsDirty=false;render(true);loadJobs()}catch(e){job=null;render(true)}
+}
+function setDone(id,on){$(id).classList.toggle('done',on)}
+
+function render(first){
+  showErr(job&&job.error);
+  const st=job?job.step||2:1, busy=job&&job.busy;
+  if(document.activeElement!==$('title'))$('title').value=job?job.title:($('title').value||'');
+  $('startBtn').hidden=!!job;
+  setDone('s1',!!job);
+  $('s2').hidden=!job; setDone('s2',!!(job&&job.has_a));
+  if(job){$('tA').classList.toggle('ok',!!job.has_a);if(job.has_a&&!up.a)$('subA').textContent='✓';
+    $('fA').disabled=!!busy||!!up.a}  // 作業中は選び直せない（サーバーも 409 で断る）
+  // 3 文字起こし：作業中は進み具合、失敗したら「もう一度」
+  const hasCaps=!!(job&&job.captions&&busy!=='文字起こし'&&st>=4);
+  const capBusy=busy==='文字起こし'||(busy==='見直し'||busy==='英訳')&&!hasCaps;
+  $('s3').hidden=!(job&&job.has_a&&!hasCaps);
+  $('b3').hidden=!capBusy;
+  $('capBtn').hidden=!!busy||!job||!job.has_a||hasCaps||!!up.a;
+  if(capBusy){$('b3t').textContent=busy==='見直し'?'見直し中':busy==='英訳'?'英語の字幕を作成中':'文字起こし中';
+    // 帯は確認用の動画を作るあいだだけ（文字起こしの中は進み具合が取れないので、回る印だけにする）
+    $('bar3').style.width=((job.progress||0)*100)+'%';$('bar3').parentNode.hidden=busy!=='文字起こし'||(job.progress||0)>=0.2}
+  setDone('s3',hasCaps);
+  if(job){const n=job.captions?liveReview().length:0;
+    $('revT').textContent=busy==='見直し'?'見直し中…':job.review_error?'見直しできませんでした':n?n+'件':'直す案なし';
+    $('revAll').hidden=!n||!!busy;$('revBtn').disabled=!!busy}
+  // 4 字幕の確認
+  $('s4').hidden=!hasCaps; setDone('s4',st>=5);
+  const ck=hasCaps?job.id+'|'+JSON.stringify([job.captions,job.captions_shown,job.review,job.en]):'';
+  if(hasCaps&&ck!==loaded.caps&&(!capsDirty||first)){loaded.caps=ck;capsDirty=false;drawCaps()}
+  if(hasCaps&&(first||$('ffList').dataset.k!==JSON.stringify(ffs()))){if(first)ffStart=null;drawFF()}
+  $('ffA').disabled=!!busy;$('ffB').disabled=!!busy||ffStart===null;
+  document.querySelectorAll('.ffr .sp,.ffr .del').forEach(b=>b.disabled=!!busy);
+  const pk=hasCaps?job.id+'|'+job.proxy:'';
+  if(hasCaps&&loaded.pc!==pk){loaded.pc=pk;$('pc').src='/files/'+job.id+'/proxy_a.mp4?v='+(job.proxy||Date.now())}
+  // 5 完成
+  const rend=hasCaps&&(busy==='書き出し'||busy==='英訳'), fin=job&&job.rendered;
+  if(rend)$('b5t').textContent=busy==='英訳'?'英語の字幕を作成中':'書き出し中';
+  $('s5').hidden=!(rend||fin);
+  $('b5').hidden=!rend; $('v5').hidden=!fin||rend;
+  if(rend)$('bar5').style.width=((job.progress||0)*100)+'%';
+  if(fin&&$('fin').dataset.v!==String(job.rendered)){
+    const u='/files/'+job.id+'/'+encodeURIComponent('完成.mp4')+'?v='+job.rendered;
+    $('fin').src=u;$('fin').dataset.v=String(job.rendered);$('dl').href=u+'&dl=1';
+  }
+  $('learned').hidden=!(job&&job.learned);
+  $('enErr').hidden=!(job&&job.en_error&&!busy&&fin);
+  if(job&&job.learned)$('learnedT').textContent='+'+job.learned+' 件 覚えました';
+  $('renderBtn').disabled=!!busy;
+  clearTimeout(pollT);
+  if(busy){const id=job.id;pollT=setTimeout(async function poll(){
+    try{const j=await api('/api/job/'+id);if(job&&job.id===id){setJob(j);render(false)}}
+    catch(e){if(job&&job.id===id)pollT=setTimeout(poll,2000)}},1000)}
+}
+
+// 1 タイトル
+$('startBtn').onclick=guard(async()=>{
+  try{job=await post('/api/job',{title:$('title').value});try{localStorage.setItem('yj.job',job.id)}catch(e){}
+    render(true);loadJobs()}catch(e){showErr(e.message)}
+});
+// タイトルの直し：まだ保存していない字幕の直しは持ち越す（setJob）。作業中などで通らなければ知らせて元に戻す
+$('title').addEventListener('change',async()=>{if(!job)return;
+  try{showErr('');setJob(await post('/api/job/'+job.id+'/title',{title:$('title').value}));loadJobs()}
+  catch(e){showErr(e.message);$('title').value=job.title}});
+$('newBtn').onclick=()=>{job=null;loaded.caps=loaded.pc='';try{localStorage.removeItem('yj.job')}catch(e){}$('title').value='';
+  resetTiles();$('pc').removeAttribute('src');$('fin').removeAttribute('src');$('fin').dataset.v='';render(true);loadJobs();window.scrollTo(0,0)};
+
+// 2 動画（受け取ったらサーバーがそのまま文字起こしへ進む）
+const up={};
+function upload(file){
+  const ext=(file.name.split('.').pop()||'mov').toLowerCase();
+  up.a=true; $('fA').disabled=true;
+  return new Promise((res,rej)=>{
+    const x=new XMLHttpRequest();
+    const jid=job.id;
+    x.open('PUT','/api/job/'+jid+'/upload');x.setRequestHeader('X-Ext',ext);x.setRequestHeader('X-YJ','1');
+    x.upload.onprogress=e=>{if(e.lengthComputable&&job&&job.id===jid){$('barA').style.width=(e.loaded/e.total*100)+'%';$('subA').textContent=Math.round(e.loaded/e.total*100)+'%'}};
+    x.onloadend=()=>{$('fA').disabled=false};
+    x.onload=()=>{up.a=false;
+      if(!job||job.id!==jid){res();return}  // 送っている間に別の作業へ移った
+      if(x.status<300){job=JSON.parse(x.responseText);capsDirty=false;$('subA').textContent='✓';res()}
+      else{$('subA').textContent='やり直す';let m='送れませんでした';try{m=JSON.parse(x.responseText).error||m}catch(e){}rej(new Error(m))}};
+    x.onerror=()=>{up.a=false;$('subA').textContent='やり直す';rej(new Error('送れませんでした'))};
+    x.send(file);
+  });
+}
+$('fA').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f)return; e.target.value='';
+  // 字幕まで進んだ動画を入れ替えると、字幕の直し・早送り・完成版は作り直しになる
+  if(job.captions&&!confirm('動画を入れ替えると、字幕・早送り・完成版は作り直しになります。入れ替えますか？'))return;
+  const jid=job.id;
+  try{showErr('');await upload(f);if(!job||job.id!==jid)return;
+    loaded.caps=loaded.pc='';$('fin').dataset.v='';render(true);$('s3').scrollIntoView({behavior:'smooth'})}
+  catch(err){showErr(err.message);render(false)}
+});
+
+// 3 文字起こしのやり直し
+$('capBtn').onclick=guard(async()=>{try{showErr('');job=await post('/api/job/'+job.id+'/caption')}catch(e){showErr(e.message)}});
+
+// 5 字幕の確認
+// 早送り：区間は確認の動画の時刻（映像の頭が0秒＝書き出しと同じ）。中は音なしで速く流し、字幕も出さない
+let ffStart=null, ffSpeed=4;
+const SPEEDS=[2,4,8];
+const ffs=()=>(job&&job.ff)||[];
+function inFF(c){  // 半分以上が早送りに入る字幕は出さない（書き出しと同じ決まり）
+  const al=(job.a_info&&job.a_info.alead)||0, s=c.start+al, e=c.end+al, L=e-s;  // 字幕は音の頭が0秒・区間は映像の頭が0秒
+  if(L<=0)return true;
+  return ffs().reduce((a,r)=>a+Math.max(0,Math.min(e,r.end)-Math.max(s,r.start)),0)>=L*0.5;
+}
+function drawFF(){
+  $('ffAt').textContent=ffStart===null?'ここから':fmt(ffStart);
+  $('ffA').classList.toggle('on',ffStart!==null);$('ffB').disabled=ffStart===null;
+  const box=$('ffList');box.innerHTML='';box.dataset.k=JSON.stringify(ffs());
+  ffs().forEach((r,i)=>{
+    const row=document.createElement('div');row.className='ffr';
+    const b=document.createElement('button');b.className='rng';b.setAttribute('aria-label','ここから再生');
+    const L=r.end-r.start;
+    b.textContent=fmt(r.start)+'–'+fmt(r.end);
+    const sm=document.createElement('small');sm.textContent=L.toFixed(1)+'→'+(L/r.speed).toFixed(1)+'秒';b.appendChild(sm);
+    b.onclick=()=>{const v=$('pc');v.currentTime=Math.max(0,r.start-1);v.play()};
+    const sp=document.createElement('button');sp.className='sp';sp.textContent=r.speed+'×';sp.setAttribute('aria-label','速さを変える');
+    sp.onclick=guard(async()=>{const ff=ffs().map(x=>({...x}));ff[i].speed=SPEEDS[(SPEEDS.indexOf(r.speed)+1)%SPEEDS.length];ffSpeed=ff[i].speed;await saveFF(ff)});
+    const x=document.createElement('button');x.className='del';x.setAttribute('aria-label','この早送りを消す');x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+    x.onclick=guard(async()=>{await saveFF(ffs().filter((_,k)=>k!==i))});
+    row.append(b,sp,x);box.appendChild(row);
+  });
+}
+async function saveFF(ff){
+  try{showErr('');setJob(await post('/api/job/'+job.id+'/ff',{ff}))}catch(e){showErr(e.message)}
+  drawFF();drawCaps();
+}
+$('ffA').onclick=()=>{ffStart=Math.round($('pc').currentTime*10)/10;drawFF()};
+$('ffB').onclick=guard(async()=>{
+  const t=Math.round($('pc').currentTime*10)/10;
+  if(ffStart===null||Math.abs(t-ffStart)<0.3)return;  // ほぼ同じ所なら区間にしない（「ここから」は残す）
+  const s0=Math.min(t,ffStart),e=Math.max(t,ffStart);  // 戻ってから押しても前後を入れ替えて使う
+  ffStart=null;await saveFF([...ffs(),{start:s0,end:e,speed:ffSpeed}]);
+});
+// 確認の動画でも、早送りの区間は速く・音なしで流す（書き出しの見え方に近づける）
+// 区間に入った時だけ速さと消音を変え、出たら入る前の状態に戻す（本人が選んだ速さ・音はそのまま）
+let ffIn=null, ffTick=null;  // ffIn＝区間に入る前の {rate, muted}
+function ffCheck(){
+  const v=$('pc'),t=v.currentTime,r=ffs().find(r=>t>=r.start&&t<r.end);
+  if(r&&!ffIn){ffIn={rate:v.playbackRate,muted:v.muted};v.playbackRate=r.speed;v.muted=true}
+  else if(r&&ffIn&&v.playbackRate!==r.speed&&ffs().some(x=>x.speed===v.playbackRate))v.playbackRate=r.speed;  // 隣の区間へ
+  else if(!r&&ffIn){v.playbackRate=ffIn.rate;v.muted=ffIn.muted;ffIn=null}
+}
+$('pc').addEventListener('timeupdate',ffCheck);
+$('pc').addEventListener('seeked',ffCheck);
+// timeupdate は 0.25 秒おきなので、再生中は細かく見て区間の出口を通り過ぎないようにする
+$('pc').addEventListener('play',()=>{clearInterval(ffTick);ffTick=setInterval(ffCheck,50)});
+$('pc').addEventListener('pause',()=>{clearInterval(ffTick);ffCheck()});
+const capAt=st=>job.captions.find(x=>Math.abs(x.start-st)<0.001);  // 字幕は start で引き直す（job が入れ替わっても正しい字幕を指す）
+function liveReview(){  // 今の文がまだ案の「直す前」と同じものだけが有効な案
+  return (job.review||[]).filter(v=>{const c=capAt(v.start);return c&&c.text===v.before});
+}
+function drawCaps(){
+  const box=$('caps');box.innerHTML='';
+  const rv=liveReview();
+  job.captions.forEach(c0=>{
+    const st=c0.start;
+    const r=document.createElement('div');r.className='cap'+(inFF(c0)?' ffd':'');
+    const b=document.createElement('button');b.textContent=fmt(st);b.setAttribute('aria-label','ここから再生');
+    b.onclick=()=>{const v=$('pc');v.currentTime=st+((job.a_info&&job.a_info.alead)||0);v.play()};  // 字幕は音の頭が0秒・動画は映像の頭が0秒
+    const t=document.createElement('textarea');t.rows=1;t.value=c0.text;
+    const shown=(job.captions_shown||[]).find(x=>Math.abs(x.start-st)<0.01);
+    const mark=()=>t.classList.toggle('ed',!!shown&&shown.text!==t.value);
+    const fit=(el)=>{el.style.height='auto';el.style.height=el.scrollHeight+'px'};
+    t.oninput=()=>{const c=capAt(st);if(c)c.text=t.value;capsDirty=true;fit(t);mark()};
+    const x=document.createElement('button');x.className='del';x.setAttribute('aria-label','この字幕を消す');
+    x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+    x.onclick=()=>{job.captions=job.captions.filter(c=>Math.abs(c.start-st)>=0.001);
+      job.review=(job.review||[]).filter(v=>Math.abs(v.start-st)>=0.001);capsDirty=true;drawCaps();render(false)};
+    r.append(b,t,x);
+    const enTxt=(job.en||{})[c0.text];
+    if(enTxt!==undefined&&enTxt!==''){
+      const e=document.createElement('textarea');e.className='en';e.rows=1;e.value=enTxt;e.setAttribute('aria-label','英語の字幕');e.lang='en';
+      e.oninput=()=>{const c=capAt(st);if(c){job.en=job.en||{};job.en[c.text]=e.value}capsDirty=true;fit(e)};
+      r.appendChild(e);requestAnimationFrame(()=>fit(e));
+    }
+    const sg=rv.find(v=>Math.abs(v.start-st)<0.001);
+    if(sg){
+      const d=document.createElement('div');d.className='sug';
+      const tx=document.createElement('div');const bb=document.createElement('b');bb.textContent=sg.after;
+      const sm=document.createElement('small');sm.textContent=sg.why;tx.append(bb,sm);
+      const ok=document.createElement('button');ok.setAttribute('aria-label','採用');ok.innerHTML='<svg class="i"><use href="#i-check"/></svg>';
+      const no=document.createElement('button');no.setAttribute('aria-label','そのまま');no.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+      const drop=()=>{job.review=(job.review||[]).filter(v=>v!==sg);capsDirty=true;drawCaps();render(false)};
+      ok.onclick=()=>{const c=capAt(st);if(c&&c.text===sg.before)c.text=sg.after;drop()};no.onclick=drop;
+      d.append(tx,ok,no);r.appendChild(d);
+    }
+    box.appendChild(r);mark();requestAnimationFrame(()=>fit(t));
+  });
+}
+$('renderBtn').onclick=guard(async()=>{
+  try{await post('/api/job/'+job.id+'/captions',{captions:job.captions,review:liveReview(),en:job.en||{}});capsDirty=false;
+    loadLex();job=await post('/api/job/'+job.id+'/render');render(true);$('s5').scrollIntoView({behavior:'smooth'})}catch(e){showErr(e.message)}
+});
+
+$('revBtn').onclick=guard(async()=>{try{showErr('');capsDirty=false;job=await post('/api/job/'+job.id+'/review',{captions:job.captions,en:job.en||{}})}catch(e){showErr(e.message)}});
+$('revAll').onclick=()=>{liveReview().forEach(sg=>{const c=capAt(sg.start);if(c)c.text=sg.after});
+  job.review=[];capsDirty=true;drawCaps();render(false)};
+
+// 覚えた言葉
+async function loadLex(){
+  const lex=await api('/api/lexicon');const box=$('lex');box.innerHTML='';
+  $('lexN').textContent=lex.pairs.length;
+  if(!lex.pairs.length){box.innerHTML='<div class="empty">—</div>';return}
+  lex.pairs.forEach(p=>{
+    const r=document.createElement('div');r.className='lexr';
+    const a=document.createElement('s');a.textContent=p.from;
+    const ar=document.createElement('span');ar.textContent='→';ar.setAttribute('aria-hidden','true');
+    const b=document.createElement('span');b.textContent=p.to;
+    const x=document.createElement('button');x.setAttribute('aria-label','忘れる');x.innerHTML='<svg class="i"><use href="#i-x"/></svg>';
+    x.onclick=async()=>{await post('/api/lexicon/remove',{from:p.from,to:p.to});loadLex()};
+    const n=document.createElement('span');n.className='n';n.textContent='×'+p.n;
+    r.append(a,ar,b,n,x);box.appendChild(r);
+  });
+}
+loadLex();
+
+
+
+(async()=>{let id=new URLSearchParams(location.search).get('job');if(!id)try{id=localStorage.getItem('yj.job')}catch(e){}
+  if(id)await open(id);else{render(true);loadJobs()}})();
+</script>
+</body>
+</html>

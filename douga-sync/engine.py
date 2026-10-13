@@ -789,7 +789,7 @@ def rebuild_lexicon(learn_dir):
     """ログから置き換え表を作り直す。消した物（removed）は戻さない。"""
     learn_dir = Path(learn_dir)
     lex_path = learn_dir / "覚えた言葉.json"
-    lex = json.loads(lex_path.read_text()) if lex_path.exists() else {"pairs": [], "removed": []}
+    lex = load_lexicon(learn_dir)
     removed = {tuple(x) for x in lex.get("removed", [])}
     count = {}
     log = learn_dir / "修正ログ.jsonl"
@@ -805,19 +805,34 @@ def rebuild_lexicon(learn_dir):
              if (a, b) not in removed and (b, a) not in count]
     pairs.sort(key=lambda p: -p["n"])
     lex = {"pairs": pairs, "removed": [list(x) for x in removed]}
-    lex_path.write_text(json.dumps(lex, ensure_ascii=False, indent=1))
+    _write_lexicon(learn_dir, lex)
     return lex
 
 
 def load_lexicon(learn_dir):
+    """読めない（書きかけ・壊れた）ときは空として続ける。作業は止めない（ログから作り直せる）。"""
     p = Path(learn_dir) / "覚えた言葉.json"
-    return json.loads(p.read_text()) if p.exists() else {"pairs": [], "removed": []}
+    try:
+        lex = json.loads(p.read_text())
+        if isinstance(lex, dict) and isinstance(lex.get("pairs"), list):
+            return lex
+    except (OSError, ValueError):
+        pass
+    return {"pairs": [], "removed": []}
+
+
+def _write_lexicon(learn_dir, lex):
+    """一時ファイルに書いてから入れ替える（学習は動画同期と横動画字幕の2つが書くので、書きかけを読ませない）。"""
+    p = Path(learn_dir) / "覚えた言葉.json"
+    tmp = p.with_name(f".覚えた言葉.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(lex, ensure_ascii=False, indent=1))
+    tmp.replace(p)
 
 
 def remove_pair(learn_dir, a, b):
     lex = load_lexicon(learn_dir)
     lex["removed"] = [x for x in lex.get("removed", []) if x != [a, b]] + [[a, b]]
-    Path(learn_dir, "覚えた言葉.json").write_text(json.dumps(lex, ensure_ascii=False, indent=1))
+    _write_lexicon(learn_dir, lex)
     return rebuild_lexicon(learn_dir)
 
 
