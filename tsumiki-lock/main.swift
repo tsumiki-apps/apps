@@ -182,6 +182,48 @@ func sunTimes(_ p: Place, on day: Date) -> (rise: Date, set: Date)? {
   return (r, s)
 }
 
+// 天気（本人の指定 2026-10-14：その日いちにちを数時間ごとに、天気の絵をはっきり）。
+// Open-Meteo（鍵なし・無料）に小数2桁の緯度経度だけを渡し、1時間ごとの予報を取る。1時間に1回取り直す。
+// 取れないときは最後の予報。日付が変わった古い予報は出さない
+struct Hour: Codable { let at: Date; let temp: Double; let code: Int; let rain: Int }
+
+func weatherSymbol(_ code: Int, night: Bool) -> String {
+  switch code {
+  case 0, 1: return night ? "moon.stars.fill" : "sun.max.fill"
+  case 2: return night ? "cloud.moon.fill" : "cloud.sun.fill"
+  case 3: return "cloud.fill"
+  case 45, 48: return "cloud.fog.fill"
+  case 51...57: return "cloud.drizzle.fill"
+  case 61, 63, 66: return "cloud.rain.fill"
+  case 65, 67: return "cloud.heavyrain.fill"
+  case 71...77, 85, 86: return "cloud.snow.fill"
+  case 80...82: return night ? "cloud.moon.rain.fill" : "cloud.sun.rain.fill"
+  case 95...99: return "cloud.bolt.rain.fill"
+  default: return "cloud.fill"
+  }
+}
+
+func fetchWeather(_ p: Place, done: @escaping ([Hour]) -> Void) {
+  var c = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
+  c.queryItems = [.init(name: "latitude", value: String(format: "%.2f", p.lat)), .init(name: "longitude", value: String(format: "%.2f", p.lon)),
+                  .init(name: "hourly", value: "temperature_2m,weather_code,precipitation_probability"),
+                  .init(name: "timezone", value: "auto"), .init(name: "forecast_days", value: "2")]
+  var rq = URLRequest(url: c.url!); rq.timeoutInterval = 10
+  URLSession.shared.dataTask(with: rq) { d, _, _ in
+    guard let d = d, let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+          let off = o["utc_offset_seconds"] as? Int, let h = o["hourly"] as? [String: Any],
+          let ts = h["time"] as? [String], let tp = h["temperature_2m"] as? [Double],
+          let wc = h["weather_code"] as? [Int] else { return }
+    let pr = h["precipitation_probability"] as? [Int?] ?? []
+    let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm"; f.timeZone = TimeZone(secondsFromGMT: off)
+    var out: [Hour] = []
+    for i in 0..<min(ts.count, tp.count, wc.count) {
+      if let t = f.date(from: ts[i]) { out.append(Hour(at: t, temp: tp[i], code: wc[i], rain: (i < pr.count ? pr[i] : nil) ?? 0)) }
+    }
+    DispatchQueue.main.async { done(out) }
+  }.resume()
+}
+
 // バッテリー（本人の指定 2026-10-14）。nil＝電池のない Mac
 func batteryNow() -> (pct: Int, charging: Bool)? {
   guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
@@ -222,6 +264,7 @@ final class Model: ObservableObject {
   var renderAt: Date? = nil   // 見本の書き出し用
   @Published var place = Place(lat: 35.68, lon: 139.69)   // 東京（取れるまでの仮）
   @Published var battery: Int? = nil
+  @Published var hours: [Hour] = []
   @Published var charging = false
   var fails = 0
 
@@ -309,6 +352,7 @@ struct Curtain: View {
     .background(ZStack { Color.paper; SkyGlow(now: m.now, sun: sun, size: size) })
     .overlay(alignment: .top) { corners(u) }
     .overlay(alignment: .bottomTrailing) { batteryTag(u) }
+    .overlay(alignment: .bottomLeading) { weather(u) }
   }
 
   var sun: (rise: Date, set: Date)? { sunTimes(m.place, on: m.now) }
@@ -331,6 +375,53 @@ struct Curtain: View {
     }
     .foregroundColor(.mid)
     .padding(.horizontal, 40 * u).padding(.top, 34 * u)
+  }
+
+  // 左下に今日の天気：6時〜21時を3時間ごと（6枠）。過ぎた枠は薄く、今の枠に橙の印
+  var todaySlots: [Hour] {
+    let cal = Calendar.current
+    return [6, 9, 12, 15, 18, 21].compactMap { hr in
+      m.hours.first { cal.isDate($0.at, inSameDayAs: m.now) && cal.component(.hour, from: $0.at) == hr }
+    }
+  }
+  // 行の高さ・列の幅は固定（本人「X軸Y軸ずれないように」）：どの時間も 時刻／絵／気温／雨／今の印 が同じ高さに並ぶ。
+  // 左端は左上の日の出と同じ 40、下端は右下のバッテリーと同じ 34（上の隅と同じ余白）
+  @ViewBuilder func weather(_ u: CGFloat) -> some View {
+    let slots = todaySlots
+    if !slots.isEmpty {
+      let nowH = Calendar.current.component(.hour, from: m.now)
+      let cur = slots.lastIndex { Calendar.current.component(.hour, from: $0.at) <= nowH } ?? -1
+      let s = sun
+      HStack(alignment: .top, spacing: 6 * u) {
+        ForEach(Array(slots.enumerated()), id: \.offset) { i, h in
+          let hr = Calendar.current.component(.hour, from: h.at)
+          let night = s.map { h.at < $0.rise || h.at > $0.set } ?? (hr < 6 || hr >= 18)
+          let isNow = i == cur
+          VStack(spacing: 0) {
+            Text("\(hr)時").font(zen(15 * u, isNow)).foregroundColor(isNow ? .accent : .mid)
+              .frame(height: 20 * u)
+            symbol(weatherSymbol(h.code, night: night), u)
+              .frame(width: 54 * u, height: 50 * u)
+            Text("\(Int(h.temp.rounded()))°").font(zen(20 * u, true)).foregroundColor(.ink).monospacedDigit()
+              .frame(height: 26 * u)
+            Text(h.rain >= 20 ? "\(h.rain)%" : "").font(zen(13 * u)).foregroundColor(Color(hex: 0x8fb4d6)).monospacedDigit()
+              .frame(height: 18 * u)
+            Capsule().fill(Color.accent).frame(width: 22 * u, height: 3 * u).opacity(isNow ? 1 : 0)
+          }
+          .frame(width: 54 * u)
+          .opacity(i < cur ? 0.4 : 1)   // 過ぎた時間は薄く
+        }
+      }
+      .padding(.leading, 40 * u).padding(.bottom, 34 * u)
+    }
+  }
+  // 天気の絵（本人の選択：案2）：太陽と月は幕と同じ橙、雲は生成り、雨・雪は淡い青
+  func symbol(_ name: String, _ u: CGFloat) -> some View {
+    let wet = name.contains("rain") || name.contains("drizzle") || name.contains("snow") || name.contains("bolt")
+    let lit = name.hasPrefix("sun") || name.hasPrefix("moon")
+    return Image(systemName: name).font(.system(size: 38 * u))
+      .symbolRenderingMode(.palette)
+      .foregroundStyle(lit ? Color.accent : Color.ink, wet ? Color(hex: 0x8fb4d6) : Color.accent, Color.accent)
   }
 
   // 右下にバッテリー。20% 以下は警告の色、充電中は稲妻
@@ -595,7 +686,8 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     }
     if m.locked { log("起動時に幕が掛かっていた → 掛け直す"); showCurtain() }
     // 朝のまとめは幕が外れていても送る（幕の tick は掛けているあいだしか回らないので別に回す）
-    morningTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.morningReport() }
+    morningTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.morningReport(); self?.refreshWeather() }
+    refreshWeather()
   }
 
   func isAuthAgent(_ a: NSRunningApplication) -> Bool {
@@ -661,6 +753,17 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     }
   }
   func locationManager(_ mgr: CLLocationManager, didFailWithError e: Error) {}
+
+  var lastWeather = Date.distantPast, weatherPlace: Place?
+  func refreshWeather(force: Bool = false) {
+    let p = m.place
+    guard force || Date().timeIntervalSince(lastWeather) > 3600 || weatherPlace?.lat != p.lat || weatherPlace?.lon != p.lon else { return }
+    lastWeather = Date(); weatherPlace = p
+    fetchWeather(p) { [weak self] hs in
+      guard let self = self, !hs.isEmpty else { return }
+      self.m.hours = hs
+    }
+  }
 
   func readBattery() {
     let b = batteryNow()
@@ -1090,7 +1193,8 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
      // armed は「返事待ち」だけ。指を読めるのは確認の窓が前面のとき（authFront）
      "armed": authing, "authFront": NSWorkspace.shared.frontmostApplication.map { isAuthAgent($0) } ?? false,
      "armedFor": authing ? Date().timeIntervalSince(authStart) : -1,
-     "sinceEnd": Date().timeIntervalSince(lastAuthEnd), "failStreak": failStreak, "showPin": m.showPin]
+     "sinceEnd": Date().timeIntervalSince(lastAuthEnd), "failStreak": failStreak, "showPin": m.showPin,
+     "weatherHours": m.hours.count, "battery": m.battery ?? -1]
   }
 }
 
@@ -1110,6 +1214,10 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render" {
              Seat(id: "c", title: "", status: "idle")]
   m.now = Date(timeIntervalSince1970: 1791895000)
   m.battery = 82
+  // 天気の見本（10/14 東京の Open-Meteo の予報から）
+  let day0 = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1791936000))
+  m.hours = [(6, 19.4, 1, 0), (9, 23.1, 2, 6), (12, 25.3, 1, 49), (15, 20.7, 3, 55), (18, 20.0, 61, 45), (21, 19.4, 2, 53)]
+    .map { Hour(at: day0.addingTimeInterval(Double($0.0) * 3600), temp: $0.1, code: $0.2, rain: $0.3) }
   // 7つ目に "15:20" のように時刻を渡すと、10/14 のその時刻の空で描く（東京）
   if a.count > 6 {
     let hm = a[6].split(separator: ":").compactMap { Double($0) }
