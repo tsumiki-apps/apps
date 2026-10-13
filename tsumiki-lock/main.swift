@@ -397,6 +397,23 @@ final class App: NSObject, NSApplicationDelegate {
   // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
   // 黙っていた分の数は次の知らせに足す
   var lastAlert = Date.distantPast, quietAlerts = 0
+  // 夜（22時〜8時・つみきリモートと同じ）は鳴らさず数えるだけ。朝8時を過ぎたら1通にまとめて送る（本人の選択）。
+  // 数えはメモリだけ（夜のあいだに幕のアプリが起き直すと消える）
+  var nightTally: [String: Int] = [:]
+  var morningTimer: Timer?
+  func isNight(_ d: Date = Date()) -> Bool {
+    if let f = ProcessInfo.processInfo.environment["TSUMIKI_LOCK_NIGHT"], KC_SERVICE != "com.tsumiki.lock" {   // 試験用
+      return FileManager.default.fileExists(atPath: f)
+    }
+    let h = Calendar.current.component(.hour, from: d); return h < 8 || h >= 22 }
+  func morningReport() {
+    guard !isNight(), !nightTally.isEmpty else { return }
+    let parts = ["指紋": "指紋が合わない", "ロック": "Touch ID のロック", "合言葉": "合言葉ちがい"]
+      .compactMap { k, v in nightTally[k].map { "\(v) \($0) 回" } }.sorted()
+    nightTally = [:]
+    log("iPhone に知らせた：夜のあいだの失敗（\(parts.joined(separator: "・"))）")
+    pushPhone("Mac の幕（夜のあいだ）", parts.joined(separator: "・") + " がありました")
+  }
 
   // 幕の高さ。常に一番上（どのアプリの全画面の窓より上）。Touch ID の確認（coreautha・1000）は
   // 幕の裏に隠れたまま待ち受ける（touch() の説明）
@@ -445,6 +462,8 @@ final class App: NSObject, NSApplicationDelegate {
       self.reassert()
     }
     if m.locked { log("起動時に幕が掛かっていた → 掛け直す"); showCurtain() }
+    // 朝のまとめは幕が外れていても送る（幕の tick は掛けているあいだしか回らないので別に回す）
+    morningTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.morningReport() }
   }
 
   func isAuthAgent(_ a: NSRunningApplication) -> Bool {
@@ -595,8 +614,9 @@ final class App: NSObject, NSApplicationDelegate {
 
   // MARK: 合言葉・Touch ID
 
-  func alertPhone(_ what: String) {
+  func alertPhone(_ what: String, kind: String) {
     guard m.locked else { return }
+    if isNight() { nightTally[kind, default: 0] += 1; return }
     if Date().timeIntervalSince(lastAlert) < 300 { quietAlerts += 1; return }
     let more = quietAlerts > 0 ? "（その前にも \(quietAlerts) 回）" : ""
     lastAlert = Date(); quietAlerts = 0
@@ -652,7 +672,7 @@ final class App: NSObject, NSApplicationDelegate {
           self.m.now = Date()   // 古い時刻で秒を多く出さない
         }
         self.m.note = "違います"
-        self.alertPhone("合言葉が違いました（\(self.m.fails) 回目）")
+        self.alertPhone("合言葉が違いました（\(self.m.fails) 回目）", kind: "合言葉")
         self.m.save()
         log("合言葉ちがい（\(self.m.fails) 回目）")
       }
@@ -728,7 +748,7 @@ final class App: NSObject, NSApplicationDelegate {
     }
     switch code {
     case .authenticationFailed?:
-      alertPhone("指紋が合いませんでした")
+      alertPhone("指紋が合いませんでした", kind: "指紋")
       // 毎回赤く揺らし、3回続いたら合言葉へ（本人の指定）。それまではすぐ待ち受け直す
       // 「続けて」3回：前の失敗から2分以上あいたら数え直す（朝・昼・夕の1回ずつで欄に移らない）
       if Date().timeIntervalSince(lastFingerFail) > 120 { fingerFails = 0 }
@@ -741,7 +761,7 @@ final class App: NSObject, NSApplicationDelegate {
         failStreak = 0   // 指が合わないのは間を広げる理由にしない
       }
     case .biometryLockout?:
-      alertPhone("Touch ID がロックされました（指の失敗が続いたため）")
+      alertPhone("Touch ID がロックされました（指の失敗が続いたため）", kind: "ロック")
       let round = m.since
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if self.m.locked && self.m.since == round { self.toPin() } }
     case .biometryNotAvailable?, .biometryNotEnrolled?, .userCancel?:
