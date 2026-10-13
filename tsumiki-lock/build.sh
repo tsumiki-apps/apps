@@ -12,5 +12,5 @@ test -x build/TsumikiLock
 mkdir -p "$OUT/Contents/MacOS"
 cp build/TsumikiLock "$OUT/Contents/MacOS/TsumikiLock"
 cp Info.plist "$OUT/Contents/Info.plist"
-codesign --force --sign "$ID" --options runtime "$OUT"
+codesign --force --sign "$ID" --options runtime --entitlements TsumikiLock.entitlements "$OUT"
 codesign --verify "$OUT" && echo "OK $OUT"

@@ -11,6 +11,8 @@ import Network
 import LocalAuthentication
 import Security
 import CommonCrypto
+import CoreLocation
+import IOKit.ps
 
 // MARK: - 置き場
 
@@ -145,6 +147,54 @@ enum Pin {
   }
 }
 
+// MARK: - 日の出・日の入り（本人の指定 2026-10-14：その場所のその日の時刻を、幕の空の灯りとして出す）
+// 位置は macOS の位置情報（幕が外れているときだけ聞く＝許可の窓が幕の裏に隠れないように）。
+// 取れた場所は lock-place.json に小数2桁（約1km）で残し、取れないときはそれを使う。無ければ東京。
+// 時刻は通信せずにここで計算する（NOAA の簡略式・誤差は1〜2分）
+
+let PLACE_FILE = CONF.appendingPathComponent("lock-place.json")
+struct Place: Codable { var lat: Double; var lon: Double }
+
+func sunTimes(_ p: Place, on day: Date) -> (rise: Date, set: Date)? {
+  let cal = Calendar.current
+  let start = cal.startOfDay(for: day)
+  let n = Double(cal.ordinality(of: .day, in: .year, for: day) ?? 1)
+  let tz = Double(TimeZone.current.secondsFromGMT(for: day)) / 3600
+  let rad = Double.pi / 180
+  func at(_ rising: Bool) -> Date? {
+    let lngH = p.lon / 15
+    let t = n + ((rising ? 6 : 18) - lngH) / 24
+    let m = 0.9856 * t - 3.289
+    var l = m + 1.916 * sin(m * rad) + 0.020 * sin(2 * m * rad) + 282.634
+    l = l.truncatingRemainder(dividingBy: 360); if l < 0 { l += 360 }
+    var ra = atan(0.91764 * tan(l * rad)) / rad
+    ra = ra.truncatingRemainder(dividingBy: 360); if ra < 0 { ra += 360 }
+    ra = (ra + (floor(l / 90) * 90 - floor(ra / 90) * 90)) / 15
+    let sd = 0.39782 * sin(l * rad), cd = cos(asin(sd))
+    let ch = (cos(90.833 * rad) - sd * sin(p.lat * rad)) / (cd * cos(p.lat * rad))
+    guard ch >= -1, ch <= 1 else { return nil }   // 白夜・極夜
+    let h = (rising ? 360 - acos(ch) / rad : acos(ch) / rad) / 15
+    let ut = h + ra - 0.06571 * t - 6.622 - lngH
+    var local = (ut + tz).truncatingRemainder(dividingBy: 24); if local < 0 { local += 24 }
+    return start.addingTimeInterval(local * 3600)
+  }
+  guard let r = at(true), let s = at(false) else { return nil }
+  return (r, s)
+}
+
+// バッテリー（本人の指定 2026-10-14）。nil＝電池のない Mac
+func batteryNow() -> (pct: Int, charging: Bool)? {
+  guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+        let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+  for ps in list {
+    guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
+          let cur = d[kIOPSCurrentCapacityKey] as? Int, let mx = d[kIOPSMaxCapacityKey] as? Int, mx > 0 else { continue }
+    let ac = (d[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue
+    return (Int((Double(cur) / Double(mx) * 100).rounded()), ac)
+  }
+  return nil
+}
+
 // MARK: - 状態（幕が落ちて立ち上がっても、掛かっていたら掛け直す）
 
 struct Persist: Codable { var locked: Bool; var since: Double; var fails: Int; var waitUntil: Double }
@@ -170,6 +220,9 @@ final class Model: ObservableObject {
   @Published var scan = ""
   @Published var scanAt = Date()
   var renderAt: Date? = nil   // 見本の書き出し用
+  @Published var place = Place(lat: 35.68, lon: 139.69)   // 東京（取れるまでの仮）
+  @Published var battery: Int? = nil
+  @Published var charging = false
   var fails = 0
 
   func load() {
@@ -253,7 +306,44 @@ struct Curtain: View {
     }
     .padding(.top, 70 * u).padding(.bottom, 80 * u)
     .frame(width: size.width, height: size.height)
-    .background(Color.paper)
+    .background(ZStack { Color.paper; SkyGlow(now: m.now, sun: sun, size: size) })
+    .overlay(alignment: .top) { corners(u) }
+    .overlay(alignment: .bottomTrailing) { batteryTag(u) }
+  }
+
+  var sun: (rise: Date, set: Date)? { sunTimes(m.place, on: m.now) }
+  func hm(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "H:mm"; return f.string(from: d) }
+
+  // 左上に日の出、右上に日の入り（線画の記号と時刻だけ）
+  func corners(_ u: CGFloat) -> some View {
+    HStack(spacing: 0) {
+      if let s = sun {
+        HStack(spacing: 10 * u) {
+          Image(systemName: "sunrise").font(.system(size: 22 * u, weight: .light))
+          Text(hm(s.rise)).font(zen(20 * u)).monospacedDigit()
+        }
+        Spacer()
+        HStack(spacing: 10 * u) {
+          Text(hm(s.set)).font(zen(20 * u)).monospacedDigit()
+          Image(systemName: "sunset").font(.system(size: 22 * u, weight: .light))
+        }
+      }
+    }
+    .foregroundColor(.mid)
+    .padding(.horizontal, 40 * u).padding(.top, 34 * u)
+  }
+
+  // 右下にバッテリー。20% 以下は警告の色、充電中は稲妻
+  @ViewBuilder func batteryTag(_ u: CGFloat) -> some View {
+    if let b = m.battery {
+      let sym = m.charging ? "battery.100.bolt" : b > 87 ? "battery.100" : b > 62 ? "battery.75" : b > 37 ? "battery.50" : b > 12 ? "battery.25" : "battery.0"
+      HStack(spacing: 10 * u) {
+        Text("\(b)%").font(zen(20 * u)).monospacedDigit()
+        Image(systemName: sym).font(.system(size: 22 * u, weight: .light))
+      }
+      .foregroundColor(b <= 20 && !m.charging ? .warn : .mid)
+      .padding(.trailing, 40 * u).padding(.bottom, 34 * u)
+    }
   }
 
   // 合言葉の欄（usePin のときだけ出る）。キーボードで数字＋Enter。マウスだけでも打てるよう、
@@ -338,6 +428,34 @@ struct Curtain: View {
   func label(_ s: String) -> String { ["busy": "作業中", "waiting": "返答待ち", "idle": "待機", "paused": "中断"][s] ?? "" }
 }
 
+// MARK: - 空の灯り（本人の選択：背景が太陽の方角からうっすら明るむ）
+// 太陽は画面の縁をたどる：日の出に左の縁（下寄り）から現れ、上の縁を渡って、日の入りに右の縁へ沈む。
+// 灯りの中心は縁の上＝画面の端っこから光が差す（本人の指定）。色はいつも橙（本人「オレンジが好き」）。
+// 日の出の30分前から明るみ始め、日の入りの30分後に消える。夜は何も出さない
+struct SkyGlow: View {
+  let now: Date
+  let sun: (rise: Date, set: Date)?
+  let size: CGSize
+  var body: some View {
+    if let s = sun {
+      let dawn = s.rise.addingTimeInterval(-1800), dusk = s.set.addingTimeInterval(1800)
+      if now > dawn && now < dusk {
+        let k = min(1, min(now.timeIntervalSince(dawn), dusk.timeIntervalSince(now)) / 3600)   // 縁の1時間で強まる・弱まる
+        let f = min(1, max(0, now.timeIntervalSince(s.rise) / s.set.timeIntervalSince(s.rise)))
+        let w = size.width, h = size.height, side = h * 0.8
+        let d = f * (side * 2 + w)
+        let pt: CGPoint = d < side ? CGPoint(x: 0, y: side - d)
+                        : d < side + w ? CGPoint(x: d - side, y: 0)
+                        : CGPoint(x: w, y: d - side - w)
+        RadialGradient(stops: [.init(color: Color.accent.opacity(0.50 * k), location: 0),
+                               .init(color: Color.accent.opacity(0.16 * k), location: 0.45),
+                               .init(color: .clear, location: 1)],
+                       center: UnitPoint(x: pt.x / w, y: pt.y / h), startRadius: 0, endRadius: max(w, h) * 0.8)
+      }
+    }
+  }
+}
+
 // MARK: - 指紋（Apple の Touch ID の記号そのもの）
 struct ScanPrint: View {
   let scan: String
@@ -377,7 +495,7 @@ final class CurtainWindow: NSWindow {
   override var canBecomeMain: Bool { true }
 }
 
-final class App: NSObject, NSApplicationDelegate {
+final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   let m = Model()
   var windows: [NSWindow] = []
   var listener: NSListener?
@@ -394,6 +512,7 @@ final class App: NSObject, NSApplicationDelegate {
   var fingerFails = 0   // 続けて指が合わなかった数（3で合言葉へ）
   var lastFingerFail = Date.distantPast
   var lastErr: LAError.Code?
+  let locMan = CLLocationManager()
   var authStart = Date.distantPast
   var lastFrontName = "", lastFrontLog = Date.distantPast
   // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
@@ -443,6 +562,11 @@ final class App: NSObject, NSApplicationDelegate {
     // launchd が作る記録は 0644 になる。前に出たアプリの名前や時刻が残るので自分だけに
     chmod(CONF.appendingPathComponent("lock.log").path, 0o600)
     m.load()
+    if let d = try? Data(contentsOf: PLACE_FILE), let p = try? JSONDecoder().decode(Place.self, from: d) { m.place = p }
+    locMan.delegate = self
+    locMan.desiredAccuracy = kCLLocationAccuracyKilometer
+    if !m.locked { askPlace() }
+    readBattery()
     checkTouch()
     Pin.refresh()
     startServer()
@@ -516,6 +640,34 @@ final class App: NSObject, NSApplicationDelegate {
     showCurtain()
   }
 
+  // 位置を聞くのは幕が外れているときだけ（初回の許可の窓が幕の裏に隠れないように）
+  func askPlace() {
+    switch locMan.authorizationStatus {
+    case .notDetermined: locMan.requestWhenInUseAuthorization()
+    case .authorized, .authorizedAlways: locMan.requestLocation()
+    default: break   // 断られた＝最後の場所（無ければ東京）のまま
+    }
+  }
+  func locationManagerDidChangeAuthorization(_ mgr: CLLocationManager) {
+    if mgr.authorizationStatus == .authorized || mgr.authorizationStatus == .authorizedAlways { mgr.requestLocation() }
+  }
+  func locationManager(_ mgr: CLLocationManager, didUpdateLocations ls: [CLLocation]) {
+    guard let c = ls.last?.coordinate else { return }
+    let p = Place(lat: (c.latitude * 100).rounded() / 100, lon: (c.longitude * 100).rounded() / 100)
+    if p.lat != m.place.lat || p.lon != m.place.lon {
+      m.place = p
+      if let d = try? JSONEncoder().encode(p) { try? d.write(to: PLACE_FILE, options: .atomic); chmod(PLACE_FILE.path, 0o600) }
+      log("日の出・日の入りの場所を更新した")
+    }
+  }
+  func locationManager(_ mgr: CLLocationManager, didFailWithError e: Error) {}
+
+  func readBattery() {
+    let b = batteryNow()
+    if b?.pct != m.battery { m.battery = b?.pct }
+    if (b?.charging ?? false) != m.charging { m.charging = b?.charging ?? false }
+  }
+
   func unlock(by who: String) {
     guard m.locked else { return }
     endAuth()
@@ -525,6 +677,7 @@ final class App: NSObject, NSApplicationDelegate {
     m.save()
     log("解除（\(who)）")
     hideCurtain()
+    askPlace()
   }
 
   func showCurtain() {
@@ -567,6 +720,7 @@ final class App: NSObject, NSApplicationDelegate {
     }
     tick()
     pollSeats()
+    readBattery()
     if AUTO_UNLOCK > 0 {
       DispatchQueue.main.asyncAfter(deadline: .now() + AUTO_UNLOCK) { [weak self] in self?.unlock(by: "試験の自動解除") }
     }
@@ -622,6 +776,7 @@ final class App: NSObject, NSApplicationDelegate {
     // （待ち受け中はキーが確認の窓に取られ、合言葉が打てないため）
     if !authing && !m.showPin { touch() }
     if now.timeIntervalSince(lastPoll) >= 3 { lastPoll = now; pollSeats() }
+    if tickCount % 60 == 0 { readBattery() }   // 30秒ごと（変わったときだけ描き直す）
   }
 
   // MARK: 合言葉・Touch ID
@@ -954,6 +1109,12 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render" {
   m.seats = [Seat(id: "a", title: "", status: "busy"), Seat(id: "b", title: "", status: "waiting"),
              Seat(id: "c", title: "", status: "idle")]
   m.now = Date(timeIntervalSince1970: 1791895000)
+  m.battery = 82
+  // 7つ目に "15:20" のように時刻を渡すと、10/14 のその時刻の空で描く（東京）
+  if a.count > 6 {
+    let hm = a[6].split(separator: ":").compactMap { Double($0) }
+    if hm.count == 2 { m.now = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1791936000)).addingTimeInterval(hm[0] * 3600 + hm[1] * 60) }
+  }
   func shoot(_ path: String) {
     MainActor.assumeIsolated {
       let r = ImageRenderer(content: Curtain(m: m, onKey: { _ in }, onTouch: {}, touchOK: true).frame(width: w, height: h))
