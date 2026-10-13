@@ -145,6 +145,9 @@ final class Model: ObservableObject {
   @Published var now = Date()
   @Published var waitUntil = Date.distantPast
   @Published var checking = false
+  // 数字の板を出すか。ふだんは Touch ID だけ。Touch ID が断ったとき（指が合わない・
+  // ロックアウト・使えない）に出す。外れたら隠し直す
+  @Published var showPin = false
   var fails = 0
 
   func load() {
@@ -230,15 +233,34 @@ struct Curtain: View {
         .padding(.leading, 120 * u).padding(.top, 130 * u)
         .frame(maxWidth: .infinity, alignment: .leading)
 
+        if !m.showPin && touchOK {
+          // 待機の画面：Touch ID だけ。押すか、指を置く前に何かキーを押す
+          VStack(spacing: 36 * u) {
+            LockIcon().frame(width: 72 * u, height: 72 * u)
+            Button(action: onTouch) {
+              ZStack {
+                Circle().fill(Color.surface2)
+                Image(systemName: "touchid").font(.system(size: 76 * u, weight: .light)).foregroundColor(.accent)
+              }.frame(width: 150 * u, height: 150 * u).contentShape(Circle())
+            }.buttonStyle(.plain)
+            Text(m.note).font(zen(18 * u)).foregroundColor(.warn).frame(height: 24 * u)
+          }
+          .frame(width: 520 * u).padding(.trailing, 110 * u)
+        } else {
         VStack(spacing: 30 * u) {
           LockIcon().frame(width: 72 * u, height: 72 * u)
+          // 丸は打った数だけ。空の丸を並べると「4桁」に見えて紛らわしく（本人の指摘）、
+          // 合言葉の桁数を見せることにもなるので、打つ前は細い線だけ
           HStack(spacing: 18 * u) {
-            ForEach(0..<max(m.typed.count, 4), id: \.self) { i in
-              Circle().strokeBorder(Color.accent, lineWidth: 2.5 * u)
-                .background(Circle().fill(i < m.typed.count ? Color.accent : .clear))
-                .frame(width: 22 * u, height: 22 * u)
+            if m.typed.isEmpty {
+              Capsule().fill(Color.surface2).frame(width: 120 * u, height: 4 * u)
+            } else {
+              ForEach(0..<m.typed.count, id: \.self) { _ in
+                Circle().fill(Color.accent).frame(width: 22 * u, height: 22 * u)
+              }
             }
           }
+          .frame(height: 22 * u)
           .offset(x: m.shake % 2 == 1 ? 10 * u : 0)
           .animation(.default.repeatCount(3, autoreverses: true).speed(4), value: m.shake)
           Text(waitLeft > 0 ? "\(waitLeft) 秒 お待ちください" : m.checking ? "確かめています" : m.note)
@@ -249,6 +271,7 @@ struct Curtain: View {
           .opacity(waitLeft > 0 ? 0.35 : 1)
         }
         .frame(width: 520 * u).padding(.trailing, 110 * u)
+        }
       }
       .frame(width: g.size.width, height: g.size.height)
       .background(Color.paper)
@@ -371,7 +394,7 @@ final class App: NSObject, NSApplicationDelegate {
   func lock(by who: String) {
     guard !m.locked else { return }
     Pin.refresh()
-    m.locked = true; m.since = Date(); m.typed = ""; m.note = ""
+    m.locked = true; m.since = Date(); m.typed = ""; m.note = ""; m.showPin = false
     m.save()
     log("ロック（\(who)）")
     showCurtain()
@@ -381,6 +404,7 @@ final class App: NSObject, NSApplicationDelegate {
     guard m.locked else { return }
     endAuth()
     m.locked = false; m.typed = ""; m.fails = 0; m.waitUntil = .distantPast; m.checking = false
+    m.showPin = false
     m.save()
     log("解除（\(who)）")
     hideCurtain()
@@ -407,6 +431,7 @@ final class App: NSObject, NSApplicationDelegate {
     if keyMon == nil {
       keyMon = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
         guard let self = self, self.m.locked else { return e }
+        if !self.m.showPin && self.touchOK { self.touch(); return nil }
         if e.keyCode == 51 { self.press("del") }                         // ⌫
         else if e.keyCode == 36 || e.keyCode == 76 {                      // Enter：打っていれば決定、無ければ Touch ID
           if self.m.typed.isEmpty { self.touch() } else { self.press("enter") }
@@ -465,6 +490,7 @@ final class App: NSObject, NSApplicationDelegate {
 
   func press(_ k: String) {
     guard m.locked, Date() >= m.waitUntil, !m.checking else { return }
+    guard m.showPin || !touchOK else { return }   // 板が隠れているあいだは数字を受けない
     m.note = ""
     if k == "del" { if !m.typed.isEmpty { m.typed.removeLast() }; return }
     if k == "enter" { if m.typed.count >= 4 { tryPin() } else if !m.typed.isEmpty { m.note = "4桁以上です" }; return }
@@ -541,9 +567,24 @@ final class App: NSObject, NSApplicationDelegate {
         if ok { self.unlock(by: "Touch ID") }
         else {
           log("Touch ID 通らず: \(err?.localizedDescription ?? "")")
+          self.touchFailed((err as? LAError)?.code)
           self.reassert()
         }
       }
+    }
+  }
+
+  // 指が合わなかった（LAContext は1回の確認の中で何度か指を試させ、それでも合わないと
+  // authenticationFailed を返す＝ここに来た時点で複数回だめだった）・ロックアウト・使えない
+  // → 数字の板を出す。やめた・打ち切った（キャンセル）は数えない＝Touch ID のまま
+  func touchFailed(_ code: LAError.Code?) {
+    switch code {
+    case .authenticationFailed?, .biometryLockout?, .biometryNotAvailable?, .biometryNotEnrolled?:
+      if !m.showPin { log("Touch ID が通らない → 合言葉の板を出す") }
+      m.showPin = true
+      m.note = "合言葉で外してください"
+    default:
+      break
     }
   }
 
@@ -655,7 +696,7 @@ final class App: NSObject, NSApplicationDelegate {
     case ("POST", "/try") where KC_SERVICE != "com.tsumiki.lock":
       // 試験のときだけ：キーを打たずに、幕のボタンを押したのと同じ道を通す
       for ch in (j["keys"] as? String) ?? "" {
-        if ch == "t" { touch() } else { press(ch == "\n" ? "enter" : String(ch)) }
+        if ch == "t" { touch() } else if ch == "f" { touchFailed(.authenticationFailed) } else { press(ch == "\n" ? "enter" : String(ch)) }
       }
       reply(200, snapshot())
     default:
@@ -676,7 +717,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render" {
   let a = CommandLine.arguments
   let w = Double(a.count > 3 ? a[3] : "1440") ?? 1440, h = Double(a.count > 4 ? a[4] : "900") ?? 900
   let m = Model()
-  m.locked = true; m.typed = "12"; m.note = ""
+  let mode = a.count > 5 ? a[5] : "pin"
+  m.locked = true; m.typed = mode == "pin" ? "12" : ""; m.note = mode == "pin" ? "合言葉で外してください" : ""
+  m.showPin = mode == "pin"
   m.now = Date(timeIntervalSince1970: 1791895000)
   m.seats = [Seat(id: "a", title: "見本の作業A", status: "busy"), Seat(id: "b", title: "見本の作業B", status: "waiting"),
              Seat(id: "c", title: "見本の作業C", status: "idle")]
