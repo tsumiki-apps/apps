@@ -295,22 +295,52 @@ def _plate(d, cx, top, lines, size, padx=44, pady=26, radius=None, sub=()):
     return top + h
 
 
-def wrap_en(d, text, maxw=W - 2 * 44 - 80, maxlines=2):
-    """英語を単語の切れ目で折る（2行まで。収まらなければ最後の行は _fit が縮める）。"""
-    words, lines, cur = text.split(), [], ""
+def wrap_en(d, text, maxw=W - 2 * 44 - 80, maxlines=None):
+    """英語を単語の切れ目で折る。字の大きさは変えず、収まる一番少ない行数にして、
+    行の長さをそろえる（1行目だけ長く、最後に「so,」1語だけ残るような折り方をしない）。
+    区切りは句読点（, . ? !）の後を好み、1語だけの行は避ける。"""
+    words = text.split()
+    if not words:
+        return []
     f = _font(EN_FONT)
-    for w in words:
-        t = (cur + " " + w).strip()
-        if d.textlength(t, font=f) <= maxw or not cur:
-            cur = t
+    tw = lambda ws: d.textlength(" ".join(ws), font=f)
+    if tw(words) <= maxw:
+        return [" ".join(words)]
+    n = len(words)
+
+    def score(lines):
+        ws = [tw(l) for l in lines]
+        if max(ws) > maxw:
+            return None
+        sc = max(ws) + (max(ws) - min(ws)) * 0.6
+        for l in lines[:-1]:
+            if l[-1][-1] in ".?!":
+                sc -= 300            # 文の終わりで折るのがいちばん自然
+            elif l[-1][-1] in ",;:":
+                sc -= 200            # 読点の後も自然
+            elif l[-1].lower() in ("a", "an", "the", "to", "of", "and", "or", "but", "in", "on", "at", "for", "with", "your", "my"):
+                sc += 150            # 冠詞・前置詞などで行を終えない
+        sc += 400 * sum(1 for l in lines if len(l) == 1)   # 1語だけの行
+        sc += 200 * sum(1 for l in lines[1:] if l[0][:1].isdigit())   # 「Ultra ｜ 4」のように数字を次の行へ送らない
+        return sc
+
+    for k in range(2, max(2, maxlines or 4) + 1):
+        best = None
+        if k == 2:
+            cands = ([words[:i], words[i:]] for i in range(1, n))
+        elif k == 3:
+            cands = ([words[:i], words[i:j], words[j:]] for i in range(1, n - 1) for j in range(i + 1, n))
         else:
-            lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    if len(lines) > maxlines:
-        lines = lines[:maxlines - 1] + [" ".join(lines[maxlines - 1:])]
-    return lines
+            per = -(-n // k)
+            cands = [[words[i:i + per] for i in range(0, n, per)]]
+        for ls in cands:
+            sc = score(ls)
+            if sc is not None and (best is None or sc < best[0]):
+                best = (sc, ls)
+        if best:
+            return [" ".join(l) for l in best[1]]
+    # どう折っても収まらない（とても長い1語など）ときだけ、そのまま返す（_fit が縮める）
+    return [" ".join(words)]
 
 
 def make_title(title, path):
@@ -521,8 +551,8 @@ def caption_image(text, path, en=None):
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     lines = wrap(text)
-    # 日本語が3行のときは英語を1行にし、札を小窓（PIP_BOTTOM）より下に収める
-    sub = wrap_en(d, en, maxlines=1 if len(lines) >= 3 else 2) if en else []
+    # 英語は字の大きさを変えず、収まる一番少ない行数で長さをそろえて折る
+    sub = wrap_en(d, en) if en else []
     h = _plate_size(d, lines, CAP_FONT, sub)
     _plate(d, W // 2, H - CAP_BOTTOM - h, lines, CAP_FONT, sub=sub)
     im.save(path)
