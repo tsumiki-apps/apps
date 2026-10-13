@@ -221,7 +221,7 @@ struct Curtain: View {
       Group {
         if usePin { field(u) } else {
           Button(action: onTouch) {
-            ScanPrint(armed: m.armed, scan: m.scan, scanAt: m.scanAt, at: m.renderAt)
+            ScanPrint(scan: m.scan, scanAt: m.scanAt, at: m.renderAt)
               .frame(width: 92 * u, height: 92 * u).contentShape(Circle())
           }.buttonStyle(.plain)
         }
@@ -245,13 +245,14 @@ struct Curtain: View {
   func field(_ u: CGFloat) -> some View {
     let w = 250 * u, h = 38 * u
     return HStack(spacing: 0) {
+      // Touch ID が使えないときは板が常に出ている＝押しても変わらないので隠す（場所は残す）
       Button(action: { m.showPad.toggle() }) {
         Image(systemName: "circle.grid.3x3").font(.system(size: 14 * u)).foregroundColor(.mid)
           .frame(width: 28 * u, height: 28 * u).contentShape(Circle())
-      }.buttonStyle(.plain).padding(.leading, 6 * u)
+      }.buttonStyle(.plain).padding(.leading, 6 * u).opacity(touchOK ? 1 : 0).disabled(!touchOK)
       ZStack(alignment: .leading) {
         if m.typed.isEmpty {
-          // 待ち受け中はキーが確認の窓に取られる＝数字は入らない。Esc で入力に戻ると案内する
+          // 打つ前は「合言葉を入力」だけ（文字は最小限）。Esc で指紋に戻る
           Text("合言葉を入力").font(zen(14 * u)).foregroundColor(.mid.opacity(0.8))
         } else {
           HStack(spacing: 7 * u) {
@@ -277,7 +278,8 @@ struct Curtain: View {
     // 数字の板は欄の下に重ねる（中央の位置を崩さない）
     .overlay(alignment: .top) {
       if m.showPad || !touchOK {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(46 * u), spacing: 10 * u), count: 3), spacing: 8 * u) {
+        let ks = max(46 * u, 44)   // 小さい画面でも押せる大きさ（44 より小さくしない・反証役）
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(ks), spacing: 10 * u), count: 3), spacing: 8 * u) {
           ForEach(["1","2","3","4","5","6","7","8","9","del","0","enter"], id: \.self) { k in
             Button(action: { onKey(k) }) {
               ZStack {
@@ -285,7 +287,7 @@ struct Curtain: View {
                 if k == "del" { Image(systemName: "delete.left").font(.system(size: 16 * u)).foregroundColor(.mid) }
                 else if k == "enter" { Image(systemName: "arrow.right").font(.system(size: 15 * u, weight: .semibold)).foregroundColor(.paper) }
                 else { Text(k).font(zen(20 * u, true)).foregroundColor(.ink) }
-              }.frame(width: 46 * u, height: 46 * u).contentShape(Circle())
+              }.frame(width: ks, height: ks).contentShape(Circle())
             }.buttonStyle(.plain)
           }
         }
@@ -320,13 +322,8 @@ struct Curtain: View {
   func label(_ s: String) -> String { ["busy": "作業中", "waiting": "返答待ち", "idle": "待機", "paused": "中断"][s] ?? "" }
 }
 
-// MARK: - 動く指紋（本人の指定：指紋の線が動いていく Touch ID の絵）
-//   待ち受け：内側の線から順に描かれていき、描き終わると薄れて、また描き始める（2.4秒で一巡）
-//   通った：全部の線が緑で満ちる／通らなかった：赤く光って小さく揺れる
-// 指紋の形は Apple の Touch ID の記号そのもの。薄い下地の上に、色の付いた同じ記号を
-// 中心から外へ広がる丸で切り抜いて重ね、線が内側から順に色づいていくように見せる
+// MARK: - 指紋（Apple の Touch ID の記号そのもの）
 struct ScanPrint: View {
-  let armed: Bool
   let scan: String
   let scanAt: Date
   var at: Date? = nil   // 見本の書き出し用：時刻を決め打ちにする
@@ -378,8 +375,10 @@ final class App: NSObject, NSApplicationDelegate {
   var checkToken: UUID?
   var lastAuthEnd = Date.distantPast
   var failStreak = 0
-  var fingerFails = 0   // この回で指が合わなかった数（3で合言葉へ）
+  var fingerFails = 0   // 続けて指が合わなかった数（3で合言葉へ）
+  var lastFingerFail = Date.distantPast
   var lastErr: LAError.Code?
+  var lastFrontName = "", lastFrontLog = Date.distantPast
 
   // 幕の高さ。常に一番上（どのアプリの全画面の窓より上）。Touch ID の確認（coreautha・1000）は
   // 幕の裏に隠れたまま待ち受ける（touch() の説明）
@@ -418,7 +417,12 @@ final class App: NSObject, NSApplicationDelegate {
             let a = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
       if a.processIdentifier == ProcessInfo.processInfo.processIdentifier || self.isAuthAgent(a)
           || a.bundleIdentifier == Bundle.main.bundleIdentifier { return }   // 自分（試験で2つ動かしたとき）は数えない
-      log("ほかのアプリが前に出た（\(a.localizedName ?? "?")）→ 前に戻る")
+      // 記録は同じアプリなら10秒に1行（前に出続けるアプリと並んでも記録が膨らまない・反証役）
+      let name = a.localizedName ?? "?"
+      if name != self.lastFrontName || Date().timeIntervalSince(self.lastFrontLog) > 10 {
+        log("ほかのアプリが前に出た（\(name)）→ 前に戻る")
+        self.lastFrontName = name; self.lastFrontLog = Date()
+      }
       self.endAuth()
       self.reassert()
     }
@@ -503,6 +507,7 @@ final class App: NSObject, NSApplicationDelegate {
           if e.keyCode == 53 { self.toPin(); return nil }
           self.touch(); return nil
         }
+        if e.keyCode == 53 { self.backToTouch(); return nil }            // Esc：指紋に戻る（反証役）
         if e.keyCode == 51 { self.press("del") }                         // ⌫
         else if e.keyCode == 36 || e.keyCode == 76 {                      // Enter：打っていれば決定（空なら何もしない）
           if !self.m.typed.isEmpty { self.press("enter") }   // 空の Enter では確認を始めない（数字が確認の窓に取られる）
@@ -554,7 +559,9 @@ final class App: NSObject, NSApplicationDelegate {
     // 0.5秒ごとに m.now を変えると、幕の全体を描き直し続けて CPU を約9%使っていた（実測）
     let now = Date()
     let minuteChanged = Int(now.timeIntervalSince1970 / 60) != Int(m.now.timeIntervalSince1970 / 60)
-    if minuteChanged || m.waitUntil > now || !m.locked { m.now = now }
+    // 待たせる秒を出しているあいだ（m.now がまだ waitUntil より前）は毎回。明けた最初の回にも入れて
+    // 「1 秒 お待ちください」を残さない（反証役）
+    if minuteChanged || m.waitUntil > m.now || !m.locked { m.now = now }
     guard m.locked else { return }
     // 幕はいちばん上の高さにいるので、前に出し直すのは2秒に1回で足りる（0.5秒ごとだと
     // WindowServer の仕事が増え続ける・反証役の指摘で測った）
@@ -587,7 +594,7 @@ final class App: NSObject, NSApplicationDelegate {
     guard let b = Pin.blob else {
       // 写しが無い＝鍵束が読めていない。まちがいとして数えない（数えると正しい合言葉でも待たされる）
       m.typed = ""
-      m.note = "合言葉を読めません。Touch ID か iPhone で外してください"
+      m.note = touchOK ? "合言葉を読めません。Esc で指紋に戻れます" : "合言葉を読めません。iPhone から外してください"
       Pin.refresh()
       return
     }
@@ -614,6 +621,7 @@ final class App: NSObject, NSApplicationDelegate {
         if self.m.fails >= 5 {
           let s = min(600.0, 30 * pow(2, Double(self.m.fails - 5)))
           self.m.waitUntil = Date().addingTimeInterval(s)
+          self.m.now = Date()   // 古い時刻で秒を多く出さない
         }
         self.m.note = "違います"
         self.m.save()
@@ -626,7 +634,7 @@ final class App: NSObject, NSApplicationDelegate {
   // 指を置けば通る。窓を見せるために幕を下げると、ずっと待ち受ける今の作りでは
   // 幕がほぼ常に下がったままになり、1000 以上の窓（全画面のアプリなど）が上に出る恐れがある。
   // 待ち受け中はキーが確認の窓に行く＝Esc で確認をやめると合言葉の板に切り替わる。
-  // 終わってから2秒は次を始めない（連打で確認を作り続けさせない）。60秒ごとに張り直す
+  // 終わってから1秒は次を始めない（連打で確認を作り続けさせない・続けて失敗したら2→60秒）。60秒ごとに張り直す
   func touch() {
     let wait = failStreak == 0 ? 1.0 : min(60.0, 2 * pow(2, Double(max(0, failStreak - 1))))
     guard m.locked, !authing, Date().timeIntervalSince(lastAuthEnd) > wait else { return }
@@ -641,7 +649,8 @@ final class App: NSObject, NSApplicationDelegate {
       guard let self = self, let c = c, self.authCtx === c else { return }
       self.endAuth(); self.reassert()
     }
-    // 確認を始めたら、すぐ幕を前に戻す。確認は打ち切られずに指を待ち続ける（2026-10-13 実測）。
+    // 確認を始めたら、すぐ幕を前に戻す（ふつうは didResignActive の reassert が先に戻し、これは念のため）。
+    // 確認は打ち切られずに指を待ち続ける（2026-10-13 実測）。
     // 幕が前にいれば Dock を隠す・切り替えを止める設定が効き、Esc も幕に届く
     // （確認の窓が前のままだと Dock が見え、スワイプで裏が動いた＝本人のテスト）
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -691,6 +700,9 @@ final class App: NSObject, NSApplicationDelegate {
     switch code {
     case .authenticationFailed?:
       // 毎回赤く揺らし、3回続いたら合言葉へ（本人の指定）。それまではすぐ待ち受け直す
+      // 「続けて」3回：前の失敗から2分以上あいたら数え直す（朝・昼・夕の1回ずつで欄に移らない）
+      if Date().timeIntervalSince(lastFingerFail) > 120 { fingerFails = 0 }
+      lastFingerFail = Date()
       fingerFails += 1
       if fingerFails >= 3 {
         let round = m.since
@@ -706,6 +718,16 @@ final class App: NSObject, NSApplicationDelegate {
     default:
       break
     }
+  }
+
+  // 合言葉の欄から指紋に戻る（Esc）。Esc の押し間違い・画面が眠って確認が打ち切られた・
+  // 鍵束が読めない、のどれでも Touch ID に戻れるように。数え直しは0から（間を広げる数は残す）
+  func backToTouch() {
+    guard m.locked, m.showPin, touchOK, !m.checking else { return }
+    log("合言葉の欄から指紋へ")
+    m.showPin = false; m.showPad = false; m.typed = ""; m.note = ""
+    fingerFails = 0
+    tick()
   }
 
   func toPin() {
