@@ -149,6 +149,10 @@ final class Model: ObservableObject {
   // ロックアウト・使えない）に出す。外れたら隠し直す
   @Published var showPin = false
   @Published var armed = false   // Touch ID を待ち受けている（指を置けば外れる）
+  // 指紋の絵の結末："" ＝待ち受け／"ok" ＝通った（緑に満ちる）／"ng" ＝通らなかった（赤く揺れる）
+  @Published var scan = ""
+  @Published var scanAt = Date()
+  var renderAt: Date? = nil   // 見本の書き出し用
   var fails = 0
 
   func load() {
@@ -221,28 +225,30 @@ struct Curtain: View {
   var usePin: Bool { m.showPin || !touchOK }
 
   func lockScreen(_ size: CGSize, _ u: CGFloat) -> some View {
+    // 日付の下〜真ん中〜札の上を同じ間にする（上下の Spacer を同じ重さに・本人の指定）。
+    // 真ん中はふだん動く指紋、合言葉のときは入力欄。知らせの文字は下に重ねるだけ＝間を崩さない
     VStack(spacing: 0) {
-      Text(day).font(zen(24 * u, true)).foregroundColor(.ink.opacity(0.85))
-      Text(clock).font(zen(150 * u, true)).foregroundColor(.ink).monospacedDigit().padding(.top, -6 * u)
-      Spacer()
-      // 人の丸
-      ZStack {
-        Circle().fill(Color.surface2)
-        Image(systemName: "person.fill").font(.system(size: 34 * u)).foregroundColor(.mid)
-      }.frame(width: 76 * u, height: 76 * u)
-      // 欄
-      field(u).padding(.top, 18 * u)
-      Text(waitLeft > 0 ? "\(waitLeft) 秒 お待ちください" : m.checking ? "確かめています" : m.note)
-        .font(zen(15 * u)).foregroundColor(.warn).frame(height: 22 * u).padding(.top, 10 * u)
-      chips(u).scaleEffect(0.8).padding(.top, 36 * u)
+      Text(clock).font(zen(120 * u, true)).foregroundColor(.ink).monospacedDigit()
+      Text(day).font(zen(26 * u)).foregroundColor(.mid).padding(.top, 4 * u)
+      Spacer(minLength: 24 * u)
+      Group {
+        if usePin { field(u) } else {
+          Button(action: onTouch) {
+            ScanPrint(armed: m.armed, scan: m.scan, scanAt: m.scanAt, at: m.renderAt)
+              .frame(width: 92 * u, height: 92 * u).contentShape(Circle())
+          }.buttonStyle(.plain)
+        }
+      }
+      .overlay(alignment: .bottom) {
+        Text(waitLeft > 0 ? "\(waitLeft) 秒 お待ちください" : m.checking ? "確かめています" : m.note)
+          .font(zen(16 * u)).foregroundColor(.warn).fixedSize().offset(y: 34 * u)
+      }
+      Spacer(minLength: 24 * u)
+      chips(u)
     }
-    .padding(.top, 80 * u).padding(.bottom, 44 * u)
+    .padding(.top, 70 * u).padding(.bottom, 80 * u)
     .frame(width: size.width, height: size.height)
-    .background(
-      // 壁紙のぼかしに見立てた、ごく薄い明かり
-      RadialGradient(colors: [Color.surface.opacity(0.9), Color.paper], center: .init(x: 0.5, y: 0.35),
-                     startRadius: 0, endRadius: max(size.width, size.height) * 0.7)
-    )
+    .background(Color.paper)
   }
 
   @ViewBuilder func field(_ u: CGFloat) -> some View {
@@ -313,6 +319,47 @@ struct Curtain: View {
   func dot(_ s: String) -> Color { s == "busy" ? .good : s == "waiting" ? .accent : .mid }
   func wash(_ s: String) -> Color { s == "busy" ? .goodWash : .surface2 }
   func label(_ s: String) -> String { ["busy": "作業中", "waiting": "返答待ち", "idle": "待機", "paused": "中断"][s] ?? "" }
+}
+
+// MARK: - 動く指紋（本人の指定：指紋の線が動いていく Touch ID の絵）
+//   待ち受け：内側の線から順に描かれていき、描き終わると薄れて、また描き始める（2.4秒で一巡）
+//   通った：全部の線が緑で満ちる／通らなかった：赤く光って小さく揺れる
+// 指紋の形は Apple の Touch ID の記号そのもの。薄い下地の上に、色の付いた同じ記号を
+// 中心から外へ広がる丸で切り抜いて重ね、線が内側から順に色づいていくように見せる
+struct ScanPrint: View {
+  let armed: Bool
+  let scan: String
+  let scanAt: Date
+  var at: Date? = nil   // 見本の書き出し用：時刻を決め打ちにする
+
+  var body: some View {
+    TimelineView(.animation) { tl in
+      let date = at ?? tl.date
+      let since = date.timeIntervalSince(scanAt)
+      let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4   // 0→1 で一巡
+      // どこまで色づくか（0〜1）と、その色・濃さ
+      let (amount, color, alpha): (Double, Color, Double) = {
+        if scan == "ok" { return (min(1, 0.35 + since / 0.3), .good, 1) }
+        if scan == "ng" { return (1, .warn, 1) }
+        if !armed { return (0, .accent, 1) }
+        let grow = min(1, t / 0.7)                                  // 0.7 までで外まで広がる
+        let fade = t > 0.8 ? max(0, 1 - (t - 0.8) / 0.2) : 1        // 最後に薄れて、また始まる
+        return (grow, .accent, fade)
+      }()
+      GeometryReader { g in
+        let d = g.size.width
+        ZStack {
+          Circle().fill(Color.surface2)
+          Image(systemName: "touchid").font(.system(size: d * 0.56, weight: .light))
+            .foregroundColor(Color.accent.opacity(0.22))
+          Image(systemName: "touchid").font(.system(size: d * 0.56, weight: .light))
+            .foregroundColor(color.opacity(alpha))
+            .mask(Circle().frame(width: d * 0.62 * amount, height: d * 0.62 * amount))
+        }
+        .offset(x: scan == "ng" ? CGFloat(sin(since * 40) * max(0, 1 - since / 0.5) * 6) : 0)
+      }
+    }
+  }
 }
 
 // MARK: - 幕の窓
@@ -595,7 +642,12 @@ final class App: NSObject, NSApplicationDelegate {
         self.authing = false
         self.m.armed = false
         self.lastAuthEnd = Date()
-        if ok { self.failStreak = 0; self.lastErr = nil; self.unlock(by: "Touch ID") }
+        if ok {
+          self.failStreak = 0; self.lastErr = nil
+          self.m.scan = "ok"; self.m.scanAt = Date()
+          // 指紋が緑に満ちるのを見せてから外す
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self.m.scan = ""; self.unlock(by: "Touch ID") }
+        }
         else {
           let code = (err as? LAError)?.code
           if code != self.lastErr { log("Touch ID 通らず: \(err?.localizedDescription ?? "")") }
@@ -614,8 +666,14 @@ final class App: NSObject, NSApplicationDelegate {
   // → 数字の板を出す。Esc で確認をやめた（userCancel）ときも板に切り替える＝Touch ID が
   // 効かないときの逃げ道。こちらから打ち切った・ほかのアプリに移った（appCancel/systemCancel）は数えない
   func touchFailed(_ code: LAError.Code?) {
+    if code == .authenticationFailed || code == .biometryLockout {
+      m.scan = "ng"; m.scanAt = Date()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if self.m.scan == "ng" { self.m.scan = "" } }
+    }
     switch code {
-    case .authenticationFailed?, .biometryLockout?, .biometryNotAvailable?, .biometryNotEnrolled?, .userCancel?:
+    case .authenticationFailed?, .biometryLockout?:
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if self.m.locked { self.toPin() } }
+    case .biometryNotAvailable?, .biometryNotEnrolled?, .userCancel?:
       toPin()
     default:
       break
@@ -763,16 +821,28 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render" {
   let mode = a.count > 5 ? a[5] : "pin"
   m.locked = true; m.typed = mode == "pin" ? "12" : ""; m.note = ""
   m.showPin = mode == "pin"
+  m.armed = mode != "pin"
+  m.seats = [Seat(id: "a", title: "", status: "busy"), Seat(id: "b", title: "", status: "waiting"),
+             Seat(id: "c", title: "", status: "idle")]
   m.now = Date(timeIntervalSince1970: 1791895000)
-  m.seats = [Seat(id: "a", title: "見本の作業A", status: "busy"), Seat(id: "b", title: "見本の作業B", status: "waiting"),
-             Seat(id: "c", title: "見本の作業C", status: "idle")]
-  MainActor.assumeIsolated {
-    let r = ImageRenderer(content: Curtain(m: m, onKey: { _ in }, onTouch: {}, touchOK: true).frame(width: w, height: h))
-    r.scale = 2
-    if let img = r.nsImage, let t = img.tiffRepresentation, let b = NSBitmapImageRep(data: t),
-       let png = b.representation(using: .png, properties: [:]) {
-      try? png.write(to: URL(fileURLWithPath: a[2]))
+  func shoot(_ path: String) {
+    MainActor.assumeIsolated {
+      let r = ImageRenderer(content: Curtain(m: m, onKey: { _ in }, onTouch: {}, touchOK: true).frame(width: w, height: h))
+      r.scale = 1
+      if let img = r.nsImage, let t = img.tiffRepresentation, let b = NSBitmapImageRep(data: t),
+         let png = b.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
     }
+  }
+  if mode == "frames" {
+    // 動きの見本：待ち受けの一巡（2.4秒・30コマ/秒）→ 通った（0.5秒）を連番の画像に
+    m.showPin = false
+    let base = Date(timeIntervalSinceReferenceDate: 0)
+    for f in 0..<72 { m.renderAt = base.addingTimeInterval(Double(f) / 30); shoot(a[2] + String(format: "/f%03d.png", f)) }
+    m.scan = "ok"; m.scanAt = base.addingTimeInterval(10)
+    for f in 0..<18 { m.renderAt = m.scanAt.addingTimeInterval(Double(f) / 30); shoot(a[2] + String(format: "/f%03d.png", 72 + f)) }
+  } else {
+    m.renderAt = Date(timeIntervalSinceReferenceDate: 1.1)
+    shoot(a[2])
   }
   exit(0)
 }
