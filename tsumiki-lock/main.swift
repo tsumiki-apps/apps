@@ -209,72 +209,84 @@ struct Curtain: View {
   var body: some View {
     GeometryReader { g in
       let u = min(g.size.width / 1440, g.size.height / 900) // 1440×900 を基準に伸び縮み
-      if !m.showPin && touchOK {
-        standby(g.size, u)
-      } else {
-      HStack(spacing: 0) {
-        VStack(alignment: .leading, spacing: 0) {
-          Text(clock).font(zen(150 * u, true)).foregroundColor(.ink).monospacedDigit()
-          Text(day).font(zen(28 * u)).foregroundColor(.mid).padding(.top, 4 * u)
-          chips(u).padding(.top, 48 * u)
-          Spacer()
-        }
-        .padding(.leading, 120 * u).padding(.top, 130 * u)
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-        VStack(spacing: 30 * u) {
-          LockIcon().frame(width: 72 * u, height: 72 * u)
-          // 丸は打った数だけ。空の丸を並べると「4桁」に見えて紛らわしく（本人の指摘）、
-          // 合言葉の桁数を見せることにもなるので、打つ前は細い線だけ
-          HStack(spacing: 18 * u) {
-            if m.typed.isEmpty {
-              Capsule().fill(Color.surface2).frame(width: 120 * u, height: 4 * u)
-            } else {
-              ForEach(0..<m.typed.count, id: \.self) { _ in
-                Circle().fill(Color.accent).frame(width: 22 * u, height: 22 * u)
-              }
-            }
-          }
-          .frame(height: 22 * u)
-          .offset(x: m.shake % 2 == 1 ? 10 * u : 0)
-          .animation(.default.repeatCount(3, autoreverses: true).speed(4), value: m.shake)
-          Text(waitLeft > 0 ? "\(waitLeft) 秒 お待ちください" : m.checking ? "確かめています" : m.note)
-            .font(zen(18 * u)).foregroundColor(.warn).frame(height: 24 * u)
-          LazyVGrid(columns: Array(repeating: GridItem(.fixed(84 * u), spacing: 22 * u), count: 3), spacing: 18 * u) {
-            ForEach(["1","2","3","4","5","6","7","8","9","touch","0","del"], id: \.self) { k in key(k, u) }
-          }
-          .opacity(waitLeft > 0 ? 0.35 : 1)
-        }
-        .frame(width: 520 * u).padding(.trailing, 110 * u)
-      }
-      .frame(width: g.size.width, height: g.size.height)
-      .background(Color.paper)
-      }
+      lockScreen(g.size, u)
     }
   }
 
   // 待機の画面：全体を中央そろえ。時計は上、Touch ID の丸は画面のちょうど真ん中（本人の指定）、
   // 状態の札は下。数字の板は Touch ID が通らなかったときだけ（上の HStack の画面）
-  func standby(_ size: CGSize, _ u: CGFloat) -> some View {
-    ZStack {
-      VStack(spacing: 4 * u) {
-        Text(clock).font(zen(120 * u, true)).foregroundColor(.ink).monospacedDigit()
-        Text(day).font(zen(26 * u)).foregroundColor(.mid)
-        Spacer()
-        chips(u)
-      }
-      .padding(.top, 70 * u).padding(.bottom, 80 * u)
-      Button(action: onTouch) {
-        ZStack {
-          Circle().fill(Color.surface2)
-          Circle().stroke(Color.accent.opacity(m.armed ? 0.55 : 0), lineWidth: 3 * u)
-          Image(systemName: "touchid").font(.system(size: 76 * u, weight: .light)).foregroundColor(.accent)
-        }.frame(width: 150 * u, height: 150 * u).contentShape(Circle())
-      }.buttonStyle(.plain)
-      Text(m.note).font(zen(18 * u)).foregroundColor(.warn).offset(y: (75 + 34 + 12) * u)
+  // macOS のロック画面に寄せた形（本人の指定）：上に日付と大きな時刻、下に人の丸と横長の欄。
+  // 欄はふだん「Touch ID で解除」（指を置けば外れる・常に待ち受け）。Touch ID が通らなかったとき
+  // （か Esc）だけ、同じ欄が合言葉の入力欄に変わる（キーボードで数字＋Enter）。作業の数は一番下に小さく
+  var usePin: Bool { m.showPin || !touchOK }
+
+  func lockScreen(_ size: CGSize, _ u: CGFloat) -> some View {
+    VStack(spacing: 0) {
+      Text(day).font(zen(24 * u, true)).foregroundColor(.ink.opacity(0.85))
+      Text(clock).font(zen(150 * u, true)).foregroundColor(.ink).monospacedDigit().padding(.top, -6 * u)
+      Spacer()
+      // 人の丸
+      ZStack {
+        Circle().fill(Color.surface2)
+        Image(systemName: "person.fill").font(.system(size: 34 * u)).foregroundColor(.mid)
+      }.frame(width: 76 * u, height: 76 * u)
+      // 欄
+      field(u).padding(.top, 18 * u)
+      Text(waitLeft > 0 ? "\(waitLeft) 秒 お待ちください" : m.checking ? "確かめています" : m.note)
+        .font(zen(15 * u)).foregroundColor(.warn).frame(height: 22 * u).padding(.top, 10 * u)
+      chips(u).scaleEffect(0.8).padding(.top, 36 * u)
     }
+    .padding(.top, 80 * u).padding(.bottom, 44 * u)
     .frame(width: size.width, height: size.height)
-    .background(Color.paper)
+    .background(
+      // 壁紙のぼかしに見立てた、ごく薄い明かり
+      RadialGradient(colors: [Color.surface.opacity(0.9), Color.paper], center: .init(x: 0.5, y: 0.35),
+                     startRadius: 0, endRadius: max(size.width, size.height) * 0.7)
+    )
+  }
+
+  @ViewBuilder func field(_ u: CGFloat) -> some View {
+    let w = 250 * u, h = 38 * u
+    if !usePin {
+      Button(action: onTouch) {
+        HStack(spacing: 8 * u) {
+          Image(systemName: "touchid").font(.system(size: 17 * u)).foregroundColor(.accent)
+          Text("Touch ID で解除").font(zen(15 * u)).foregroundColor(.mid)
+        }
+        .frame(width: w, height: h)
+        .background(Capsule().fill(Color.ink.opacity(0.08)))
+        .overlay(Capsule().stroke(Color.accent.opacity(m.armed ? 0.45 : 0), lineWidth: 1.5 * u))
+        .contentShape(Capsule())
+      }.buttonStyle(.plain)
+    } else {
+      HStack(spacing: 0) {
+        ZStack(alignment: .leading) {
+          if m.typed.isEmpty {
+            Text(m.armed ? "指を置くか、合言葉を入力" : "合言葉を入力").font(zen(15 * u)).foregroundColor(.mid.opacity(0.8))
+          } else {
+            HStack(spacing: 7 * u) {
+              ForEach(0..<m.typed.count, id: \.self) { _ in Circle().fill(Color.ink).frame(width: 8 * u, height: 8 * u) }
+            }
+          }
+        }
+        .padding(.leading, 16 * u)
+        Spacer(minLength: 0)
+        // 右端の丸：打っていれば→（決定）、打っていなければ指紋（Touch ID をもう一度）
+        Button(action: { m.typed.isEmpty ? onTouch() : onKey("enter") }) {
+          ZStack {
+            Circle().fill(m.typed.isEmpty ? Color.clear : Color.ink.opacity(0.18))
+            Image(systemName: m.typed.isEmpty ? "touchid" : "arrow.right")
+              .font(.system(size: m.typed.isEmpty ? 16 * u : 13 * u, weight: .semibold))
+              .foregroundColor(m.typed.isEmpty ? .accent : .ink)
+          }.frame(width: 28 * u, height: 28 * u).contentShape(Circle())
+        }.buttonStyle(.plain).disabled(m.typed.isEmpty && !touchOK).padding(.trailing, 5 * u)
+      }
+      .frame(width: w, height: h)
+      .background(Capsule().fill(Color.ink.opacity(0.08)))
+      .offset(x: m.shake % 2 == 1 ? 10 * u : 0)
+      .animation(.default.repeatCount(3, autoreverses: true).speed(4), value: m.shake)
+      .opacity(waitLeft > 0 ? 0.4 : 1)
+    }
   }
 
   // 状態ごとの数（作業の題名は出さない＝お客様の名前が入ることがある）
@@ -296,23 +308,7 @@ struct Curtain: View {
     }
   }
 
-  @ViewBuilder func key(_ k: String, _ u: CGFloat) -> some View {
-    let enter = k == "touch" && !m.typed.isEmpty
-    Button(action: { enter ? onKey("enter") : k == "touch" ? onTouch() : onKey(k) }) {
-      ZStack {
-        Circle().fill(enter ? Color.accent : (k == "touch" || k == "del" ? Color.clear : Color.surface2))
-        if enter {
-          Image(systemName: "arrow.right").font(.system(size: 30 * u, weight: .semibold)).foregroundColor(.paper)
-        } else if k == "touch" {
-          if touchOK { Image(systemName: "touchid").font(.system(size: 40 * u, weight: .light)).foregroundColor(.accent) }
-        } else if k == "del" {
-          Text("⌫").font(zen(28 * u)).foregroundColor(.mid)
-        } else {
-          Text(k).font(zen(32 * u, true)).foregroundColor(.ink)
-        }
-      }.frame(width: 84 * u, height: 84 * u).contentShape(Circle())
-    }.buttonStyle(.plain).disabled(k == "touch" && !enter && !touchOK)
-  }
+
 
   func dot(_ s: String) -> Color { s == "busy" ? .good : s == "waiting" ? .accent : .mid }
   func wash(_ s: String) -> Color { s == "busy" ? .goodWash : .surface2 }
@@ -585,7 +581,6 @@ final class App: NSObject, NSApplicationDelegate {
     guard touchOK else { return }
     authing = true
     m.armed = true
-    if m.showPin { m.note = "指を置いてください（Esc で数字に戻る）" }
     let c = LAContext()
     c.localizedFallbackTitle = ""   // 「パスワードを入力」は出さない（幕の合言葉を使う）
     authCtx = c
@@ -600,7 +595,6 @@ final class App: NSObject, NSApplicationDelegate {
         self.authing = false
         self.m.armed = false
         self.lastAuthEnd = Date()
-        if self.m.showPin { self.m.note = "合言葉で外してください" }
         if ok { self.failStreak = 0; self.lastErr = nil; self.unlock(by: "Touch ID") }
         else {
           let code = (err as? LAError)?.code
@@ -632,7 +626,7 @@ final class App: NSObject, NSApplicationDelegate {
     if !m.showPin { log("Touch ID から合言葉の板へ") }
     endAuth()   // 待ち受けが残っているとキーが確認の窓に取られ、合言葉が打てない
     m.showPin = true
-    m.note = "合言葉で外してください"
+    m.note = ""   // 欄が「合言葉を入力」に変わるので、知らせは出さない
     reassert()
   }
 
@@ -767,7 +761,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render" {
   let w = Double(a.count > 3 ? a[3] : "1440") ?? 1440, h = Double(a.count > 4 ? a[4] : "900") ?? 900
   let m = Model()
   let mode = a.count > 5 ? a[5] : "pin"
-  m.locked = true; m.typed = mode == "pin" ? "12" : ""; m.note = mode == "pin" ? "合言葉で外してください" : ""
+  m.locked = true; m.typed = mode == "pin" ? "12" : ""; m.note = ""
   m.showPin = mode == "pin"
   m.now = Date(timeIntervalSince1970: 1791895000)
   m.seats = [Seat(id: "a", title: "見本の作業A", status: "busy"), Seat(id: "b", title: "見本の作業B", status: "waiting"),
