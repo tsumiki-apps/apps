@@ -1,6 +1,6 @@
 """サムネイル（1280×720）を作る：パステルの地・左上に Apple マーク・左に太字の題名・右に端末の枠に入れた画面録画。
 
-    .venv/bin/python thumbnail.py <作業のフォルダ> [出力.png] [--color 0-13] [--at 秒] [--seed 何でも]
+    .venv/bin/python thumbnail.py <作業のフォルダ> [出力.png] [--color 0-13] [--at 秒] [--seed 何でも] [--image 画像 --focus 0〜1]
 
 画面録画（src_b）から見ばえのする1コマを自動で選ぶ（色の多さ・明暗の幅が大きいコマ。頭と終わりの15%は除く）。
 --at で秒を指定するとそのコマを使う。地の色は14色からランダム（--seed を変えると引き直し、--color で指定）。縦長＝iPhone の枠（下は切れる）、横長＝iPad の枠。
@@ -165,13 +165,24 @@ def shadow(im, blur=18, alpha=70, off=(0, 10)):
     return sh.filter(ImageFilter.GaussianBlur(blur))
 
 
-def make(job_dir, out, color=None, at=None, seed=0):
+def from_image(path, focus=0.5, ratio=1206 / 2622):
+    """画面録画の代わりに使う画像（公式の写真など）。iPhone の画面の縦横比で、focus（横の位置 0〜1）を中心に切り出す。"""
+    im = Image.open(path).convert("RGB")
+    w = min(im.width, round(im.height * ratio))
+    x = min(max(round(im.width * focus - w / 2), 0), im.width - w)
+    return im.crop((x, 0, x + w, im.height))
+
+
+def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5):
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text())
     src = next(job_dir.glob("src_b.*"))
     bi = job["b_info"]
-    t = at if at is not None else pick_frame(src, bi.get("vdur") or bi["dur"], info=bi)
-    shot = grab(src, t, info=bi)
+    if image:   # 画面録画の代わりに指定の画像（公式の写真など）を端末の画面に入れる
+        t, shot = None, from_image(image, focus)
+    else:
+        t = at if at is not None else pick_frame(src, bi.get("vdur") or bi["dur"], info=bi)
+        shot = grab(src, t, info=bi)
     portrait = shot.height > shot.width * 1.05     # 正方形に近い録画は iPad の枠
     if color is None:   # ランダム（作業ごとに色の順番を混ぜ、seed で次の色へ。前と見分けにくい色は飛ばす）
         color = pick_color(job["id"], seed)
@@ -222,6 +233,8 @@ if __name__ == "__main__":
     color = int(args[args.index("--color") + 1]) if "--color" in args else None
     at = float(args[args.index("--at") + 1]) if "--at" in args else None
     seed = args[args.index("--seed") + 1] if "--seed" in args else 0
+    image = args[args.index("--image") + 1] if "--image" in args else None
+    focus = float(args[args.index("--focus") + 1]) if "--focus" in args else 0.5
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or not args[i - 1].startswith("--"))]
     out = pos[1] if len(pos) > 1 else str(Path(pos[0]) / "サムネイル.png")
-    print(make(pos[0], out, color, at, seed))
+    print(make(pos[0], out, color, at, seed, image, focus))
