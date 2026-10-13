@@ -200,7 +200,7 @@ def make(job_dir, out, color=None, at=None, seed=0):
         lines = wrap_title(title, f, maxw)
         if all(d.textlength(l, font=f) <= maxw for l in lines):
             break
-        if len(wrap_hard(title, f, maxw)) <= 3 and size <= 60:   # 長いカタカナ語などは小さくしすぎず字の境目で折る
+        if len(wrap_hard(title, f, maxw)) <= 3 and size <= 48:   # 1行に縮めても入らない長いカタカナ語だけ、字の境目で折る
             lines = wrap_hard(title, f, maxw)
             break
         if size <= 40:   # 切れ目ではどうしても入らない → 字の境目で折る（それでも5行を超えるなら失敗にする）
