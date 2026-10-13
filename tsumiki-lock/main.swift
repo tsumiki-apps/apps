@@ -27,6 +27,21 @@ let AUTO_UNLOCK = Double(ProcessInfo.processInfo.environment["TSUMIKI_LOCK_AUTOU
 // 試験用：鍵束の名前を変える（本番の合言葉に触らない）
 let KC_SERVICE = ProcessInfo.processInfo.environment["TSUMIKI_LOCK_KC"] ?? "com.tsumiki.lock"
 
+// 幕で指紋が合わない・合言葉を間違えたら iPhone に知らせる（本人の要望 2026-10-14）。
+// つみきリモートと同じ ntfy の話題（~/.tsumiki-remote/ntfy-topic）。外のサーバーなので決まり文句だけ送る
+// （合言葉の値・鍵・作業の題名は送らない）。試験は別の置き場＝話題が無ければ送らない
+func pushPhone(_ title: String, _ body: String) {
+  guard let t = try? String(contentsOf: CONF.appendingPathComponent("ntfy-topic"), encoding: .utf8)
+                       .trimmingCharacters(in: .whitespacesAndNewlines),
+        !t.isEmpty, t.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else { return }
+  // 日本語の見出しは curl で送る（つみきリモートと同じ道）
+  let p = Process()
+  p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+  p.arguments = ["-s", "-m", "5", "-o", "/dev/null", "-H", "Title: " + title, "-H", "Tags: lock",
+                 "-H", "Priority: high", "-d", body, "https://ntfy.sh/" + t]
+  try? p.run()
+}
+
 func log(_ s: String) {
   let f = ISO8601DateFormatter()
   FileHandle.standardError.write("\(f.string(from: Date())) \(s)\n".data(using: .utf8)!)
@@ -379,6 +394,9 @@ final class App: NSObject, NSApplicationDelegate {
   var lastFingerFail = Date.distantPast
   var lastErr: LAError.Code?
   var lastFrontName = "", lastFrontLog = Date.distantPast
+  // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
+  // 黙っていた分の数は次の知らせに足す
+  var lastAlert = Date.distantPast, quietAlerts = 0
 
   // 幕の高さ。常に一番上（どのアプリの全画面の窓より上）。Touch ID の確認（coreautha・1000）は
   // 幕の裏に隠れたまま待ち受ける（touch() の説明）
@@ -465,6 +483,7 @@ final class App: NSObject, NSApplicationDelegate {
     Pin.refresh()
     m.locked = true; m.since = Date(); m.typed = ""; m.note = ""; m.showPin = false; m.showPad = false
     fingerFails = 0
+    lastAlert = .distantPast; quietAlerts = 0
     m.save()
     log("ロック（\(who)）")
     showCurtain()
@@ -576,6 +595,15 @@ final class App: NSObject, NSApplicationDelegate {
 
   // MARK: 合言葉・Touch ID
 
+  func alertPhone(_ what: String) {
+    guard m.locked else { return }
+    if Date().timeIntervalSince(lastAlert) < 300 { quietAlerts += 1; return }
+    let more = quietAlerts > 0 ? "（その前にも \(quietAlerts) 回）" : ""
+    lastAlert = Date(); quietAlerts = 0
+    log("iPhone に知らせた：\(what)")
+    pushPhone("Mac の幕", what + more)
+  }
+
   func press(_ k: String) {
     guard m.locked, Date() >= m.waitUntil, !m.checking else { return }
     guard m.showPin || !touchOK else { return }   // 板が隠れているあいだは数字を受けない
@@ -624,6 +652,7 @@ final class App: NSObject, NSApplicationDelegate {
           self.m.now = Date()   // 古い時刻で秒を多く出さない
         }
         self.m.note = "違います"
+        self.alertPhone("合言葉が違いました（\(self.m.fails) 回目）")
         self.m.save()
         log("合言葉ちがい（\(self.m.fails) 回目）")
       }
@@ -699,6 +728,7 @@ final class App: NSObject, NSApplicationDelegate {
     }
     switch code {
     case .authenticationFailed?:
+      alertPhone("指紋が合いませんでした")
       // 毎回赤く揺らし、3回続いたら合言葉へ（本人の指定）。それまではすぐ待ち受け直す
       // 「続けて」3回：前の失敗から2分以上あいたら数え直す（朝・昼・夕の1回ずつで欄に移らない）
       if Date().timeIntervalSince(lastFingerFail) > 120 { fingerFails = 0 }
@@ -711,6 +741,7 @@ final class App: NSObject, NSApplicationDelegate {
         failStreak = 0   // 指が合わないのは間を広げる理由にしない
       }
     case .biometryLockout?:
+      alertPhone("Touch ID がロックされました（指の失敗が続いたため）")
       let round = m.since
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if self.m.locked && self.m.since == round { self.toPin() } }
     case .biometryNotAvailable?, .biometryNotEnrolled?, .userCancel?:
