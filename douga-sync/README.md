@@ -16,6 +16,7 @@ Mac で処理し、iPhone から操作する。全部無料（ffmpeg・mlx-whisp
 
 - 早送り：確認の動画で「ここから」「ここまで」を押した区間を 2×/4×/8× で流す。区間は音なし・字幕なし（半分以上が区間に入る字幕は出さない）
 - 字幕の改行：言葉の切れ目（BudouX の文節＋fugashi の形態素）だけで折る。検査は `.venv/bin/python test_wrap.py [job.json]`
+- サムネイル：書き出しと一緒に作る（画面録画の1コマ）。公式の写真などに替えるときは作業フォルダに画像を置き、job.json の `thumb_image`（`file`・`focus`・`box`・`island`・`card`）に書く。書き出し直しや「色を変える」でもその画像のまま。試すだけなら `thumbnail.py` の `--image` `--box` `--no-island` `--card`
 
 ## 入れ直し
 ```

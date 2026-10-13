@@ -164,18 +164,25 @@ def do_render(jid):
 
 
 def do_thumb(jid, reroll=False):
-    """サムネイル（1280×720）。使うコマは1回目に選んで覚え、色を変えるときは色だけ引き直す。"""
+    """サムネイル（1280×720）。使うコマは1回目に選んで覚え、色を変えるときは色だけ引き直す。
+    job.json の thumb_image（作業フォルダの画像と切り出し方）があれば、画面録画の代わりにそれを使う。"""
     d = jpath(jid)
     job = load(jid)
     seed = int(job.get("thumb_seed") or 0) + (1 if reroll else 0)
     tmp = d / "サムネイル.tmp.png"
+    ti = job.get("thumb_image") or {}
+    kw = {}
+    if ti.get("file") and (d / ti["file"]).exists():
+        kw = dict(image=d / ti["file"], focus=ti.get("focus", 0.5), box=tuple(ti["box"]) if ti.get("box") else None,
+                  island=ti.get("island", True), as_card=ti.get("card", False))
     try:
-        at = thumbnail.make(d, tmp, seed=seed, at=job.get("thumb_at"))
+        at = thumbnail.make(d, tmp, seed=seed, at=job.get("thumb_at"), **kw)
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
     tmp.replace(d / "サムネイル.png")
-    update(jid, thumb=time.time(), thumb_seed=seed, thumb_at=round(at, 2), thumb_error=None)
+    update(jid, thumb=time.time(), thumb_seed=seed, thumb_error=None,
+           **({"thumb_at": round(at, 2)} if at is not None else {}))
 
 
 def do_translate(jid, caps, title):

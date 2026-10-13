@@ -1,6 +1,10 @@
 """サムネイル（1280×720）を作る：パステルの地・左上に Apple マーク・左に太字の題名・右に端末の枠に入れた画面録画。
 
     .venv/bin/python thumbnail.py <作業のフォルダ> [出力.png] [--color 0-13] [--at 秒] [--seed 何でも] [--image 画像 --focus 0〜1]
+        [--box 左,上,右,下] [--no-island] [--card]
+
+--image：画面録画の代わりに使う画像（公式の写真など）。--box で切り出す範囲、--no-island は画像に元から Dynamic Island が写っているとき、
+--card は端末の枠に入れず写真を角丸のカードで置く。動画同期のサーバーは job.json の thumb_image（file・focus・box・island・card）を読んで同じように作る。
 
 画面録画（src_b）から見ばえのする1コマを自動で選ぶ（色の多さ・明暗の幅が大きいコマ。頭と終わりの15%は除く）。
 --at で秒を指定するとそのコマを使う。地の色は14色からランダム（--seed を変えると引き直し、--color で指定）。縦長＝iPhone の枠（下は切れる）、横長＝iPad の枠。
@@ -249,6 +253,8 @@ if __name__ == "__main__":
     seed = args[args.index("--seed") + 1] if "--seed" in args else 0
     image = args[args.index("--image") + 1] if "--image" in args else None
     focus = float(args[args.index("--focus") + 1]) if "--focus" in args else 0.5
-    pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or not args[i - 1].startswith("--"))]
+    box = tuple(int(v) for v in args[args.index("--box") + 1].split(",")) if "--box" in args else None
+    valued = ("--color", "--at", "--seed", "--image", "--focus", "--box")
+    pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in valued)]
     out = pos[1] if len(pos) > 1 else str(Path(pos[0]) / "サムネイル.png")
-    print(make(pos[0], out, color, at, seed, image, focus))
+    print(make(pos[0], out, color, at, seed, image, focus, box, "--no-island" not in args, "--card" in args))
