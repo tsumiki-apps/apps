@@ -39,6 +39,7 @@ func pushPhone(_ title: String, _ body: String) {
   p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
   p.arguments = ["-s", "-m", "5", "-o", "/dev/null", "-H", "Title: " + title, "-H", "Tags: lock",
                  "-H", "Priority: high", "-d", body, "https://ntfy.sh/" + t]
+  p.terminationHandler = { _ in }   // 終わった curl を片付ける
   try? p.run()
 }
 
@@ -393,9 +394,10 @@ final class App: NSObject, NSApplicationDelegate {
   var fingerFails = 0   // 続けて指が合わなかった数（3で合言葉へ）
   var lastFingerFail = Date.distantPast
   var lastErr: LAError.Code?
+  var authStart = Date.distantPast
   var lastFrontName = "", lastFrontLog = Date.distantPast
   // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
-  // 黙っていた分の数は次の知らせに足す
+  // 黙っていた分は5分たったら1通にまとめる（morningReport）
   var lastAlert = Date.distantPast, quietAlerts = 0
   // 夜（22時〜8時・つみきリモートと同じ）は鳴らさず数えるだけ。朝8時を過ぎたら1通にまとめて送る（本人の選択）。
   // 数えはメモリだけ（夜のあいだに幕のアプリが起き直すと消える）
@@ -407,6 +409,12 @@ final class App: NSObject, NSApplicationDelegate {
     }
     let h = Calendar.current.component(.hour, from: d); return h < 8 || h >= 22 }
   func morningReport() {
+    // 昼の5分の間引きで黙っていた分は、5分たったら1通にして出す（次の失敗が来なくても届く・反証役）
+    if !isNight(), quietAlerts > 0, Date().timeIntervalSince(lastAlert) >= 300 {
+      let n = quietAlerts; quietAlerts = 0; lastAlert = Date()
+      log("iPhone に知らせた：そのあとの失敗 \(n) 回")
+      pushPhone("Mac の幕", "そのあとも失敗が \(n) 回ありました")
+    }
     guard !isNight(), !nightTally.isEmpty else { return }
     let parts = ["指紋": "指紋が合わない", "ロック": "Touch ID のロック", "合言葉": "合言葉ちがい"]
       .compactMap { k, v in nightTally[k].map { "\(v) \($0) 回" } }.sorted()
@@ -572,10 +580,14 @@ final class App: NSObject, NSApplicationDelegate {
     windows.first?.makeKey()
   }
 
+  // ⚠️ Touch ID の待ち受け中は前に出ない（activate しない）。幕のアプリが前に出ると、確認の窓
+  // （coreautha）が数十ミリ秒で指の読み取りを止める＝指を置いても何も起きない（2026-10-14 本人の実機で
+  // 指が全く効かなくなった・反証役が log show の biometrickitd で裏を取った）。窓を上に重ねるだけ
+  // （orderFrontRegardless）なら止まらない（10/13 夜の版で通っていた）
   func reassert() {
-    guard m.locked else { return }
+    guard m.locked, !authing else { return }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-      guard let self = self, self.m.locked else { return }
+      guard let self = self, self.m.locked, !self.authing else { return }
       self.windows.forEach { $0.level = self.topLevel; $0.orderFrontRegardless() }
       self.clampDown()
     }
@@ -605,7 +617,7 @@ final class App: NSObject, NSApplicationDelegate {
     // WindowServer の仕事が増え続ける・反証役の指摘で測った）
     tickCount += 1
     if tickCount % 4 == 0 { windows.forEach { $0.orderFrontRegardless() } }
-    if !NSApp.isActive { reassert() }
+    if !authing && !NSApp.isActive { reassert() }
     // Touch ID は常に待ち受ける（本人の要望）。合言葉の板を出しているあいだは待ち受けない
     // （待ち受け中はキーが確認の窓に取られ、合言葉が打てないため）
     if !authing && !m.showPin { touch() }
@@ -618,10 +630,9 @@ final class App: NSObject, NSApplicationDelegate {
     guard m.locked else { return }
     if isNight() { nightTally[kind, default: 0] += 1; return }
     if Date().timeIntervalSince(lastAlert) < 300 { quietAlerts += 1; return }
-    let more = quietAlerts > 0 ? "（その前にも \(quietAlerts) 回）" : ""
-    lastAlert = Date(); quietAlerts = 0
+    lastAlert = Date()
     log("iPhone に知らせた：\(what)")
-    pushPhone("Mac の幕", what + more)
+    pushPhone("Mac の幕", what)
   }
 
   func press(_ k: String) {
@@ -683,13 +694,15 @@ final class App: NSObject, NSApplicationDelegate {
   // 指を置けば通る。窓を見せるために幕を下げると、ずっと待ち受ける今の作りでは
   // 幕がほぼ常に下がったままになり、1000 以上の窓（全画面のアプリなど）が上に出る恐れがある。
   // 待ち受け中はキーが確認の窓に行く＝Esc で確認をやめると合言葉の板に切り替わる。
-  // 終わってから1秒は次を始めない（連打で確認を作り続けさせない・続けて失敗したら2→60秒）。60秒ごとに張り直す
+  // 終わってから0.3秒は次を始めない（連打で確認を作り続けさせない・続けて失敗したら2→60秒）。60秒ごとに張り直す
   func touch() {
-    let wait = failStreak == 0 ? 1.0 : min(60.0, 2 * pow(2, Double(max(0, failStreak - 1))))
+    // 張り直しの継ぎ目は短く（確認の窓が無いあいだに Touch ID を押し込むと、幕の裏で macOS がロックされる・反証役）
+    let wait = failStreak == 0 ? 0.3 : min(60.0, 2 * pow(2, Double(max(0, failStreak - 1))))
     guard m.locked, !authing, Date().timeIntervalSince(lastAuthEnd) > wait else { return }
     checkTouch()
     guard touchOK else { return }
     authing = true
+    authStart = Date()
     m.armed = true
     let c = LAContext()
     c.localizedFallbackTitle = ""   // 「パスワードを入力」は出さない（幕の合言葉を使う）
@@ -698,15 +711,9 @@ final class App: NSObject, NSApplicationDelegate {
       guard let self = self, let c = c, self.authCtx === c else { return }
       self.endAuth(); self.reassert()
     }
-    // 確認を始めたら、すぐ幕を前に戻す（ふつうは didResignActive の reassert が先に戻し、これは念のため）。
-    // 確認は打ち切られずに指を待ち続ける（2026-10-13 実測）。
-    // 幕が前にいれば Dock を隠す・切り替えを止める設定が効き、Esc も幕に届く
-    // （確認の窓が前のままだと Dock が見え、スワイプで裏が動いた＝本人のテスト）
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-      guard let self = self, self.authCtx === c else { return }
-      self.windows.forEach { $0.orderFrontRegardless() }
-      self.clampDown()
-    }
+    // 待ち受け中は確認の窓が前面のまま（幕は上に重なるだけ）。そのあいだ Dock を隠す・切り替えを止める
+    // 設定は効かない（Dock が見え、スワイプで裏が動くことがある＝本人のテスト）。それでも前に戻すと
+    // 指が読まれなくなるので、こちらを取る（reassert の説明）。Esc は確認の窓に届き userCancel → 合言葉の欄
     c.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "幕を外します") { ok, err in
       DispatchQueue.main.async {
         guard self.authCtx === c else { return }   // 打ち切ったあとの返事は捨てる
@@ -911,7 +918,12 @@ final class App: NSObject, NSApplicationDelegate {
 
   func snapshot() -> [String: Any] {
     ["locked": m.locked, "since": m.since.timeIntervalSince1970 * 1000, "pin": Pin.isSet,
-     "touchid": touchOK, "fails": m.fails, "checking": m.checking]
+     "touchid": touchOK, "fails": m.fails, "checking": m.checking,
+     // 指が効かないときの調べ用：待ち受けているか・いつから・最後に終わってから何秒・続けた失敗
+     // armed は「返事待ち」だけ。指を読めるのは確認の窓が前面のとき（authFront）
+     "armed": authing, "authFront": NSWorkspace.shared.frontmostApplication.map { isAuthAgent($0) } ?? false,
+     "armedFor": authing ? Date().timeIntervalSince(authStart) : -1,
+     "sinceEnd": Date().timeIntervalSince(lastAuthEnd), "failStreak": failStreak, "showPin": m.showPin]
   }
 }
 
