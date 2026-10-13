@@ -6369,7 +6369,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // ---------------------------------------------------------- Mac の幕（つみきロック）
   //
-  // 上の帯の鍵：押すたびに掛ける⇄外す。掛けるのは一押し、外すのは Face ID（パスキー）。
+  // 上の帯の鍵：押すたびに掛ける⇄外す。どちらも一押し（2026-10-13 本人の選択。Face ID＝パスキーは
+  // iOS が毎回「サインイン」のシートを出し、Web からは消せないのでやめた。Face ID は合言葉の決め直しだけに使う）。
   // Mac 側は ~/制作物/tsumiki-lock（全画面の幕。Mac の前では Touch ID か合言葉で外す）。
   // ⚠️ iOS は Face ID の呼び出しを「指で押した流れの中」でしか許さない。押してから問い
   //    （challenge）を取りに行くと断られることがあるので、**先に取っておく**（45秒で取り直す）。
@@ -6433,7 +6434,6 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var want = l.locked ? 'lock' : 'unlock';
     if (el.lockbtn.dataset.ic !== want) { el.lockbtn.innerHTML = sicSvg(want); el.lockbtn.dataset.ic = want; }
     el.lockbtn.setAttribute('aria-label', l.locked ? 'Mac の幕を外す' : 'Mac に幕を掛ける');
-    if (l.locked && l.passkeys && lockSecure) prefetch('unlock');
   }
 
   function lockDone(d) {
@@ -6443,9 +6443,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function lockMac(opts) {
-    // 合言葉が無いと Mac の前で外せない。Face ID が無いと外から外せない＝↻ の押し間違いで
-    // 帰るまで外せなくなるので、帯の鍵からは掛けずにシートを開く（シートの「掛ける」は通す）
-    if (!lockSt.pin || (!lockSt.passkeys && !opts)) { openLockSheet(); return; }
+    if (!lockSt.pin) { openLockSheet(); return; }   // 合言葉が無いと Mac の前で外せない
     lockBusy = true; renderLock(lockSt);
     api('/api/lock/on', { method: 'POST', body: '{}' }, 8000)
       .then(function (d) { lockDone(d); toast('Mac に幕を掛けました'); })
@@ -6453,10 +6451,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function unlockMac() {
-    if (!lockSt.passkeys) { toast('Face ID が未登録です（Mac の前では合言葉で外せます）', 2800); return; }
     lockBusy = true; renderLock(lockSt);
-    faceId('unlock')
-      .then(function (a) { return api('/api/lock/off', { method: 'POST', body: JSON.stringify({ assertion: a }) }, 8000); })
+    api('/api/lock/off', { method: 'POST', body: '{}' }, 8000)
       .then(function (d) { lockDone(d); toast('Mac の幕を外しました'); })
       .catch(function (e) { lockDone(null); toast('外せません: ' + e.message); });
   }
@@ -6476,9 +6472,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
     if (lockSecure && !l.passkeys) prefetch('register');
     if (lockSecure && l.passkeys) prefetch('pin');
-    sheetItem(l.locked ? '外す' : '掛ける', !l.locked && !l.passkeys ? '⚠️ 外からは外せません' : '', function () { closeSheet(); if (l.locked) unlockMac(); else lockMac({ fromSheet: true }); },
+    sheetItem(l.locked ? '外す' : '掛ける', '', function () { closeSheet(); if (l.locked) unlockMac(); else lockMac({ fromSheet: true }); },
       { icon: l.locked ? 'unlock' : 'lock', iconCls: l.locked ? 'ok' : 'dark',
-        disabled: (l.locked && !l.passkeys) || (!l.locked && !l.pin) });
+        disabled: !l.locked && !l.pin });
     sheetItem('Face ID', lockSecure ? '' : 'https で開いたときだけ',
       function () { registerPasskey(); },
       { icon: 'face', iconCls: 'edit', val: l.passkeys ? '登録済み' : '未登録',

@@ -148,6 +148,7 @@ final class Model: ObservableObject {
   // 数字の板を出すか。ふだんは Touch ID だけ。Touch ID が断ったとき（指が合わない・
   // ロックアウト・使えない）に出す。外れたら隠し直す
   @Published var showPin = false
+  @Published var armed = false   // Touch ID を待ち受けている（指を置けば外れる）
   var fails = 0
 
   func load() {
@@ -240,6 +241,7 @@ struct Curtain: View {
             Button(action: onTouch) {
               ZStack {
                 Circle().fill(Color.surface2)
+                Circle().stroke(Color.accent.opacity(m.armed ? 0.55 : 0), lineWidth: 3 * u)
                 Image(systemName: "touchid").font(.system(size: 76 * u, weight: .light)).foregroundColor(.accent)
               }.frame(width: 150 * u, height: 150 * u).contentShape(Circle())
             }.buttonStyle(.plain)
@@ -325,7 +327,6 @@ final class App: NSObject, NSApplicationDelegate {
   // 幕の高さ。ふだんは一番上（どのアプリの全画面の窓より上）。
   // Touch ID の確認（coreautha・1000）を出すあいだだけ、その下に下げる
   let topLevel = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-  let authLevel = NSWindow.Level(rawValue: 999)
 
   func checkTouch() {
     var e: NSError?
@@ -415,7 +416,7 @@ final class App: NSObject, NSApplicationDelegate {
     windows.forEach { $0.orderOut(nil) }
     windows = NSScreen.screens.map { sc in
       let w = CurtainWindow(contentRect: sc.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-      w.level = authing ? authLevel : topLevel
+      w.level = topLevel
       w.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
       w.isOpaque = true
       w.backgroundColor = NSColor(red: 0x0f / 255, green: 0x0d / 255, blue: 0x07 / 255, alpha: 1)
@@ -480,9 +481,11 @@ final class App: NSObject, NSApplicationDelegate {
   func tick() {
     m.now = Date()
     guard m.locked else { return }
-    // 確認中でも幕そのものは前に出し続ける（高さは確認の窓のすぐ下）
     windows.forEach { $0.orderFrontRegardless() }
     if !authing && !NSApp.isActive { reassert() }
+    // Touch ID は常に待ち受ける（本人の要望）。合言葉の板を出しているあいだは待ち受けない
+    // （待ち受け中はキーが確認の窓に取られ、合言葉が打てないため）
+    if !authing && !m.showPin { touch() }
     if m.now.timeIntervalSince(lastPoll) >= 3 { lastPoll = m.now; pollSeats() }
   }
 
@@ -541,21 +544,22 @@ final class App: NSObject, NSApplicationDelegate {
     }
   }
 
-  // 確認中は幕の高さを下げる（確認の窓＝1000 を上に出すため）。その間は presentationOptions が
-  // 効かない恐れがあるので、確認は10秒まで・終わってから2秒は次を始めない（反証役）
+  // Touch ID の待ち受け。幕は一番上のまま＝確認の窓（coreautha・1000）は幕の裏に隠れるが、
+  // 指を置けば通る。窓を見せるために幕を下げると、ずっと待ち受ける今の作りでは
+  // 幕がほぼ常に下がったままになり、1000 以上の窓（全画面のアプリなど）が上に出る恐れがある。
+  // 待ち受け中はキーが確認の窓に行く＝Esc で確認をやめると合言葉の板に切り替わる。
+  // 終わってから2秒は次を始めない（連打で確認を作り続けさせない）。60秒ごとに張り直す
   func touch() {
     guard m.locked, !authing, Date().timeIntervalSince(lastAuthEnd) > 2 else { return }
     checkTouch()
     guard touchOK else { return }
     authing = true
-    windows.forEach { $0.level = authLevel }   // 確認の窓を幕の上に出す
+    m.armed = true
     let c = LAContext()
     c.localizedFallbackTitle = ""   // 「パスワードを入力」は出さない（幕の合言葉を使う）
     authCtx = c
-    // 確認は20秒で打ち切る（出しっぱなしにさせない）
-    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self, weak c] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self, weak c] in
       guard let self = self, let c = c, self.authCtx === c else { return }
-      log("Touch ID の確認を10秒で打ち切り")
       self.endAuth(); self.reassert()
     }
     c.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "幕を外します") { ok, err in
@@ -563,6 +567,7 @@ final class App: NSObject, NSApplicationDelegate {
         guard self.authCtx === c else { return }   // 打ち切ったあとの返事は捨てる
         self.authCtx = nil
         self.authing = false
+        self.m.armed = false
         self.lastAuthEnd = Date()
         if ok { self.unlock(by: "Touch ID") }
         else {
@@ -576,12 +581,15 @@ final class App: NSObject, NSApplicationDelegate {
 
   // 指が合わなかった（LAContext は1回の確認の中で何度か指を試させ、それでも合わないと
   // authenticationFailed を返す＝ここに来た時点で複数回だめだった）・ロックアウト・使えない
-  // → 数字の板を出す。やめた・打ち切った（キャンセル）は数えない＝Touch ID のまま
+  // → 数字の板を出す。Esc で確認をやめた（userCancel）ときも板に切り替える＝Touch ID が
+  // 効かないときの逃げ道。こちらから打ち切った・ほかのアプリに移った（appCancel/systemCancel）は数えない
   func touchFailed(_ code: LAError.Code?) {
     switch code {
-    case .authenticationFailed?, .biometryLockout?, .biometryNotAvailable?, .biometryNotEnrolled?:
+    case .authenticationFailed?, .biometryLockout?, .biometryNotAvailable?, .biometryNotEnrolled?, .userCancel?:
       if !m.showPin { log("Touch ID が通らない → 合言葉の板を出す") }
+      endAuth()   // 待ち受けが残っているとキーが確認の窓に取られ、合言葉が打てない
       m.showPin = true
+      reassert()
       m.note = "合言葉で外してください"
     default:
       break
@@ -590,6 +598,7 @@ final class App: NSObject, NSApplicationDelegate {
 
   func endAuth() {
     if authCtx != nil { lastAuthEnd = Date() }
+    m.armed = false
     authCtx?.invalidate()
     authCtx = nil
     authing = false

@@ -3080,7 +3080,9 @@ const server = http.createServer(async (req, res) => {
     //   GET  /api/lock            … 幕の状態（掛かっているか・合言葉/パスキーの有無）
     //   GET  /api/lock/challenge  … Face ID の問い（purpose＝register/unlock/pin/add）
     //   POST /api/lock/on         … 掛ける（本人確認なし＝すぐ閉められることを優先）
-    //   POST /api/lock/off        … 外す（Face ID 必須）
+    //   POST /api/lock/off        … 外す（一押し。2026-10-13 本人の選択で Face ID をやめた：iOS の
+    //                                パスキーは毎回「サインイン」のシートを1枚はさみ、Web から消せない。
+    //                                守りは iPhone のロックとつみきリモートの合言葉）
     //   POST /api/lock/passkey    … この iPhone を登録（2台目からは登録済みの Face ID が要る）
     //   POST /api/lock/pin        … Mac で打つ合言葉を決める（決め直しは Face ID が要る）
     // ⚠️ 最初の1回（パスキー0件）だけは Face ID なしで通す。そのときも「幕が外れている」ことを条件にする。
@@ -3098,10 +3100,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, r.ok ? 200 : (r.code || 503), r.ok ? r.data : { error: r.data.error || '掛けられません' });
     }
     if (p === '/api/lock/off' && req.method === 'POST') {
-      const body = await readBody(req);
-      const v = LOCK.verify(req, body.assertion, 'unlock');
-      if (v.error) { console.log(`lock off 断った（${v.error}）`); return json(res, 403, v); }
-      const r = await LOCK.lockCall('POST', '/unlock', { by: 'iPhone の Face ID' });
+      const r = await LOCK.lockCall('POST', '/unlock', { by: 'iPhone' });
       console.log(`lock off ${r.ok ? 'ok' : r.code}`);
       await LOCK.refresh();
       return json(res, r.ok ? 200 : (r.code || 503), r.ok ? r.data : { error: r.data.error || '外せません' });
