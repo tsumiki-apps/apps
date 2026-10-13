@@ -133,7 +133,7 @@ def rounded(im, r):
     return m
 
 
-def device(shot, portrait):
+def device(shot, portrait, island=True):
     """端末の枠に画面を入れた画像（透明の地）。"""
     if portrait:
         sw = 318
@@ -150,7 +150,7 @@ def device(shot, portrait):
     d.rounded_rectangle([3, 3, W + 2, H + 2], radius=r_out, fill=BEZEL)
     scr = shot.resize((sw, sh), Image.LANCZOS)
     im.paste(scr, (3 + b, 3 + b), rounded(scr, r_in))
-    if portrait:   # ダイナミックアイランド
+    if portrait and island:   # ダイナミックアイランド（画面の画像に元から写っているときは描かない）
         iw, ih = 96, 28
         cx, top = (W + 6) // 2, 3 + b + 12
         d.rounded_rectangle([cx - iw // 2, top, cx + iw // 2, top + ih], radius=ih // 2, fill=(0, 0, 0))
@@ -165,21 +165,33 @@ def shadow(im, blur=18, alpha=70, off=(0, 10)):
     return sh.filter(ImageFilter.GaussianBlur(blur))
 
 
-def from_image(path, focus=0.5, ratio=1206 / 2622):
-    """画面録画の代わりに使う画像（公式の写真など）。iPhone の画面の縦横比で、focus（横の位置 0〜1）を中心に切り出す。"""
+def from_image(path, focus=0.5, ratio=1206 / 2622, box=None):
+    """画面録画の代わりに使う画像（公式の写真など）。box（左,上,右,下）を指定するとその範囲をそのまま使う。
+    指定が無ければ iPhone の画面の縦横比で、focus（横の位置 0〜1）を中心に切り出す。"""
     im = Image.open(path).convert("RGB")
+    if box:
+        return im.crop(box)
     w = min(im.width, round(im.height * ratio))
     x = min(max(round(im.width * focus - w / 2), 0), im.width - w)
     return im.crop((x, 0, x + w, im.height))
 
 
-def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5):
+def card(im, maxw=560, maxh=600, r=28):
+    """公式の写真をそのまま角の丸いカードにする（端末の枠に入れない置き方）。"""
+    im = im.copy()
+    im.thumbnail((maxw, maxh), Image.LANCZOS)
+    out = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    out.paste(im, (0, 0), rounded(im, r))
+    return out
+
+
+def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5, box=None, island=True, as_card=False):
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text())
     src = next(job_dir.glob("src_b.*"))
     bi = job["b_info"]
     if image:   # 画面録画の代わりに指定の画像（公式の写真など）を端末の画面に入れる
-        t, shot = None, from_image(image, focus)
+        t, shot = None, from_image(image, focus, box=box)
     else:
         t = at if at is not None else pick_frame(src, bi.get("vdur") or bi["dur"], info=bi)
         shot = grab(src, t, info=bi)
@@ -190,9 +202,11 @@ def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5):
     im = Image.new("RGBA", (TW, TH), bg + (255,))
     d = ImageDraw.Draw(im)
 
-    dev = device(shot, portrait)
-    if portrait:
-        x, y = TW - 96 - dev.width, 64                         # 下は画面の外へ切れる
+    dev = card(shot) if as_card else device(shot, portrait, island)
+    if as_card:
+        x, y = TW - 70 - dev.width, (TH - dev.height) // 2
+    elif portrait:
+        x, y = TW - 96 - dev.width, max(64, TH - dev.height + 60)   # 下は画面の外へ切れる（短い画面は下から立ち上げる）
     else:
         x, y = TW - 56 - dev.width, (TH - dev.height) // 2 + 20
     sh = shadow(dev)
