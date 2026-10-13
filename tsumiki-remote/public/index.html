@@ -658,6 +658,14 @@
     border:1px solid var(--line);color:var(--dim);font:inherit;font-size:13px;line-height:1;
   }
   #reload{font-size:15px}
+  /* Mac の幕（つみきロック）。掛かっているときだけ色を付ける＝開いた鍵は目立たせない */
+  #lockbtn{display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;
+    padding:0 4px;background:none;border:none;color:var(--dim)}
+  #lockbtn[hidden]{display:none}
+  #lockbtn svg{width:19px;height:19px}
+  #lockbtn.on{color:var(--wait)}
+  #lockbtn.busy{opacity:.45}
+  .pinedit input{letter-spacing:.4em;text-align:center;font-variant-numeric:tabular-nums;-webkit-text-security:disc}
   #reload:active{color:var(--fg);border-color:#3b4250}
 
   #viewer{position:fixed;inset:0;z-index:40;background:var(--bg);
@@ -1173,6 +1181,7 @@
   </span><span class="num" id="unum" hidden></span></button>
   <button id="batt" hidden aria-label="MacBookの電池"><span class="bolt" hidden>⚡︎</span><span
     class="cell"><i></i></span><span class="num" id="bnum" hidden></span></button>
+  <button id="lockbtn" hidden aria-label="Mac の幕"></button>
   <button id="reload" aria-label="読み込み直す">↻</button>
   <button id="menu" aria-label="メニュー">⋯</button>
 </header>
@@ -1955,7 +1964,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     bolt: document.querySelector('#batt .bolt'),
     cell: document.querySelector('#batt .cell'),
     bnum: document.getElementById('bnum'),
-    authbar: document.getElementById('authbar')
+    authbar: document.getElementById('authbar'),
+    lockbtn: document.getElementById('lockbtn')
   };
 
   var current = localStorage.getItem('tsumiki-remote-session') || '';
@@ -3102,6 +3112,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       checkVersion(d.version);
       renderUsage(d.usage, d.usageWait);
       renderBatt(d.battery);
+      renderLock(d.lock);
       renderAuth(d.auth);
       sessions = d.sessions;
       sessions.forEach(function (s2) {
@@ -6355,6 +6366,184 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .catch(function (e) { toast('消せません: ' + e.message); });
   }
 
+
+  // ---------------------------------------------------------- Mac の幕（つみきロック）
+  //
+  // 上の帯の鍵：押すたびに掛ける⇄外す。掛けるのは一押し、外すのは Face ID（パスキー）。
+  // Mac 側は ~/制作物/tsumiki-lock（全画面の幕。Mac の前では Touch ID か合言葉で外す）。
+  // ⚠️ iOS は Face ID の呼び出しを「指で押した流れの中」でしか許さない。押してから問い
+  //    （challenge）を取りに行くと断られることがあるので、**先に取っておく**（45秒で取り直す）。
+  var lockSt = null;
+  var lockBusy = false;
+  var chal = {};
+  var lockSecure = location.protocol === 'https:' && /\.ts\.net$/.test(location.hostname);
+
+  function b64e(buf) {
+    var b = new Uint8Array(buf), s = '';
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64d(str) {
+    var s = atob(String(str).replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((str.length + 3) % 4));
+    var b = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+    return b;
+  }
+
+  function prefetch(purpose) {
+    var c = chal[purpose];
+    if (c && (c.o === null || Date.now() - c.at < 30000)) return;   // 取りに行っている途中か、まだ新しい
+    chal[purpose] = { o: null, at: Date.now() };
+    api('/api/lock/challenge?purpose=' + purpose, null, 8000)
+      .then(function (o) { chal[purpose] = { o: o, at: Date.now() }; })
+      .catch(function () { delete chal[purpose]; });
+  }
+  function takeChal(purpose) {
+    var c = chal[purpose];
+    delete chal[purpose];
+    prefetch(purpose);   // 次の1回ぶんを取っておく
+    // サーバーの期限は60秒。Face ID に時間がかかっても間に合うよう、40秒より古い問いは使わない
+    return c && c.o && Date.now() - c.at < 40000 ? c.o : null;
+  }
+  function faceErr(e) {
+    if (e && e.name === 'NotAllowedError') return new Error('やめました');
+    return e;
+  }
+
+  // Face ID で本人確認して、サーバーに渡す形にする
+  function faceId(purpose) {
+    if (!lockSecure) return Promise.reject(new Error('https で開いたときだけ使えます'));
+    var o = takeChal(purpose);
+    if (!o) return Promise.reject(new Error('準備しています。もう一度押してください'));
+    return navigator.credentials.get({ publicKey: {
+      challenge: b64d(o.challenge), rpId: o.rpId, userVerification: 'required', timeout: 60000,
+      allowCredentials: o.allow.map(function (id) { return { type: 'public-key', id: b64d(id) }; })
+    } }).then(function (c) {
+      return { id: c.id, clientDataJSON: b64e(c.response.clientDataJSON),
+        authenticatorData: b64e(c.response.authenticatorData), signature: b64e(c.response.signature) };
+    }, function (e) { throw faceErr(e); });
+  }
+
+  function renderLock(l) {
+    lockSt = l || null;
+    var show = !!(l && l.app);
+    el.lockbtn.hidden = !show;
+    if (!show) return;
+    el.lockbtn.className = (l.locked ? 'on' : '') + (lockBusy ? ' busy' : '');
+    var want = l.locked ? 'lock' : 'unlock';
+    if (el.lockbtn.dataset.ic !== want) { el.lockbtn.innerHTML = sicSvg(want); el.lockbtn.dataset.ic = want; }
+    el.lockbtn.setAttribute('aria-label', l.locked ? 'Mac の幕を外す' : 'Mac に幕を掛ける');
+    if (l.locked && l.passkeys && lockSecure) prefetch('unlock');
+  }
+
+  function lockDone(d) {
+    lockBusy = false;
+    if (d) renderLock(Object.assign({}, lockSt, d));
+    else if (lockSt) renderLock(lockSt);
+  }
+
+  function lockMac(opts) {
+    // 合言葉が無いと Mac の前で外せない。Face ID が無いと外から外せない＝↻ の押し間違いで
+    // 帰るまで外せなくなるので、帯の鍵からは掛けずにシートを開く（シートの「掛ける」は通す）
+    if (!lockSt.pin || (!lockSt.passkeys && !opts)) { openLockSheet(); return; }
+    lockBusy = true; renderLock(lockSt);
+    api('/api/lock/on', { method: 'POST', body: '{}' }, 8000)
+      .then(function (d) { lockDone(d); toast('Mac に幕を掛けました'); })
+      .catch(function (e) { lockDone(null); toast('掛けられません: ' + e.message); });
+  }
+
+  function unlockMac() {
+    if (!lockSt.passkeys) { toast('Face ID が未登録です（Mac の前では合言葉で外せます）', 2800); return; }
+    lockBusy = true; renderLock(lockSt);
+    faceId('unlock')
+      .then(function (a) { return api('/api/lock/off', { method: 'POST', body: JSON.stringify({ assertion: a }) }, 8000); })
+      .then(function (d) { lockDone(d); toast('Mac の幕を外しました'); })
+      .catch(function (e) { lockDone(null); toast('外せません: ' + e.message); });
+  }
+
+  el.lockbtn.onclick = function () {
+    if (!lockSt || !lockSt.app || lockBusy) return;
+    if (lockSt.locked) unlockMac(); else lockMac();
+  };
+
+  // ⋯ → Mac の幕。説明は置かず、状態は右端の値で見せる
+  function openLockSheet() {
+    var l = lockSt || {};
+    openSheet('Mac の幕');
+    if (!l.app) {
+      sheetItem('幕のアプリが動いていません', '', function () {}, { disabled: true, icon: 'lock', iconCls: 'dark' });
+      return;
+    }
+    if (lockSecure && !l.passkeys) prefetch('register');
+    if (lockSecure && l.passkeys) prefetch('pin');
+    sheetItem(l.locked ? '外す' : '掛ける', '', function () { closeSheet(); if (l.locked) unlockMac(); else lockMac({ fromSheet: true }); },
+      { icon: l.locked ? 'unlock' : 'lock', iconCls: l.locked ? 'ok' : 'dark',
+        disabled: (l.locked && !l.passkeys) || (!l.locked && !l.pin) });
+    sheetItem('Face ID', lockSecure ? '' : 'https で開いたときだけ',
+      function () { registerPasskey(); },
+      { icon: 'face', iconCls: 'edit', val: l.passkeys ? '登録済み' : '未登録',
+        disabled: !lockSecure || !!l.passkeys || !!l.locked });
+    sheetItem('合言葉', '', function () { pinSheet(); },
+      { icon: 'keypad', iconCls: 'edit', val: l.pin ? '設定済み' : '未設定',
+        disabled: (!!l.pin && !l.passkeys) || (!l.passkeys && !!l.locked) || (!!l.passkeys && !lockSecure) });
+  }
+
+  function registerPasskey() {
+    var o = takeChal('register');
+    if (!o) { toast('準備しています。もう一度押してください'); return; }
+    if (!window.PublicKeyCredential) { toast('この端末はパスキーに対応していません'); return; }
+    navigator.credentials.create({ publicKey: {
+      challenge: b64d(o.challenge),
+      rp: { id: o.rpId, name: 'つみきロック' },
+      user: { id: b64d(o.userId), name: 'Mac の幕', displayName: 'Mac の幕' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' },
+      attestation: 'none', timeout: 60000
+    } }).then(function (c) {
+      var r = c.response;
+      if (!r.getPublicKey || !r.getAuthenticatorData) throw new Error('この iOS では登録できません');
+      var cred = { id: c.id, alg: r.getPublicKeyAlgorithm(), publicKey: b64e(r.getPublicKey()),
+        clientDataJSON: b64e(r.clientDataJSON), authenticatorData: b64e(r.getAuthenticatorData()) };
+      return api('/api/lock/passkey', { method: 'POST', body: JSON.stringify({ credential: cred, name: 'iPhone' }) }, 8000);
+    }, function (e) { throw faceErr(e); })
+      .then(function () { closeSheet(); toast('Face ID を登録しました'); tick(true); })
+      .catch(function (e) { toast('登録できません: ' + e.message); });
+  }
+
+  function pinSheet() {
+    var l = lockSt || {};
+    openSheet('合言葉');
+    var box = document.createElement('div');
+    box.className = 'nameedit pinedit';
+    var input = document.createElement('input');
+    // type=password にすると iOS が「強力なパスワード」を差し込むので、文字の形だけ伏せる
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.pattern = '[0-9]*';
+    input.maxLength = 8;
+    input.placeholder = '数字4〜8桁';
+    input.autocomplete = 'off';
+    input.autocapitalize = 'off';
+    input.spellcheck = false;
+    box.appendChild(input);
+    sheetBody.appendChild(box);
+    var save = function () {
+      var v = input.value;
+      if (!/^[0-9]{4,8}$/.test(v)) { toast('数字4〜8桁にしてください'); return; }
+      // 決め直し（Face ID 登録済み）は本人確認を通す。押した流れの中で呼ぶ
+      var first = l.passkeys ? faceId('pin') : Promise.resolve(null);
+      first.then(function (a) {
+        return api('/api/lock/pin', { method: 'POST', body: JSON.stringify({ pin: v, assertion: a }) }, 8000);
+      }).then(function () { input.value = ''; closeSheet(); toast('合言葉を決めました'); tick(true); })
+        .catch(function (e) { toast('決められません: ' + e.message); });
+    };
+    input.onkeydown = function (e) {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); save(); }
+    };
+    sheetItem('これにする', '', save, { on: true, icon: 'check', iconCls: 'ok' });
+    try { input.focus(); } catch (e) {}
+  }
+
   // ---------------------------------------------------------- シート
 
   var sheet = document.getElementById('sheet');
@@ -6381,6 +6570,17 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     shield: '<path d="M12 3.2 19.4 6v6c0 4.2-3 7.4-7.4 8.8C7.6 19.4 4.6 16.2 4.6 12V6z"/>',
     // 月＝画面を消す（眠らせる）
     moon: '<path d="M20.4 14.8A8.5 8.5 0 0 1 9.2 3.6 8.5 8.5 0 1 0 20.4 14.8z"/>',
+    // 開いた鍵＝Mac の幕が外れている
+    unlock: '<rect x="5" y="10.6" width="14" height="9.8" rx="2.2"/>'
+      + '<path d="M8.2 10.6V7.8a3.8 3.8 0 0 1 7.3-1.5"/>',
+    // 顔の枠＝Face ID
+    face: '<path d="M4 8.4V6.2A2.2 2.2 0 0 1 6.2 4h2.2M15.6 4h2.2A2.2 2.2 0 0 1 20 6.2v2.2'
+      + 'M20 15.6v2.2a2.2 2.2 0 0 1-2.2 2.2h-2.2M8.4 20H6.2A2.2 2.2 0 0 1 4 17.8v-2.2"/>'
+      + '<path d="M9 9.6v1.2M15 9.6v1.2M12 9.6v3.6h-.8M9.4 15.6a3.8 3.8 0 0 0 5.2 0"/>',
+    // 数字の枡＝合言葉
+    keypad: '<circle cx="7" cy="6.5" r="1"/><circle cx="12" cy="6.5" r="1"/><circle cx="17" cy="6.5" r="1"/>'
+      + '<circle cx="7" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="17" cy="12" r="1"/>'
+      + '<circle cx="7" cy="17.5" r="1"/><circle cx="12" cy="17.5" r="1"/><circle cx="17" cy="17.5" r="1"/>',
     // 鍵＝保護（まとめて終わらせるで残す）
     lock: '<rect x="5" y="10.6" width="14" height="9.8" rx="2.2"/>'
       + '<path d="M8.2 10.6V7.8a3.8 3.8 0 0 1 7.6 0v2.8"/>',
@@ -6485,6 +6685,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       { icon: 'folder', iconCls: 'edit' });
     sheetItem('Mac の画面を消す', '', function () { closeSheet(); doDark(); },
       { icon: 'moon', iconCls: 'dark' });
+    if (lockSt && lockSt.app) {
+      sheetItem('Mac の幕', '', function () { openLockSheet(); },
+        { icon: lockSt.locked ? 'lock' : 'unlock', iconCls: 'dark', val: lockSt.locked ? '掛けています' : '' });
+    }
     sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
       function () { closeSheet(); killOrConfirm(current); },
       { disabled: !current, icon: 'power', iconCls: 'stop' });

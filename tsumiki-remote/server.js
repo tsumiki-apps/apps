@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { execFile } = require('child_process');
 const AUTH = require('./lib/auth');
+const LOCK = require('./lib/lockgate');
 
 const PORT = Number(process.env.TSUMIKI_REMOTE_PORT || 8787);
 const HOST = process.env.TSUMIKI_REMOTE_HOST || '127.0.0.1';
@@ -2591,7 +2592,7 @@ const server = http.createServer(async (req, res) => {
       }
       return json(res, 200, {
         sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
-        battery: batterySnapshot(), auth: authSnapshot(), memos: memoOut,
+        battery: batterySnapshot(), auth: authSnapshot(), memos: memoOut, lock: LOCK.snapshot(),
         version: currentVersion(), now: Date.now(),
       });
     }
@@ -3072,6 +3073,61 @@ const server = http.createServer(async (req, res) => {
       const file = path.join(UPLOAD_DIR, `${stamp}-${crypto.randomBytes(3).toString('hex')}.${ext}`);
       fs.writeFileSync(file, buf, { mode: 0o600 });
       return json(res, 200, { path: file, bytes: buf.length });
+    }
+
+    // ------------------------------------------------ Mac の幕（つみきロック）
+    //
+    //   GET  /api/lock            … 幕の状態（掛かっているか・合言葉/パスキーの有無）
+    //   GET  /api/lock/challenge  … Face ID の問い（purpose＝register/unlock/pin/add）
+    //   POST /api/lock/on         … 掛ける（本人確認なし＝すぐ閉められることを優先）
+    //   POST /api/lock/off        … 外す（Face ID 必須）
+    //   POST /api/lock/passkey    … この iPhone を登録（2台目からは登録済みの Face ID が要る）
+    //   POST /api/lock/pin        … Mac で打つ合言葉を決める（決め直しは Face ID が要る）
+    // ⚠️ 最初の1回（パスキー0件）だけは Face ID なしで通す。そのときも「幕が外れている」ことを条件にする。
+    if (p === '/api/lock' && req.method === 'GET') {
+      return json(res, 200, Object.assign({ secure: !!LOCK.rpOf(req) }, await LOCK.refresh()));
+    }
+    if (p === '/api/lock/challenge' && req.method === 'GET') {
+      const o = LOCK.options(req, url.searchParams.get('purpose') || '');
+      return json(res, o.error ? 400 : 200, o);
+    }
+    if (p === '/api/lock/on' && req.method === 'POST') {
+      const r = await LOCK.lockCall('POST', '/lock', { by: 'iPhone' });
+      console.log(`lock on ${r.ok ? 'ok' : r.code}`);
+      await LOCK.refresh();
+      return json(res, r.ok ? 200 : (r.code || 503), r.ok ? r.data : { error: r.data.error || '掛けられません' });
+    }
+    if (p === '/api/lock/off' && req.method === 'POST') {
+      const body = await readBody(req);
+      const v = LOCK.verify(req, body.assertion, 'unlock');
+      if (v.error) { console.log(`lock off 断った（${v.error}）`); return json(res, 403, v); }
+      const r = await LOCK.lockCall('POST', '/unlock', { by: 'iPhone の Face ID' });
+      console.log(`lock off ${r.ok ? 'ok' : r.code}`);
+      await LOCK.refresh();
+      return json(res, r.ok ? 200 : (r.code || 503), r.ok ? r.data : { error: r.data.error || '外せません' });
+    }
+    if ((p === '/api/lock/passkey' || p === '/api/lock/pin') && req.method === 'POST') {
+      const body = await readBody(req);
+      const isPin = p === '/api/lock/pin';
+      if (LOCK.keysBroken()) return json(res, 500, { error: 'passkeys.json が読めません（Mac で直してください）' });
+      if (LOCK.loadKeys().length > 0) {
+        const v = LOCK.verify(req, body.assertion, isPin ? 'pin' : 'add');
+        if (v.error) return json(res, 403, v);
+      } else {
+        const st = await LOCK.refresh();
+        // 幕のアプリが返事をしないとき（app:false）も通さない
+        if (!st.app || st.locked) return json(res, 409, { error: '幕が外れているときだけ、最初の登録ができます' });
+      }
+      if (isPin) {
+        const r = await LOCK.lockCall('POST', '/pin', { pin: String(body.pin || '') });
+        console.log(`lock pin ${r.ok ? '決めた' : r.code}`);   // 合言葉そのものはログに残さない
+        await LOCK.refresh();
+        return json(res, r.ok ? 200 : (r.code || 503), r.ok ? r.data : { error: r.data.error || '決められません' });
+      }
+      const g = LOCK.register(req, body.credential || {}, body.name);
+      console.log(`lock passkey ${g.error ? '断った（' + g.error + '）' : '登録 ' + g.count + ' 件'}`);
+      await LOCK.refresh();
+      return json(res, g.error ? 400 : 200, g);
     }
 
     // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用。
