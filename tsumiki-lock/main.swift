@@ -339,14 +339,22 @@ final class App: NSObject, NSApplicationDelegate {
   var touchOK = false
   var checkToken: UUID?
   var lastAuthEnd = Date.distantPast
+  var failStreak = 0
+  var lastErr: LAError.Code?
 
-  // 幕の高さ。ふだんは一番上（どのアプリの全画面の窓より上）。
-  // Touch ID の確認（coreautha・1000）を出すあいだだけ、その下に下げる
+  // 幕の高さ。常に一番上（どのアプリの全画面の窓より上）。Touch ID の確認（coreautha・1000）は
+  // 幕の裏に隠れたまま待ち受ける（touch() の説明）
   let topLevel = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
 
   func checkTouch() {
     var e: NSError?
-    touchOK = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e)
+    let now = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e)
+    if now != touchOK {
+      touchOK = now
+      // 画面は幕を作ったときの値を写して持つ。変わったら作り直す（Touch ID が使えなくなったのに
+      // 待機の画面のまま、見えない板に打つことになるのを防ぐ・反証役）
+      if m.locked && !windows.isEmpty { log("Touch ID が使える／使えないが変わった（\(now)）→ 幕を描き直す"); showCurtain() }
+    }
   }
 
   func applicationDidFinishLaunching(_ n: Notification) {
@@ -422,6 +430,7 @@ final class App: NSObject, NSApplicationDelegate {
     endAuth()
     m.locked = false; m.typed = ""; m.fails = 0; m.waitUntil = .distantPast; m.checking = false
     m.showPin = false
+    failStreak = 0; lastErr = nil
     m.save()
     log("解除（\(who)）")
     hideCurtain()
@@ -448,10 +457,14 @@ final class App: NSObject, NSApplicationDelegate {
     if keyMon == nil {
       keyMon = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
         guard let self = self, self.m.locked else { return e }
-        if !self.m.showPin && self.touchOK { self.touch(); return nil }
+        if !self.m.showPin && self.touchOK {
+          // Esc は確認の窓に届けば userCancel で板になる。幕が前にいて届かないときもここで板にする
+          if e.keyCode == 53 { self.toPin(); return nil }
+          self.touch(); return nil
+        }
         if e.keyCode == 51 { self.press("del") }                         // ⌫
         else if e.keyCode == 36 || e.keyCode == 76 {                      // Enter：打っていれば決定、無ければ Touch ID
-          if self.m.typed.isEmpty { self.touch() } else { self.press("enter") }
+          if !self.m.typed.isEmpty { self.press("enter") }   // 空の Enter では確認を始めない（数字が確認の窓に取られる）
         }
         else if let c = e.charactersIgnoringModifiers, c.count == 1, c.first!.isNumber, c.first!.isASCII { self.press(c) }
         return nil   // 幕の上では、ほかのキーは全部捨てる
@@ -566,11 +579,13 @@ final class App: NSObject, NSApplicationDelegate {
   // 待ち受け中はキーが確認の窓に行く＝Esc で確認をやめると合言葉の板に切り替わる。
   // 終わってから2秒は次を始めない（連打で確認を作り続けさせない）。60秒ごとに張り直す
   func touch() {
-    guard m.locked, !authing, Date().timeIntervalSince(lastAuthEnd) > 2 else { return }
+    let wait = min(60.0, 2 * pow(2, Double(max(0, failStreak - 1))))
+    guard m.locked, !authing, Date().timeIntervalSince(lastAuthEnd) > wait else { return }
     checkTouch()
     guard touchOK else { return }
     authing = true
     m.armed = true
+    if m.showPin { m.note = "指を置いてください（Esc で数字に戻る）" }
     let c = LAContext()
     c.localizedFallbackTitle = ""   // 「パスワードを入力」は出さない（幕の合言葉を使う）
     authCtx = c
@@ -585,10 +600,15 @@ final class App: NSObject, NSApplicationDelegate {
         self.authing = false
         self.m.armed = false
         self.lastAuthEnd = Date()
-        if ok { self.unlock(by: "Touch ID") }
+        if self.m.showPin { self.m.note = "合言葉で外してください" }
+        if ok { self.failStreak = 0; self.lastErr = nil; self.unlock(by: "Touch ID") }
         else {
-          log("Touch ID 通らず: \(err?.localizedDescription ?? "")")
-          self.touchFailed((err as? LAError)?.code)
+          let code = (err as? LAError)?.code
+          if code != self.lastErr { log("Touch ID 通らず: \(err?.localizedDescription ?? "")") }
+          self.lastErr = code
+          // 打ち切り・ほかのアプリ（こちらの都合）以外が続いたら、次を始めるまでの間を広げる（2→4→…→60秒）
+          if code == .appCancel || code == .systemCancel { self.failStreak = 0 } else { self.failStreak += 1 }
+          self.touchFailed(code)
           self.reassert()
         }
       }
@@ -602,14 +622,18 @@ final class App: NSObject, NSApplicationDelegate {
   func touchFailed(_ code: LAError.Code?) {
     switch code {
     case .authenticationFailed?, .biometryLockout?, .biometryNotAvailable?, .biometryNotEnrolled?, .userCancel?:
-      if !m.showPin { log("Touch ID が通らない → 合言葉の板を出す") }
-      endAuth()   // 待ち受けが残っているとキーが確認の窓に取られ、合言葉が打てない
-      m.showPin = true
-      reassert()
-      m.note = "合言葉で外してください"
+      toPin()
     default:
       break
     }
+  }
+
+  func toPin() {
+    if !m.showPin { log("Touch ID から合言葉の板へ") }
+    endAuth()   // 待ち受けが残っているとキーが確認の窓に取られ、合言葉が打てない
+    m.showPin = true
+    m.note = "合言葉で外してください"
+    reassert()
   }
 
   func endAuth() {

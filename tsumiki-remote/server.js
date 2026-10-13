@@ -3085,7 +3085,9 @@ const server = http.createServer(async (req, res) => {
     //                                守りは iPhone のロックとつみきリモートの合言葉）
     //   POST /api/lock/passkey    … この iPhone を登録（2台目からは登録済みの Face ID が要る）
     //   POST /api/lock/pin        … Mac で打つ合言葉を決める（決め直しは Face ID が要る）
-    // ⚠️ 最初の1回（パスキー0件）だけは Face ID なしで通す。そのときも「幕が外れている」ことを条件にする。
+    // ⚠️ 最初の1回（パスキー0件）だけは Face ID なしで通す。条件は「幕が外れている」こと。
+    //    ただし iPhone の解除が一押しになったので、合言葉（?t=）を持つ人なら誰でも満たせる＝飾りに近い。
+    //    守りは合言葉そのもの（README）。
     if (p === '/api/lock' && req.method === 'GET') {
       return json(res, 200, Object.assign({ secure: !!LOCK.rpOf(req) }, await LOCK.refresh()));
     }

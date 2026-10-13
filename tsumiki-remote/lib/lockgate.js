@@ -79,7 +79,8 @@ function saveKeys(a) {
 // 問いは1回きり・60秒。何のための問いか（purpose）も一緒に覚える＝
 // 「登録の問い」で取った署名を「解除」に使い回せない
 const challenges = new Map();
-const PURPOSES = new Set(['register', 'unlock', 'pin', 'add']);
+// 'unlock' は使わない（2026-10-13 から iPhone の解除は一押し）
+const PURPOSES = new Set(['register', 'pin', 'add']);
 function newChallenge(purpose) {
   if (!PURPOSES.has(purpose)) return null;
   const now = Date.now();
