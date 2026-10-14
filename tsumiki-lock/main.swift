@@ -340,6 +340,18 @@ func zen(_ size: CGFloat, _ bold: Bool = false) -> Font {
   .custom(bold ? "ZenMaruGothic-Bold" : "ZenMaruGothic-Medium", size: size)
 }
 
+// 中身の真ん中を y に置く。はみ出すときは枠の中に収まるようずらす（入りきらなければ上をそろえる）
+struct CenterAt: Layout {
+  let y: CGFloat
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize { proposal.replacingUnspecifiedDimensions() }
+  func placeSubviews(in b: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    guard let v = subviews.first else { return }
+    let sz = v.sizeThatFits(ProposedViewSize(width: b.width, height: b.height))
+    let top = max(0, min(y - sz.height / 2, b.height - sz.height))
+    v.place(at: CGPoint(x: b.minX, y: b.minY + top), proposal: ProposedViewSize(width: b.width, height: b.height))
+  }
+}
+
 struct Curtain: View {
   @ObservedObject var m: Model
   let onKey: (String) -> Void
@@ -399,9 +411,13 @@ struct Curtain: View {
     .overlay(alignment: .top) { corners(u) }
     .overlay(alignment: .bottomTrailing) { batteryTag(u) }
     .overlay(alignment: .bottomLeading) { weather(u) }
-    // 左の真ん中：日の出（上）と天気（下）のあいだ。左端は同じ 40
+    // 左：リストの真ん中を画面の真ん中に（本人の選択 2026-10-14：案2）。欄は日の出の下〜天気の上（110〜720）で、
+    // 多くて入らないときだけ欄の中に収まるようずらす。左端は日の出・天気と同じ 40
     .overlay(alignment: .topLeading) {
-      if showTodos { todoBox(u).frame(width: 520 * u, height: 610 * u).padding(.top, 110 * u).padding(.leading, 40 * u) }
+      if showTodos {
+        CenterAt(y: size.height / 2 - 110 * u) { todoBox(u) }
+          .frame(width: 520 * u, height: 610 * u).padding(.top, 110 * u).padding(.leading, 40 * u)
+      }
     }
   }
 
@@ -425,7 +441,6 @@ struct Curtain: View {
           if m.todos.count > 38 { Text("ほか \(m.todos.count - 38)").font(zen(15 * u)).foregroundColor(.mid).padding(.leading, 22 * u) }
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
   }
   func todoList(_ u: CGFloat, _ k: CGFloat, _ shown: [Todo]) -> some View {
