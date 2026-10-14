@@ -265,7 +265,8 @@ func batteryNow() -> (pct: Int, charging: Bool)? {
   for ps in list {
     guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
           let cur = d[kIOPSCurrentCapacityKey] as? Int, let mx = d[kIOPSMaxCapacityKey] as? Int, mx > 0 else { continue }
-    let ac = (d[kIOPSIsChargingKey] as? Bool) ?? false   // 電源につながっていても満充電なら稲妻は出さない
+    // 電源につながっていれば稲妻（満充電でも出す・本人の指定 2026-10-14）
+    let ac = (d[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue
     return (Int((Double(cur) / Double(mx) * 100).rounded()), ac)
   }
   return nil
@@ -465,12 +466,14 @@ struct Curtain: View {
     return skyPath(k).applying(CGAffineTransform(scaleX: side / 24, y: side / 24)).fill(Color.ink).frame(width: side, height: side)
   }
 
-  // 右下にバッテリー。20% 以下は警告の色、充電中は稲妻
+  // 右下にバッテリー。20% 以下は警告の色、電源につないでいる間は稲妻
   @ViewBuilder func batteryTag(_ u: CGFloat) -> some View {
     if let b = m.battery {
-      let sym = m.charging ? "battery.100.bolt" : b > 87 ? "battery.100" : b > 62 ? "battery.75" : b > 37 ? "battery.50" : b > 12 ? "battery.25" : "battery.0"
+      let sym = b > 87 ? "battery.100" : b > 62 ? "battery.75" : b > 37 ? "battery.50" : b > 12 ? "battery.25" : "battery.0"
       HStack(spacing: 10 * u) {
         Text("\(b)%").font(zen(20 * u)).monospacedDigit()
+        // 電源につながっている間は残りの記号の左に稲妻を足す（残りの量はそのまま見える）
+        if m.charging { Image(systemName: "bolt.fill").font(.system(size: 15 * u)) }
         Image(systemName: sym).font(.system(size: 22 * u, weight: .light))
       }
       .foregroundColor(b <= 20 && !m.charging ? .warn : .mid)
