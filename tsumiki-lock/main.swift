@@ -345,6 +345,7 @@ struct Curtain: View {
   let onKey: (String) -> Void
   let onTouch: () -> Void
   let touchOK: Bool
+  var showTodos = true   // リマインダーの題名を出す画面か（Mac 本体の画面だけ）
 
   var clock: String { let f = DateFormatter(); f.dateFormat = "H:mm"; return f.string(from: m.now) }
   var day: String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "M月d日 EEEE"; return f.string(from: m.now) }
@@ -400,7 +401,7 @@ struct Curtain: View {
     .overlay(alignment: .bottomLeading) { weather(u) }
     // 左の真ん中：日の出（上）と天気（下）のあいだ。左端は同じ 40
     .overlay(alignment: .topLeading) {
-      todoBox(u).frame(width: 520 * u, height: 610 * u).padding(.top, 110 * u).padding(.leading, 40 * u)
+      if showTodos { todoBox(u).frame(width: 520 * u, height: 610 * u).padding(.top, 110 * u).padding(.leading, 40 * u) }
     }
   }
 
@@ -933,6 +934,11 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   func showCurtain() {
     checkTouch()
     windows.forEach { $0.orderOut(nil) }
+    // リマインダーの題名は Mac 本体の画面だけ（外部ディスプレイ・プロジェクターには出さない・本人の選択 2026-10-14）。
+    // 本体の画面が無い（ふたを閉じて外部だけ・デスクトップの Mac）ときは、いちばん目の画面に
+    let builtin = NSScreen.screens.first { sc in
+      (sc.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map { CGDisplayIsBuiltin($0.uint32Value) != 0 } ?? false
+    } ?? NSScreen.screens.first
     windows = NSScreen.screens.map { sc in
       let w = CurtainWindow(contentRect: sc.frame, styleMask: [.borderless], backing: .buffered, defer: false)
       w.level = topLevel
@@ -942,7 +948,8 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
       w.hasShadow = false
       w.isReleasedWhenClosed = false
       w.contentView = NSHostingView(rootView: Curtain(m: m, onKey: { [weak self] k in self?.press(k) },
-                                                     onTouch: { [weak self] in self?.touch() }, touchOK: touchOK))
+                                                     onTouch: { [weak self] in self?.touch() }, touchOK: touchOK,
+                                                     showTodos: sc == builtin))
       w.setFrame(sc.frame, display: true)
       w.makeKeyAndOrderFront(nil)
       return w
