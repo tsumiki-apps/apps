@@ -769,8 +769,12 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     locMan.delegate = self
     locMan.desiredAccuracy = kCLLocationAccuracyKilometer
     if !m.locked { askPlace(); askTodos() } else { loadTodos() }
-    // リマインダーが変わったら（iPhone で足した・済ませた）macOS が知らせる。そのときだけ読み直す
+    // リマインダーが変わったら（iPhone で足した・済ませた）macOS が知らせる。ほかに毎分の見回り（newDayTodos）・ロック時・起きたときにも読み直す
     NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: todoStore, queue: .main) { [weak self] _ in self?.loadTodos() }
+    // スリープから起きたら、幕を掛けたままでもすぐ読み直す（5分の見回りを待たない・反証役）
+    NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+      self?.todoStore.refreshSourcesIfNecessary(); self?.loadTodos()
+    }
     readBattery()
     checkTouch()
     Pin.refresh()
@@ -867,7 +871,10 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     }
   }
   func loadTodos() {
-    todoAccess = EKEventStore.authorizationStatus(for: .reminder)
+    // 許可が変わっていたら、どの入口から呼ばれても入れ物を空にしてから読む（許可の前に作った入れ物は空のまま返すことがある・反証役）
+    let access = EKEventStore.authorizationStatus(for: .reminder)
+    if access != todoAccess { todoStore.reset() }
+    todoAccess = access
     // 許可が外されたら、最後に読んだ題名も幕から消す。番号も進めて、読みかけの古い結果を書き戻させない（反証役）
     todoSeq += 1; let seq = todoSeq
     let cal = Calendar.current, today = cal.startOfDay(for: Date())
@@ -890,19 +897,26 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
         return a.1 < b.1
       }.map { $0.0 }
       // 読み込みが重なったら（同期中は知らせが続けて来る）最後に始めた分だけを使う
-      DispatchQueue.main.async { if self?.todoSeq == seq { self?.m.todos = sorted } }
+      DispatchQueue.main.async {
+        guard let self = self, self.todoSeq == seq else { return }
+        // 何分で幕に届いたかを後から突き合わせるため、件数が変わったときだけ1行残す（題名は残さない）
+        if sorted.count != self.m.todos.count { log("リマインダー \(self.m.todos.count)→\(sorted.count)件") }
+        self.m.todos = sorted
+      }
     }
   }
   // 日付が変わったら読み直す（昨日の「今日」を残さない）
   // システム設定で許可を足した・外したときも、次の1分で拾う
   // 変わった知らせ（EKEventStoreChanged）は iPhone での変更だと遅れたり来なかったりする。
-  // 毎分 iCloud に取りに行かせ、5分ごとに入れ物を空にして読み直す（知らせが来なくても5分で追いつく）
+  // 幕が出ている間だけ、毎分 取りに行くよう頼み、5分ごとに入れ物を空にして読み直す（知らせが来なくても5分で追いつく）
+  // 幕が外れている間は回さない（ロックした瞬間に読み直すので失うものはない）
   func newDayTodos() {
     let access = EKEventStore.authorizationStatus(for: .reminder)
-    if access != todoAccess { todoStore.reset() }   // 許可の前に作った入れ物は空のまま返すことがある
-    todoTick += 1
-    if access == .fullAccess { todoStore.refreshSourcesIfNecessary() }
-    if access == .fullAccess && todoTick % 5 == 0 { todoStore.reset(); loadTodos(); return }
+    if m.locked && access == .fullAccess {
+      todoTick += 1
+      todoStore.refreshSourcesIfNecessary()
+      if todoTick % 5 == 0 { todoStore.reset(); loadTodos(); return }
+    }
     if Calendar.current.startOfDay(for: Date()) != todoDay || access != todoAccess { loadTodos() }
   }
   func locationManagerDidChangeAuthorization(_ mgr: CLLocationManager) {
