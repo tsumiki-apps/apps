@@ -1070,3 +1070,48 @@ def make_white(src, dst, dur, progress=None):
     mask.unlink(missing_ok=True)
     if rc != 0:
         raise RuntimeError("".join(errbuf)[-1500:].strip() or f"ffmpeg が止まりました（{rc}）")
+
+
+INTRO_HOLD, INTRO_FADE = 3.5, 0.6     # 冒頭のサムネイルを出す秒数・本編へ重ねて切り替える秒数
+
+
+def probe_duration(path):
+    r = subprocess.run([FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                       capture_output=True, text=True, check=True)
+    return float(r.stdout.strip())
+
+
+def add_intro(body, image, dst, body_dur=None, progress=None):
+    """冒頭に縦長のサムネイル（W×H）を INTRO_HOLD 秒出し、INTRO_FADE 秒かけて本編へ重ねて切り替える。
+    本編は頭から全部使う（切り替えの間に本編の頭が透けて始まる）。音はサムネイルの間は無音、本編の頭で短く立ち上げる。
+    返り値＝できた動画の長さ（秒）＝INTRO_HOLD＋本編の長さ。"""
+    body_dur = body_dur or probe_duration(body)
+    total = INTRO_HOLD + body_dur
+    fc = (f"[0:v]scale={W}:{H}:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1,fps=30,"
+          f"trim=duration={INTRO_HOLD + INTRO_FADE:.3f},settb=AVTB[i];"
+          f"[1:v]fps=30,scale={W}:{H},format=yuv420p,setsar=1,settb=AVTB[b];"
+          f"[i][b]xfade=transition=fade:duration={INTRO_FADE}:offset={INTRO_HOLD}[out];"
+          f"[1:a]aresample=48000,adelay={round(INTRO_HOLD * 1000)}:all=1,"
+          f"afade=t=in:st={INTRO_HOLD}:d={INTRO_FADE}[aout]")
+    cmd = [FFMPEG, "-y", "-v", "error", "-progress", "pipe:1", "-nostats",
+           "-loop", "1", "-framerate", "30", "-i", str(image), "-i", str(body),
+           "-filter_complex", fc, "-map", "[out]", "-map", "[aout]", "-t", f"{total:.3f}",
+           "-c:v", "h264_videotoolbox", "-b:v", "6M", "-profile:v", "high",
+           "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+           "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    errbuf = []
+    import threading
+    th = threading.Thread(target=lambda: errbuf.append(p.stderr.read()), daemon=True)
+    th.start()
+    for line in p.stdout:
+        if line.startswith("out_time_us=") and progress:
+            try:
+                progress(min(int(line.split("=")[1]) / 1e6 / total, 1.0))
+            except ValueError:
+                pass
+    rc = p.wait()
+    th.join(5)
+    if rc != 0:
+        raise RuntimeError("".join(errbuf)[-1500:].strip() or f"ffmpeg が止まりました（{rc}）")
+    return total

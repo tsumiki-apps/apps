@@ -1,4 +1,5 @@
 """サムネイル（1280×720）を作る：パステルの地・左上に Apple マーク・左に太字の題名・右に端末の枠に入れた画面録画。
+--vertical で縦長（1080×1920＝書き出しの動画と同じ大きさ）：マークの下に題名、その下に端末。
 
     .venv/bin/python thumbnail.py <作業のフォルダ> [出力.png] [--color 0-13] [--at 秒] [--seed 何でも] [--image 画像 --focus 0〜1]
         [--box 左,上,右,下] [--no-island] [--card]
@@ -20,6 +21,7 @@ from PIL import Image, ImageDraw, ImageFont
 import engine
 
 TW, TH = 1280, 720
+VW, VH = 1080, 1920      # 縦長（9:16）版＝書き出しの動画と同じ大きさ。冒頭に入れる
 # 地の色：見本と同じ、白に近いくすんだパステル（明るさ・鮮やかさをそろえる）。
 # 見分けにくい色（ピーチ・アプリコット≒ベージュ、バター≒クリーム）は入れない
 COLORS = [
@@ -67,14 +69,35 @@ def pick_frame(src, dur, n=14, info=None):
     return best[1]
 
 
-def wrap_title(text, font, maxw, maxlines=4):
-    """題名を言葉の切れ目で折る（日本語は engine.breaks、英語は空白）。行の長さはなるべくそろえる。"""
+def kata_cuts(text, least=3):
+    """長いカタカナ語の中の、形態素の切れ目（ペアレンタル｜コントロール）。前後とも least 字以上の所だけ。
+    縦長版の題名で、言葉の切れ目では大きい字のまま入らないときだけ使う。"""
+    kata = lambda ch: 0x30A1 <= ord(ch) <= 0x30FA or ch == "ー"
+    out = {}
+    for s, e, *_ in engine._morphs(text):
+        if 0 < s < len(text) and kata(text[s - 1]) and kata(text[s]):
+            a = s
+            while a > 0 and kata(text[a - 1]):
+                a -= 1
+            b = s
+            while b < len(text) and kata(text[b]):
+                b += 1
+            if s - a >= least and b - s >= least:
+                out[s] = 4                      # 複合語の中と同じ重さ（形態素の誤り＝ショート｜カット もあるので最後の手段）
+    return out
+
+
+def wrap_title(text, font, maxw, maxlines=4, extra=None, maxpen=None):
+    """題名を言葉の切れ目で折る（日本語は engine.breaks、英語は空白）。行の長さはなるべくそろえる。
+    extra＝足してよい切れ目 {位置: 罰点}。maxpen＝この罰点以上の切れ目（複合語の中）は使わない（空白は使う）。"""
     d = ImageDraw.Draw(Image.new("L", (1, 1)))
     tw = lambda s: d.textlength(s, font=font)
     if tw(text) <= maxw:
         return [text]
-    bk = engine.breaks(text)
+    bk = {**engine.breaks(text), **(extra or {})}
     qs = sorted(set(bk) | {i + 1 for i, ch in enumerate(text) if ch == " "})
+    if maxpen is not None:
+        qs = [c for c in qs if text[c - 1] == " " or bk.get(c, 2) < maxpen]
     for k in range(2, maxlines + 1):
         best = None
         from itertools import combinations
@@ -137,16 +160,16 @@ def rounded(im, r):
     return m
 
 
-def device(shot, portrait, island=True):
-    """端末の枠に画面を入れた画像（透明の地）。"""
+def device(shot, portrait, island=True, k=1.0):
+    """端末の枠に画面を入れた画像（透明の地）。k＝大きさの倍率（縦長版は大きく描く。形の比率は同じ）。"""
     if portrait:
-        sw = 318
+        sw = round(318 * k)
         sh = round(sw * shot.height / shot.width)
-        b, r_out, r_in = 12, 58, 47
+        b, r_out, r_in = round(12 * k), round(58 * k), round(47 * k)
     else:
-        sw = 540
+        sw = round(540 * k)
         sh = round(sw * shot.height / shot.width)
-        b, r_out, r_in = 18, 34, 18
+        b, r_out, r_in = round(18 * k), round(34 * k), round(18 * k)
     W, H = sw + 2 * b, sh + 2 * b
     im = Image.new("RGBA", (W + 6, H + 6), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
@@ -155,17 +178,18 @@ def device(shot, portrait, island=True):
     scr = shot.resize((sw, sh), Image.LANCZOS)
     im.paste(scr, (3 + b, 3 + b), rounded(scr, r_in))
     if portrait and island:   # ダイナミックアイランド（画面の画像に元から写っているときは描かない）
-        iw, ih = 96, 28
-        cx, top = (W + 6) // 2, 3 + b + 12
+        iw, ih = round(96 * k), round(28 * k)
+        cx, top = (W + 6) // 2, 3 + b + round(12 * k)
         d.rounded_rectangle([cx - iw // 2, top, cx + iw // 2, top + ih], radius=ih // 2, fill=(0, 0, 0))
     return im
 
 
-def shadow(im, blur=18, alpha=70, off=(0, 10)):
+def shadow(im, blur=18, alpha=70, off=(0, 10), pad=40):
+    """影。pad＝影の画像の余白（ぼかしが縁で切れないよう、ぼかしの3倍ほど要る）。置くときは (x - pad, y - pad)。"""
     from PIL import ImageFilter
     a = im.split()[-1].point(lambda v: alpha if v else 0)
-    sh = Image.new("RGBA", (im.width + 80, im.height + 80), (0, 0, 0, 0))
-    sh.paste(Image.new("RGBA", im.size, (0, 0, 0, 255)), (40 + off[0], 40 + off[1]), a)
+    sh = Image.new("RGBA", (im.width + 2 * pad, im.height + 2 * pad), (0, 0, 0, 0))
+    sh.paste(Image.new("RGBA", im.size, (0, 0, 0, 255)), (pad + off[0], pad + off[1]), a)
     return sh.filter(ImageFilter.GaussianBlur(blur))
 
 
@@ -189,7 +213,9 @@ def card(im, maxw=560, maxh=600, r=28):
     return out
 
 
-def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5, box=None, island=True, as_card=False):
+def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5, box=None, island=True, as_card=False,
+         vertical=False):
+    """vertical=True で縦長（1080×1920）版。色・画面・題名は横長版と同じものを使い、並べ方だけ縦にする。"""
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text())
     src = next(job_dir.glob("src_b.*"))
@@ -203,6 +229,9 @@ def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5, box=N
     if color is None:   # ランダム（作業ごとに色の順番を混ぜ、seed で次の色へ。前と見分けにくい色は飛ばす）
         color = pick_color(job["id"], seed)
     bg = COLORS[color % len(COLORS)]
+    if vertical:
+        _vertical(job, shot, portrait, island, as_card, bg, out)
+        return t
     im = Image.new("RGBA", (TW, TH), bg + (255,))
     d = ImageDraw.Draw(im)
 
@@ -246,6 +275,74 @@ def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5, box=N
     return t
 
 
+def fit_title(d, title, maxw, start, stop, step):
+    """題名の字の大きさと行。字を小さくするほうを、無理な切れ目より先に使う：
+    ① 複合語の中では折らずに、大きい字から縮めて入る大きさ → ② 複合語の中も使う → ③ 長いカタカナ語の中（ペアレンタル｜コントロール）。
+    ただし小さくしすぎない（まず96pxまでで①〜③）。どれでも入らなければ一番小さい字で字の境目で折る。"""
+    sizes = list(range(start, stop - 1, -step))
+    kc = kata_cuts(title)
+    passes = [{"maxpen": 4}, {}] + ([{"extra": kc}] if kc else [])
+    def fits(size, kw):
+        f = ImageFont.truetype(JP_BOLD, size)
+        lines = wrap_title(title, f, maxw, **kw)
+        return (f, size, lines) if all(d.textlength(l, font=f) <= maxw for l in lines) else None
+
+    for floor in (96, stop):   # まず 96px 以上で①〜③、だめなら小さい字まで①〜③（ペアレンタルコントロール を72pxの1行にしない）
+        for kw in passes:
+            got = next((r for z in sizes if z >= floor for r in [fits(z, kw)] if r), None)
+            if not got:
+                continue
+            if len(got[2]) >= 3:   # 3行以上になったら、3段まで小さくして2行に収まるほうを（キーボード／ショート／カット にしない）
+                fewer = [r for z in sizes if max(floor, got[1] - 3 * step) <= z < got[1]
+                         for r in [fits(z, kw)] if r and len(r[2]) < len(got[2])]
+                if fewer:
+                    got = min(fewer, key=lambda r: (len(r[2]), -r[1]))
+            return got
+    f = ImageFont.truetype(JP_BOLD, sizes[-1])
+    lines = wrap_hard(title, f, maxw)
+    if len(lines) > 5:
+        raise ValueError("題名が長すぎてサムネイルに入りません")
+    return f, sizes[-1], lines
+
+
+def _vertical(job, shot, portrait, island, as_card, bg, out):
+    """縦長版：左上に Apple マーク、その下に題名（左寄せ）、下の残りに端末（真ん中・iPhone は下が画面の外へ切れる）。"""
+    im = Image.new("RGBA", (VW, VH), bg + (255,))
+    d = ImageDraw.Draw(im)
+    mx = 96
+    try:
+        d.text((mx, 150), "\uf8ff", font=ImageFont.truetype(LOGO_FONT, 84), fill=INK, anchor="lt")
+    except OSError:
+        pass
+    title = clean_title(job["title"]) or "　"
+    f, size, lines = fit_title(d, title, VW - 2 * mx, 128, 72, 8)
+    lh = int(size * 1.32)
+    top = 330
+    for k, l in enumerate(lines):
+        hang = d.textlength(l[0], font=f) / 2 if l[:1] in "「『（【" else 0   # 行頭のかぎ括弧はぶら下げてマークと頭をそろえる
+        d.text((mx - hang, top + k * lh), l, font=f, fill=INK)
+    area = top + lh * len(lines) + 90            # 端末を置ける上の端
+    if as_card:
+        dev = card(shot, maxw=VW - 2 * mx, maxh=VH - area - 160, r=44)
+        y = area + (VH - area - dev.height) // 2
+    elif portrait:
+        dev = device(shot, True, island, k=1.85)
+        free = VH - area
+        # 長い画面は下をはっきり画面の外へ切る（縁ぎりぎりで止めない）。短い画面は残りの真ん中に
+        if dev.height <= free - 120:              # 上下に60px以上の余白を取って収まる画面は真ん中に
+            y = area + (free - dev.height) // 2
+        else:                                     # 収まらない画面は下を140pxはっきり切る（縁ぎりぎりで止めない）
+            y = max(area, VH - dev.height + 140)
+    else:
+        dev = device(shot, False, island, k=1.62)
+        y = area + (VH - area - dev.height) // 2
+    x = (VW - dev.width) // 2
+    sh = shadow(dev, blur=26, alpha=70, off=(0, 16), pad=96)
+    im.alpha_composite(sh, (x - 96, y - 96))
+    im.alpha_composite(dev, (x, y))
+    im.convert("RGB").save(out)
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     color = int(args[args.index("--color") + 1]) if "--color" in args else None
@@ -257,4 +354,5 @@ if __name__ == "__main__":
     valued = ("--color", "--at", "--seed", "--image", "--focus", "--box")
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in valued)]
     out = pos[1] if len(pos) > 1 else str(Path(pos[0]) / "サムネイル.png")
-    print(make(pos[0], out, color, at, seed, image, focus, box, "--no-island" not in args, "--card" in args))
+    print(make(pos[0], out, color, at, seed, image, focus, box, "--no-island" not in args, "--card" in args,
+               "--vertical" in args))

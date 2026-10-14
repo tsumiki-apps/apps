@@ -119,6 +119,7 @@ details summary::-webkit-details-marker{display:none}
 /* サムネイル */
 .thumb{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
 .thumb img{width:100%;display:block;border-radius:12px;aspect-ratio:16/9;object-fit:cover;background:var(--surface-2)}
+.thumb img.tall{aspect-ratio:9/16;width:min(100%,280px);margin:0 auto}
 .two{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
 .two .primary{margin:0}
 @media (min-width:900px){main{max-width:760px}.final{max-width:360px}}
@@ -150,6 +151,8 @@ details summary::-webkit-details-marker{display:none}
   <symbol id="i-in" viewBox="0 0 24 24"><path d="M10 5H6v14h4M13 12h6M16 9l3 3-3 3"/></symbol>
   <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 5h4v14h-4M5 12h6M8 9l3 3-3 3"/></symbol>
   <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4zM16 9.5l5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-land" viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="19" height="11" rx="2"/></symbol>
+  <symbol id="i-port" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 15.5l4.5-4 4 3.5 3-2.5 6.5 5"/><circle cx="16" cy="9.5" r="1.5"/></symbol>
   <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 7h3.5c4 0 6 10 10 10H21M3 17h3.5c1.6 0 2.8-1.6 3.8-3.6M13.7 9.6c1-2 2.2-2.6 3.8-2.6H21M18 4l3 3-3 3M18 14l3 3-3 3"/></symbol>
   <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5L12 3l4.5 4.5M5 13v6h14v-6"/></symbol>
@@ -226,6 +229,7 @@ details summary::-webkit-details-marker{display:none}
   <section class="card" id="s6" hidden>
     <h2><span class="num">6</span><svg class="i"><use href="#i-export"/></svg>完成</h2>
     <div class="busy" id="b6" hidden><div class="spin"></div><span id="b6t">書き出し中</span><div class="bar"><i id="bar6"></i></div></div>
+    <div class="banner warn" id="introErr" hidden><svg class="i"><use href="#i-warn"/></svg><span>冒頭のサムネイルを入れられませんでした。サムネイルの色を変えると入れ直します</span></div>
     <div class="banner warn" id="enErr" hidden><svg class="i"><use href="#i-warn"/></svg><span>英語の字幕を作れませんでした。もう一度書き出してください</span></div>
     <div class="banner good" id="learned" hidden><svg class="i"><use href="#i-book"/></svg><span id="learnedT"></span></div>
     <div id="v6" hidden>
@@ -243,6 +247,10 @@ details summary::-webkit-details-marker{display:none}
         <div class="banner warn" id="thErr" hidden><svg class="i"><use href="#i-warn"/></svg><span id="thErrT"></span></div>
         <button class="primary" id="thMake" hidden><svg class="i"><use href="#i-image"/></svg>サムネイルを作る</button>
         <div id="thBox" hidden>
+          <div class="ver" role="tablist">
+            <button id="thH" class="on" role="tab"><svg class="i"><use href="#i-land"/></svg>16:9</button>
+            <button id="thV" role="tab"><svg class="i"><use href="#i-port"/></svg>9:16</button>
+          </div>
           <img id="thImg" alt="サムネイル">
           <div class="two"><a class="btn primary" id="thDl"><svg class="i"><use href="#i-down"/></svg>ダウンロード</a>
             <button id="thRe" aria-label="色を変える"><svg class="i"><use href="#i-shuffle"/></svg></button></div>
@@ -265,6 +273,7 @@ const $=id=>document.getElementById(id);
 // iPhone のマナーモードでも動画の音を出す（Safari 16.4〜。無い端末では何もしない）
 try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
 let job=null, pollT=null, offset=0, capsDirty=false, ver='n';  // ver＝完成の見せ方（n＝そのまま／w＝白背景）
+let thV=false;  // サムネイルを 9:16 で見ているか
 const loaded={prox:'',caps:'',pc:''};  // 何を読み込み済みか（裏で作業が終わったら読み込み直す）
 // 押した瞬間に押せなくする（応答が返るまでの二度押しを防ぐ）
 // サーバーの状態で job を入れ替える。まだ保存していない字幕の直し（と英語・見直し案）は持ち越す
@@ -289,7 +298,7 @@ async function loadJobs(){
 }
 function resetTiles(){['subA','subB'].forEach(i=>$(i).textContent='選ぶ');['barA','barB'].forEach(i=>$(i).style.width=0)}
 async function open(id){
-  loaded.prox=loaded.caps=loaded.pc='';resetTiles();
+  loaded.prox=loaded.caps=loaded.pc='';resetTiles();thV=false;
   try{job=await api('/api/job/'+id);try{localStorage.setItem('dsync.job',id)}catch(e){}
     capsDirty=false;render(true);loadJobs()}catch(e){job=null;render(true)}
 }
@@ -332,8 +341,8 @@ function render(first){
   $('ffA').disabled=!!busy;$('ffB').disabled=!!busy||ffStart===null;
   document.querySelectorAll('.ffr .sp,.ffr .del').forEach(b=>b.disabled=!!busy);
   if(hasCaps&&loaded.pc!==pk){loaded.pc=pk;$('pc').src='/files/'+job.id+'/proxy_a.mp4?v='+Date.now()}
-  const rend=busy==='書き出し'||busy==='英訳', fin=job&&job.rendered;
-  if(rend)$('b6t').textContent=busy==='英訳'?'英語の字幕を作成中':'書き出し中';
+  const rend=busy==='書き出し'||busy==='英訳'||busy==='冒頭', fin=job&&job.rendered;
+  if(rend)$('b6t').textContent=busy==='英訳'?'英語の字幕を作成中':busy==='冒頭'?'冒頭のサムネイルを入れています':'書き出し中';
   $('s6').hidden=!(rend||fin);
   $('b6').hidden=!rend; $('v6').hidden=!fin||rend;
   if(rend)$('bar6').style.width=((job.progress||0)*100)+'%';
@@ -356,13 +365,17 @@ function render(first){
     $('thMake').hidden=!!th||tb;$('thMake').disabled=!!busy;
     $('thErr').hidden=!job.thumb_error||!!th||tb;$('thErrT').textContent=job.thumb_error||'';
     $('thBox').hidden=!th;$('thRe').disabled=!!busy;$('thRe').classList.toggle('on',tb);
-    if(th&&$('thImg').dataset.v!==String(th)){
-      const u='/files/'+job.id+'/'+encodeURIComponent('サムネイル.png')+'?v='+th;
-      $('thImg').src=u;$('thImg').dataset.v=String(th);$('thDl').href=u+'&dl=1';
+    const tv=thV&&job.thumb_v;  // 縦長版は前のサムネイルには無い（9:16 を押すと同じ色で作る）
+    $('thH').classList.toggle('on',!tv);$('thV').classList.toggle('on',tv);
+    if(th&&$('thImg').dataset.v!==th+(tv?'v':'h')){
+      const u='/files/'+job.id+'/'+encodeURIComponent(tv?'サムネイル_縦.png':'サムネイル.png')+'?v='+th;
+      $('thImg').src=u;$('thImg').dataset.v=th+(tv?'v':'h');$('thDl').href=u+'&dl=1';
+      $('thImg').classList.toggle('tall',tv);
     }
   }
   $('learned').hidden=!(job&&job.learned);
   $('enErr').hidden=!(job&&job.en_error&&!busy);
+  $('introErr').hidden=!(job&&job.rendered&&job.intro_error&&!busy);
   if(job&&job.learned)$('learnedT').textContent='+'+job.learned+' 件 覚えました';
   $('okSync').disabled=$('renderBtn').disabled=!!busy;
   clearTimeout(pollT);
@@ -542,6 +555,10 @@ $('revAll').onclick=()=>{liveReview().forEach(sg=>{const c=capAt(sg.start);if(c)
 // サムネイル（書き出しのとき一緒に作る。前に書き出した作業はボタンで作る。色だけ引き直せる）
 $('thMake').onclick=guard(async()=>{try{showErr('');setJob(await post('/api/job/'+job.id+'/thumb'))}catch(e){showErr(e.message)}});
 $('thRe').onclick=guard(async()=>{try{showErr('');setJob(await post('/api/job/'+job.id+'/thumb',{reroll:true}))}catch(e){showErr(e.message)}});
+$('thH').onclick=()=>{thV=false;render(false)};
+$('thV').onclick=guard(async()=>{thV=true;
+  if(!job.thumb_v){try{showErr('');setJob(await post('/api/job/'+job.id+'/thumb'))}catch(e){showErr(e.message)}}
+  render(false)});
 $('verN').onclick=()=>{ver='n';render(false)};
 $('verW').onclick=guard(async()=>{ver='w';
   if(!job.white){try{showErr('');setJob(await post('/api/job/'+job.id+'/white'))}catch(e){showErr(e.message);ver='n'}}});

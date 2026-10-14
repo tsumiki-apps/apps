@@ -144,7 +144,7 @@ def do_render(jid):
     en = do_translate(jid, caps, job["title"])
     update(jid, busy="書き出し")
     job["captions"] = [{**c, "en": en.get(c["text"]) or None} for c in caps]
-    tmp = d / "完成.tmp.mp4"   # 書き終わってから入れ替える（途中で止まっても壊れた完成版を出さない）
+    tmp = d / "本編.tmp.mp4"   # 書き終わってから入れ替える（途中で止まっても壊れた完成版を出さない）
     try:
         out_dur = engine.render(d, src(jid, "a"), src(jid, "b"), job["a_info"], job["b_info"],
                       job["offset"], job["title"], job["captions"], tmp,
@@ -152,19 +152,60 @@ def do_render(jid):
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
-    tmp.replace(d / "完成.mp4")
+    tmp.replace(d / "本編.mp4")
+    link_body(d)                                  # 冒頭ができるまでは本編をそのまま完成として見せる
     (d / "完成_白.mp4").unlink(missing_ok=True)   # 前の白背景版は古いので消す
-    update(jid, rendered=time.time(), step=6, white=None, out_dur=round(out_dur, 3))
-    try:   # サムネイルも一緒に（失敗しても書き出しは成功のまま。完成動画はもう見られるよう表示はサムネイルの作業に）
+    update(jid, rendered=time.time(), step=6, white=None, out_dur=round(out_dur, 3), body_dur=round(out_dur, 3),
+           intro=False, intro_error=None)
+    try:   # サムネイルと冒頭も一緒に（失敗しても書き出しは成功のまま＝冒頭の無い本編が完成になる）
         update(jid, busy="サムネイル")
         do_thumb(jid)
     except Exception as e:
         traceback.print_exc()
         update(jid, thumb_error=str(e)[:200])
+        return
+    do_intro(jid)
+
+
+def link_body(d):
+    """完成.mp4 を本編.mp4 と同じ中身に（ハードリンク。冒頭つきの完成は後で別のファイルに書いて入れ替える）。"""
+    tmp = d / "完成.link.mp4"
+    tmp.unlink(missing_ok=True)
+    os.link(d / "本編.mp4", tmp)
+    tmp.replace(d / "完成.mp4")
+
+
+def do_intro(jid):
+    """完成＝冒頭に縦長のサムネイルを3.5秒出してから本編へ。失敗したら本編のまま（理由は intro_error に）。
+    本編.mp4 が無い前の作業は、冒頭の無い完成.mp4 を本編として使う。"""
+    d = jpath(jid)
+    job = load(jid)
+    body, img = d / "本編.mp4", d / "サムネイル_縦.png"
+    if not body.exists():
+        if job.get("intro") or not (d / "完成.mp4").exists():
+            raise RuntimeError("本編がありません。もう一度書き出してください")
+        os.replace(d / "完成.mp4", body)
+        link_body(d)
+    if not img.exists():
+        raise RuntimeError("縦長のサムネイルがありません")
+    update(jid, busy="冒頭", progress=0)
+    tmp = d / "完成.tmp.mp4"
+    try:
+        total = engine.add_intro(body, img, tmp, job.get("body_dur") or (None if job.get("intro") else job.get("out_dur")),
+                                 progress=lambda f: update(jid, progress=round(f, 3)))
+    except Exception as e:
+        traceback.print_exc()
+        tmp.unlink(missing_ok=True)
+        update(jid, intro_error=str(e)[:200])
+        return
+    tmp.replace(d / "完成.mp4")
+    (d / "完成_白.mp4").unlink(missing_ok=True)
+    update(jid, rendered=time.time(), white=None, intro=True, intro_error=None, out_dur=round(total, 3),
+           body_dur=round(total - engine.INTRO_HOLD, 3))
 
 
 def do_thumb(jid, reroll=False):
-    """サムネイル（1280×720）。使うコマは1回目に選んで覚え、色を変えるときは色だけ引き直す。
+    """サムネイル（1280×720 と縦長の 1080×1920）。使うコマは1回目に選んで覚え、色を変えるときは色だけ引き直す。
     job.json の thumb_image（作業フォルダの画像と切り出し方）があれば、画面録画の代わりにそれを使う。"""
     d = jpath(jid)
     job = load(jid)
@@ -175,13 +216,17 @@ def do_thumb(jid, reroll=False):
     if ti.get("file") and (d / ti["file"]).exists():
         kw = dict(image=d / ti["file"], focus=ti.get("focus", 0.5), box=tuple(ti["box"]) if ti.get("box") else None,
                   island=ti.get("island", True), as_card=ti.get("card", False))
-    try:
+    tmpv = d / "サムネイル_縦.tmp.png"
+    try:   # 横長（16:9）と縦長（9:16・動画の冒頭に入れる）。色・画面は同じ
         at = thumbnail.make(d, tmp, seed=seed, at=job.get("thumb_at"), **kw)
+        thumbnail.make(d, tmpv, seed=seed, at=at if at is not None else job.get("thumb_at"), vertical=True, **kw)
     except Exception:
         tmp.unlink(missing_ok=True)
+        tmpv.unlink(missing_ok=True)
         raise
     tmp.replace(d / "サムネイル.png")
-    update(jid, thumb=time.time(), thumb_seed=seed, thumb_error=None,
+    tmpv.replace(d / "サムネイル_縦.png")
+    update(jid, thumb=time.time(), thumb_v=True, thumb_seed=seed, thumb_error=None,
            **({"thumb_at": round(at, 2)} if at is not None else {}))
 
 
@@ -314,7 +359,7 @@ class H(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/job/([\d-]+)", p)
             if m:
                 return self.send_json(load(m.group(1)))
-            m = re.fullmatch(r"/files/([\d-]+)/(proxy_a\.mp4|proxy_b\.mp4|完成\.mp4|完成_白\.mp4|サムネイル\.png)", unquote(p))
+            m = re.fullmatch(r"/files/([\d-]+)/(proxy_a\.mp4|proxy_b\.mp4|完成\.mp4|完成_白\.mp4|サムネイル\.png|サムネイル_縦\.png)", unquote(p))
             if m:
                 name = None
                 if "dl=1" in (self.path.split("?", 1) + [""])[1]:
@@ -322,7 +367,10 @@ class H(BaseHTTPRequestHandler):
                     name = re.sub(r'[\\/:*?"<>|]', "_", load(m.group(1))["title"]).strip() or "動画"
                     if "白" in m.group(2):
                         name += "_白背景"
-                    name += "_サムネイル.png" if m.group(2).endswith(".png") else ".mp4"
+                    if m.group(2).endswith(".png"):
+                        name += "_サムネイル" + ("_縦" if "縦" in m.group(2) else "") + ".png"
+                    else:
+                        name += ".mp4"
                 png = m.group(2).endswith(".png")
                 return self.send_file(jpath(m.group(1)) / m.group(2), "image/png" if png else "video/mp4", download=name)
             self.send_json({"error": "not found"}, 404)
@@ -392,7 +440,7 @@ class H(BaseHTTPRequestHandler):
                 for old in d.glob(f"src_{k}.*"):
                     old.unlink()
                 part.rename(d / f"src_{k}.{ext}")
-                drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error", "thumb", "thumb_at"]
+                drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error", "thumb", "thumb_v", "thumb_at", "intro", "intro_error", "body_dur"]
                 if k == "a":   # 字幕は A の音から作るので、B の差し替えでは残す
                     drop += ["captions", "captions_shown", "ff"]
                 for key in drop:
@@ -481,7 +529,7 @@ class H(BaseHTTPRequestHandler):
                 if not job.get("rendered"):
                     return self.send_json({"error": "先に書き出してください"}, 400)
                 reroll = bool(body.get("reroll"))
-                background(jid, "サムネイル", lambda: do_thumb(jid, reroll))
+                background(jid, "サムネイル", lambda: (do_thumb(jid, reroll), do_intro(jid)))
             elif act == "white":
                 if not job.get("rendered"):
                     return self.send_json({"error": "先に書き出してください"}, 400)
