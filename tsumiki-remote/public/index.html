@@ -5570,16 +5570,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       return askMove(p, go);
     }
     if (b === el.kasked) return askedMenu();
-    // 定型文の札。よく打つ許可の一言を**入力欄に入れるだけ**で、送らない
-    // （書き足してから送れるように）。書きかけがあれば改行してその下に足す
-    // 反証役・作業報告・コミットの札（data-snip）も同じ動き（2026-09-28）
-    // 許可の札だけは**カーソルの位置にそのまま**入れる（前に改行を足さない・2026-10-14 本人の依頼）。
-    // 入れた字の後ろにカーソルを置く。空の入力欄で押すと先頭に入る＝最初の一言が題名になる点は承知のうえ
+    // 定型文の札はどれも**入力欄に入れるだけ**で、送らない（書き足してから送れるように）。
+    // 許可の札は**カーソルの位置にそのまま**入れる（前に改行を足さない・2026-10-14 本人の依頼）。
+    // 入れた字の後ろにカーソルを置く。空の入力欄で押すと先頭に入る＝最初の一言が題名になりうる（本人に伝え済み）。
+    // 変換中に押したら、変換中の字を選んだ範囲として消さないよう、その後ろに入れる
     if (b === el.kperm) {
       imeNote('札で字を入れた');
       var v = el.cmd.value;
       var s0 = el.cmd.selectionStart, s1 = el.cmd.selectionEnd;
-      if (typeof s0 !== 'number') s0 = s1 = v.length;
+      if (imeComposing) s0 = s1;
       el.cmd.value = v.slice(0, s0) + PERM_TEXT + v.slice(s1);
       var at = s0 + PERM_TEXT.length;
       el.cmd.focus();
@@ -5589,6 +5588,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       renderSug();
       return;
     }
+    // ほかの札（反証役・作業報告・コミットなど data-snip・2026-09-28）は、書きかけがあれば改行してその下に足す
     if (b.dataset.snip) {
       imeNote('札で字を入れた');
       var draft = el.cmd.value;
