@@ -265,6 +265,7 @@ func batteryNow() -> (pct: Int, charging: Bool)? {
         let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
   for ps in list {
     guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
+          (d[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType,   // UPS を電池と取り違えない（反証役）
           let cur = d[kIOPSCurrentCapacityKey] as? Int, let mx = d[kIOPSMaxCapacityKey] as? Int, mx > 0 else { continue }
     // 電源につながっていれば稲妻（満充電でも出す・本人の指定 2026-10-14）
     let ac = (d[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue
@@ -403,7 +404,7 @@ struct Curtain: View {
     }
   }
 
-  // 全部を出す。入らなければ字を小さく → 2列に。それでも入らなければ（36件ほどから）入るだけ出して「ほか N」
+  // 全部を出す。入らなければ字を小さく → 2列に。それでも入らなければ（41件から）2列に入るだけ出して「ほか N」
   @ViewBuilder func todoBox(_ u: CGFloat) -> some View {
     if !m.todos.isEmpty {
       ViewThatFits(in: .vertical) {
@@ -414,7 +415,14 @@ struct Curtain: View {
           todoList(u, 0.72, nil, Array(m.todos.prefix(half))).frame(width: 246 * u, alignment: .leading)
           todoList(u, 0.72, nil, Array(m.todos.dropFirst(half))).frame(width: 246 * u, alignment: .leading)
         }
-        todoList(u, 0.72, 17, m.todos)
+        // 2列×19件（下の「ほか N」の1行ぶんを空ける）
+        VStack(alignment: .leading, spacing: 8 * u) {
+          HStack(alignment: .top, spacing: 28 * u) {
+            todoList(u, 0.72, nil, Array(m.todos.prefix(19))).frame(width: 246 * u, alignment: .leading)
+            todoList(u, 0.72, nil, Array(m.todos.dropFirst(19).prefix(19))).frame(width: 246 * u, alignment: .leading)
+          }
+          Text("ほか \(max(0, m.todos.count - 38))").font(zen(15 * u)).foregroundColor(.mid).padding(.leading, 22 * u)
+        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
@@ -694,6 +702,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   let locMan = CLLocationManager()
   let todoStore = EKEventStore()
   var todoDay = Date.distantPast
+  var todoAccess = EKAuthorizationStatus.notDetermined, todoSeq = 0
   var authStart = Date.distantPast
   var lastFrontName = "", lastFrontLog = Date.distantPast
   // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
@@ -844,7 +853,10 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     }
   }
   func loadTodos() {
-    guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { return }
+    todoAccess = EKEventStore.authorizationStatus(for: .reminder)
+    // 許可が外されたら、最後に読んだ題名も幕から消す（反証役）
+    guard todoAccess == .fullAccess else { m.todos = []; return }
+    todoSeq += 1; let seq = todoSeq
     let cal = Calendar.current, today = cal.startOfDay(for: Date())
     guard let tomorrow = cal.date(byAdding: .day, value: 1, to: today) else { return }
     todoDay = today
@@ -857,17 +869,21 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
         let timed = c.hour != nil
         return (Todo(title: title, at: timed ? d : nil, overdue: d < today), d)
       }
-      // 期限切れ（古い順）→ 今日の時刻つき（早い順）→ 今日の時刻なし
+      // 期限切れ（古い順・時刻の有無は問わない）→ 今日の時刻つき（早い順）→ 今日の時刻なし
       let sorted = list.sorted { a, b in
         if a.0.overdue != b.0.overdue { return a.0.overdue }
-        if (a.0.at == nil) != (b.0.at == nil) { return a.0.at != nil }
+        if !a.0.overdue && (a.0.at == nil) != (b.0.at == nil) { return a.0.at != nil }
         return a.1 < b.1
       }.map { $0.0 }
-      DispatchQueue.main.async { self?.m.todos = sorted }
+      // 読み込みが重なったら（同期中は知らせが続けて来る）最後に始めた分だけを使う
+      DispatchQueue.main.async { if self?.todoSeq == seq { self?.m.todos = sorted } }
     }
   }
   // 日付が変わったら読み直す（昨日の「今日」を残さない）
-  func newDayTodos() { if Calendar.current.startOfDay(for: Date()) != todoDay { loadTodos() } }
+  // システム設定で許可を足した・外したときも、次の1分で拾う
+  func newDayTodos() {
+    if Calendar.current.startOfDay(for: Date()) != todoDay || EKEventStore.authorizationStatus(for: .reminder) != todoAccess { loadTodos() }
+  }
   func locationManagerDidChangeAuthorization(_ mgr: CLLocationManager) {
     if mgr.authorizationStatus == .authorized || mgr.authorizationStatus == .authorizedAlways { mgr.requestLocation() }
   }
