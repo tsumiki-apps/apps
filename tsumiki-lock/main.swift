@@ -213,7 +213,7 @@ func skyPath(_ k: Sky) -> Path {
   func line(_ pts: [CGPoint], _ w: CGFloat) -> Path {
     var p = Path(); p.addLines(pts); return p.strokedPath(StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
   }
-  let moon = circ(12, 12, 6.5).subtracting(circ(16, 8.5, 5.5))
+  let moon = circ(12, 12, 6.5).subtracting(circ(8, 8.5, 5.5))   // 右下が光る（雲の後ろの月と同じ向き）
   let low = cloud(-2)   // 下に雨・雪・稲妻を置く雲
   switch k {
   case .sun: return circ(12, 12, 6.5)
@@ -440,7 +440,12 @@ struct Curtain: View {
               .frame(height: 20 * u)
             symbol(weatherSky(h.code, night: night), u)
               .frame(width: 54 * u, height: 50 * u)
-            Text("\(Int(h.temp.rounded()))°").font(zen(20 * u, true)).foregroundColor(.ink).monospacedDigit()
+            // 数字だけで中央をそろえ、° は数字の右肩に外付け（本人「° のせいで数字が左に寄って見える」）
+            Text("\(Int(h.temp.rounded()))").font(zen(20 * u, true)).foregroundColor(.ink).monospacedDigit()
+              .overlay(alignment: .trailing) {
+                Text("°").font(zen(20 * u, true)).foregroundColor(.ink).fixedSize()
+                  .alignmentGuide(.trailing) { $0[.leading] }
+              }
               .frame(height: 26 * u)
             Text(h.rain >= 20 ? "\(h.rain)%" : "").font(zen(13 * u)).foregroundColor(Color(hex: 0x8fb4d6)).monospacedDigit()
               .frame(height: 18 * u)
@@ -450,11 +455,11 @@ struct Curtain: View {
           .opacity(i < cur ? 0.4 : 1)   // 過ぎた時間は薄く
         }
       }
-      // 列は中央そろえなので、最初の絵の左端が日の出の記号の左端（40）に来るよう 8 だけ左へ
+      // 列は中央そろえ。列の左端を 32 に置く（絵の左端は種類で変わり、晴れの丸で 46 前後・雲で 44 前後）
       .padding(.leading, 32 * u).padding(.bottom, 34 * u)
     }
   }
-  // 天気の絵は一色（生成り）。24 の座標を 46 に伸ばす（もとの記号 38pt と同じくらいの見た目の大きさ）
+  // 天気の絵は一色（生成り）。24 の座標を 46 に伸ばす（太陽の丸は直径約25・雲は幅約31＝もとの記号よりひと回り小さい）
   func symbol(_ k: Sky, _ u: CGFloat) -> some View {
     let side = 46 * u
     return skyPath(k).applying(CGAffineTransform(scaleX: side / 24, y: side / 24)).fill(Color.ink).frame(width: side, height: side)
