@@ -189,19 +189,49 @@ func sunTimes(_ p: Place, on day: Date) -> (rise: Date, set: Date)? {
 // 取れないときは最後の予報。日付が変わった古い予報は出さない
 struct Hour: Codable { let at: Date; let temp: Double; let code: Int; let rain: Int }
 
-func weatherSymbol(_ code: Int, night: Bool) -> String {
+// 天気の絵（本人の選択 2026-10-14：案3「塗りの図形」）＝丸と雲だけ・光線なし・一色。24×24 の座標で描き、表示の大きさに伸ばす
+enum Sky { case sun, moon, sunCloud, moonCloud, cloud, fog, rain, bolt, snow }
+
+func weatherSky(_ code: Int, night: Bool) -> Sky {
   switch code {
-  case 0, 1: return night ? "moon.stars.fill" : "sun.max.fill"
-  case 2: return night ? "cloud.moon.fill" : "cloud.sun.fill"
-  case 3: return "cloud.fill"
-  case 45, 48: return "cloud.fog.fill"
-  case 51...57: return "cloud.drizzle.fill"
-  case 61, 63, 66: return "cloud.rain.fill"
-  case 65, 67: return "cloud.heavyrain.fill"
-  case 71...77, 85, 86: return "cloud.snow.fill"
-  case 80...82: return night ? "cloud.moon.rain.fill" : "cloud.sun.rain.fill"
-  case 95...99: return "cloud.bolt.rain.fill"
-  default: return "cloud.fill"
+  case 0, 1: return night ? .moon : .sun
+  case 2: return night ? .moonCloud : .sunCloud
+  case 3: return .cloud
+  case 45, 48: return .fog
+  case 51...57, 61...67, 80...82: return .rain
+  case 71...77, 85, 86: return .snow
+  case 95...99: return .bolt
+  default: return .cloud
+  }
+}
+
+func skyPath(_ k: Sky) -> Path {
+  func circ(_ x: CGFloat, _ y: CGFloat, _ r: CGFloat) -> Path { Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)) }
+  func cloud(_ dy: CGFloat) -> Path {
+    circ(7, 14 + dy, 3).union(circ(12, 10.5 + dy, 4.5)).union(circ(17, 14 + dy, 3)).union(Path(CGRect(x: 7, y: 12 + dy, width: 10, height: 5)))
+  }
+  func line(_ pts: [CGPoint], _ w: CGFloat) -> Path {
+    var p = Path(); p.addLines(pts); return p.strokedPath(StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
+  }
+  let moon = circ(12, 12, 6.5).subtracting(circ(16, 8.5, 5.5))
+  let low = cloud(-2)   // 下に雨・雪・稲妻を置く雲
+  switch k {
+  case .sun: return circ(12, 12, 6.5)
+  case .moon: return moon
+  case .sunCloud, .moonCloud:
+    // 雲の後ろから太陽（夜は月）がのぞく。雲のまわりに 1.6 の隙間をあけて重なりを見せる
+    let c = cloud(2)
+    let back = k == .sunCloud ? circ(15.5, 8.5, 4.2) : circ(16, 8.5, 4.8).subtracting(circ(13, 6.5, 4.4))
+    return c.union(back.subtracting(c.strokedPath(StrokeStyle(lineWidth: 3.2)).union(c)))
+  case .cloud: return cloud(0)
+  case .fog:
+    return line([CGPoint(x: 4, y: 9), CGPoint(x: 20, y: 9)], 2.6).union(line([CGPoint(x: 6, y: 13), CGPoint(x: 18, y: 13)], 2.6))
+      .union(line([CGPoint(x: 4, y: 17), CGPoint(x: 20, y: 17)], 2.6))
+  case .rain:
+    return [9, 13, 17].reduce(low) { $0.union(line([CGPoint(x: $1, y: 18.5), CGPoint(x: $1 - 0.8, y: 21)], 2.2)) }
+  case .bolt:
+    return low.union(line([CGPoint(x: 13, y: 18), CGPoint(x: 10.5, y: 20.5), CGPoint(x: 13.5, y: 20.5), CGPoint(x: 11, y: 23)], 2))
+  case .snow: return low.union(circ(8.5, 20, 1.4)).union(circ(12.5, 21.5, 1.4)).union(circ(16.5, 20, 1.4))
   }
 }
 
@@ -408,7 +438,7 @@ struct Curtain: View {
           VStack(spacing: 0) {
             Text("\(hr)時").font(zen(15 * u, isNow)).foregroundColor(isNow ? .accent : .mid)
               .frame(height: 20 * u)
-            symbol(weatherSymbol(h.code, night: night), u)
+            symbol(weatherSky(h.code, night: night), u)
               .frame(width: 54 * u, height: 50 * u)
             Text("\(Int(h.temp.rounded()))°").font(zen(20 * u, true)).foregroundColor(.ink).monospacedDigit()
               .frame(height: 26 * u)
@@ -424,13 +454,10 @@ struct Curtain: View {
       .padding(.leading, 32 * u).padding(.bottom, 34 * u)
     }
   }
-  // 天気の絵（本人の選択：案2）：太陽と月は幕と同じ橙、雲は生成り、雨・雪は淡い青
-  func symbol(_ name: String, _ u: CGFloat) -> some View {
-    let wet = name.contains("rain") || name.contains("drizzle") || name.contains("snow") || name.contains("bolt")
-    let lit = name.hasPrefix("sun") || name.hasPrefix("moon")
-    return Image(systemName: name).font(.system(size: 38 * u))
-      .symbolRenderingMode(.palette)
-      .foregroundStyle(lit ? Color.accent : Color.ink, wet ? Color(hex: 0x8fb4d6) : Color.accent, Color.accent)
+  // 天気の絵は一色（生成り）。24 の座標を 46 に伸ばす（もとの記号 38pt と同じくらいの見た目の大きさ）
+  func symbol(_ k: Sky, _ u: CGFloat) -> some View {
+    let side = 46 * u
+    return skyPath(k).applying(CGAffineTransform(scaleX: side / 24, y: side / 24)).fill(Color.ink).frame(width: side, height: side)
   }
 
   // 右下にバッテリー。20% 以下は警告の色、充電中は稲妻
