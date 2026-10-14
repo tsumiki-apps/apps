@@ -5573,15 +5573,26 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 定型文の札。よく打つ許可の一言を**入力欄に入れるだけ**で、送らない
     // （書き足してから送れるように）。書きかけがあれば改行してその下に足す
     // 反証役・作業報告・コミットの札（data-snip）も同じ動き（2026-09-28）
-    // 許可の札だけは**依頼の下に**置き、カーソルをその上に残す。空の入力欄で先頭に入れると
-    // 最初の一言が「画面操作許可」になり、Claude Code の題名がそれになっていた（2026-09-29）
-    if (b === el.kperm || b.dataset.snip) {
+    // 許可の札だけは**カーソルの位置にそのまま**入れる（前に改行を足さない・2026-10-14 本人の依頼）。
+    // 入れた字の後ろにカーソルを置く。空の入力欄で押すと先頭に入る＝最初の一言が題名になる点は承知のうえ
+    if (b === el.kperm) {
+      imeNote('札で字を入れた');
+      var v = el.cmd.value;
+      var s0 = el.cmd.selectionStart, s1 = el.cmd.selectionEnd;
+      if (typeof s0 !== 'number') s0 = s1 = v.length;
+      el.cmd.value = v.slice(0, s0) + PERM_TEXT + v.slice(s1);
+      var at = s0 + PERM_TEXT.length;
+      el.cmd.focus();
+      el.cmd.setSelectionRange(at, at);
+      autoGrow();
+      saveDraft();
+      renderSug();
+      return;
+    }
+    if (b.dataset.snip) {
       imeNote('札で字を入れた');
       var draft = el.cmd.value;
-      var isPerm = !b.dataset.snip;
-      if (isPerm && !draft.trim()) draft = '';
       var head = draft + (draft && !/\n$/.test(draft) ? '\n' : '');
-      if (isPerm && !draft) head = '\n\n';
       // / で始まる札（/compact）は先頭でないと効かない。書きかけがあれば後ろに続けて
       // 引数にする（/compact の引数＝要約で残してほしいこと）
       // 先頭に別の / コマンドが入っていたら差し替える（/apple-memo /compact … と二重にならないように）
@@ -5589,12 +5600,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         var rest = draft.trim().replace(/^\/\S+\s*/, '');
         el.cmd.value = b.dataset.snip + (rest ? ' ' + rest : '');
       }
-      else el.cmd.value = head + (b.dataset.snip || PERM_TEXT);
-      if (isPerm) {
-        var caret = draft ? draft.replace(/\n+$/, '').length : 0;
-        el.cmd.focus();
-        el.cmd.setSelectionRange(caret, caret);
-      }
+      else el.cmd.value = head + b.dataset.snip;
       autoGrow();
       saveDraft();
       renderSug();
