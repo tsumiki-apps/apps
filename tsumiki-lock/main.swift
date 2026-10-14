@@ -715,7 +715,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   let locMan = CLLocationManager()
   let todoStore = EKEventStore()
   var todoDay = Date.distantPast
-  var todoAccess = EKAuthorizationStatus.notDetermined, todoSeq = 0
+  var todoAccess = EKAuthorizationStatus.notDetermined, todoSeq = 0, todoTick = 0
   var authStart = Date.distantPast
   var lastFrontName = "", lastFrontLog = Date.distantPast
   // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
@@ -843,6 +843,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     lastAlert = .distantPast; quietAlerts = 0
     m.save()
     log("ロック（\(who)）")
+    loadTodos()   // 幕を下ろすときは最新を読んでから
     showCurtain()
   }
 
@@ -894,9 +895,14 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   }
   // 日付が変わったら読み直す（昨日の「今日」を残さない）
   // システム設定で許可を足した・外したときも、次の1分で拾う
+  // 変わった知らせ（EKEventStoreChanged）は iPhone での変更だと遅れたり来なかったりする。
+  // 毎分 iCloud に取りに行かせ、5分ごとに入れ物を空にして読み直す（知らせが来なくても5分で追いつく）
   func newDayTodos() {
     let access = EKEventStore.authorizationStatus(for: .reminder)
     if access != todoAccess { todoStore.reset() }   // 許可の前に作った入れ物は空のまま返すことがある
+    todoTick += 1
+    if access == .fullAccess { todoStore.refreshSourcesIfNecessary() }
+    if access == .fullAccess && todoTick % 5 == 0 { todoStore.reset(); loadTodos(); return }
     if Calendar.current.startOfDay(for: Date()) != todoDay || access != todoAccess { loadTodos() }
   }
   func locationManagerDidChangeAuthorization(_ mgr: CLLocationManager) {
