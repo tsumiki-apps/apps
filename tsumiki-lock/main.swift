@@ -13,6 +13,7 @@ import Security
 import CommonCrypto
 import CoreLocation
 import IOKit.ps
+import EventKit
 
 // MARK: - 置き場
 
@@ -276,6 +277,9 @@ func batteryNow() -> (pct: Int, charging: Bool)? {
 
 struct Persist: Codable { var locked: Bool; var since: Double; var fails: Int; var waitUntil: Double }
 
+// リマインダー（本人の指定 2026-10-14：その日の分を全部・見出しなし）。期限が今日まで＝今日の分と期限切れ。済んだもの・期限なしは出さない
+struct Todo { let title: String; let at: Date?; let overdue: Bool }
+
 struct Seat: Identifiable { let id: String; let title: String; let status: String }
 
 final class Model: ObservableObject {
@@ -301,6 +305,7 @@ final class Model: ObservableObject {
   @Published var battery: Int? = nil
   @Published var hours: [Hour] = []
   @Published var charging = false
+  @Published var todos: [Todo] = []
   var fails = 0
 
   func load() {
@@ -392,6 +397,44 @@ struct Curtain: View {
     .overlay(alignment: .top) { corners(u) }
     .overlay(alignment: .bottomTrailing) { batteryTag(u) }
     .overlay(alignment: .bottomLeading) { weather(u) }
+    // 左の真ん中：日の出（上）と天気（下）のあいだ。左端は同じ 40
+    .overlay(alignment: .topLeading) {
+      todoBox(u).frame(width: 520 * u, height: 610 * u).padding(.top, 110 * u).padding(.leading, 40 * u)
+    }
+  }
+
+  // 全部を出す。入らなければ字を小さく → 2列に。それでも入らなければ（36件ほどから）入るだけ出して「ほか N」
+  @ViewBuilder func todoBox(_ u: CGFloat) -> some View {
+    if !m.todos.isEmpty {
+      ViewThatFits(in: .vertical) {
+        todoList(u, 1, nil, m.todos); todoList(u, 0.85, nil, m.todos); todoList(u, 0.72, nil, m.todos)
+        // 1列に入らなければ2列（前半・後半）。それでも入らなければ入るだけ出して「ほか N」
+        HStack(alignment: .top, spacing: 28 * u) {
+          let half = (m.todos.count + 1) / 2
+          todoList(u, 0.72, nil, Array(m.todos.prefix(half))).frame(width: 246 * u, alignment: .leading)
+          todoList(u, 0.72, nil, Array(m.todos.dropFirst(half))).frame(width: 246 * u, alignment: .leading)
+        }
+        todoList(u, 0.72, 17, m.todos)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+  }
+  func todoList(_ u: CGFloat, _ k: CGFloat, _ limit: Int?, _ all: [Todo]) -> some View {
+    let shown = limit.map { Array(all.prefix($0)) } ?? all
+    return VStack(alignment: .leading, spacing: 14 * u * k) {
+      ForEach(shown.indices, id: \.self) { i in
+        let t = shown[i]
+        HStack(spacing: 12 * u * k) {
+          Circle().stroke(t.overdue ? Color.accent : Color.mid, lineWidth: 1.6 * u).frame(width: 18 * u * k, height: 18 * u * k)
+          Text(t.title).font(zen(19 * u * k)).foregroundColor(.ink).lineLimit(1).truncationMode(.tail)
+          if let at = t.at, !t.overdue { Text(hm(at)).font(zen(15 * u * k)).foregroundColor(.mid).monospacedDigit().fixedSize() }
+          if t.overdue { Text("期限切れ").font(zen(13 * u * k)).foregroundColor(.accent).fixedSize() }
+        }
+      }
+      if shown.count < all.count {
+        Text("ほか \(all.count - shown.count)").font(zen(14 * u * k)).foregroundColor(.mid).padding(.leading, 30 * u * k)
+      }
+    }
   }
 
   var sun: (rise: Date, set: Date)? { sunTimes(m.place, on: m.now) }
@@ -649,6 +692,8 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   var lastFingerFail = Date.distantPast
   var lastErr: LAError.Code?
   let locMan = CLLocationManager()
+  let todoStore = EKEventStore()
+  var todoDay = Date.distantPast
   var authStart = Date.distantPast
   var lastFrontName = "", lastFrontLog = Date.distantPast
   // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
@@ -701,7 +746,9 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     if let d = try? Data(contentsOf: PLACE_FILE), let p = try? JSONDecoder().decode(Place.self, from: d) { m.place = p }
     locMan.delegate = self
     locMan.desiredAccuracy = kCLLocationAccuracyKilometer
-    if !m.locked { askPlace() }
+    if !m.locked { askPlace(); askTodos() } else { loadTodos() }
+    // リマインダーが変わったら（iPhone で足した・済ませた）macOS が知らせる。そのときだけ読み直す
+    NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: todoStore, queue: .main) { [weak self] _ in self?.loadTodos() }
     readBattery()
     checkTouch()
     Pin.refresh()
@@ -731,7 +778,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     }
     if m.locked { log("起動時に幕が掛かっていた → 掛け直す"); showCurtain() }
     // 朝のまとめは幕が外れていても送る（幕の tick は掛けているあいだしか回らないので別に回す）
-    morningTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.morningReport(); self?.refreshWeather() }
+    morningTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.morningReport(); self?.refreshWeather(); self?.newDayTodos() }
     refreshWeather()
   }
 
@@ -785,6 +832,42 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     default: break   // 断られた＝最後の場所（無ければ東京）のまま
     }
   }
+  // リマインダーも、許可を聞くのは幕が外れているときだけ（窓が幕の裏に隠れないように）
+  func askTodos() {
+    switch EKEventStore.authorizationStatus(for: .reminder) {
+    case .notDetermined:
+      todoStore.requestFullAccessToReminders { [weak self] ok, _ in
+        DispatchQueue.main.async { if ok { self?.loadTodos() } }
+      }
+    case .fullAccess: loadTodos()
+    default: break   // 断られた＝出さない
+    }
+  }
+  func loadTodos() {
+    guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { return }
+    let cal = Calendar.current, today = cal.startOfDay(for: Date())
+    guard let tomorrow = cal.date(byAdding: .day, value: 1, to: today) else { return }
+    todoDay = today
+    let pred = todoStore.predicateForIncompleteReminders(withDueDateStarting: nil, ending: tomorrow, calendars: nil)
+    todoStore.fetchReminders(matching: pred) { [weak self] rs in
+      let list: [(Todo, Date)] = (rs ?? []).compactMap { r in
+        guard let c = r.dueDateComponents, let d = c.date ?? cal.date(from: c) else { return nil }
+        let title = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        let timed = c.hour != nil
+        return (Todo(title: title, at: timed ? d : nil, overdue: d < today), d)
+      }
+      // 期限切れ（古い順）→ 今日の時刻つき（早い順）→ 今日の時刻なし
+      let sorted = list.sorted { a, b in
+        if a.0.overdue != b.0.overdue { return a.0.overdue }
+        if (a.0.at == nil) != (b.0.at == nil) { return a.0.at != nil }
+        return a.1 < b.1
+      }.map { $0.0 }
+      DispatchQueue.main.async { self?.m.todos = sorted }
+    }
+  }
+  // 日付が変わったら読み直す（昨日の「今日」を残さない）
+  func newDayTodos() { if Calendar.current.startOfDay(for: Date()) != todoDay { loadTodos() } }
   func locationManagerDidChangeAuthorization(_ mgr: CLLocationManager) {
     if mgr.authorizationStatus == .authorized || mgr.authorizationStatus == .authorizedAlways { mgr.requestLocation() }
   }
@@ -828,7 +911,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     m.save()
     log("解除（\(who)）")
     hideCurtain()
-    askPlace()
+    askPlace(); askTodos()
   }
 
   func showCurtain() {
@@ -1246,7 +1329,8 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
      "armed": authing, "authFront": NSWorkspace.shared.frontmostApplication.map { isAuthAgent($0) } ?? false,
      "armedFor": authing ? Date().timeIntervalSince(authStart) : -1,
      "sinceEnd": Date().timeIntervalSince(lastAuthEnd), "failStreak": failStreak, "showPin": m.showPin,
-     "weatherHours": m.hours.count, "battery": m.battery ?? -1]
+     "weatherHours": m.hours.count, "battery": m.battery ?? -1, "todos": m.todos.count,
+     "todoAccess": EKEventStore.authorizationStatus(for: .reminder).rawValue]
   }
 }
 
@@ -1268,6 +1352,13 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render" {
   m.battery = 82
   // 天気の見本（10/14 東京の Open-Meteo の予報から）
   let day0 = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1791936000))
+  // リマインダーの見本（架空）。TSUMIKI_RENDER_TODOS=件数 で多いときの見た目も
+  let todoN = Int(ProcessInfo.processInfo.environment["TSUMIKI_RENDER_TODOS"] ?? "") ?? 5
+  let samples = ["請求書の支払い", "牛乳を買う", "クリーニング受け取り", "歯医者の予約", "植木に水", "本を返す", "電球を買う", "荷物を出す"]
+  let t0 = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1791936000))
+  m.todos = (0..<todoN).map { i in
+    Todo(title: samples[i % samples.count], at: i == 1 ? t0.addingTimeInterval(18 * 3600) : i == 2 ? t0.addingTimeInterval(19.5 * 3600) : nil, overdue: i == 0)
+  }
   m.hours = [(6, 19.4, 1, 0), (9, 23.1, 2, 6), (12, 25.3, 1, 49), (15, 20.7, 3, 55), (18, 20.0, 61, 45), (21, 19.4, 2, 53)]
     .map { Hour(at: day0.addingTimeInterval(Double($0.0) * 3600), temp: $0.1, code: $0.2, rain: $0.3) }
   // 7つ目に "15:20" のように時刻を渡すと、10/14 のその時刻の空で描く（東京）
