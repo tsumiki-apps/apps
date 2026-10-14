@@ -411,12 +411,13 @@ struct Curtain: View {
     .overlay(alignment: .top) { corners(u) }
     .overlay(alignment: .bottomTrailing) { batteryTag(u) }
     .overlay(alignment: .bottomLeading) { weather(u) }
-    // 左：リストの真ん中を画面の真ん中に（本人の選択 2026-10-14：案2）。欄は日の出の下〜天気の上（110〜720）で、
-    // 多くて入らないときだけ欄の中に収まるようずらす。左端は日の出・天気と同じ 40
+    // 左：リストの真ん中を画面の真ん中に（本人の選択 2026-10-14：案2）。欄は日の出の下〜天気の上で、
+    // 多くて入らないときだけ欄（日の出の下 110u〜天気の上・画面の下から 180u）の中に収まるようずらす。左端は日の出・天気と同じ 40
     .overlay(alignment: .topLeading) {
       if showTodos {
         CenterAt(y: size.height / 2 - 110 * u) { todoBox(u) }
-          .frame(width: 520 * u, height: 610 * u).padding(.top, 110 * u).padding(.leading, 40 * u)
+          // 下端は天気の上（画面の下から 180u）。縦に長い画面でも天気まで使う（反証役）
+          .frame(width: 520 * u, height: max(0, size.height - 290 * u)).padding(.top, 110 * u).padding(.leading, 40 * u)
       }
     }
   }
