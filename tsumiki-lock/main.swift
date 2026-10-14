@@ -409,27 +409,26 @@ struct Curtain: View {
   @ViewBuilder func todoBox(_ u: CGFloat) -> some View {
     if !m.todos.isEmpty {
       ViewThatFits(in: .vertical) {
-        todoList(u, 1, nil, m.todos); todoList(u, 0.85, nil, m.todos); todoList(u, 0.72, nil, m.todos)
+        todoList(u, 1, m.todos); todoList(u, 0.85, m.todos); todoList(u, 0.72, m.todos)
         // 1列に入らなければ2列（前半・後半）。それでも入らなければ入るだけ出して「ほか N」
         HStack(alignment: .top, spacing: 28 * u) {
           let half = (m.todos.count + 1) / 2
-          todoList(u, 0.72, nil, Array(m.todos.prefix(half))).frame(width: 246 * u, alignment: .leading)
-          todoList(u, 0.72, nil, Array(m.todos.dropFirst(half))).frame(width: 246 * u, alignment: .leading)
+          todoList(u, 0.72, Array(m.todos.prefix(half))).frame(width: 246 * u, alignment: .leading)
+          todoList(u, 0.72, Array(m.todos.dropFirst(half))).frame(width: 246 * u, alignment: .leading)
         }
         // 2列×19件（下の「ほか N」の1行ぶんを空ける）
         VStack(alignment: .leading, spacing: 8 * u) {
           HStack(alignment: .top, spacing: 28 * u) {
-            todoList(u, 0.72, nil, Array(m.todos.prefix(19))).frame(width: 246 * u, alignment: .leading)
-            todoList(u, 0.72, nil, Array(m.todos.dropFirst(19).prefix(19))).frame(width: 246 * u, alignment: .leading)
+            todoList(u, 0.72, Array(m.todos.prefix(19))).frame(width: 246 * u, alignment: .leading)
+            todoList(u, 0.72, Array(m.todos.dropFirst(19).prefix(19))).frame(width: 246 * u, alignment: .leading)
           }
-          Text("ほか \(max(0, m.todos.count - 38))").font(zen(15 * u)).foregroundColor(.mid).padding(.leading, 22 * u)
+          if m.todos.count > 38 { Text("ほか \(m.todos.count - 38)").font(zen(15 * u)).foregroundColor(.mid).padding(.leading, 22 * u) }
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
   }
-  func todoList(_ u: CGFloat, _ k: CGFloat, _ limit: Int?, _ all: [Todo]) -> some View {
-    let shown = limit.map { Array(all.prefix($0)) } ?? all
+  func todoList(_ u: CGFloat, _ k: CGFloat, _ shown: [Todo]) -> some View {
     return VStack(alignment: .leading, spacing: 14 * u * k) {
       ForEach(shown.indices, id: \.self) { i in
         let t = shown[i]
@@ -439,9 +438,6 @@ struct Curtain: View {
           if let at = t.at, !t.overdue { Text(hm(at)).font(zen(15 * u * k)).foregroundColor(.mid).monospacedDigit().fixedSize() }
           if t.overdue { Text("期限切れ").font(zen(13 * u * k)).foregroundColor(.accent).fixedSize() }
         }
-      }
-      if shown.count < all.count {
-        Text("ほか \(all.count - shown.count)").font(zen(14 * u * k)).foregroundColor(.mid).padding(.leading, 30 * u * k)
       }
     }
   }
@@ -847,7 +843,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     switch EKEventStore.authorizationStatus(for: .reminder) {
     case .notDetermined:
       todoStore.requestFullAccessToReminders { [weak self] ok, _ in
-        DispatchQueue.main.async { if ok { self?.loadTodos() } }
+        DispatchQueue.main.async { if ok { self?.todoStore.reset(); self?.loadTodos() } }
       }
     case .fullAccess: loadTodos()
     default: break   // 断られた＝出さない
@@ -855,12 +851,12 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   }
   func loadTodos() {
     todoAccess = EKEventStore.authorizationStatus(for: .reminder)
-    // 許可が外されたら、最後に読んだ題名も幕から消す（反証役）
-    guard todoAccess == .fullAccess else { m.todos = []; return }
+    // 許可が外されたら、最後に読んだ題名も幕から消す。番号も進めて、読みかけの古い結果を書き戻させない（反証役）
     todoSeq += 1; let seq = todoSeq
     let cal = Calendar.current, today = cal.startOfDay(for: Date())
+    todoDay = today   // 断られている間も毎分読み直さない（許可の変化は todoAccess で拾う）
+    guard todoAccess == .fullAccess else { m.todos = []; return }
     guard let tomorrow = cal.date(byAdding: .day, value: 1, to: today) else { return }
-    todoDay = today
     let pred = todoStore.predicateForIncompleteReminders(withDueDateStarting: nil, ending: tomorrow, calendars: nil)
     todoStore.fetchReminders(matching: pred) { [weak self] rs in
       let list: [(Todo, Date)] = (rs ?? []).compactMap { r in
@@ -883,7 +879,9 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   // 日付が変わったら読み直す（昨日の「今日」を残さない）
   // システム設定で許可を足した・外したときも、次の1分で拾う
   func newDayTodos() {
-    if Calendar.current.startOfDay(for: Date()) != todoDay || EKEventStore.authorizationStatus(for: .reminder) != todoAccess { loadTodos() }
+    let access = EKEventStore.authorizationStatus(for: .reminder)
+    if access != todoAccess { todoStore.reset() }   // 許可の前に作った入れ物は空のまま返すことがある
+    if Calendar.current.startOfDay(for: Date()) != todoDay || access != todoAccess { loadTodos() }
   }
   func locationManagerDidChangeAuthorization(_ mgr: CLLocationManager) {
     if mgr.authorizationStatus == .authorized || mgr.authorizationStatus == .authorizedAlways { mgr.requestLocation() }
@@ -935,10 +933,12 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     checkTouch()
     windows.forEach { $0.orderOut(nil) }
     // リマインダーの題名は Mac 本体の画面だけ（外部ディスプレイ・プロジェクターには出さない・本人の選択 2026-10-14）。
-    // 本体の画面が無い（ふたを閉じて外部だけ・デスクトップの Mac）ときは、いちばん目の画面に
-    let builtin = NSScreen.screens.first { sc in
-      (sc.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map { CGDisplayIsBuiltin($0.uint32Value) != 0 } ?? false
-    } ?? NSScreen.screens.first
+    // 本体がミラーリング中（外に同じ画面が映る）なら、どこにも出さない（反証役）。
+    // 本体の画面が見つからないとき：電池のある Mac（ふたを閉じて外部だけ）は出さない／デスクトップの Mac は1枚目に
+    func did(_ sc: NSScreen) -> CGDirectDisplayID? { (sc.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value }
+    let inner = NSScreen.screens.first { did($0).map { CGDisplayIsBuiltin($0) != 0 } ?? false }
+    let builtin: NSScreen? = inner.map { sc in did(sc).map { CGDisplayIsInMirrorSet($0) != 0 } == true ? nil : sc }
+      ?? (batteryNow() == nil ? NSScreen.screens.first : nil)
     windows = NSScreen.screens.map { sc in
       let w = CurtainWindow(contentRect: sc.frame, styleMask: [.borderless], backing: .buffered, defer: false)
       w.level = topLevel
