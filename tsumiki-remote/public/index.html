@@ -5530,13 +5530,23 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 札で字を入れる共通の入れかた（2026-10-16）。カーソルの位置にそのまま入れ、前に改行を足さない。
   // 選んでいた字は置き換え、カーソルは入れた字の後ろ。
   // 変換中に押したら、変換中の字を選んだ範囲として消さないよう、その後ろに入れる
+  // 先頭の / コマンド（/compact・/apple-memo など）。パス（/Users/…）は語の中にも / があるので除く。
+  // 送るときは前後の空白を削るので、前に空白や改行があってもコマンドとして見る
+  var CMD_HEAD = /^\s*\/[^\s\/]*(?=\s|$)/;
   function insertAtCaret(t) {
     var v = el.cmd.value;
     var s0 = el.cmd.selectionStart, s1 = el.cmd.selectionEnd;
     if (typeof s0 !== 'number' || typeof s1 !== 'number') s0 = s1 = v.length;
     if (imeComposing) s0 = s1;
-    // 先頭が / コマンドなのにカーソルが先頭にあるときは、コマンドを壊さないよう末尾に入れる
-    if (s0 === 0 && /^\//.test(v)) s0 = s1 = v.length;
+    // カーソルが先頭のコマンド名の中か直後にあるときは、コマンドを壊さないよう
+    // コマンド名の後ろに空白を1つ挟んで入れる（/compact を押した直後に文の札を押したときなど）。
+    // 選んでいた範囲がコマンド名にかかっていたら、コマンド名は残して残りだけ置き換える
+    var m = v.match(CMD_HEAD);
+    if (m && s0 <= m[0].length) {
+      s0 = m[0].length;
+      if (s1 < s0) s1 = s0;
+      t = ' ' + t;
+    }
     el.cmd.value = v.slice(0, s0) + t + v.slice(s1);
     var at = s0 + t.length;
     el.cmd.focus();
@@ -5547,11 +5557,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
   // / で始まる文（/compact・/apple-memo）は先頭でないと効かないので、カーソルの位置ではなく先頭に入れる。
   // 書きかけがあれば後ろに続けて引数にする（/compact の引数＝要約で残してほしいこと）。
-  // 先頭に別の / コマンドが入っていたら差し替える（/apple-memo /compact … と二重にならないように）
+  // 先頭に別の / コマンドが入っていたら差し替える（/apple-memo /compact … と二重にならないように）。
+  // パス（/Users/… で始まる出した指示）はコマンドとして扱わず、カーソルの位置に入れる。
+  // ほかの札とそろえて入力欄に焦点を移し、カーソルは末尾
   function insertText(t) {
-    if (!/^\//.test(t)) return insertAtCaret(t);
-    var rest = el.cmd.value.trim().replace(/^\/\S+\s*/, '');
+    if (!CMD_HEAD.test(t)) return insertAtCaret(t);
+    var rest = el.cmd.value.trim().replace(CMD_HEAD, '').trim();
     el.cmd.value = t + (rest ? ' ' + rest : '');
+    var at = el.cmd.value.length;
+    el.cmd.focus();
+    el.cmd.setSelectionRange(at, at);
     autoGrow();
     saveDraft();
     renderSug();
