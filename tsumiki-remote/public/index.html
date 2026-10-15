@@ -5527,8 +5527,38 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   var PERM_TEXT = '画面操作許可\nClaude in chrome許可';
 
+  // 札で字を入れる共通の入れかた（2026-10-16）。カーソルの位置にそのまま入れ、前に改行を足さない。
+  // 選んでいた字は置き換え、カーソルは入れた字の後ろ。
+  // 変換中に押したら、変換中の字を選んだ範囲として消さないよう、その後ろに入れる
+  function insertAtCaret(t) {
+    var v = el.cmd.value;
+    var s0 = el.cmd.selectionStart, s1 = el.cmd.selectionEnd;
+    if (typeof s0 !== 'number' || typeof s1 !== 'number') s0 = s1 = v.length;
+    if (imeComposing) s0 = s1;
+    // 先頭が / コマンドなのにカーソルが先頭にあるときは、コマンドを壊さないよう末尾に入れる
+    if (s0 === 0 && /^\//.test(v)) s0 = s1 = v.length;
+    el.cmd.value = v.slice(0, s0) + t + v.slice(s1);
+    var at = s0 + t.length;
+    el.cmd.focus();
+    el.cmd.setSelectionRange(at, at);
+    autoGrow();
+    saveDraft();
+    renderSug();
+  }
+  // / で始まる文（/compact・/apple-memo）は先頭でないと効かないので、カーソルの位置ではなく先頭に入れる。
+  // 書きかけがあれば後ろに続けて引数にする（/compact の引数＝要約で残してほしいこと）。
+  // 先頭に別の / コマンドが入っていたら差し替える（/apple-memo /compact … と二重にならないように）
+  function insertText(t) {
+    if (!/^\//.test(t)) return insertAtCaret(t);
+    var rest = el.cmd.value.trim().replace(/^\/\S+\s*/, '');
+    el.cmd.value = t + (rest ? ' ' + rest : '');
+    autoGrow();
+    saveDraft();
+    renderSug();
+  }
+
   // 自分が出した指示を新しい順に並べる。読むのは会話の記録（Mac 側）で、席には何も送らない
-  // 押したら入力欄に入れる＝そのまま直して送り直せる（書きかけは消さず、下に足す）
+  // 押したら入力欄のカーソルの位置に入れる＝そのまま直して送り直せる（書きかけは消さない）
   function askedMenu() {
     if (!current) return toast('送り先が選ばれていません');
     var name = current;
@@ -5545,11 +5575,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         var b = sheetItem(x.t, when, function () {
           closeSheet();
           imeNote('出した指示から字を入れた');
-          var draft = el.cmd.value;
-          el.cmd.value = draft + (draft && !/\n$/.test(draft) ? '\n' : '') + x.t;
-          autoGrow();
-          saveDraft();
-          renderSug();
+          insertText(x.t);
         });
         b.className = 'asked';
       });
@@ -5571,41 +5597,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
     if (b === el.kasked) return askedMenu();
     // 定型文の札はどれも**入力欄に入れるだけ**で、送らない（書き足してから送れるように）。
-    // 許可の札は**カーソルの位置にそのまま**入れる（前に改行を足さない・2026-10-14 本人の依頼）。
-    // 入れた字の後ろにカーソルを置く。空の入力欄で押すと先頭に入る＝最初の一言が題名になりうる（本人に伝え済み）。
-    // 変換中に押したら、変換中の字を選んだ範囲として消さないよう、その後ろに入れる
-    if (b === el.kperm) {
-      imeNote('札で字を入れた');
-      var v = el.cmd.value;
-      var s0 = el.cmd.selectionStart, s1 = el.cmd.selectionEnd;
-      if (imeComposing) s0 = s1;
-      el.cmd.value = v.slice(0, s0) + PERM_TEXT + v.slice(s1);
-      var at = s0 + PERM_TEXT.length;
-      el.cmd.focus();
-      el.cmd.setSelectionRange(at, at);
-      autoGrow();
-      saveDraft();
-      renderSug();
-      return;
-    }
-    // ほかの札（反証役・作業報告・コミットなど data-snip・2026-09-28）は、書きかけがあれば改行してその下に足す
-    if (b.dataset.snip) {
-      imeNote('札で字を入れた');
-      var draft = el.cmd.value;
-      var head = draft + (draft && !/\n$/.test(draft) ? '\n' : '');
-      // / で始まる札（/compact）は先頭でないと効かない。書きかけがあれば後ろに続けて
-      // 引数にする（/compact の引数＝要約で残してほしいこと）
-      // 先頭に別の / コマンドが入っていたら差し替える（/apple-memo /compact … と二重にならないように）
-      if (/^\//.test(b.dataset.snip || '')) {
-        var rest = draft.trim().replace(/^\/\S+\s*/, '');
-        el.cmd.value = b.dataset.snip + (rest ? ' ' + rest : '');
-      }
-      else el.cmd.value = head + b.dataset.snip;
-      autoGrow();
-      saveDraft();
-      renderSug();
-      return;
-    }
+    // 文の札（許可・反証役・作業報告・コミットなど）は**カーソルの位置にそのまま**入れる
+    // （前に改行を足さない。許可の札は 2026-10-14、ほかの札も 2026-10-16 本人の依頼でそろえた）。
+    // 空の入力欄で押すと先頭に入る＝最初の一言が題名になりうる（本人に伝え済み）
+    if (b === el.kperm) { imeNote('札で字を入れた'); return insertAtCaret(PERM_TEXT); }
+    // / で始まる札（/compact・/apple-memo）だけは例外＝先頭に入れる（insertText）
+    if (b.dataset.snip) { imeNote('札で字を入れた'); return insertText(b.dataset.snip); }
     // 中断の札（hold / unhold）。タブの縁の色を変える付箋。
     // 一度 hold を押したら、unhold を押すまで印は消えない（文字を送っても、席が
     // 動き出しても降りない）。2026-09-30 から hold は Claude の席に中断の指示、
