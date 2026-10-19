@@ -82,6 +82,26 @@ def probe(path):
     }
 
 
+READABLE_AUDIO = ("aac", "alac", "mp3", "pcm_s16le", "pcm_s24le", "pcm_f32le", "opus")
+
+
+def drop_unreadable_audio(path):
+    """iPhone 16 以降の空間オーディオ（apple_apac）は無料の ffmpeg で読めず、しかも1本目の音に入る。
+    読める音が別にあれば、映像と読める音だけを残して詰め直す（中身はコピー・回転の情報もそのまま）。
+    詰め直したら True。読める音が無ければ何もしない（あとで「音が入っていません」になる）。"""
+    path = Path(path)
+    d = json.loads(run([FFPROBE, "-v", "error", "-print_format", "json", "-show_streams", str(path)]))
+    auds = [s for s in d["streams"] if s["codec_type"] == "audio"]
+    good = [s for s in auds if s.get("codec_name") in READABLE_AUDIO]
+    if not good or len(good) == len(auds):
+        return False
+    tmp = path.with_name("音の詰め直し.tmp" + path.suffix)   # src_*.* の名前にしない（途中で止まっても元の動画と取り違えない）
+    run([FFMPEG, "-y", "-v", "error", "-i", str(path), "-map", "0:v:0", "-map", f"0:{good[0]['index']}",
+         "-c", "copy", "-map_metadata", "0", "-movflags", "+faststart", str(tmp)])
+    tmp.replace(path)
+    return True
+
+
 def hdr_filter(info):
     """iPhone の HDR（HLG）を普通の色へ。HLG は SDR でもそれなりに見える作りなので、
     色域だけ BT.2020→BT.709 に寄せる（無料の ffmpeg に zscale が無いための近似）。"""

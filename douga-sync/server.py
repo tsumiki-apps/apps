@@ -101,6 +101,8 @@ def src(jid, k):
 def do_sync(jid):
     d = jpath(jid)
     a, b = src(jid, "a"), src(jid, "b")
+    for f in (a, b):   # 空間オーディオ（読めない音）が1本目に入った iPhone の動画を、読める音だけに
+        engine.drop_unreadable_audio(f)
     ia, ib = engine.probe(a), engine.probe(b)
     if not ia["audio"] or not ib["audio"]:
         raise RuntimeError("どちらかの動画に音が入っていません（画面録画はマイクをオンに）")
