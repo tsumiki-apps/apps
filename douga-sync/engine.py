@@ -82,22 +82,35 @@ def probe(path):
     }
 
 
-READABLE_AUDIO = ("aac", "alac", "mp3", "pcm_s16le", "pcm_s24le", "pcm_f32le", "opus")
+def _decodes(path, *mapping):
+    """その音を ffmpeg が頭の0.5秒だけでも読めるか（読み手のない形式なら False）。"""
+    r = subprocess.run([FFMPEG, "-v", "error", "-i", str(path), *mapping, "-vn", "-t", "0.5", "-f", "null", "-"],
+                       capture_output=True)
+    return r.returncode == 0
 
 
 def drop_unreadable_audio(path):
-    """iPhone 16 以降の空間オーディオ（apple_apac）は無料の ffmpeg で読めず、しかも1本目の音に入る。
-    読める音が別にあれば、映像と読める音だけを残して詰め直す（中身はコピー・回転の情報もそのまま）。
-    詰め直したら True。読める音が無ければ何もしない（あとで「音が入っていません」になる）。"""
+    """iPhone 16 以降の空間オーディオ（apple_apac）は無料の ffmpeg で読めない。ffmpeg が自分で選ぶ音が
+    それに当たると、同期・文字起こし・書き出しが止まる。そのときだけ、映像と読める音だけを残して詰め直す
+    （中身はコピー・回転の情報もそのまま）。元の動画は「元の動画_a.mov」などの名前で同じフォルダに残す
+    （空間オーディオ・撮影機種などの情報は詰め直した側には残らないため）。
+    詰め直したら True。選ばれる音がそのまま読める・読める音が無い・二度目は何もしない。"""
     path = Path(path)
-    d = json.loads(run([FFPROBE, "-v", "error", "-print_format", "json", "-show_streams", str(path)]))
-    auds = [s for s in d["streams"] if s["codec_type"] == "audio"]
-    good = [s for s in auds if s.get("codec_name") in READABLE_AUDIO]
-    if not good or len(good) == len(auds):
+    if _decodes(path):
         return False
+    d = json.loads(run([FFPROBE, "-v", "error", "-print_format", "json", "-show_streams", str(path)]))
+    good = [s for s in d["streams"] if s["codec_type"] == "audio" and _decodes(path, "-map", f"0:{s['index']}")]
+    if not good:
+        return False
+    keep = path.with_name("元の動画_" + path.stem.removeprefix("src_") + path.suffix)
     tmp = path.with_name("音の詰め直し.tmp" + path.suffix)   # src_*.* の名前にしない（途中で止まっても元の動画と取り違えない）
-    run([FFMPEG, "-y", "-v", "error", "-i", str(path), "-map", "0:v:0", "-map", f"0:{good[0]['index']}",
-         "-c", "copy", "-map_metadata", "0", "-movflags", "+faststart", str(tmp)])
+    try:
+        run([FFMPEG, "-y", "-v", "error", "-i", str(path), "-map", "0:v:0?", "-map", f"0:{good[0]['index']}",
+             "-c", "copy", "-map_metadata", "0", "-movflags", "+faststart", str(tmp)])
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    path.replace(keep)
     tmp.replace(path)
     return True
 

@@ -441,6 +441,8 @@ class H(BaseHTTPRequestHandler):
                     return self.send_json({"error": "作業中です"}, 409)
                 for old in d.glob(f"src_{k}.*"):
                     old.unlink()
+                for old in d.glob(f"元の動画_{k}.*"):   # 前の動画の詰め直し前の控え
+                    old.unlink()
                 part.rename(d / f"src_{k}.{ext}")
                 drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error", "thumb", "thumb_v", "thumb_at", "intro", "intro_error", "body_dur"]
                 if k == "a":   # 字幕は A の音から作るので、B の差し替えでは残す
