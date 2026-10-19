@@ -1000,11 +1000,8 @@ def review_captions(caps, title, lex=None, timeout=300):
     if res.get("is_error"):     # 利用枠切れなどは終了コード0でも is_error で返る
         raise RuntimeError(str(res.get("result") or "Claude がエラーを返しました")[:300])
     text = res.get("result", "")
-    m = re.search(r"\[.*\]", text, re.S)
-    if not m:
-        return []
     out = []
-    for s in json.loads(m.group(0)):
+    for s in json_array(text):
         try:
             i = int(s["i"])
             after = " ".join(str(s["after"]).split())
@@ -1014,6 +1011,20 @@ def review_captions(caps, title, lex=None, timeout=300):
             out.append({"start": caps[i]["start"], "before": caps[i]["text"],
                         "after": after, "why": str(s.get("why", ""))[:20]})
     return out
+
+
+def json_array(text):
+    """Claude の答えから最初の JSON の配列だけを読む（後ろに説明や2つ目の配列が付いても読める）。"""
+    i = text.find("[")
+    while i != -1:
+        try:
+            v = json.JSONDecoder().raw_decode(text, i)[0]
+            if isinstance(v, list):
+                return [x for x in v if isinstance(x, dict)]
+        except ValueError:
+            pass
+        i = text.find("[", i + 1)
+    return []
 
 
 # ---------- 英語の字幕 ----------
@@ -1051,9 +1062,8 @@ def translate_captions(caps, title, timeout=300):
     if res.get("is_error"):     # 利用枠切れなどは終了コード0でも is_error で返る
         raise RuntimeError(str(res.get("result") or "Claude がエラーを返しました")[:300])
     text = res.get("result", "")
-    m = re.search(r"\[.*\]", text, re.S)
     out = {}
-    for s in (json.loads(m.group(0)) if m else []):
+    for s in json_array(text):
         try:
             i, en = int(s["i"]), " ".join(str(s.get("en", "")).split())
         except (KeyError, ValueError, TypeError):

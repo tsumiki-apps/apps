@@ -236,6 +236,10 @@ def do_translate(jid, caps, title):
     """足りない英訳だけを足す。返り値＝{日本語: 英語}（""＝口ぐせだけで訳さない字幕）。"""
     job = load(jid)
     en = {k: v for k, v in (job.get("en") or {}).items() if any(c["text"] == k for c in caps)}
+    gone = {i for i, c in enumerate(caps) if c["text"] not in en}
+    # 直した字幕の前後も訳し直す（英語は前後の行にまたがって訳すので、隣だけ古い意味のまま残る）
+    for i in {j for g in gone for j in (g - 1, g + 1) if 0 <= j < len(caps)} - gone:
+        en.pop(caps[i]["text"], None)
     missing = [c for c in caps if c["text"] not in en]
     if not missing:
         update(jid, en=en, en_error=None)
