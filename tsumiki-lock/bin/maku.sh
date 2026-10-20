@@ -52,7 +52,7 @@ off() {
     locked)
       call POST /unlock "{\"by\":\"$BY_OFF\"}"
       if [ "$CODE" != 200 ] || [ "$(state)" != unlocked ]; then
-        echo "外せませんでした（$CODE）" >&2; return 1
+        echo "外せませんでした（${CODE}）" >&2; return 1
       fi
       { date +%s; echo "$$"; } > "$MARK"
       echo "外した（あとで restore）" ;;
@@ -80,7 +80,7 @@ restore() {
   if [ "$CODE" = 200 ] && [ "$(state)" = locked ]; then
     rm -f "$MARK"; echo "掛け直した"
   else
-    echo "掛け直せませんでした（$CODE・印は残す）" >&2; return 1
+    echo "掛け直せませんでした（${CODE}・印は残す）" >&2; return 1
   fi
 }
 
@@ -97,9 +97,10 @@ case "${1:-status}" in
   pass)
     sec="${2:-}"
     [[ "$sec" =~ ^[0-9]{1,3}$ ]] && [ "$sec" -le 300 ] || { echo "usage: maku.sh pass <0〜300>" >&2; exit 2; }
+    sec=$((10#$sec))   # 00・010 を JSON に出せる形に（そのままだと 400 で閉じられない・反証役）
     [ -r "$KEYF" ] || { echo "鍵が読めません" >&2; exit 1; }
     call POST /pass "{\"bundle\":\"com.apple.Notes\",\"seconds\":$sec,\"by\":\"メモのチェックリスト\"}"
-    [ "$CODE" = 200 ] || { echo "通り道を開けませんでした（$CODE）" >&2; exit 1; }
+    [ "$CODE" = 200 ] || { echo "通り道を開けませんでした（${CODE}）" >&2; exit 1; }
     echo "ok" ;;
   *) echo "usage: maku.sh status|run <コマンド…>|off|restore|pass <秒>" >&2; exit 2 ;;
 esac

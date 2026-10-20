@@ -854,6 +854,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     guard !m.locked else { return }
     Pin.refresh()
     m.locked = true; m.since = Date(); m.typed = ""; m.note = ""; m.showPin = false; m.showPad = false
+    passUntil = .distantPast; passToken = nil   // 外れているあいだの通り道を持ち越さない
     fingerFails = 0
     lastAlert = .distantPast; quietAlerts = 0
     m.save()
@@ -1371,6 +1372,10 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
       guard App.passBundles.contains(b), let sec = (j["seconds"] as? NSNumber)?.doubleValue, (0...300).contains(sec) else {
         reply(400, ["error": "メモ（com.apple.Notes）だけ・0〜300秒です"]); return
       }
+      // 幕が外れているときは何もしない（あとで掛けた幕に持ち越さない・反証役）。
+      // 合言葉の板が出ているときは開けない（板を見て打った数字が見えないメモに入る・反証役）
+      if sec > 0 && !m.locked { reply(200, snapshot()); return }
+      if sec > 0 && m.showPin { reply(409, ["error": "合言葉の板が出ています"]); return }
       setPass(sec, by: (j["by"] as? String) ?? "?")
       reply(200, snapshot())
     case ("POST", "/pin"):
@@ -1404,13 +1409,13 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     let wasOn = Date() < passUntil
     if sec <= 0 {
       passUntil = .distantPast; passToken = nil
-      if wasOn && m.locked { log("メモの通り道を閉じた（\(who)）") }
+      if wasOn { log("メモの通り道を閉じた（\(who)）") }
       reassert()
       return
     }
     passUntil = Date().addingTimeInterval(sec)
     let t = UUID(); passToken = t
-    if !wasOn && m.locked { log("幕の下でメモを前に出すのを許した（\(who)・\(Int(sec))秒まで）") }
+    if !wasOn { log("幕の下でメモを前に出すのを許した（\(who)・\(Int(sec))秒まで）") }
     DispatchQueue.main.asyncAfter(deadline: .now() + sec + 0.1) { [weak self] in
       guard let self = self, self.passToken == t else { return }
       self.passToken = nil
