@@ -718,6 +718,14 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   var todoAccess = EKAuthorizationStatus.notDetermined, todoSeq = 0, todoTick = 0
   var authStart = Date.distantPast
   var lastFrontName = "", lastFrontLog = Date.distantPast
+  // 幕の下でメモを前に出してよい間（純正メモにチェックリストを作るとき・本人の依頼 2026-10-20）。
+  // 幕は上に出したまま＝画面は見えない。許すのはメモだけ・最長5分・期限が来たら幕が前に戻る
+  static let passBundles: Set<String> = ["com.apple.Notes"]
+  var passUntil = Date.distantPast, passToken: UUID?
+  func passing(_ a: NSRunningApplication?) -> Bool {
+    guard Date() < passUntil, let b = a?.bundleIdentifier else { return false }
+    return App.passBundles.contains(b)
+  }
   // iPhone への知らせ：1回の掛けにつき5分に1回まで（指を何度も置かれても鳴り続けない）。
   // 黙っていた分は5分たったら1通にまとめる（morningReport）
   var lastAlert = Date.distantPast, quietAlerts = 0
@@ -793,6 +801,9 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
             let a = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
       if a.processIdentifier == ProcessInfo.processInfo.processIdentifier || self.isAuthAgent(a)
           || a.bundleIdentifier == Bundle.main.bundleIdentifier { return }   // 自分（試験で2つ動かしたとき）は数えない
+      if self.passing(a) {   // 幕の下でメモが前に出るのは許した間だけ。Touch ID の待ち受けは止める（前に戻さない）
+        self.endAuth(); return
+      }
       // 記録は同じアプリなら10秒に1行（前に出続けるアプリと並んでも記録が膨らまない・反証役）
       let name = a.localizedName ?? "?"
       if name != self.lastFrontName || Date().timeIntervalSince(self.lastFrontLog) > 10 {
@@ -1036,6 +1047,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
       guard let self = self, self.m.locked, !self.authing else { return }
       self.windows.forEach { $0.level = self.topLevel; $0.orderFrontRegardless() }
+      if self.passing(NSWorkspace.shared.frontmostApplication) { return }   // 幕は上に重ねたまま、メモを前に置いておく
       self.clampDown()
     }
   }
@@ -1353,6 +1365,14 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
       lock(by: (j["by"] as? String) ?? "iPhone"); reply(200, snapshot())
     case ("POST", "/unlock"):
       unlock(by: (j["by"] as? String) ?? "iPhone"); reply(200, snapshot())
+    case ("POST", "/pass"):
+      // {"bundle":"com.apple.Notes","seconds":1〜300} で許す・seconds 0 で終える
+      let b = (j["bundle"] as? String) ?? "com.apple.Notes"
+      guard App.passBundles.contains(b), let sec = (j["seconds"] as? NSNumber)?.doubleValue, (0...300).contains(sec) else {
+        reply(400, ["error": "メモ（com.apple.Notes）だけ・0〜300秒です"]); return
+      }
+      setPass(sec, by: (j["by"] as? String) ?? "?")
+      reply(200, snapshot())
     case ("POST", "/pin"):
       guard let p = j["pin"] as? String, (4...8).contains(p.count), p.allSatisfy({ $0.isASCII && $0.isNumber }) else {
         reply(400, ["error": "数字4〜8桁で決めてください"]); return
@@ -1380,6 +1400,25 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     }
   }
 
+  func setPass(_ sec: Double, by who: String) {
+    let wasOn = Date() < passUntil
+    if sec <= 0 {
+      passUntil = .distantPast; passToken = nil
+      if wasOn && m.locked { log("メモの通り道を閉じた（\(who)）") }
+      reassert()
+      return
+    }
+    passUntil = Date().addingTimeInterval(sec)
+    let t = UUID(); passToken = t
+    if !wasOn && m.locked { log("幕の下でメモを前に出すのを許した（\(who)・\(Int(sec))秒まで）") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + sec + 0.1) { [weak self] in
+      guard let self = self, self.passToken == t else { return }
+      self.passToken = nil
+      if self.m.locked { log("メモの通り道の期限が来た → 前に戻る") }
+      self.reassert()
+    }
+  }
+
   func snapshot() -> [String: Any] {
     ["locked": m.locked, "since": m.since.timeIntervalSince1970 * 1000, "pin": Pin.isSet,
      "touchid": touchOK, "fails": m.fails, "checking": m.checking,
@@ -1389,7 +1428,8 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
      "armedFor": authing ? Date().timeIntervalSince(authStart) : -1,
      "sinceEnd": Date().timeIntervalSince(lastAuthEnd), "failStreak": failStreak, "showPin": m.showPin,
      "weatherHours": m.hours.count, "battery": m.battery ?? -1, "todos": m.todos.count,
-     "todoAccess": EKEventStore.authorizationStatus(for: .reminder).rawValue]
+     "todoAccess": EKEventStore.authorizationStatus(for: .reminder).rawValue,
+     "passFor": max(0, passUntil.timeIntervalSinceNow)]
   }
 }
 

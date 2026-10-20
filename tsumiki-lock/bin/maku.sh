@@ -3,6 +3,8 @@
 #   maku.sh status          … locked / unlocked / error（error は終了コード1）
 #   maku.sh run <コマンド…> … 掛かっていれば外してコマンドを動かし、終わったら（失敗しても）戻す。これを使う
 #   maku.sh off / restore   … 手で分けて使うとき。off したら必ず restore まで行う
+#   maku.sh pass <秒>       … 幕は掛けたまま、その秒数だけメモ（純正）を幕の下で前に出してよくする（0 で終える・最長300）
+#                             純正メモにチェックリストを作るとき（~/memo-checklist）用。画面は見えないまま
 #
 # 戻すのは次の全部がそろったときだけ（本人の上に幕を落とさない・反証役）：
 #   ① 自分が外した印がある ② 今も外れている ③ 最後の掛け外しが自分の「外した」のまま
@@ -92,5 +94,12 @@ case "${1:-status}" in
     off || exit 1
     trap 'restore' EXIT   # 失敗しても・止められても戻す
     "$@" ;;
-  *) echo "usage: maku.sh status|run <コマンド…>|off|restore" >&2; exit 2 ;;
+  pass)
+    sec="${2:-}"
+    [[ "$sec" =~ ^[0-9]{1,3}$ ]] && [ "$sec" -le 300 ] || { echo "usage: maku.sh pass <0〜300>" >&2; exit 2; }
+    [ -r "$KEYF" ] || { echo "鍵が読めません" >&2; exit 1; }
+    call POST /pass "{\"bundle\":\"com.apple.Notes\",\"seconds\":$sec,\"by\":\"メモのチェックリスト\"}"
+    [ "$CODE" = 200 ] || { echo "通り道を開けませんでした（$CODE）" >&2; exit 1; }
+    echo "ok" ;;
+  *) echo "usage: maku.sh status|run <コマンド…>|off|restore|pass <秒>" >&2; exit 2 ;;
 esac
