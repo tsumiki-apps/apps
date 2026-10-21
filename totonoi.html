@@ -526,6 +526,7 @@ function rr(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w
 function hair(g, x0, x1, y, a){ g.save(); g.shadowColor='transparent'; g.strokeStyle=`rgba(255,255,255,${a||.55})`; g.lineWidth=2; g.beginPath(); g.moveTo(x0,y); g.lineTo(x1,y); g.stroke(); g.restore(); }
 const bpmPair = v => v.max && v.min ? `${v.max} / ${v.min}` : (v.max || v.min);
 const bpmLab = v => v.max && v.min ? 'MAX / MIN bpm' : v.max ? 'MAX bpm' : 'MIN bpm';
+const bpmTxt = v => (v.max && v.min ? '' : v.max ? 'MAX ' : 'MIN ')+bpmPair(v)+' bpm';   // 片方だけのときは最大か最小かを添える
 const statsOf = v => [['Time',v.time],['Max',v.max],['Min',v.min]].filter(s=>s[1]);
 const FREE = {
   corner(g, v, st){
@@ -566,7 +567,7 @@ const FREE = {
     drawCurve(g,70,1540,940,140,false,5);
     hair(g,70,1010,1735);
     if(v.time) T(g,v.time,70,1810,n.v,40,{al:'left',maxW:300});
-    if(v.max || v.min) T(g,bpmPair(v)+' bpm',540,1810,n.v,40,{maxW:340});
+    if(v.max || v.min) T(g,bpmTxt(v),540,1810,n.v,40,{maxW:340});
     T(g,'TOTONOI',1010,1806,n.v,22,{al:'right',ls:3});
   },
   frame(g, v, st){
@@ -582,6 +583,8 @@ const FREE = {
   },
   ticket(g, v, st){
     const n=NF(), x0=290, x1=790; let y=250;
+    if(!st){ const yEnd=y+(v.name?56:0)+40+statsOf(v).length*90+(S.curve?120:0)+50;   // 明るい写真でも読めるよう、字の後ろに暗い板
+      g.save(); rr(g,x0-50,y-70,x1-x0+100,yEnd-y+70,36); g.fillStyle='rgba(0,0,0,.38)'; g.fill(); g.restore(); }
     shadowOn(g);
     T(g,'TOTONOI',540,y,n.v,24,{ls:4});
     if(v.name){ y+=56; T(g,v.name,540,y,700,32,{jp:true,maxW:500}); }
@@ -600,7 +603,7 @@ const FREE = {
       [[hi,-30,v.max],[lo,62,v.min]].forEach(([i,dy,t])=>{ if(!t) return; const [px,py]=P(i);
         g.save(); g.fillStyle='#fff'; g.beginPath(); g.arc(px,py,10,0,Math.PI*2); g.fill(); g.restore();
         T(g,t+' bpm',Math.min(930,Math.max(150,px)),py+dy,n.v,36); });   // bpm は数字に付ける（右端の最高点で別の字と重ならない）
-    }else if(v.max || v.min) T(g,bpmPair(v)+' bpm',540,1620,n.v,36);
+    }else if(v.max || v.min) T(g,bpmTxt(v),540,1620,n.v,36);
     if(v.name) T(g,v.name,540,1660,700,32,{jp:true,maxW:940});
     if(v.time) T(g,v.time,540,1720,n.v,44);
     T(g,'TOTONOI',540+1,1790,n.v,22,{ls:3});
@@ -844,6 +847,7 @@ document.fonts.ready.then(draw);
     [['fTime','time'],['fMax','max'],['fMin','min'],['fName','name']].forEach(([id,k])=>{ if(!$(id).value && typeof st[k]==='string') $(id).value=st[k]; });
   }
   draw();
+  const nm=$('fName').value; if(nm) document.fonts.load(`700 44px ${F.jp}`, nm).then(draw, ()=>{});   // 戻した施設名の字を読み込んでから描き直す
 })();
 </script>
 <!-- tsumiki-back-button -->
