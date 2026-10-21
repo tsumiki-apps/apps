@@ -193,8 +193,9 @@ def do_intro(jid):
     update(jid, busy="冒頭", progress=0)
     tmp = d / "完成.tmp.mp4"
     try:
-        total = engine.add_intro(body, img, tmp, job.get("body_dur") or (None if job.get("intro") else job.get("out_dur")),
-                                 progress=lambda f: update(jid, progress=round(f, 3)))
+        bd = job.get("body_dur") or (None if job.get("intro") else job.get("out_dur")) or engine.probe_duration(body)
+        head = max(0.0, min(float(job.get("head_cut") or 0), bd - 1.0))   # 撮り始めの撮影者の声を落とす秒数（本編の頭から）
+        total = engine.add_intro(body, img, tmp, bd, progress=lambda f: update(jid, progress=round(f, 3)), head=head)
     except Exception as e:
         traceback.print_exc()
         tmp.unlink(missing_ok=True)
@@ -203,12 +204,12 @@ def do_intro(jid):
     tmp.replace(d / "完成.mp4")
     (d / "完成_白.mp4").unlink(missing_ok=True)
     update(jid, rendered=time.time(), white=None, intro=True, intro_error=None, out_dur=round(total, 3),
-           body_dur=round(total - engine.INTRO_HOLD, 3))
+           body_dur=round(total - engine.INTRO_HOLD + head, 3))   # 本編.mp4 そのものの長さ（切った分を戻す）
 
 
 def do_thumb(jid, reroll=False):
     """サムネイル（1280×720 と縦長の 1080×1920）。使うコマは1回目に選んで覚え、色を変えるときは色だけ引き直す。
-    job.json の thumb_image（作業フォルダの画像と切り出し方）があれば、画面録画の代わりにそれを使う。"""
+    job.json の thumb_image（作業フォルダの画像と切り出し方・upper＝画面の上だけの写真）があれば、画面録画の代わりにそれを使う。"""
     d = jpath(jid)
     job = load(jid)
     seed = int(job.get("thumb_seed") or 0) + (1 if reroll else 0)
@@ -217,7 +218,7 @@ def do_thumb(jid, reroll=False):
     kw = {}
     if ti.get("file") and (d / ti["file"]).exists():
         kw = dict(image=d / ti["file"], focus=ti.get("focus", 0.5), box=tuple(ti["box"]) if ti.get("box") else None,
-                  island=ti.get("island", True), as_card=ti.get("card", False))
+                  island=ti.get("island", True), as_card=ti.get("card", False), upper=ti.get("upper", False))
     tmpv = d / "サムネイル_縦.tmp.png"
     try:   # 横長（16:9）と縦長（9:16・動画の冒頭に入れる）。色・画面は同じ
         at = thumbnail.make(d, tmp, seed=seed, at=job.get("thumb_at"), **kw)
@@ -450,7 +451,7 @@ class H(BaseHTTPRequestHandler):
                 part.rename(d / f"src_{k}.{ext}")
                 drop = ["offset", "auto_offset", "confidence", "rendered", "learned", "error", "thumb", "thumb_v", "thumb_at", "intro", "intro_error", "body_dur"]
                 if k == "a":   # 字幕は A の音から作るので、B の差し替えでは残す
-                    drop += ["captions", "captions_shown", "ff"]
+                    drop += ["captions", "captions_shown", "ff", "head_cut"]
                 for key in drop:
                     job.pop(key, None)
                 job.update({f"has_{k}": True, "step": 2})

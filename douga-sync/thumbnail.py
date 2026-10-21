@@ -2,10 +2,12 @@
 --vertical で縦長（1080×1920＝書き出しの動画と同じ大きさ）：マークの下に題名、その下に端末。
 
     .venv/bin/python thumbnail.py <作業のフォルダ> [出力.png] [--color 0-13] [--at 秒] [--seed 何でも] [--image 画像 --focus 0〜1]
-        [--box 左,上,右,下] [--no-island] [--card]
+        [--box 左,上,右,下] [--no-island] [--card] [--upper]
 
 --image：画面録画の代わりに使う画像（公式の写真など）。--box で切り出す範囲、--no-island は画像に元から Dynamic Island が写っているとき、
---card は端末の枠に入れず写真を角丸のカードで置く。動画同期のサーバーは job.json の thumb_image（file・focus・box・island・card）を読んで同じように作る。
+--card は端末の枠に入れず写真を角丸のカードで置く。--upper は画像が画面の上の部分だけのとき（公式の写真で端末の下が切れているもの）：
+端末は本物の縦横比のまま描き、写真が終わるところより上でサムネイルの縁が端末を切るように置く（端末が寸詰まりにならない）。
+動画同期のサーバーは job.json の thumb_image（file・focus・box・island・card・upper）を読んで同じように作る。
 
 画面録画（src_b）から見ばえのする1コマを自動で選ぶ（色の多さ・明暗の幅が大きいコマ。頭と終わりの15%は除く）。
 --at で秒を指定するとそのコマを使う。地の色は14色からランダム（--seed を変えると引き直し、--color で指定）。縦長＝iPhone の枠（下は切れる）、横長＝iPad の枠。
@@ -177,6 +179,8 @@ def device(shot, portrait, island=True, k=1.0):
     d.rounded_rectangle([3, 3, W + 2, H + 2], radius=r_out, fill=BEZEL)
     scr = shot.resize((sw, sh), Image.LANCZOS)
     im.paste(scr, (3 + b, 3 + b), rounded(scr, r_in))
+    if shot.info.get("real"):   # 画面の上だけの写真：中身が終わる高さ（置くときにここより上で縁が切るように）
+        im.info["cut"] = 3 + b + int(sh * shot.info["real"])
     if portrait and island:   # ダイナミックアイランド（画面の画像に元から写っているときは描かない）
         iw, ih = round(96 * k), round(28 * k)
         cx, top = (W + 6) // 2, 3 + b + round(12 * k)
@@ -193,12 +197,21 @@ def shadow(im, blur=18, alpha=70, off=(0, 10), pad=40):
     return sh.filter(ImageFilter.GaussianBlur(blur))
 
 
-def from_image(path, focus=0.5, ratio=1206 / 2622, box=None):
+def from_image(path, focus=0.5, ratio=1206 / 2622, box=None, upper=False):
     """画面録画の代わりに使う画像（公式の写真など）。box（左,上,右,下）を指定するとその範囲をそのまま使う。
-    指定が無ければ iPhone の画面の縦横比で、focus（横の位置 0〜1）を中心に切り出す。"""
+    指定が無ければ iPhone の画面の縦横比で、focus（横の位置 0〜1）を中心に切り出す。
+    upper＝box が画面の上の部分だけ（box の幅＝画面の幅）。下を足して iPhone の縦横比にし、中身の割合を info["real"] に残す。"""
     im = Image.open(path).convert("RGB")
     if box:
-        return im.crop(box)
+        im = im.crop(box)
+        full = round(im.width / ratio)
+        if upper and im.height < full:
+            fill = tuple(int(v) for v in np.median(np.asarray(im)[-1], axis=0))   # 足す所は一番下の行の色（縁が切るので見えない）
+            out = Image.new("RGB", (im.width, full), fill)
+            out.paste(im, (0, 0))
+            out.info["real"] = im.height / full
+            return out
+        return im
     w = min(im.width, round(im.height * ratio))
     x = min(max(round(im.width * focus - w / 2), 0), im.width - w)
     return im.crop((x, 0, x + w, im.height))
@@ -214,14 +227,14 @@ def card(im, maxw=560, maxh=600, r=28):
 
 
 def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5, box=None, island=True, as_card=False,
-         vertical=False):
+         vertical=False, upper=False):
     """vertical=True で縦長（1080×1920）版。色・画面・題名は横長版と同じものを使い、並べ方だけ縦にする。"""
     job_dir = Path(job_dir)
     job = json.loads((job_dir / "job.json").read_text())
     src = next(job_dir.glob("src_b.*"))
     bi = job["b_info"]
     if image:   # 画面録画の代わりに指定の画像（公式の写真など）を端末の画面に入れる
-        t, shot = None, from_image(image, focus, box=box)
+        t, shot = None, from_image(image, focus, box=box, upper=upper and not as_card)   # カードは縁で切らないので足さない
     else:
         t = at if at is not None else pick_frame(src, bi.get("vdur") or bi["dur"], info=bi)
         shot = grab(src, t, info=bi)
@@ -240,6 +253,8 @@ def make(job_dir, out, color=None, at=None, seed=0, image=None, focus=0.5, box=N
         x, y = TW - 70 - dev.width, (TH - dev.height) // 2
     elif portrait:
         x, y = TW - 96 - dev.width, max(64, TH - dev.height + 60)   # 下は画面の外へ切れる（短い画面は下から立ち上げる）
+        if dev.info.get("cut"):                    # 画面の上だけの写真：中身が終わる所より上で縁が切る
+            y = max(y, min(TH - dev.info["cut"] + 8, TH - dev.height // 2))   # ただし端末の半分は見せる
     else:
         x, y = TW - 56 - dev.width, (TH - dev.height) // 2 + 20
     sh = shadow(dev)
@@ -333,6 +348,8 @@ def _vertical(job, shot, portrait, island, as_card, bg, out):
             y = area + (free - dev.height) // 2
         else:                                     # 収まらない画面は下を140pxはっきり切る（縁ぎりぎりで止めない）
             y = max(area, VH - dev.height + 140)
+        if dev.info.get("cut"):                    # 画面の上だけの写真：中身が終わる所より上で縁が切る
+            y = max(y, min(VH - dev.info["cut"] + 8, VH - dev.height // 2))   # ただし端末の半分は見せる
     else:
         dev = device(shot, False, island, k=1.62)
         y = area + (VH - area - dev.height) // 2
@@ -355,4 +372,4 @@ if __name__ == "__main__":
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in valued)]
     out = pos[1] if len(pos) > 1 else str(Path(pos[0]) / "サムネイル.png")
     print(make(pos[0], out, color, at, seed, image, focus, box, "--no-island" not in args, "--card" in args,
-               "--vertical" in args))
+               "--vertical" in args, "--upper" in args))

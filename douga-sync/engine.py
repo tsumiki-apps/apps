@@ -1124,20 +1124,27 @@ def probe_duration(path):
     return float(r.stdout.strip())
 
 
-def add_intro(body, image, dst, body_dur=None, progress=None):
+HEAD_AFADE = 0.12                             # 頭を切ったときの音の立ち上げ（秒）。切り口のぷつっを消すだけ
+
+
+def add_intro(body, image, dst, body_dur=None, progress=None, head=0.0):
     """冒頭に縦長のサムネイル（W×H）を INTRO_HOLD 秒出し、INTRO_FADE 秒かけて本編へ重ねて切り替える。
-    本編は頭から全部使う（切り替えの間に本編の頭が透けて始まる）。音はサムネイルの間は無音、本編の頭で短く立ち上げる。
-    返り値＝できた動画の長さ（秒）＝INTRO_HOLD＋本編の長さ。"""
+    本編は head 秒目から使う（撮り始めの「よーい」「はい、ではお願いします」など撮影者の声を落とす。本編.mp4 は切らずに残す）。
+    切り替えの間に本編の頭が透けて始まる。音はサムネイルの間は無音、本編の頭で短く立ち上げる。
+    返り値＝できた動画の長さ（秒）＝INTRO_HOLD＋本編の長さ−head。"""
     body_dur = body_dur or probe_duration(body)
-    total = INTRO_HOLD + body_dur
+    head = max(0.0, min(float(head or 0), body_dur - 1.0))
+    total = INTRO_HOLD + body_dur - head
     fc = (f"[0:v]scale={W}:{H}:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1,fps=30,"
           f"trim=duration={INTRO_HOLD + INTRO_FADE:.3f},settb=AVTB[i];"
           f"[1:v]fps=30,scale={W}:{H},format=yuv420p,setsar=1,settb=AVTB[b];"
           f"[i][b]xfade=transition=fade:duration={INTRO_FADE}:offset={INTRO_HOLD}[out];"
-          f"[1:a]aresample=48000,adelay={round(INTRO_HOLD * 1000)}:all=1,"
-          f"afade=t=in:st={INTRO_HOLD}:d={INTRO_FADE}[aout]")
+          # adelay のあと時刻を0秒から詰め直す（-ss で頭を切ると音の時刻が3.5秒飛び、プレーヤーによって音が早く鳴る）。
+          # 頭を切ったときは本人の第一声が近いので、音の立ち上げは短く（映像の切り替えは同じ0.6秒）
+          f"[1:a]aresample=48000,adelay={round(INTRO_HOLD * 1000)}:all=1,aresample=async=1:first_pts=0,"
+          f"afade=t=in:st={INTRO_HOLD}:d={HEAD_AFADE if head else INTRO_FADE}[aout]")
     cmd = [FFMPEG, "-y", "-v", "error", "-progress", "pipe:1", "-nostats",
-           "-loop", "1", "-framerate", "30", "-i", str(image), "-i", str(body),
+           "-loop", "1", "-framerate", "30", "-i", str(image), *(["-ss", f"{head:.3f}"] if head else []), "-i", str(body),
            "-filter_complex", fc, "-map", "[out]", "-map", "[aout]", "-t", f"{total:.3f}",
            "-c:v", "h264_videotoolbox", "-b:v", "6M", "-profile:v", "high",
            "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
