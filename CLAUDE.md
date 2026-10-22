@@ -15,12 +15,12 @@
 
 ## 2. 注入
 - 自分専用の新規アプリは `inject_backbtn.py`（戻るボタン＋apple-touch-icon）。**HTMLにベタ書きしない**（左端エッジスワイプのみ。見える「‹ つみき」は置かない）。外部配布には注入しない。
-- UI部品（選択カード・つまみ・ダイアログ・タブ・表など）は `tn.css`、決定論の乱数 `TN.rnd` と見えたら再生 `TN.reveal` は `tn.js`。`python3 inject_tn.py <HTML>` で両方入る。デモで `Math.random()` を使わない。外部配布に入れてよい → 詳細 `docs/tn部品.md`
+- UI部品は `tn.css`、決定論の乱数 `TN.rnd` と見えたら再生 `TN.reveal` は `tn.js`。`python3 inject_tn.py <HTML>` で両方入る。デモで `Math.random()` を使わない。外部配布に入れてよい → 詳細 `docs/tn部品.md`
 
 ## 3. 見た目
 - 正本は `DESIGN.md`（読むのはA層 §5 P1）。ダークの塗りボタンは `--accent` 地に `--ink` 文字、洗い色の帯は `--good-ink`/`--warn-ink`。
 - 色を触ったら `python3 design_check.py <HTML>` と `python3 color_leak.py <HTML>` の両方を通す（✗1件で終了コード1）。
-- refero から写すときは `refero-styles` スキル。スキルを直したら `python3 sync_skills.py --write`。→ 詳細 `docs/見た目の検査.md`
+- スキルを直したら `python3 sync_skills.py --write`。→ 詳細 `docs/見た目の検査.md`
 
 ## 4. 固有の禁止・お返事カード
 - 受託ソース `Kouban/` `Teppari/` は `.gitignore`。成果物のHTMLだけを `~/tsumiki-tools` へ。
@@ -29,11 +29,9 @@
 ## 5. 出力の置き場（正本＝`docs/置き場.md`）
 - 出力は全部 `~/つみき出力/<セッションの名前>/<ファイル>`（実体は iCloud `Kodai/04_つみきリモート制作物`）。種類や版のフォルダを作らない。名前は日本語、日付や v2 を付けない。
 - **置き場は自分で組み立てず `python3 tsumiki_out.py <ファイル名>` に聞く**（見せた後に作り直すなら `--new`）。`SendUserFile` はここに置いてから。
-- 「保存版に移行して」と言われたら、行き先（種類で自動）・`<月>_<名前>` のフォルダ・`書類/画像/データ` に分けて移動 → 正本 `docs/置き場.md` の「保存版への移行」。言われない限り移さない。
 
 ## 6. Codex連携
-**停止中**（A層 §6）。下は再開したとき用。
-Codex は `~/制作物` 専用。agmsg は scripts の inbox.sh / send.sh 経由だけ。CLI を回すときだけデスクトップアプリを閉じる。→ `~/ObsidianVault/Knowledge/claude-codex-integration.md`
+停止中（A層 §6）。再開したとき → `~/ObsidianVault/Knowledge/claude-codex-integration.md`
 
 ## 7. クラウドで開かれたら止まる
-A層が見えない／`~/ObsidianVault` が無い＝claude.ai/code などのクラウド環境。代わりの手順を組まず「ここでは作業しない」と伝えて止まる。ブランチも push しない。→ `docs/クラウドセッション.md`
+A層が見えない／`~/ObsidianVault` が無い＝クラウド環境。代わりの手順を組まず「ここでは作業しない」と伝えて止まる（ブランチも push もしない）。→ `docs/クラウドセッション.md`
