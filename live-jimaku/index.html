@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ライブ字幕</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="ライブ字幕">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f5f4f0;--surface:#fffefb;--surface-2:#efece5;--ink:#1d1a15;--ink-mid:#5b554a;--ink-soft:#666154;
+  --ghost:#887f70;--line:#e2ded4;--line-2:#d8d3c7;--accent:#b06f26;--accent-2:#8a5a24;--accent-wash:#f0e4d1;
+  --good:#4c7a51;--good-wash:#dde9dd;--good-ink:#416845;--warn-wash:#f2e0d4;--warn-ink:#974624;
+  --btn-bg:var(--accent-2);--btn-ink:var(--paper);
+  --ease:cubic-bezier(0.2,0,0,1);
+  --fs:28px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0f0d07;--surface:#211d14;--surface-2:#2b2619;--ink:#efe8da;--ink-mid:#a89e8b;--ink-soft:#9f988a;
+  --ghost:#9f988a;--line:#36301f;--line-2:#443d2b;--accent:#d59a4d;--accent-2:#e0ab63;--accent-wash:#362a19;
+  --good:#7fae82;--good-wash:#23301f;--good-ink:#7fae82;--warn-wash:#39251a;--warn-ink:#d9825a;
+  --btn-bg:var(--accent);--btn-ink:#1d1a15;
+}}
+*{box-sizing:border-box;margin:0}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+html,body{overflow-x:hidden;overscroll-behavior-x:none;max-width:100%}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.7 "Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif;
+  height:100dvh;display:flex;flex-direction:column}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 16px 8px;max-width:960px;width:100%;margin:0 auto}
+header h1{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;flex:none}
+.title{flex:1;min-width:0;font-size:13px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;padding:4px 12px;border-radius:9999px;background:var(--surface-2);color:var(--ink-mid);flex:none}
+.pill .dot{width:8px;height:8px;border-radius:9999px;background:currentColor}
+.pill.on{background:var(--good-wash);color:var(--good-ink)}
+.pill.on .dot{animation:beat 1.6s var(--ease) infinite}
+.pill.bad{background:var(--warn-wash);color:var(--warn-ink)}
+@keyframes beat{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.pill.on .dot{animation:none}}
+
+/* はじめる */
+.start{max-width:640px;width:100%;margin:0 auto;padding:16px}
+.card{background:var(--surface);border-radius:20px;padding:20px;border:1px solid var(--line)}
+.card h2{font-size:17px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=url]{flex:1 1 220px;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--paper);border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;min-height:44px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:12px;font-size:14px;font-weight:500;background:var(--surface-2);color:var(--ink)}
+.btn.primary{background:var(--btn-bg);color:var(--btn-ink)}
+.btn:disabled{opacity:.5;cursor:default}
+.note{font-size:13px;color:var(--ink-mid);margin-top:12px}
+.err{font-size:13px;color:var(--warn-ink);background:var(--warn-wash);border-radius:8px;padding:8px 12px;margin-top:12px}
+
+/* 字幕 */
+#view{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;position:relative}
+#lines{max-width:960px;margin:0 auto;padding:16px 16px 24px;display:flex;flex-direction:column;gap:12px}
+.ln{display:grid;grid-template-columns:auto 1fr;column-gap:12px;align-items:baseline}
+.ln time{font-size:13px;color:var(--ghost);font-variant-numeric:tabular-nums;min-width:4.2em}
+.ln p{font-size:calc(var(--fs) * .72);line-height:1.6;color:var(--ink-mid);word-break:normal;overflow-wrap:anywhere;line-break:strict}
+.ln.last p{font-size:var(--fs);color:var(--ink);font-weight:500}
+.ln.partial p{font-size:var(--fs);color:var(--ghost)}
+.ln.partial time{visibility:hidden}
+.empty{color:var(--ghost);text-align:center;padding:48px 16px;font-size:15px}
+#jump{position:sticky;bottom:12px;margin:0 auto;display:flex;width:max-content}
+#jump .btn{background:var(--surface);border:1px solid var(--line-2)}
+
+/* 下の道具 */
+.bar{border-top:1px solid var(--line);background:var(--paper);padding:8px 16px calc(8px + env(safe-area-inset-bottom))}
+.bar .in{max-width:960px;margin:0 auto;display:flex;align-items:center;gap:8px}
+.ic{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:var(--surface-2);color:var(--ink);flex:none}
+.ic .t{font-size:15px;font-weight:700;line-height:1}
+.ic small{font-size:11px}
+.sp{flex:1}
+.fsnum{font-size:13px;color:var(--ink-soft);min-width:2.5em;text-align:center;font-variant-numeric:tabular-nums}
+@media (max-width:599px){.title{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 12h4M13 12h4M7 15.5h7"/></svg>ライブ字幕</h1>
+  <div class="title" id="title"></div>
+  <span class="pill" id="pill"><span class="dot"></span><span id="pillt">待機</span></span>
+</header>
+
+<section class="start" id="start">
+  <div class="card">
+    <h2><svg class="i" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>配信</h2>
+    <div class="row">
+      <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=…" inputmode="url" autocomplete="off" aria-label="配信の URL">
+      <button class="btn" id="fromChrome" type="button" title="Chrome で見ているタブ"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5h8.5M8.97 13.75 4.7 6.4M15.03 13.75l-4.25 7.2"/></svg>Chrome</button>
+      <button class="btn primary" id="go" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></svg>始める</button>
+    </div>
+    <p class="note">数秒〜十数秒遅れて出ます。記録は Mac の「ムービー › ライブ字幕」に残ります。</p>
+    <p class="err" id="err" hidden></p>
+  </div>
+</section>
+
+<main id="view" hidden>
+  <div id="lines"><p class="empty" id="empty">声が聞こえたら、ここに出ます</p></div>
+  <div id="jump" hidden><button class="btn" type="button" id="jumpb"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>最新</button></div>
+</main>
+
+<nav class="bar" id="bar" hidden>
+  <div class="in">
+    <button class="ic" id="smaller" type="button" aria-label="文字を小さく"><span class="t"><small>A</small>−</span></button>
+    <span class="fsnum" id="fsnum">28</span>
+    <button class="ic" id="bigger" type="button" aria-label="文字を大きく"><span class="t">A+</span></button>
+    <span class="sp"></span>
+    <a class="ic" id="save" href="/api/text" download aria-label="記録を保存" title="記録を保存"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></svg></a>
+    <button class="ic" id="stop" type="button" aria-label="止める" title="止める"><svg class="i" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg></button>
+    <button class="ic" id="again" type="button" aria-label="別の配信" title="別の配信" hidden><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4.5v4h4"/></svg></button>
+  </div>
+</nav>
+
+<script>
+const $ = id => document.getElementById(id);
+const LS = 'livejimaku.fs';
+let fs = +(localStorage.getItem(LS) || (innerWidth < 600 ? 24 : 32));
+let follow = true, lines = [], partial = '', state = {};
+const STATUS = {idle:['待機',''], connecting:['つないでいます',''], listening:['聞いています','on'],
+  stopped:['止めました',''], ended:['配信が終わりました',''], error:['止まりました','bad']};
+
+function setFs(v){ fs = Math.max(16, Math.min(72, v)); document.documentElement.style.setProperty('--fs', fs+'px');
+  $('fsnum').textContent = fs; localStorage.setItem(LS, fs); }
+setFs(fs);
+
+const hm = t => { const d = new Date(t*1000); return d.toTimeString().slice(0,5); };
+function el(l, cls){ const d = document.createElement('div'); d.className = 'ln ' + (cls||'');
+  const t = document.createElement('time'); t.textContent = l.t ? hm(l.t) : '';
+  const p = document.createElement('p'); p.textContent = l.text; d.append(t, p); return d; }
+
+function render(){
+  const box = $('lines'); box.querySelectorAll('.ln').forEach(n => n.remove());
+  $('empty').hidden = lines.length > 0 || !!partial;
+  lines.forEach((l, i) => box.append(el(l, i === lines.length - 1 && !partial ? 'last' : '')));
+  if (partial) box.append(el({text: partial}, 'partial'));
+  if (follow) toBottom();
+}
+function toBottom(){ const v = $('view'); v.scrollTop = v.scrollHeight; }
+
+function show(s){
+  state = s || state;
+  const [t, c] = STATUS[state.status] || STATUS.idle;
+  $('pillt').textContent = t; $('pill').className = 'pill ' + c;
+  $('title').textContent = state.title || '';
+  const live = state.running || lines.length > 0;
+  $('start').hidden = live; $('view').hidden = !live; $('bar').hidden = !live;
+  $('stop').hidden = !state.running; $('again').hidden = state.running;
+  if (state.status === 'error' && !lines.length) { $('start').hidden = false; $('view').hidden = true; $('bar').hidden = true;
+    $('err').hidden = false; $('err').textContent = state.error || '配信の音を取れませんでした'; }
+  else $('err').hidden = true;
+  $('go').disabled = !!state.running;
+}
+
+async function load(){
+  const r = await fetch('/api/state', {cache:'no-store'}).then(r => r.json());
+  lines = r.lines; partial = r.partial || ''; show(r.state); render();
+}
+
+function listen(){
+  const es = new EventSource('/api/events');
+  es.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'line') { lines.push(m.line); partial = ''; render(); }
+    else if (m.type === 'partial') { partial = m.text; render(); }
+    else if (m.type === 'state') show(m.state);
+    else if (m.type === 'reset') { lines = []; partial = ''; render(); }
+  };
+  es.onerror = () => { es.close(); setTimeout(() => load().then(listen).catch(listen), 2000); };
+}
+
+$('view').addEventListener('scroll', () => {
+  const v = $('view'); follow = v.scrollHeight - v.scrollTop - v.clientHeight < 40; $('jump').hidden = follow;
+}, {passive:true});
+$('jumpb').onclick = () => { follow = true; toBottom(); $('jump').hidden = true; };
+$('bigger').onclick = () => { setFs(fs + 4); if (follow) toBottom(); };
+$('smaller').onclick = () => { setFs(fs - 4); if (follow) toBottom(); };
+
+$('fromChrome').onclick = async () => {
+  const r = await fetch('/api/chrome').then(r => r.json()).catch(() => ({}));
+  if (r.url) $('url').value = r.url;
+  else { $('err').hidden = false; $('err').textContent = 'Chrome の前のタブが YouTube ではありません'; }
+};
+$('go').onclick = async () => {
+  const url = $('url').value.trim();
+  const r = await fetch('/api/start', {method:'POST', body: JSON.stringify({url})});
+  if (!r.ok) { const j = await r.json().catch(() => ({})); $('err').hidden = false; $('err').textContent = j.error || '始められませんでした'; return; }
+  $('err').hidden = true; follow = true;
+  show({...state, running:true, status:'connecting', title:''});
+};
+$('stop').onclick = () => fetch('/api/stop', {method:'POST'});
+$('again').onclick = () => { lines = []; partial = ''; render(); show({...state, running:false, status:'idle', title:''});
+  $('start').hidden = false; $('view').hidden = true; $('bar').hidden = true; };
+
+const q = new URLSearchParams(location.search).get('url'); if (q) $('url').value = q;
+load().then(listen).catch(listen);
+</script>
+</body>
+</html>
