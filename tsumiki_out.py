@@ -53,6 +53,8 @@ READ_TIMEOUT = 5.0
 # shareddocuments:// で中まで進めず「最近使った項目」で止まる（本人の iPad で、空白ありのフォルダは
 # 止まり、空白なしのフォルダは作ったばかりのファイルでも開けた）。iPhone は空白があっても開ける
 SPACE_RE = re.compile(r'[\s_]*\s[\s_]*')   # 空白（全角・NBSP・タブも）と、その前後の _ をまとめて1つの _ に
+NAME_MARK_RE = re.compile(r'[・＝→【】（）「」『』〜]')   # ピンクの名前を途中で切る記号〔M156〕
+COMMON_STEMS = {'index', 'メモ', 'img', 'img1', 'image', 'test', 'テスト', 'memo', 'untitled', '資料', '画像'}   # 同じ名前が多く、押すと選ぶ画面が出る
 # 札の頭に Claude Code が付ける動きの印（✳ ✻ など）と点字の回転
 SPIN_RE = re.compile(r'^[\s⠀-⣿✳✻✽✶✢·•*⏺◐◓◑◒]+')
 
@@ -279,6 +281,18 @@ def main(argv):
             notes.append('名前の空白は「_」にしました（iPad のファイルアプリで開けないため）：%s → %s' % (old, fname))
         if not fname or '/' in fname or fname in ('.', '..'):
             return fail('ファイル名として使えません: %r' % args[0])
+        # つみきリモートでピンクの押せる名前になる条件〔M156〕。拡張子の大文字だけは直し、ほかは注意を出す
+        stem, ext = os.path.splitext(fname)
+        if ext != ext.lower():
+            old = fname
+            fname = stem + ext.lower()
+            notes.append('拡張子を小文字にしました：%s → %s' % (old, fname))
+        if NAME_MARK_RE.search(stem):
+            notes.append('⚠️ 名前に記号（%s）があります。ピンクにならないことがあるので付け直してください' % ''.join(sorted(set(NAME_MARK_RE.findall(stem)))))
+        if len(fname) > 60:
+            notes.append('⚠️ 名前が60字を超えています（%d字）。短くしてください' % len(fname))
+        if stem.lower() in COMMON_STEMS:
+            notes.append('⚠️ 「%s」はありふれた名前で、押すと選ぶ画面が出ます。用件の分かる名前にしてください' % stem)
         try:
             if '--new' in flags:
                 old = fname
