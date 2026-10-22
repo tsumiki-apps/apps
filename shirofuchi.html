@@ -222,9 +222,26 @@
   .more span.t{flex:1; font-size:12.5px; font-weight:700; letter-spacing:.02em;}
   .more .chev{width:14px; height:14px; flex:0 0 auto; display:block; opacity:.7;
     transition:transform var(--t-mid) var(--ease);}
-  .fold.open .chev{transform:rotate(180deg);}
-  .fold.open span.t{color:var(--ink);}
+  .more[aria-expanded="true"] .chev{transform:rotate(180deg);}
+  .more[aria-expanded="true"] span.t{color:var(--ink);}
+  /* 2つの見出しを1行に。閉じているときの高さを、見出し1つのころと同じにする */
+  .foldbar{display:flex;}
+  .foldbar .more{flex:1 1 0; min-width:0; gap:var(--s1);}
+  .foldbar .more span.t{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .fold .field{padding:0 var(--s2);}
+
+  /* ---- 内側の線：写真の上にのせる四角い線。見本は小さな写真に線を引いた絵 ---- */
+  .frame .lines{position:absolute; left:0; top:0; pointer-events:none;}
+  /* 7つ並ぶので、どの幅でも1つ44px以上になるように。狭い幅（〜379px）は4つずつ2段にする */
+  #lineRow{padding:0; gap:2px;}
+  .lchip{min-width:44px;}
+  @media (max-width:379px){
+    #lineRow:not(.hide){display:grid; grid-template-columns:repeat(4, 1fr); row-gap:var(--s1);}
+    /* 見出し2つが並ぶと「内側…」と切れるので、今の値は隠す（ひらけば光っているボタンで分かる） */
+    .foldbar .val{display:none;}
+  }
+  .lchip i{background:linear-gradient(180deg,#E9A27C 0%,#B9708A 52%,#3D5A80 54%,#26405F 100%);}  /* 色ok: 見本の「写真」の絵。UIの色ではない */
+  .lchip svg{width:100%; height:100%; display:block;}
 
   /* ---- 下の2つ：やり直す／保存する ---- */
   .actions{display:flex; gap:var(--s2);}
@@ -423,8 +440,9 @@
     <!-- ふちの色。ぼかし＝写真そのものをぼかして敷く／写真の色＝写真の平均の色 -->
     <div class="chips" id="chips"></div>
 
-    <!-- 角の丸み。ふだんはたたんでおく -->
+    <!-- 角の丸み／内側の線。ふだんは1行にたたんでおき、ひらくのはどちらか片方だけ -->
     <div class="fold" id="radFold">
+    <div class="foldbar">
     <button type="button" class="more" id="radBtn" aria-expanded="false" aria-controls="radRow">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
            stroke-linecap="round"><path d="M2.9,21.1 L2.9,10 A7.1,7.1 0 0 1 10,2.9 L21.1,2.9"/></svg>
@@ -433,9 +451,20 @@
       <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
            stroke-linecap="round" stroke-linejoin="round"><path d="M5,9 L12,16 L19,9"/></svg>
     </button>
+    <button type="button" class="more" id="lineBtn" aria-expanded="false" aria-controls="lineRow">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linejoin="round"
+           stroke-linecap="round"><rect x="2.5" y="2.5" width="19" height="19" rx="2.5" stroke-width="2.2"/>
+        <rect x="6.5" y="6.5" width="11" height="11" stroke-width="1.2" stroke-dasharray="2.2 1.8"/></svg>
+      <span class="t">内側の線</span>
+      <span class="val" id="lv">なし</span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M5,9 L12,16 L19,9"/></svg>
+    </button>
+    </div>
     <div class="field hide" id="radRow">
       <input type="range" id="r" min="0" max="24" step="1" value="2" aria-label="角の丸み">
     </div>
+    <div class="chips hide" id="lineRow"></div>
     </div>
     </div>
 
@@ -477,7 +506,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 18;
+const VER = 19;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -565,6 +594,25 @@ const BGS = [
 let bgKey = localStorage.getItem(KEY_BG) || 'white';
 if(!BGS.some(b => b.k === bgKey)) bgKey = 'white';
 let bgCustom = localStorage.getItem(KEY_BC) || '#F4F2EE';
+
+/* ---------- 内側の線（写真の上にのせる四角い線） ----------
+   2026-10-22 本人がモック8案から 1,2,3,4,5,8 を採用。
+   大きさはどれも「写真の見えている部分の短い辺」に対する％（u）。
+   ふちの太さと同じく％なので、プレビューでも書き出しでも、コラージュの小さいマスでも同じ見た目になる。
+   in ＝ 写真のきわから線の真ん中まで／w ＝ 線の太さ。日付は下の線を切って字を入れる。 */
+const LINES = [
+  {k:'none',   t:'なし', s:[]},
+  {k:'thin',   t:'細線', s:[{in:5,   w:.38, c:'#FFFFFF'}]},
+  {k:'thick',  t:'太線', s:[{in:5.6, w:1.3, c:'#FFFFFF'}]},
+  {k:'double', t:'二重', s:[{in:4.2, w:.48, c:'#FFFFFF'}, {in:6.5, w:.3, c:'#FFFFFF'}]},
+  {k:'black',  t:'黒線', s:[{in:5,   w:.48, c:'#1E1B18'}]},   // 色ok: 写真に焼きこむ線の色
+  {k:'band',   t:'帯',   s:[{in:5.6, w:2.3, c:'rgba(255,255,255,.45)'}]},
+  {k:'date',   t:'日付', s:[{in:5,   w:.38, c:'#FFFFFF'}], date:true}
+];
+const KEY_LN = 'shirofuchi_line', KEY_LOPEN = 'shirofuchi_lopen';
+let lineKey = localStorage.getItem(KEY_LN) || 'none';
+if(!LINES.some(l => l.k === lineKey)) lineKey = 'none';
+let shotDate = new Date();     // 日付の線に入れる日。えらんだファイルの日付（読めなければ今日）
 /* tiny ＝ 写真を思いきり小さくした見本（ぼかし背景と「写真の色」のもと） */
 let tiny = null, tinyURL = '', autoColor = '#FFFFFF';
 
@@ -727,8 +775,9 @@ function afterTiny(){ syncChips(); paintFrame(); paintPicks(); }
       たたんだ行に「角の丸み ○%」と値を出しておけば、ひらかなくても今の状態は分かる。 */
 const KEY_ROPEN = 'shirofuchi_ropen';
 function setRadOpen(open){
+  if(open && el('lineRow') && !el('lineRow').classList.contains('hide')) setLineOpen(false);
   el('radRow').classList.toggle('hide', !open);
-  el('radFold').classList.toggle('open', open);
+  el('radFold').classList.toggle('open', open || !el('lineRow').classList.contains('hide'));
   el('radBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
   localStorage.setItem(KEY_ROPEN, open ? '1' : '0');
   relayout();                  // パネルの高さが変わるので、プレビューを測り直す
@@ -738,9 +787,57 @@ el('radBtn').addEventListener('click', () => {
   setRadOpen(el('radRow').classList.contains('hide'));
 });
 
+/* 内側の線のボタン。見本は「小さな写真に、その線を引いた絵」 */
+function lineIcon(l){
+  if(l.k === 'none') return '<svg viewBox="0 0 24 24"><path d="M6,18 L18,6" stroke="rgba(255,255,255,.85)" stroke-width="2" stroke-linecap="round"/></svg>';
+  return '<svg viewBox="0 0 24 24" fill="none">' + l.s.map(o => {
+    const i = o.in * 0.5, w = Math.max(.9, o.w * 0.9);
+    if(l.date) return '<path d="M9,' + (24 - i) + ' L' + i + ',' + (24 - i) + ' L' + i + ',' + i + ' L' + (24 - i) + ',' + i +
+      ' L' + (24 - i) + ',' + (24 - i) + ' L15,' + (24 - i) + '" stroke="' + o.c + '" stroke-width="' + w + '"/>' +
+      '<path d="M10.5,' + (24 - i) + ' L13.5,' + (24 - i) + '" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>';
+    return '<rect x="' + i + '" y="' + i + '" width="' + (24 - i * 2) + '" height="' + (24 - i * 2) + '" stroke="' + o.c + '" stroke-width="' + w + '"/>';
+  }).join('') + '</svg>';
+}
+function buildLines(){
+  el('lineRow').innerHTML = LINES.map(l =>
+    '<button type="button" class="chip lchip" data-k="' + l.k + '" aria-label="内側の線 ' + l.t + '">' +
+      '<i>' + lineIcon(l) + '</i><b>' + l.t + '</b></button>').join('');
+  el('lineRow').addEventListener('click', e => {
+    const b = e.target.closest('.chip');
+    if(b && !busy) setLine(b.dataset.k);
+  });
+}
+function syncLines(){
+  el('lineRow').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.k === lineKey));
+  el('lv').textContent = LINES.find(l => l.k === lineKey).t;
+}
+function setLine(k){
+  lineKey = k;
+  localStorage.setItem(KEY_LN, k);
+  syncLines();
+  if(pending) disarmSave();
+  layout();
+}
+/* ⚠️ 角の丸みと内側の線は、どちらか片方だけひらく。両方ひらくとパネルが伸びて、
+   320×568 でプレビューが 35×62px まで縮む（2026-10-22 実測） */
+function setLineOpen(open){
+  if(open && !el('radRow').classList.contains('hide')) setRadOpen(false);
+  el('lineRow').classList.toggle('hide', !open);
+  el('radFold').classList.toggle('open', open || !el('radRow').classList.contains('hide'));
+  el('lineBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  localStorage.setItem(KEY_LOPEN, open ? '1' : '0');
+  relayout();
+}
+el('lineBtn').addEventListener('click', () => {
+  if(busy) return;
+  setLineOpen(el('lineRow').classList.contains('hide'));
+});
+
 buildShapes(el('shapes1'));
 buildShapes(el('shapes2'));
 buildChips();
+buildLines();
+syncLines();
 syncShapes();
 syncChips();
 paintPicks();
@@ -884,6 +981,9 @@ function render(){
     f.appendChild(box);
     it.box = box;
   });
+  const ln = document.createElement('canvas');   // 内側の線はこの1枚に描く（写真より上）
+  ln.className = 'lines';
+  f.appendChild(ln);
 }
 
 /* プレビューの大きさは、余った場所を実測してぴったり収まるように決める（＝スクロールしない） */
@@ -918,6 +1018,21 @@ function layout(){
     kid.style.width  = g.w + 'px';
     kid.style.height = g.h + 'px';
   });
+  const ln = f.querySelector('canvas.lines');
+  if(ln){
+    /* ⚠️ width/height を代入すると、同じ値でも中身ごと作り直しになる（dpr3 で約11MB）。
+       指でなぞるたびに layout() が走るので、大きさが変わったときだけ代入し、あとは消して描き直す */
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+    if(ln.width !== pw || ln.height !== ph){
+      ln.width = pw; ln.height = ph;
+      ln.style.width = w + 'px'; ln.style.height = h + 'px';
+    }
+    const lc = ln.getContext('2d');
+    lc.setTransform(1, 0, 0, 1, 0, 0);
+    lc.clearRect(0, 0, pw, ph);
+    if(lineKey !== 'none'){ lc.setTransform(dpr, 0, 0, dpr, 0, 0); drawLines(lc, w, h, false); }
+  }
 }
 el('seg').addEventListener('click', e => {
   const b = e.target.closest('.segb');
@@ -951,6 +1066,9 @@ if(window.ResizeObserver) new ResizeObserver(relayout).observe(el('stage'));
 /* 角の丸みの開け閉めを前回のとおりに戻す。
    ⚠️ relayout を使うので、layoutQ を作ったあと（＝ここ）で呼ぶこと */
 setRadOpen(localStorage.getItem(KEY_ROPEN) === '1');
+setLineOpen(localStorage.getItem(KEY_LOPEN) === '1');   // 両方 '1' なら、あとの線のほうだけひらく
+// 日付の字は Zen Maru Gothic で描く。読み込みが遅れたら、届いた時点で描き直す
+if(document.fonts && document.fonts.load) document.fonts.load('700 20px "Zen Maru Gothic"', '0123456789.').then(() => layout()).catch(() => {});
 
 /* ---------- ファイルをえらぶ ----------
    写真用・動画用で入力欄を分けている。accept を絞っておくと、
@@ -1024,6 +1142,7 @@ function load(files, hint){
   const over = use.length > MAX_SHOTS;
   if(over) use = use.slice(0, MAX_SHOTS);
   fileBytes = use[0].size;
+  takeDate(use[use.length - 1]);   // 日付の字は最後のマスに入るので、その写真の日付
   loadPhotos(use);
   if(over) toast('写真は' + MAX_SHOTS + '枚まで。はじめの' + MAX_SHOTS + '枚を使います');
 }
@@ -1048,8 +1167,56 @@ function loadPhotos(files){
   });
 }
 
+/* 日付の線に入れる日。写真の情報（EXIF）の撮影日時を読み、無ければファイルの日付。
+   ⚠️ iPhone の写真ピッカーは選んだ写真を書き出し直して渡すので、ファイルの日付（lastModified）は
+      「選んだ時刻」になりやすい。撮った日は EXIF の DateTimeOriginal に残っているのでそちらを先に見る。
+      動画は EXIF が無いので、ファイルの日付のまま。 */
+let dateTok = 0;
+function takeDate(file){
+  const tok = ++dateTok;     // 読み終わる前に別の写真をえらび直したら、古いほうの結果は捨てる
+  shotDate = file.lastModified ? new Date(file.lastModified) : new Date();
+  if(!/jpe?g/i.test(file.type || '') && !/\.jpe?g$/i.test(file.name || '')) return;
+  file.slice(0, 256 * 1024).arrayBuffer().then(buf => {
+    const d = exifDate(new DataView(buf));
+    if(d && tok === dateTok){ shotDate = d; if(lineKey === 'date'){ if(pending) disarmSave(); layout(); } }
+  }).catch(() => {});
+}
+/* JPEG の APP1(Exif) から DateTimeOriginal（0x9003）、無ければ DateTime（0x0132）を取り出す */
+function exifDate(v){
+  try{
+    if(v.getUint16(0) !== 0xFFD8) return null;
+    let o = 2;
+    while(o + 4 < v.byteLength){
+      const m = v.getUint16(o), len = v.getUint16(o + 2);
+      if(m === 0xFFE1 && v.getUint32(o + 4) === 0x45786966){          // "Exif"
+        const t = o + 10, le = v.getUint16(t) === 0x4949;
+        const u16 = p => v.getUint16(t + p, le), u32 = p => v.getUint32(t + p, le);
+        const find = (ifd, tag) => {
+          const n = u16(ifd);
+          for(let i = 0; i < n; i++){ const e = ifd + 2 + i * 12; if(u16(e) === tag) return e; }
+          return -1;
+        };
+        const str = e => { let p = u32(e + 8), r = ''; for(let i = 0; i < 19; i++) r += String.fromCharCode(v.getUint8(t + p + i)); return r; };
+        const ifd0 = u32(4);
+        let s = '';
+        const ex = find(ifd0, 0x8769);
+        if(ex >= 0){ const e = find(u32(ex + 8), 0x9003); if(e >= 0) s = str(e); }
+        if(!s){ const e = find(ifd0, 0x0132); if(e >= 0) s = str(e); }
+        const m2 = s.match(/^(\d{4}):(\d{2}):(\d{2})/);
+        if(!m2) return null;
+        const d = new Date(+m2[1], +m2[2] - 1, +m2[3]);
+        return isNaN(d) || +m2[1] < 1990 ? null : d;
+      }
+      if((m & 0xFF00) !== 0xFF00 || m === 0xFFDA) return null;          // 画像の本体に入ったら終わり
+      o += 2 + len;
+    }
+  }catch(e){}
+  return null;
+}
+
 function loadVideo(file){
   fileBytes = file.size;
+  takeDate(file);
   const u = URL.createObjectURL(file);
   urls.push(u);
   const v = document.createElement('video');
@@ -1256,6 +1423,68 @@ function makeCorners(W, H){
   return out;
 }
 
+/* 内側の線を描く（プレビューの重ね絵と、書き出しの両方がここを通る）。
+   線は写真の「見えている部分」の内側に引く。かどが丸いときは、線のかども同じ中心で丸める。
+   日付は最後のマス（1枚ならその写真）の下の線を切って入れる。 */
+function datePath(cx, x, y, w, h, r, gap){
+  // 下の線の切れ目（gap＝左右の端のx）から時計回りに、ぐるっと回って反対の端まで
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  cx.beginPath();
+  cx.moveTo(gap[0], y + h);
+  cx.lineTo(x + r, y + h);
+  cx.arcTo(x, y + h, x, y, r);
+  cx.arcTo(x, y, x + w, y, r);
+  cx.arcTo(x + w, y, x + w, y + h, r);
+  cx.arcTo(x + w, y + h, x, y + h, r);
+  cx.lineTo(gap[1], y + h);
+}
+function drawLines(cx, W, H, snap){
+  const L = LINES.find(l => l.k === lineKey);
+  if(!L || !L.s.length || !N()) return;
+  const cs = cells(W, H, 0, snap);
+  const ds = (() => {
+    const p = n => String(n).padStart(2, '0');
+    return shotDate.getFullYear() + '.' + p(shotDate.getMonth() + 1) + '.' + p(shotDate.getDate());
+  })();
+  cx.save();
+  shots.forEach((it, i) => {
+    const g = geomIn(cs[i], it);
+    const u = Math.min(g.vw, g.vh) / 100;
+    const pr = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);   // 写真のかどの丸み
+    const withDate = L.date && i === shots.length - 1;
+    let gap = null;
+    if(withDate){
+      const fs = Math.max(8, u * 4.6);
+      cx.font = '700 ' + fs + 'px "Zen Maru Gothic", "Hiragino Maru Gothic ProN", sans-serif';
+      const tw = cx.measureText(ds).width;
+      const mid = g.vx + g.vw / 2;
+      gap = [mid - tw / 2 - u * 2.4, mid + tw / 2 + u * 2.4];
+      // 小さいプレビューでは字の最小8pxが効いてマスからはみ出す。そのときは字を入れず線だけ
+      if(gap[1] - gap[0] > g.vw * 0.7) gap = null;
+    }
+    L.s.forEach(o => {
+      const d = o.in * u, lw = Math.max(1, o.w * u);
+      const x = g.vx + d, y = g.vy + d, w = g.vw - d * 2, h = g.vh - d * 2;
+      if(w <= lw || h <= lw) return;
+      const r = Math.max(0, pr - d);
+      cx.strokeStyle = o.c; cx.lineWidth = lw; cx.lineJoin = 'miter';
+      if(gap) datePath(cx, x, y, w, h, r, gap);
+      else{
+        cx.beginPath();
+        if(cx.roundRect) cx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2));
+        else datePath(cx, x, y, w, h, r, [x + w / 2, x + w / 2]);
+      }
+      cx.stroke();
+    });
+    if(gap){
+      const o = L.s[0], d = o.in * u;
+      cx.fillStyle = o.c; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+      cx.fillText(ds, g.vx + g.vw / 2, g.vy + g.vh - d);
+    }
+  });
+  cx.restore();
+}
+
 /* 1コマぶんを描く。
    ⚠️ iPhoneでは「毎コマ clip する」「毎コマ台紙ぜんぶを白でぬる」がとても重く、
       動画のコマ落ちの原因になる。そこで
@@ -1276,6 +1505,7 @@ function paint(ctx, W, H, keepBg, pre){
     ctx.drawImage(it.media, sx, sy, cw, ch, g.vx, g.vy, g.vw, g.vh);
   });
   (pre || makeCorners(W, H)).forEach(o => ctx.drawImage(o.c, o.x, o.y));
+  drawLines(ctx, W, H, true);                // 内側の線は写真とかどの上にのせる
 }
 
 /* ---------- 保存 ---------- */
@@ -1294,6 +1524,10 @@ async function save(){
   busy = true;
   btn.disabled = true; el('again').disabled = true;
   try{
+    // 日付の字が届く前に描くと、ちがう書体で焼きつく。少しだけ待つ（届かなくても先へ進む）
+    if(lineKey === 'date' && document.fonts && document.fonts.load){
+      await Promise.race([document.fonts.load('700 20px "Zen Maru Gothic"', '0123456789.'), new Promise(r => setTimeout(r, 1500))]).catch(() => {});
+    }
     if(kind === 'image'){
       btn.textContent = '書き出し中';
       const blob = await makeImage();
