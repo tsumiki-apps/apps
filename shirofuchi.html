@@ -434,7 +434,7 @@
         <b>ふちの太さ</b>
         <span class="val" id="wv">2.0%</span>
       </div>
-      <input type="range" id="w" min="0.5" max="8" step="0.1" value="2" aria-label="ふちの太さ">
+      <input type="range" id="w" min="0" max="8" step="0.1" value="2" aria-label="ふちの太さ">
     </div>
 
     <!-- ふちの色。ぼかし＝写真そのものをぼかして敷く／写真の色＝写真の平均の色 -->
@@ -506,7 +506,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 21;
+const VER = 24;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -531,7 +531,7 @@ let busy = false;
    太さ ＝ 出来上がりの「横幅」に対する％。かど ＝ 中身（写真部分）の「横幅」に対する％。
    どちらも％なので、プレビューでも書き出しでも見た目が同じになる。 */
 let pct = parseFloat(localStorage.getItem(KEY) || '2');
-if(!(pct >= 0.5 && pct <= 8)) pct = 2;
+if(!(pct >= 0 && pct <= 8)) pct = 2;     // 0 ＝ ふちなし（2026-10-22 本人の依頼）
 /* はじめて開いたときは 太さ2% / かど2%（＝ふつうの丸み）
    ふつうの丸みを 6%→2% に変えたので、前のふつう(6)のまま残っている端末だけ一度きりで戻す
    （自分でずらした値には触らない・フラグで二度目は走らない） */
@@ -801,7 +801,10 @@ function buildLines(){
       '<i>' + lineIcon(l) + '</i><b>' + l.t + '</b></button>').join('');
   el('lineRow').addEventListener('click', e => {
     const b = e.target.closest('.chip');
-    if(b && !busy) setLine(b.dataset.k);
+    if(!b || busy) return;
+    setLine(b.dataset.k);
+    /* 狭い画面（〜379px）では棚が2段になり、プレビューが 62×110px まで縮む。選んだら閉じて大きく見せる */
+    if(window.matchMedia && window.matchMedia('(max-width:379px)').matches) setLineOpen(false);
   });
 }
 function syncLines(){
@@ -906,15 +909,27 @@ function tAt(s, base, cover){
    vx,vy,vw,vh ＝ そのうち実際に見える場所（＝マスとの重なり。かどの丸みはここにつく）
    s ＝ 元の写真にかかる倍率（出来上がりサイズを決めるのに使う）
    mx,my ＝ 指で動かせる範囲（割合） */
-function geomIn(c, it){
+/* snap ＝ 書き出しのとき。写真の場所も整数の画素にそろえる。
+   ⚠️ 全部のせる（写真がマスより小さい）と写真の端が半端な位置に来て、端の1列が写真と台紙の混ざった色になる。
+      丸い角の白でもその1列が隠れきらず、灰色の細い線になる（2026-10-22 実測）。 */
+function geomIn(c, it, snap){
   const f = fitCell(c.w, c.h, it.sw, it.sh);
   const s = scaleAt(zoom, f.base, f.cover);
-  const w = it.sw * s, h = it.sh * s;
+  let w = it.sw * s, h = it.sh * s;
   const mx = Math.max(0, (w - c.w) / 2), my = Math.max(0, (h - c.h) / 2);
   const ox = Math.max(-mx, Math.min(mx, it.panX * c.w));
   const oy = Math.max(-my, Math.min(my, it.panY * c.h));
-  const x  = c.x + (c.w - w) / 2 + ox;
-  const y  = c.y + (c.h - h) / 2 + oy;
+  let x  = c.x + (c.w - w) / 2 + ox;
+  let y  = c.y + (c.h - h) / 2 + oy;
+  if(snap){
+    /* 大きさはマスと同じ偶奇にそろえてから丸める。そろえないと、余りが奇数のとき左右（上下）の余白が1px違う */
+    const even = (v, cv) => { let r = Math.round(v); if((cv - r) % 2) r += (v > r ? 1 : -1); return r; };
+    w = even(w, c.w); h = even(h, c.h);
+    // 動かせる範囲は丸めたあとの大きさで出し直す（前の範囲のままだと、端まで動かしたとき1px台紙がのぞく）
+    const mxs = Math.max(0, (w - c.w) / 2), mys = Math.max(0, (h - c.h) / 2);
+    x = c.x + (c.w - w) / 2 + Math.max(-mxs, Math.min(mxs, Math.round(ox)));
+    y = c.y + (c.h - h) / 2 + Math.max(-mys, Math.min(mys, Math.round(oy)));
+  }
   const vx = Math.max(x, c.x), vy = Math.max(y, c.y);
   const vw = Math.max(1, Math.min(x + w, c.x + c.w) - vx);
   const vh = Math.max(1, Math.min(y + h, c.y + c.h) - vy);
@@ -985,10 +1000,10 @@ function render(){
 
 /* プレビューの大きさは、余った場所を実測してぴったり収まるように決める（＝スクロールしない） */
 function layout(){
-  el('wv').textContent = pct.toFixed(1) + '%';
+  el('wv').textContent = pct > 0 ? pct.toFixed(1) + '%' : 'なし';
   el('rv').textContent = Math.round(rad) + '%';
   // 定規の「通ったところ」を木口色でぬる（--p は CSS の track が読む）
-  el('w').style.setProperty('--p', ((pct - 0.5) / 7.5 * 100).toFixed(1) + '%');
+  el('w').style.setProperty('--p', (pct / 8 * 100).toFixed(1) + '%');
   el('r').style.setProperty('--p', (rad / 24 * 100).toFixed(1) + '%');
   const f = el('frame'), st = el('stage');
   if(!N() || !st.clientWidth) return;
@@ -1039,6 +1054,8 @@ el('seg').addEventListener('click', e => {
 });
 el('w').addEventListener('input', e => {
   pct = parseFloat(e.target.value);
+  // 指で 0 ちょうどに合わせるのは難しいので、0.3% より下は「ふちなし」に吸いつかせる
+  if(pct < 0.3){ pct = 0; e.target.value = '0'; }
   localStorage.setItem(KEY, String(pct));
   if(pending) disarmSave();   // 見た目を変えたら、書き出しずみのファイルは作り直し
   layout();
@@ -1424,25 +1441,38 @@ function makeCorners(W, H){
   const out = [];
   const cs = cells(W, H, 0, true);
   shots.forEach((it, i) => {
-    const g = geomIn(cs[i], it);
+    const g = geomIn(cs[i], it, true);
     const r = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);
     if(!(r > 0.5)) return;
-    const s = Math.ceil(r) + 1;
-    const spots = [
-      {x:g.vx,            y:g.vy,            cx:r, cy:r},   // 左上
-      {x:g.vx + g.vw - r, y:g.vy,            cx:0, cy:r},   // 右上
-      {x:g.vx + g.vw - r, y:g.vy + g.vh - r, cx:0, cy:0},   // 右下
-      {x:g.vx,            y:g.vy + g.vh - r, cx:r, cy:0}    // 左下
-    ];
-    spots.forEach(o => {
+    /* ⚠️ 三日月は整数の画素の位置に貼る。半端な位置（右・下の角は vx+vw-r）に貼ると、
+          貼るときに引きのばされて、写真の右端の1列・下端の1行が隠れきらず、
+          丸い角の白の中に灰色の細い線が出る（2026-10-22 本人の画像で実測：右上＝縦線・右下＝縦横・左下＝横線、
+          221/199 前後。左上だけ線が無く「右上と左下が太い」に見えた）。
+       ⚠️ 4つの角は、左上の型1枚を反転して作る。角ごとに円を描くと、縁のなめらかさが上下で
+          わずかに違い、鏡写しにならない。
+       書き出しでは写真の場所が整数（geomIn の snap）なので、角の点 X,Y も整数。 */
+    const s = Math.ceil(r);
+    const m = document.createElement('canvas');           // 左上の型：角の点が (0,0)。残すのは丸みの外側だけ
+    m.width = s; m.height = s;
+    const mc = m.getContext('2d');
+    mc.fillStyle = '#000'; mc.fillRect(0, 0, s, s);
+    mc.globalCompositeOperation = 'destination-out';
+    mc.beginPath(); mc.arc(r, r, r, 0, Math.PI * 2); mc.fill();
+    mc.fillRect(r, 0, s, s); mc.fillRect(0, r, s, s);
+    const L = Math.round(g.vx), T = Math.round(g.vy), R = Math.round(g.vx + g.vw), B = Math.round(g.vy + g.vh);
+    [[L, T, 0, 0], [R, T, 1, 0], [R, B, 1, 1], [L, B, 0, 1]].forEach(([X, Y, right, bottom]) => {
+      const ox = right ? X - s : X, oy = bottom ? Y - s : Y;
       const c = document.createElement('canvas');
       c.width = s; c.height = s;
       const cx = c.getContext('2d');
-      cx.save(); cx.translate(-o.x, -o.y); drawBackdrop(cx, W, H); cx.restore();
-      cx.globalCompositeOperation = 'destination-out';
-      cx.beginPath(); cx.arc(o.cx, o.cy, r, 0, Math.PI * 2); cx.fill();   // 丸みの内側＝写真を見せる
-      cx.fillRect(r, 0, s, s); cx.fillRect(0, r, s, s);                   // r より外は使わない
-      out.push({x:o.x, y:o.y, c});
+      cx.save(); cx.translate(-ox, -oy); drawBackdrop(cx, W, H); cx.restore();   // 台紙と同じ模様
+      cx.globalCompositeOperation = 'destination-in';                          // 型の形だけ残す
+      cx.save();
+      cx.translate(right ? s : 0, bottom ? s : 0);
+      cx.scale(right ? -1 : 1, bottom ? -1 : 1);
+      cx.drawImage(m, 0, 0);
+      cx.restore();
+      out.push({x:ox, y:oy, c});
     });
   });
   return out;
@@ -1474,7 +1504,7 @@ function drawLines(cx, W, H, snap, minLw){
   })();
   cx.save();
   shots.forEach((it, i) => {
-    const g = geomIn(cs[i], it);
+    const g = geomIn(cs[i], it, snap);
     const u = Math.min(g.vw, g.vh) / 100;
     const pr = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);   // 写真のかどの丸み
     const withDate = L.date && i === shots.length - 1;
@@ -1524,12 +1554,14 @@ function paint(ctx, W, H, keepBg, pre){
   if(!keepBg) drawBackdrop(ctx, W, H);      // 台紙ぜんぶをふちの色（またはぼかし）でぬる
   const cs = cells(W, H, 0, true);
   shots.forEach((it, i) => {
-    const g = geomIn(cs[i], it);
+    const g = geomIn(cs[i], it, true);
     /* 「見えている場所」ぶんだけを元の写真から切り出して描く。
-       こうすると拡大してはみ出しても、切り抜き（clip）を使わずにふちを守れる＝iPhoneで軽い */
-    const sx = Math.max(0, (g.vx - g.x) / g.s), sy = Math.max(0, (g.vy - g.y) / g.s);
-    const cw = Math.max(1, Math.min(it.sw - sx, g.vw / g.s));
-    const ch = Math.max(1, Math.min(it.sh - sy, g.vh / g.s));
+       こうすると拡大してはみ出しても、切り抜き（clip）を使わずにふちを守れる＝iPhoneで軽い
+       倍率は丸めたあとの大きさから出す（g.s は丸める前の倍率なので、端が1画素ずれる） */
+    const kx = g.w / it.sw, ky = g.h / it.sh;
+    const sx = Math.max(0, (g.vx - g.x) / kx), sy = Math.max(0, (g.vy - g.y) / ky);
+    const cw = Math.max(1, Math.min(it.sw - sx, g.vw / kx));
+    const ch = Math.max(1, Math.min(it.sh - sy, g.vh / ky));
     ctx.drawImage(it.media, sx, sy, cw, ch, g.vx, g.vy, g.vw, g.vh);
   });
   (pre || makeCorners(W, H)).forEach(o => ctx.drawImage(o.c, o.x, o.y));
