@@ -477,7 +477,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 17;
+const VER = 18;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -539,9 +539,16 @@ const ARS = [
 ];
 let arKey = localStorage.getItem(KEY_AR) || '9:16';
 if(!ARS.some(a => a.k === arKey)) arKey = '9:16';
-/* いまの 横÷たて。'元のまま' は写真の比率をそのまま使う（写真が来る前は 9:16 のふりをする） */
+/* いまの 横÷たて。'元のまま' は写真の比率をそのまま使う（写真が来る前は 9:16 のふりをする）
+   ⚠️ 'そのまま' の台紙は、写真の比率そのものにしてはいけない。ふちは4辺とも同じ太さ b（＝横幅の％）
+      なので、台紙が写真と同じ比率だと内側の比率がずれ、ふちを太くするほど上下（横長なら左右）だけ
+      太くなる（2026-10-22 実測：9:16 の写真・太さ8% で 左右111px・上下198px）。
+      内側が写真の比率になるように、ふちのぶんを足した台紙にする。 */
 function curAR(){
-  if(arKey === 'src') return N() ? shots[0].sw / shots[0].sh : 0.5625;
+  if(arKey === 'src'){
+    const a = N() ? shots[0].sw / shots[0].sh : 0.5625, p = pct / 100;
+    return 1 / ((1 - 2 * p) / a + 2 * p);
+  }
   return ARS.find(a => a.k === arKey).v;
 }
 const CROP_MAX = 0.03;      // これ以内しか切れないなら、4辺のふちをそろえる（＝いままでの見た目）
@@ -743,32 +750,49 @@ syncSeg();                     // 前回えらんだ「全部のせる／台紙�
    ⚠️ 白い帯の太さは、外わくも 写真どうしのすきまも 同じ b（＝ふちの太さ）。
       別々にすると帯の太さがちぐはぐになり、ふちの太さスライダーの意味が壊れる。
    1枚＝そのまま／2枚＝長いほうを半分／3枚＝大きいの1つ＋小さいの2つ／4枚＝2×2。 */
-function cells(W, H, n){
+/* snap ＝ 書き出しのとき。ふちとマスの境目を整数の画素にそろえる。
+   ⚠️ 半端な位置（例 b=31.2px）で描くと、境目の1列が写真と白の混ざった色になり、
+      辺によってふちが1px太く見える。プレビューは小さいので丸めると太さの比が狂う＝丸めない。
+      2つ目のマスは「のこり」で取るので、外わくも すきまも b のまま。 */
+function cells(W, H, n, snap){
   n = n || Math.max(1, N());
-  const b = W * pct / 100;
+  const q = snap ? Math.round : (v => v);
+  const b = q(W * pct / 100);
   const x0 = b, y0 = b;
   const iw = Math.max(1, W - b * 2), ih = Math.max(1, H - b * 2);
   const R = (x, y, w, h) => ({x, y, w: Math.max(1, w), h: Math.max(1, h)});
   if(n <= 1) return [R(x0, y0, iw, ih)];
   const tall = ih >= iw;                      // たて長の台紙か（切る向きを決める）
-  const cw = (iw - b) / 2, ch = (ih - b) / 2;
+  const cw = q((iw - b) / 2), ch = q((ih - b) / 2);
+  const cw2 = iw - b - cw, ch2 = ih - b - ch;  // 右・下のマス（丸めのあまりをここで吸う）
   if(n === 2){
-    return tall ? [R(x0, y0, iw, ch), R(x0, y0 + ch + b, iw, ch)]
-                : [R(x0, y0, cw, ih), R(x0 + cw + b, y0, cw, ih)];
+    return tall ? [R(x0, y0, iw, ch), R(x0, y0 + ch + b, iw, ch2)]
+                : [R(x0, y0, cw, ih), R(x0 + cw + b, y0, cw2, ih)];
   }
   if(n === 3){
-    return tall ? [R(x0, y0, iw, ch), R(x0, y0 + ch + b, cw, ch), R(x0 + cw + b, y0 + ch + b, cw, ch)]
-                : [R(x0, y0, cw, ih), R(x0 + cw + b, y0, cw, ch), R(x0 + cw + b, y0 + ch + b, cw, ch)];
+    return tall ? [R(x0, y0, iw, ch), R(x0, y0 + ch + b, cw, ch2), R(x0 + cw + b, y0 + ch + b, cw2, ch2)]
+                : [R(x0, y0, cw, ih), R(x0 + cw + b, y0, cw2, ch), R(x0 + cw + b, y0 + ch + b, cw2, ch2)];
   }
-  return [R(x0, y0, cw, ch),            R(x0 + cw + b, y0, cw, ch),
-          R(x0, y0 + ch + b, cw, ch),   R(x0 + cw + b, y0 + ch + b, cw, ch)];
+  return [R(x0, y0, cw, ch),            R(x0 + cw + b, y0, cw2, ch),
+          R(x0, y0 + ch + b, cw, ch2),  R(x0 + cw + b, y0 + ch + b, cw2, ch2)];
 }
 /* 1つのマス（cw×ch）に写真（sw×sh）を入れるときの、「そのまま」「うめる」の倍率 */
 function fitCell(cw, ch, sw, sh){
   const cover = Math.max(cw / sw, ch / sh);                      // マスいっぱいに満たす倍率
   const crop  = Math.max(sw * cover / cw, sh * cover / ch) - 1;   // そのとき切れる割合
-  // ほぼマスと同じ比率の写真は、いままで通り4辺そろえる。それ以外は切らずに全部のせる
-  const base  = crop <= CROP_MAX ? cover : Math.min(cw / sw, ch / sh);
+  /* 写真1枚のときは、台紙の形とも比べる。
+     ⚠️ ふちは4辺同じ太さなので、台紙と同じ比率の写真でも、内側のマスとは比率がずれる。
+        マスとだけ比べると、ふちを約3%より太くしたとたん「全部のせる」に落ち、
+        上下（横長なら左右）だけふちが太くなる（2026-10-22 実測：9:16 の写真を形 9:16・太さ8% で 103/183px）。
+        台紙とほぼ同じ比率なら、ふちのぶんだけ切って4辺そろえる。
+     逆に、マスとの比較を残すと、比率の違う写真が太さ約7.6%をこえたところで急に「切る」側へ跳ぶ
+     （3:4 の写真を形 4:5 にしたとき）。1枚のときは台紙とだけ比べる。
+     'そのまま' だけは台紙がふちのぶん写真と違う比率になるので、マスと比べる（切れる量はほぼ0）。 */
+  const a = sw / sh, ar = curAR();
+  const fit = (N() !== 1 || arKey === 'src') ? crop <= CROP_MAX
+            : Math.max(a / ar, ar / a) - 1 <= CROP_MAX;
+  // ほぼ同じ比率の写真は、いままで通り4辺そろえる。それ以外は切らずに全部のせる
+  const base  = fit ? cover : Math.min(cw / sw, ch / sh);
   return {base, cover};
 }
 /* スライダーの値（0〜2）→ 実際の倍率。1 でちょうど「うめる」になるように折れ線でつなぐ。
@@ -1206,7 +1230,7 @@ function drawBackdrop(ctx, W, H){
       ふちが1色のときは1色の三日月、ぼかしのときはぼかしの三日月になる。 */
 function makeCorners(W, H){
   const out = [];
-  const cs = cells(W, H);
+  const cs = cells(W, H, 0, true);
   shots.forEach((it, i) => {
     const g = geomIn(cs[i], it);
     const r = Math.min(g.vw * rad / 100, g.vw / 2, g.vh / 2);
@@ -1241,7 +1265,7 @@ function makeCorners(W, H){
    pre ＝ さきに作っておいた「かどの三日月」。動画のときは1回作って使い回す。 */
 function paint(ctx, W, H, keepBg, pre){
   if(!keepBg) drawBackdrop(ctx, W, H);      // 台紙ぜんぶをふちの色（またはぼかし）でぬる
-  const cs = cells(W, H);
+  const cs = cells(W, H, 0, true);
   shots.forEach((it, i) => {
     const g = geomIn(cs[i], it);
     /* 「見えている場所」ぶんだけを元の写真から切り出して描く。
@@ -1341,7 +1365,7 @@ function stamp(){
   return 'shirofuchi_' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
 
-/* 出来上がり（9:16の台紙）の大きさ。写真が元の細かさのまま入るサイズを選ぶ。
+/* 出来上がり（えらんだ形の台紙）の大きさ。写真が元の細かさのまま入るサイズを選ぶ。
    geom は比率だけで決まるので、仮の1000pxで倍率を出して逆算できる */
 function outSize(){
   const ar = curAR();
