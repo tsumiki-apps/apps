@@ -506,7 +506,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 20;
+const VER = 21;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -1028,7 +1028,7 @@ function layout(){
     const lc = ln.getContext('2d');
     lc.setTransform(1, 0, 0, 1, 0, 0);
     lc.clearRect(0, 0, pw, ph);
-    if(lineKey !== 'none'){ lc.setTransform(dpr, 0, 0, dpr, 0, 0); drawLines(lc, w, h, false); }
+    if(lineKey !== 'none'){ lc.setTransform(dpr, 0, 0, dpr, 0, 0); drawLines(lc, w, h, false, 1 / dpr); }
   }
 }
 el('seg').addEventListener('click', e => {
@@ -1172,11 +1172,38 @@ let dateTok = 0;
 function takeDate(file){
   const tok = ++dateTok;     // 読み終わる前に別の写真をえらび直したら、古いほうの結果は捨てる
   shotDate = file.lastModified ? new Date(file.lastModified) : new Date();
+  const isVid = /^video\//.test(file.type || '') || /\.(mov|mp4|m4v)$/i.test(file.name || '');
+  if(isVid){
+    /* 動画（mp4/mov）は moov の中の mvhd に作成日時がある。moov は頭か終わりのどちらかにあるので、
+       両はしの1MBずつを見る */
+    const n = 1024 * 1024, parts = [file.slice(0, n)];
+    if(file.size > n) parts.push(file.slice(Math.max(n, file.size - n)));
+    Promise.all(parts.map(b => b.arrayBuffer())).then(bufs => {
+      let d = null;
+      for(const b of bufs){ d = mvhdDate(new DataView(b)); if(d) break; }
+      if(d && tok === dateTok){ shotDate = d; if(lineKey === 'date'){ if(pending) disarmSave(); layout(); } }
+    }).catch(() => {});
+    return;
+  }
   if(!/jpe?g/i.test(file.type || '') && !/\.jpe?g$/i.test(file.name || '')) return;
   file.slice(0, 256 * 1024).arrayBuffer().then(buf => {
     const d = exifDate(new DataView(buf));
     if(d && tok === dateTok){ shotDate = d; if(lineKey === 'date'){ if(pending) disarmSave(); layout(); } }
   }).catch(() => {});
+}
+/* mp4/mov の mvhd（動画全体の情報）から作成日時を取り出す。1904-01-01 からの秒（UTC）。
+   ⚠️ 中身を正しくたどらず「mvhd」の4文字を探すだけなので、見つけた値は年の範囲で確かめる */
+function mvhdDate(v){
+  try{
+    for(let i = 4; i + 24 < v.byteLength; i++){
+      if(v.getUint32(i) !== 0x6D766864) continue;          // "mvhd"
+      const ver = v.getUint8(i + 4);
+      const sec = ver === 1 ? v.getUint32(i + 8) * 4294967296 + v.getUint32(i + 12) : v.getUint32(i + 8);
+      const d = new Date((sec - 2082844800) * 1000);
+      if(!isNaN(d) && d.getFullYear() >= 2000 && d.getFullYear() <= new Date().getFullYear() + 1) return d;
+    }
+  }catch(e){}
+  return null;
 }
 /* JPEG の APP1(Exif) から DateTimeOriginal（0x9003）、無ければ DateTime（0x0132）を取り出す */
 function exifDate(v){
@@ -1197,8 +1224,9 @@ function exifDate(v){
         const ifd0 = u32(4);
         let s = '';
         const ex = find(ifd0, 0x8769);
+        const ok = t2 => /^\d{4}:\d{2}:\d{2}/.test(t2);
         if(ex >= 0){ const e = find(u32(ex + 8), 0x9003); if(e >= 0) s = str(e); }
-        if(!s){ const e = find(ifd0, 0x0132); if(e >= 0) s = str(e); }
+        if(!ok(s)){ const e = find(ifd0, 0x0132); if(e >= 0) s = str(e); }   // 撮影日時が空白で埋まっている写真もある
         const m2 = s.match(/^(\d{4}):(\d{2}):(\d{2})/);
         if(!m2) return null;
         const d = new Date(+m2[1], +m2[2] - 1, +m2[3]);
@@ -1435,7 +1463,8 @@ function datePath(cx, x, y, w, h, r, gap){
   cx.arcTo(x + w, y + h, x, y + h, r);
   cx.lineTo(gap[1], y + h);
 }
-function drawLines(cx, W, H, snap){
+function drawLines(cx, W, H, snap, minLw){
+  minLw = minLw || 1;   // 線のいちばん細い太さ。プレビューは端末の1画素（1/dpr）、書き出しは1px
   const L = LINES.find(l => l.k === lineKey);
   if(!L || !L.s.length || !N()) return;
   const cs = cells(W, H, 0, snap);
@@ -1457,10 +1486,12 @@ function drawLines(cx, W, H, snap){
       const mid = g.vx + g.vw / 2;
       gap = [mid - tw / 2 - u * 2.4, mid + tw / 2 + u * 2.4];
       // 小さいプレビューでは字の最小8pxが効いてマスからはみ出す。そのときは字を入れず線だけ
-      if(gap[1] - gap[0] > g.vw * 0.7) gap = null;
+      // 丸い角にかかるときも同じ（切れ目は下の線のまっすぐな所に収める）
+      const d0 = L.s[0].in * u, straight = (g.vw - d0 * 2) - Math.max(0, pr - d0) * 2;
+      if(gap[1] - gap[0] > Math.min(g.vw * 0.7, straight - 2)) gap = null;
     }
     L.s.forEach(o => {
-      const d = o.in * u, lw = Math.max(1, o.w * u);
+      const d = o.in * u, lw = Math.max(minLw, o.w * u);
       const x = g.vx + d, y = g.vy + d, w = g.vw - d * 2, h = g.vh - d * 2;
       if(w <= lw || h <= lw) return;
       const r = Math.max(0, pr - d);
