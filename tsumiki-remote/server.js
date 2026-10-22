@@ -17,7 +17,11 @@ const LOCK = require('./lib/lockgate');
 
 const PORT = Number(process.env.TSUMIKI_REMOTE_PORT || 8787);
 const HOST = process.env.TSUMIKI_REMOTE_HOST || '127.0.0.1';
-const CONF_DIR = path.join(os.homedir(), '.tsumiki-remote');
+// 試験のときは TSUMIKI_REMOTE_CONF で別の置き場にできる（token・usage.json・メモ・枠の記録・
+// ステータス行の写し・auth.json・made.jsonl などを、試験のサーバーが本番のものに書かないため・2026-10-22）。
+// ⚠️ **全部ではない**：lib/lockgate.js の置き場（passkeys など）は TSUMIKI_PASSKEY_FILE /
+//    TSUMIKI_LOCK_KEY_FILE で、MOVED_FILE（moved.json）は本番のまま（読むだけ）。試験では別に指定すること
+const CONF_DIR = process.env.TSUMIKI_REMOTE_CONF || path.join(os.homedir(), '.tsumiki-remote');
 const TOKEN_FILE = path.join(CONF_DIR, 'token');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -112,6 +116,7 @@ let usageRetryAt = 0;               // この時刻までは取りにいかな�
 let usageFails = 0;                 // 連続して失敗した回数（倍々で待つのに使う）
 let usageLastStatus = 0;            // 直前の失敗の中身（429＝叩きすぎ／401＝期限切れ／0＝通信）
 let usageStamps = [];               // 直近1時間に叩いた時刻（叩きすぎの蓋に使う）
+let usageSrc = 'oauth';             // いまの値の出どころ（status／vibe／oauth・下の「ステータス行の写し」）
 
 // 覚え書き。**再起動をまたいで残すのがこのファイルの全部の目的**なので、
 // 値だけでなく「いつまで待てと言われているか」も一緒に残す。
@@ -124,6 +129,7 @@ function usageLoad() {
     if (typeof o.fails === 'number') usageFails = o.fails;
     if (typeof o.lastStatus === 'number') usageLastStatus = o.lastStatus;
     if (Array.isArray(o.stamps)) usageStamps = o.stamps.filter((t) => typeof t === 'number');
+    if (typeof o.src === 'string') usageSrc = o.src;
   } catch (e) { /* 無ければ無いでよい（初回・壊れていたときは白紙から） */ }
 }
 function usageSave() {
@@ -131,7 +137,7 @@ function usageSave() {
     const tmp = USAGE_FILE + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({
       at: usageCache.at, value: usageCache.value, retryAt: usageRetryAt,
-      fails: usageFails, lastStatus: usageLastStatus, stamps: usageStamps,
+      fails: usageFails, lastStatus: usageLastStatus, stamps: usageStamps, src: usageSrc,
     }), { mode: 0o600 });
     fs.renameSync(tmp, USAGE_FILE);  // 書きかけを読ませない
   } catch (e) { /* 残せなくても動きは変わらない（次回また取りにいくだけ） */ }
@@ -265,17 +271,152 @@ function usageMayFetch() {
   return usageStamps.length < USAGE_MAX_PER_HOUR || rolled;
 }
 
+// ------------------------------------- ステータス行の写し（席ごと・2026-10-22）
+//
+// なぜ要るか：上の oauth の口は **429 で断られることが多い**。~/.tsumiki-remote/server.log を
+// 数えると 429 が 92回・「取れた（元通り）」が 62回＝棒が1時間近く古いのが普通だった。
+//
+// Claude Code は、ステータス行のコマンドに標準入力で JSON を渡している。そこに
+//   rate_limits.five_hour / seven_day の used_percentage・resets_at（Unix 秒）
+//   context_window（その席の文脈の大きさ）・prompt_cache（キャッシュが冷めた時刻）
+// が入っている。**応答ヘッダー由来＝追加の問い合わせが1本も要らない**（本体 2.1.308 の説明文で確認）。
+// hooks/statusline-tap.js がそれを ~/.tsumiki-remote/status/<席>.json に写し、ここで読む。
+//
+// ・残量：15分以内に書かれた写しに rate_limits があれば**それを使い、oauth の口は叩かない**。
+//   無いとき（どの席も15分動いていない・包みを入れていない）だけ、今までの取り方に戻る。
+// ・Vibe Island も同じ値を ~/.vibe-island/cache/rl.json に置いている（同じステータス行から）。
+//   包みを入れる前でも使えるよう、写しが無いときの2番手にする（形が変わったら黙って使わない）。
+const STATUS_DIR = process.env.TSUMIKI_STATUS_DIR || path.join(CONF_DIR, 'status');
+const VIBE_RL_FILE = process.env.TSUMIKI_VIBE_RL !== undefined ? process.env.TSUMIKI_VIBE_RL
+  : path.join(os.homedir(), '.vibe-island', 'cache', 'rl.json');
+const STATUS_FRESH = 15 * 60 * 1000;      // これより新しい写しの rate_limits だけを信じる
+const STATUS_TTL = 2000;                  // 写しの読み直しは2秒に1回（巡回は1.5秒）
+const STATUS_PRUNE = 7 * 24 * 3600 * 1000; // 1週間書かれていない写しは捨てる（畳んだ席のぶん）
+const STATUS_NAME_RE = /^(pane|sid)-[A-Za-z0-9_.-]+\.json$/;
+let statusCache = { at: 0, byName: new Map(), files: new Map() };
+
+function statusRead() {
+  const now = Date.now();
+  if (now - statusCache.at < STATUS_TTL) return statusCache;
+  const files = new Map();
+  const byName = new Map();
+  let names = [];
+  try { names = fs.readdirSync(STATUS_DIR); } catch (e) { names = []; }
+  for (const n of names) {
+    // 包みが rename の前に打ち切られると `<名>.json.<pid>.tmp` が残る。10分たったものは捨てる
+    if (/\.tmp$/.test(n) && /^(pane|sid)-/.test(n)) {
+      const tf = path.join(STATUS_DIR, n);
+      try { if (now - fs.statSync(tf).mtimeMs > 10 * 60 * 1000) fs.unlinkSync(tf); } catch (e) {}
+      continue;
+    }
+    if (!STATUS_NAME_RE.test(n)) continue;
+    const f = path.join(STATUS_DIR, n);
+    let st;
+    try { st = fs.statSync(f); } catch (e) { continue; }
+    if (now - st.mtimeMs > STATUS_PRUNE) { try { fs.unlinkSync(f); } catch (e) {} continue; }
+    // 変わっていないファイルは読み直さない（mtime と大きさで見分ける）
+    const key = st.mtimeMs + ':' + st.size;
+    const old = statusCache.files.get(n);
+    let rec = old && old.key === key ? old.rec : null;
+    if (!rec) {
+      try { rec = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { rec = null; }
+    }
+    if (!rec || typeof rec !== 'object') continue;
+    if (typeof rec.at !== 'number') rec.at = st.mtimeMs;
+    files.set(n, { key, rec });
+    byName.set(n, rec);
+  }
+  statusCache = { at: now, byName, files };
+  return statusCache;
+}
+
+// {used_percentage, resets_at(秒)} → {used, resetsAt(ISO)}（oauth の口と同じ形にそろえる）
+function statusBucket(b) {
+  if (!b || typeof b.used_percentage !== 'number' || !isFinite(b.used_percentage)) return null;
+  const r = typeof b.resets_at === 'number' && isFinite(b.resets_at) ? new Date(b.resets_at * 1000) : null;
+  return {
+    used: Math.max(0, Math.min(100, Math.round(b.used_percentage))),
+    resetsAt: r ? r.toISOString() : null,
+  };
+}
+
+// いちばん新しい「生きている」残量。無ければ null
+//
+// ・**リセット時刻を過ぎた枠が1つでもある写しは、まるごと「無い」扱い**（次の段へ落とす）。
+//   リセット直後に写しだけが「生きている」と、棒が空のまま理由も出ず oauth にも戻らない時間ができる
+//   （新しい枠の数字は、次の返事でステータス行が走るまで写しに入らない）
+// ・画面の再描画で古い rate_limits が再送されることがあるので、**同じ resets_at のあいだは
+//   使用率が最大のものを採る**（使用率は枠の中で減らない）。枠が違えば resets_at が遅いほう（新しい枠）
+let vibeCache = { key: '', value: null };
+function liveUsage() {
+  const now = Date.now();
+  let at = 0;
+  const pick = { session: null, week: null };
+  const take = (slot, bkt, recAt) => {
+    if (!bkt) return;
+    const t = bkt.resetsAt ? Date.parse(bkt.resetsAt) : 0;
+    const cur = pick[slot];
+    if (!cur || t > cur.t || (t === cur.t && bkt.used > cur.b.used)) pick[slot] = { t, b: bkt };
+    if (recAt > at) at = recAt;
+  };
+  for (const rec of statusRead().byName.values()) {
+    const rl = rec.rate_limits;
+    if (!rl || now - rec.at > STATUS_FRESH) continue;
+    const session = statusBucket(rl.five_hour);
+    const week = statusBucket(rl.seven_day);
+    if (!session && !week) continue;
+    if (usageExpired(session) || usageExpired(week)) continue;
+    take('session', session, rec.at);
+    take('week', week, rec.at);
+  }
+  if (pick.session || pick.week) {
+    return { at, value: { session: pick.session && pick.session.b, week: pick.week && pick.week.b }, src: 'status' };
+  }
+  // 2番手：Vibe Island の写し（同じステータス行の値。中身の形は同じ）
+  if (!VIBE_RL_FILE) return null;
+  try {
+    const st = fs.statSync(VIBE_RL_FILE);
+    if (now - st.mtimeMs > STATUS_FRESH) return null;
+    const key = st.mtimeMs + ':' + st.size;
+    if (vibeCache.key !== key) {
+      const o = JSON.parse(fs.readFileSync(VIBE_RL_FILE, 'utf8'));
+      const session = statusBucket(o && o.five_hour);
+      const week = statusBucket(o && o.seven_day);
+      vibeCache = { key, value: (session || week) ? { session, week } : null };
+    }
+    const v = vibeCache.value;
+    if (!v || usageExpired(v.session) || usageExpired(v.week)) return null;
+    return { at: Math.floor(st.mtimeMs), value: v, src: 'vibe' };
+  } catch (e) { return null; }
+}
+
+// 生きている値を覚え書きに取りこむ。oauth に戻ったときも「最後に分かった値」から出せるように。
+// 覚え書きのファイルは1分に1回まで（巡回のたびに書かない）
+let usageSavedAt = 0;
+function usageAbsorbLive() {
+  const live = liveUsage();
+  if (!live) return false;
+  if (live.at > usageCache.at || !usageCache.value) {
+    usageCache = { at: live.at, value: live.value };
+    usageSrc = live.src;
+    if (Date.now() - usageSavedAt > 60 * 1000) { usageSavedAt = Date.now(); usageSave(); }
+  }
+  return true;
+}
+
 // 待たせない。古ければ裏で取り直しにいって、いま持っている写しを返す
 // （状態の一覧が残量の取得を待って遅くなると、画面全体がもたつく）。
 function usageSnapshot() {
   const now = Date.now();
-  if (usageDue() && !usageFetching && usageMayFetch()) {
+  // ステータス行の写しが新しければ、それで足りる＝**oauth の口は叩かない**
+  const live = usageAbsorbLive();
+  if (!live && usageDue() && !usageFetching && usageMayFetch()) {
     usageStamps.push(now);
     usageFetching = fetchUsage()
       .then((v) => {
         // 取れなかったときは、前の値を出し続ける（一瞬の失敗でバーが消えないように）。
         // 12時間もったら、さすがに今の話ではないので捨てる
-        if (v) usageCache = { at: Date.now(), value: v };
+        if (v) { usageCache = { at: Date.now(), value: v }; usageSrc = 'oauth'; }
         else if (now - usageCache.at > USAGE_KEEP) usageCache = { at: Date.now(), value: null };
         usageSave();
       })
@@ -292,15 +433,117 @@ function usageSnapshot() {
     week: usageExpired(v.week) ? null : v.week,
     ageMs: age,
     stale: age > USAGE_STALE,   // 画面はこれを見て棒を薄くする
+    src: usageSrc,              // status（席のステータス行）／vibe／oauth
   };
 }
 
 // 「いま取り直せない」ときの理由。前の値が出ていても、止められているなら添える
 // （2026-08-31：37時間バーが消えていたのに気づけなかった。黙って古いままも同じこと）。
+// ステータス行の写しが生きているあいだは、oauth が止められていても困らないので言わない
 function usageWaitInfo() {
+  if (liveUsage()) return null;
   const retryInSec = Math.max(0, Math.round((usageRetryAt - Date.now()) / 1000));
   if (usageCache.value && !retryInSec) return null;
   return { status: usageLastStatus, retryInSec };
+}
+
+// ------------------------------------------------ 枠の記録（2026-10-22）
+//
+// 10分ごとに1行、~/.tsumiki-remote/usage-log.jsonl に書き足す。60日より古い行は捨てる。
+// 使い道：①Pro に下げてよいかの判断（Max 5x の棒で 20% ≒ Pro の 100%）
+//         ②週枠が5時間枠の何回ぶんかの換算。どちらも**数週間ぶんの実測**が要る。
+// ⚠️ 記録のためだけに oauth の口は叩かない（手元の値を見るだけ）。値が15分より古いときは
+//    書かない＝同じ古い数字が何行も並んで「使っていないのに一定」に見えるのを防ぐ
+const USAGE_LOG = path.join(CONF_DIR, 'usage-log.jsonl');
+const USAGE_LOG_EVERY = 10 * 60 * 1000;
+const USAGE_LOG_KEEP = 60 * 24 * 3600 * 1000;
+
+function usageLogPrune() {
+  let text;
+  try { text = fs.readFileSync(USAGE_LOG, 'utf8'); } catch (e) { return; }
+  const cut = Date.now() - USAGE_LOG_KEEP;
+  const lines = text.split('\n').filter(Boolean);
+  const kept = lines.filter((l) => {
+    try { const t = Date.parse(JSON.parse(l).t); return !isFinite(t) || t >= cut; } catch (e) { return false; }
+  });
+  if (kept.length === lines.length) return;
+  try {
+    const tmp = USAGE_LOG + '.tmp';
+    fs.writeFileSync(tmp, kept.map((l) => l + '\n').join(''), { mode: 0o600 });
+    fs.renameSync(tmp, USAGE_LOG);
+  } catch (e) { /* 捨てられなくても書き足しは続ける */ }
+}
+
+function usageLogTick() {
+  try {
+    usageAbsorbLive();
+    const v = usageCache.value;
+    const age = Date.now() - usageCache.at;
+    if (!v || age > USAGE_STALE) return;
+    const b = (x) => (x && !usageExpired(x) ? x : null);
+    const s = b(v.session), w = b(v.week);
+    if (!s && !w) return;
+    const row = {
+      t: new Date().toISOString(),
+      s5: s ? s.used : null, r5: s ? s.resetsAt : null,
+      s7: w ? w.used : null, r7: w ? w.resetsAt : null,
+      src: usageSrc, age: Math.round(age / 1000),
+    };
+    fs.appendFileSync(USAGE_LOG, JSON.stringify(row) + '\n', { mode: 0o600 });
+  } catch (e) { /* 記録できなくても本体は動かす */ }
+}
+usageLogPrune();
+setInterval(usageLogTick, USAGE_LOG_EVERY).unref();
+setInterval(usageLogPrune, 24 * 3600 * 1000).unref();
+setTimeout(usageLogTick, 60 * 1000).unref();   // 起動直後にも1行（入れ替えで10分空かないように）
+
+// -------------------------------------------- 席ごとの文脈（2026-10-22）
+//
+// 会話の文脈が15万トークンを超えると1回ごとが重くなり、1時間以上あけて長い会話に戻ると
+// キャッシュ（1時間でさめる）を丸ごと作り直す（30日で119回）。だから札に「文脈の大きさ」と
+// 「止まって何分か」を出して、大きくて長く止まった席は新しい席で続けるのを勧める。
+// 席（tmux のペイン）→ 写しのファイル名は statusline-tap.js の fileName と同じ決め方。
+// 作業中が続いているのに写しが古い＝包みが外れた（設定を戻した・Claude Code の更新で変わった）。
+// そのとき札の文脈は「止まった過去の値」なので、薄く出して現在値に見せない。
+// 作業中になった時刻を席ごとに覚え、「作業中が1分以上続き、写しは作業中になる前より古く、10分以上前」で立てる
+const CTX_OLD_MS = 10 * 60 * 1000;
+const CTX_BUSY_MS = 60 * 1000;
+const busySince = new Map();   // 席 → 作業中が続いている起点
+
+function seatCtx(info, createdSec, name, status) {
+  if (!info || !info.paneId) return null;
+  const sock = info.socket ? path.basename(info.socket) : 'tmux';
+  const safe = (x) => String(x).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80);
+  const fname = 'pane-' + safe(sock) + '-' + safe(info.paneId.replace(/^%/, '')) + '.json';
+  const rec = statusRead().byName.get(fname);
+  if (!rec) return null;
+  // 席より前に書かれた写しは、前の住人のもの（tmux を立て直すと %番号 が使い回される）
+  if (createdSec && rec.at < createdSec * 1000 - 60 * 1000) return null;
+  if (rec.tmux_socket && info.socket && rec.tmux_socket !== info.socket) return null;
+  const cw = rec.context_window || {};
+  const cu = cw.current_usage;
+  let tok = null;
+  if (cu) {
+    const n = (x) => (typeof x === 'number' && isFinite(x) ? x : 0);
+    tok = n(cu.input_tokens) + n(cu.cache_creation_input_tokens) + n(cu.cache_read_input_tokens);
+  }
+  if (!tok && typeof cw.total_input_tokens === 'number') tok = cw.total_input_tokens;
+  const pc = rec.prompt_cache;
+  const nowMs = Date.now();
+  if (name) {
+    if (status === 'busy') { if (!busySince.has(name)) busySince.set(name, nowMs); }
+    else busySince.delete(name);
+  }
+  const since = name ? busySince.get(name) : null;
+  const old = !!since && nowMs - since >= CTX_BUSY_MS && rec.at < since && nowMs - rec.at > CTX_OLD_MS;
+  return {
+    old,                      // 写しが古い疑い（画面は薄く出し、止まった長さは出さない）
+    tok: tok || null,
+    size: typeof cw.context_window_size === 'number' ? cw.context_window_size : null,
+    at: rec.at,               // 最後にステータス行が走った時刻＝最後に返事が来たころ
+    idleMs: Math.max(0, Date.now() - rec.at),   // 画面の時計とずれないよう、経過はこちらで出す
+    cold: pc && typeof pc.expires_at === 'number' ? pc.expires_at * 1000 < Date.now() : null,
+  };
 }
 
 // ------------------------------------------- Claude のログインの寿命（期限）
@@ -839,13 +1082,17 @@ async function listSessions() {
 // そのセッションについて「何が動いているか」「題名」「どこ」を1回で取る。
 // ここが見えないと「AIに話しかけたつもりがシェルに打っていた」が起きる。
 async function paneInfo(name) {
-  const empty = { cmd: '', title: '', cwd: '' };
+  const empty = { cmd: '', title: '', cwd: '', paneId: '', socket: '' };
   if (!NAME_RE.test(name)) return empty;
+  // ペインの番号（%12）と tmux のソケットは、ステータス行の写しと席を結ぶのに使う（→ seatCtx）。
+  // 題名（pane_title）は自由な字なので**いちばん最後**に置く（SEP が混じっても前の列は無事）
   const r = await tmux(['display-message', '-p', '-t', '=' + name + ':',
-    `#{pane_current_command}${SEP}#{pane_title}${SEP}#{pane_current_path}`]);
+    `#{pane_current_command}${SEP}#{pane_current_path}${SEP}#{pane_id}${SEP}#{socket_path}${SEP}#{pane_title}`]);
   if (!r.ok) return empty;
-  const [cmd, title, cwd] = r.out.trim().split(SEP);
-  return { cmd: (cmd || '').trim(), title: (title || '').trim(), cwd: (cwd || '').trim() };
+  const cols = r.out.replace(/\n+$/, '').split(SEP);
+  const [cmd, cwd, paneId, socket] = cols;
+  return { cmd: (cmd || '').trim(), title: cols.slice(4).join(SEP).trim(), cwd: (cwd || '').trim(),
+           paneId: (paneId || '').trim(), socket: (socket || '').trim() };
 }
 
 // 一覧に出す題名。work1 のような機械の名前ではどれがどれか分からないので、
@@ -964,6 +1211,11 @@ async function seatState(s, deadline) {
     //    forgetSeat で写しごと消える
     perm: permOf(text) || (lastSeat.get(s.name) || {}).perm || null,
     preview: lastMeaningfulLine(text),
+    // 文脈の大きさ（トークン）と、最後にステータス行が走った時刻（→ seatCtx）。
+    // Claude が動いていない席（シェルに戻った）には出さない
+    ctx: kindOf(info.cmd) === 'claude' ? seatCtx(info, s.created || (lastSeat.get(s.name) || {}).created, s.name, status) : null,
+    // 上限で止まっている（作業中なら、もう動き出している＝出さない）
+    limit: status === 'busy' ? null : limitOf(s.name, text),
   };
   lastSeat.set(s.name, row);
   return row;
@@ -993,6 +1245,8 @@ function forgetSeat(name) {
   forgetScreen(name);
   lastSeat.delete(name);
   pausedSeat.delete(name);
+  limitSeen.delete(name);
+  busySince.delete(name);
 }
 
 async function captureHistory(name, lines) {
@@ -1370,6 +1624,90 @@ function judge(name, text) {
   if (asksNumber(tailLines(text, ASK_NUM_TAIL))) return { status: 'waiting', quietMs };
   if (quietMs < 5000) return { status: 'busy', quietMs };
   return { status: 'idle', quietMs };
+}
+
+// ------------------------------------------------- 上限で止まった席（2026-10-22）
+//
+// 枠を使い切ると、席の画面に次の1行が出て止まる（文言は本体 2.1.308 の中で確かめた）：
+//   You've hit your session limit · resets 8:30pm (Asia/Tokyo)
+//   You've hit your weekly limit · resets Oct 25, 9pm (Asia/Tokyo)
+// 名前の部分は session / weekly / Opus / Sonnet / Fable limit のどれか。
+// 今までの判定はこれを拾わず、ただの「待機」に見えていた＝いつ戻るのか分からない。
+// ・画面の下の LIMIT_TAIL 行にあるときだけ数える（答えのあとに残った字で立ちっぱなしにしない）
+// ・端末の幅で折り返されるので、行をつないでから探す（番号の質問と同じ手当て）
+// ・リセット時刻を過ぎたら降ろす（もう打てば動く）
+const LIMIT_TAIL = 20;
+// 名前が付かない形（`You've hit your limit`）・usage credit limit・team's shared budget・
+// monthly spend limit なども本体にある（2.1.308）。種類が分からないものは kind='other'。
+const LIMIT_KIND_RE = /your (session|weekly|Opus|Sonnet|Fable) limit/i;
+const LIMIT_RESET_RE = /resets\s+((?:[A-Z][a-z]{2}\s+\d{1,2},?\s+(?:at\s+)?)?\d{1,2}(?::\d{2})?\s*[ap]m)/i;
+const LIMIT_HEAD_RE = /^[\s│|]*(?:[⎿●✻⏺*>·•-]\s*)*You(?:'|’)ve (?:hit|reached) your /;
+// 行の後ろにこれがあれば、その後に返事が進んでいる（古い上限の行が画面に残っているだけ）
+const LIMIT_AFTER_RE = /^[\s│|]*(?:[⏺●]\s|✻\s.*\bfor\s+\d)/;
+const LIMIT_NOTIME_MS = 5 * 60 * 1000;   // 時刻も終わりも分からない上限は、これだけで降ろす
+const limitSeen = new Map();             // 席 → { sig, at }（時刻が読めない上限を最初に見た時刻）
+const MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+// "8:30pm" / "Oct 25, 9pm" → その時刻（ms）。この Mac の時計（Asia/Tokyo）で読む
+function parseResetTime(t, now) {
+  const m = /^(?:([A-Za-z]{3})\s+(\d{1,2}),?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)$/i.exec(String(t).trim());
+  if (!m) return null;
+  let h = Number(m[3]) % 12;
+  if (/pm/i.test(m[5])) h += 12;
+  const min = Number(m[4] || 0);
+  const d = new Date(now);
+  if (m[1]) {
+    const mon = MON[m[1].toLowerCase()];
+    if (mon === undefined) return null;
+    const c = new Date(d.getFullYear(), mon, Number(m[2]), h, min, 0, 0);
+    // 年をまたぐ（12月に「Jan 2」）
+    if (c.getTime() < now - 180 * 86400 * 1000) c.setFullYear(c.getFullYear() + 1);
+    return c.getTime();
+  }
+  const c = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, min, 0, 0).getTime();
+  // 時刻だけのとき：今日のその時刻が6時間以上前なら「明日の」（23時に出た「2am」）。
+  // 6時間以内の過去なら、そのリセットはもう過ぎた（5時間枠の幅より長く取ってある）
+  if (c <= now && now - c >= 6 * 3600 * 1000) return c + 86400 * 1000;
+  return c;
+}
+
+function limitOf(name, text) {
+  // 行の頭（字下げと ⎿ ● などの印のあと）から始まるものだけ。Claude の返事の本文で
+  // この文言を話題にしているとき（まさにこの機能の話など）に立てないため。
+  // 折り返しで割れた時刻も拾えるよう、見つけた行と続く2行をつないでから読む
+  const lines = tailLines(text, LIMIT_TAIL).split('\n');
+  let joined = null;
+  for (let i = lines.length - 1; i >= 0 && joined === null; i--) {
+    if (!LIMIT_HEAD_RE.test(lines[i])) continue;
+    // 行より後に新しい出力がある＝返事が進んだ（別のモデルで続けた等）。古い行は出さない
+    if (lines.slice(i + 1).some((l) => LIMIT_AFTER_RE.test(l))) { limitSeen.delete(name); return null; }
+    const j = lines.slice(i, i + 3).map((l) => l.trim()).join(' ');
+    // 上限の話の行か（「limit」か「budget」が頭のほうにある）
+    if (!/\b(limit|budget)\b/i.test(j.slice(0, 120))) continue;
+    joined = j;
+  }
+  if (joined === null) { limitSeen.delete(name); return null; }
+  const km = LIMIT_KIND_RE.exec(joined);
+  const kind = km ? km[1].toLowerCase() : 'other';
+  const now = Date.now();
+  const rm = LIMIT_RESET_RE.exec(joined);
+  let resetsAt = rm ? parseResetTime(rm[1], now) : null;
+  // 時刻が読めなかったら、ステータス行の写し／oauth で分かっている枠の時刻で補う。
+  // 補った時刻が過去なら、前の枠の話＝捨てる（本物の上限を消さない）
+  if (!resetsAt && usageCache.value && (kind === 'session' || kind === 'weekly')) {
+    const b = kind === 'session' ? usageCache.value.session : usageCache.value.week;
+    const t = b && b.resetsAt ? Date.parse(b.resetsAt) : NaN;
+    if (isFinite(t) && t > now) resetsAt = t;
+  }
+  if (resetsAt && resetsAt <= now) { limitSeen.delete(name); return null; }   // もう戻っている
+  if (!resetsAt) {
+    // 時刻も終わりも分からない。最初に見てから数分で降ろす（行が残っていても出し続けない）
+    const sig = kind + '|' + joined;
+    let seen = limitSeen.get(name);
+    if (!seen || seen.sig !== sig) { seen = { sig, at: now }; limitSeen.set(name, seen); }
+    if (now - seen.at > LIMIT_NOTIME_MS) return null;
+  } else limitSeen.delete(name);
+  return { kind, resetsAt: resetsAt || null };
 }
 
 // ------------------------------------------------- 許可のしかた（permission mode）

@@ -28,6 +28,9 @@
     --sunk:#242932;
     /* 履歴の中の、押すと開くファイル名の色（URL の水色と見分けるため・#out .fl） */
     --file:#f472b6;
+    /* 上限で止まった席・文脈がとても大きい席の赤（残量の棒の .crit と同じ色）と、
+       札の小さな印の下地（赤・橙をそれぞれ黒に沈めたもの）。2026-10-22 */
+    --crit:#ef4444; --crit-bg:#2a1515; --wait-bg:#2a2113;
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -254,6 +257,25 @@
     display:inline-block;background:#2a2113;color:var(--wait);
   }
   .tab .perm.plan{background:#131c25;color:var(--pause)}
+  /* 文脈の大きさ（例「18万」）。15万から橙、25万から赤（2026-10-22）。
+     大きくて長く止まった席は、中に「新しい席」の印（＋の四角）を足す＝
+     新しい席で続けたほうが軽い、の意味。文では言わない */
+  .tab .ctx{
+    font-size:9px;letter-spacing:.02em;padding:1px 5px;border-radius:5px;flex:0 0 auto;
+    display:inline-flex;align-items:center;gap:3px;background:var(--sunk);color:var(--dim);
+    font-variant-numeric:tabular-nums;
+  }
+  .tab .ctx.big{background:var(--wait-bg);color:var(--wait)}
+  .tab .ctx.huge{background:var(--crit-bg);color:var(--crit)}
+  /* 作業中なのに写しが古い（ステータス行の包みが外れた疑い）。薄くして現在値に見せない */
+  .tab .ctx.old{opacity:.45}
+  .tab .ctx svg,.tab .st svg{width:10px;height:10px;flex:0 0 auto}
+  /* 止まって長い席の経過（時計＋「2時間」）。状態の字のすぐ後ろに続ける */
+  .tab .st .ago{display:inline-flex;align-items:center;gap:2px;font-variant-numeric:tabular-nums}
+  /* 上限で止まった席。縁と点を赤に。字は「上限 20:30」（再開の時刻） */
+  .tab.limit{border-color:var(--crit)}
+  .tab.limit .st{color:var(--crit)}
+  .tab.limit .st::before{background:var(--crit)}
 
   /* ＋とドット絵の2段を、札の真ん中に置く。
      line-height:1 が要点＝文字の標準の行間（1.5）のままだと ＋ の下に見えない
@@ -2001,7 +2023,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var timer = null;
   var toastTimer = null;
 
-  var LABEL = { busy: '作業中', waiting: '返答待ち', idle: '待機', paused: '中断' };
+  var LABEL = { busy: '作業中', waiting: '返答待ち', idle: '待機', paused: '中断', limit: '上限' };
 
   // hold / unhold を押してから Mac が同じことを言ってくるまでには、巡回1回ぶん
   // （1〜2秒）の間がある。そのあいだ見た目が変わらないと「押しても効かない」に
@@ -2457,6 +2479,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (!d || !d.sessions || !d.sessions.length) return;
 
     sessions = d.sessions;
+    // 止まっている長さも、預けてからの分を足す（一晩ぶりに開いて「5分」と出さない）
+    var away = Math.max(0, Date.now() - (d.at || Date.now()));
+    sessions.forEach(function (s) {
+      if (s.ctx && typeof s.ctx.idleMs === 'number') s.ctx.idleMs += away;
+    });
     panes = d.panes || {};
     // メモも写しから先に出す（つながる前の一瞬でも、書いたものが見えているように）
     memos = d.memos || {};
@@ -2567,7 +2594,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     el.tabs.innerHTML = '';
     sessions.forEach(function (s, i) {
       var b = document.createElement('button');
-      var st = statusOf(s);
+      var st = shownStatus(s);
       var orb = ORB_STATE[st];
       b.className = 'tab ' + st + (s.stale ? ' stale' : '') + (orb ? ' hasorb' : '');
       // 呼吸の位相は時計から出す（経過ぶんの負の delay）。札は1.5秒ごとに
@@ -2588,10 +2615,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
                     (orb ? '<div class="tb">' : '') +
                     '<div class="n">' + (i + 1) + '・' + escapeHtml(s.title || s.name) + '</div>' +
                     '<div class="meta">' +
-                      '<span class="st">' + LABEL[st] + '</span>' +
+                      '<span class="st">' + stHtml(s, st) + '</span>' +
                       '<span class="kind ' + s.kind + (chip ? ' ' + chip.cls : '') + '">' +
                         (chip ? chip.label : KIND[s.kind]) +
                       '</span>' +
+                      ctxHtml(s, st) +
                       (pchip ? '<span class="perm ' + pchip.cls + '">' + escapeHtml(pchip.label) + '</span>' : '') +
                       (s.keep ? '<span class="lock" role="img" aria-label="保護">' + sicSvg('lock') + '</span>' : '') +
                     '</div>' +
@@ -2766,6 +2794,62 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 知らない名前・アプリの外で作られた席は null ＝呼び出し側で従来の表示に戻す。
   // typeof で確かめているのは、'constructor' のような特別な名前が入ってきても
   // 中身の分からないものを画面に混ぜないため
+  // ---------------------------------------------- 文脈の大きさ・止まった長さ・上限（2026-10-22）
+  //
+  // サーバーが席ごとに s.ctx = {tok, size, at, idleMs, cold} と s.limit = {kind, resetsAt} を
+  // 添えてくる（→ server.js の seatCtx / limitOf）。どちらも Claude のステータス行の写しと画面から。
+  var CTX_BIG = 150000;       // これを超えると1回ごとが重くなる（橙）
+  var CTX_HUGE = 250000;      // 赤
+  var IDLE_LONG_MS = 60 * 60 * 1000;   // キャッシュ（1時間）がさめる長さ
+
+  // 182345 → 「18万」、9800 → 「1万」未満は「<1万」
+  function ctxText(tok) {
+    if (tok < 10000) return '<1万';
+    return Math.round(tok / 10000) + '万';
+  }
+  function agoText(ms) {
+    var m = Math.floor(ms / 60000);
+    if (m < 60) return m + '分';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + '時間';
+    return Math.floor(h / 24) + '日';
+  }
+  // 再開の時刻。今日なら「20:30」、別の日なら「10/25 21:00」
+  function resetText(ms) {
+    var d = new Date(ms), n = new Date();
+    var hm = d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2);
+    return d.toDateString() === n.toDateString() ? hm : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+  }
+  // 札に出す状態。上限で止まっている席は、待機・返答待ちの代わりに「上限」
+  function shownStatus(s) {
+    var st = statusOf(s);
+    if (s.limit && (st === 'idle' || st === 'waiting')) return 'limit';
+    return st;
+  }
+  // 止まって長いか（作業中は数えない）。長ければその長さ（ms）、でなければ 0
+  function longIdle(s, st) {
+    if (!s.ctx || s.ctx.old || st === 'busy' || typeof s.ctx.idleMs !== 'number') return 0;
+    return s.ctx.idleMs >= IDLE_LONG_MS ? s.ctx.idleMs : 0;
+  }
+  // 状態の字（札の .st の中身）。上限なら再開時刻、長く止まっていれば時計と経過を足す
+  function stHtml(s, st) {
+    var t = LABEL[st];
+    if (st === 'limit' && s.limit.resetsAt) t += ' ' + resetText(s.limit.resetsAt);
+    var idle = longIdle(s, st);
+    if (idle) t += ' <span class="ago">' + sicSvg('clock') + agoText(idle) + '</span>';
+    return t;
+  }
+  // 文脈の印。大きくて長く止まった席には「新しい席」の印を中に足す
+  function ctxHtml(s, st) {
+    var c = s.ctx;
+    if (!c || typeof c.tok !== 'number' || c.tok <= 0) return '';
+    var cls = (c.tok >= CTX_HUGE ? ' huge' : c.tok >= CTX_BIG ? ' big' : '') + (c.old ? ' old' : '');
+    var fresh = c.tok >= CTX_BIG && longIdle(s, st);
+    return '<span class="ctx' + cls + '"' + (fresh ? ' role="img" aria-label="文脈 '
+        + ctxText(c.tok) + '・新しい席で続けると軽い"' : '') + '>'
+      + ctxText(c.tok) + (fresh ? sicSvg('fresh') : '') + '</span>';
+  }
+
   function modelChip(s) {
     if (!s || s.kind !== 'claude') return null;
     var c = MODEL_CHIP[s.model];
@@ -6150,9 +6234,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 1行だけ（2026-09-12）。種類は Claude のときは出さない＝モデルの札で分かる。
     // 自動題名もここには出さない＝「名前」を押した先の入力欄に薄字で出ている
     var headChip = modelChip(s);
-    head.textContent = s.name + ' ・ ' + LABEL[s.status]
+    var headSt = shownStatus(s);
+    head.textContent = s.name + ' ・ ' + LABEL[headSt]
+      + (headSt === 'limit' && s.limit.resetsAt ? ' ' + resetText(s.limit.resetsAt) : '')
       + (s.kind !== 'claude' ? ' ・ ' + KIND[s.kind] : '')
-      + (headChip ? ' ・ ' + headChip.label : '');
+      + (headChip ? ' ・ ' + headChip.label : '')
+      // 文脈の大きさ／窓の大きさ（例「18万/100万」）と、止まっている長さ
+      + (s.ctx && s.ctx.tok ? ' ・ ' + ctxText(s.ctx.tok) + (s.ctx.size ? '/' + ctxText(s.ctx.size) : '') : '')
+      + (longIdle(s, headSt) ? ' ・ ' + agoText(longIdle(s, headSt)) : '');
     sheetBody.appendChild(head);
 
     sheetItem('名前', '', function () { renameMenu(s.name); },
@@ -6575,6 +6664,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    実際に消えるのは会話だけ（ファイルへの変更は残る）＝嘘の絵になる。
   //    電源の絵なら「動いているものを止める」で、起きることと合う。
   var SIC = {
+    // 時計＝止まってからの長さ（札の状態の字に添える）
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    // ＋の四角＝新しい席（大きくて長く止まった席は、新しい席で続けると軽い）
+    fresh: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M12 8.5v7M8.5 12h7"/>',
     // 鉛筆＝名前を書き直す
     pencil: '<path d="M4 20h4L18.3 9.7a2 2 0 0 0 0-2.8l-1.2-1.2a2 2 0 0 0-2.8 0L4 16z"/>'
       + '<path d="M14.1 6.1 17.9 9.9"/>',
