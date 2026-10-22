@@ -439,7 +439,7 @@
           <rect x="6.5" y="6.5" width="11" height="11" rx="1.8" stroke-width="2.2"/></svg>
         <b>ふちの太さ</b>
         <span class="val" id="wv">2.0%</span>
-        <button type="button" class="nob" id="nob" aria-pressed="false">なし</button>
+        <button type="button" class="nob" id="nob" aria-pressed="false" aria-label="ふちなし">なし</button>
       </div>
       <input type="range" id="w" min="0" max="8" step="0.1" value="2" aria-label="ふちの太さ">
     </div>
@@ -513,7 +513,7 @@ const KEY = 'shirofuchi_w', KEY_R = 'shirofuchi_r', KEY_NA = 'shirofuchi_noaudio
 /* 版番号。直したのに直っていないように見える事故を防ぐため、画面にも出す。
    ⚠️ ホーム画面に置いたアプリは古い版が居座りやすいので、起動時に最新の版番号を
    見に行き、自分より新しければ一度だけ読み直す（?v= を付けるとキャッシュを外せる） */
-const VER = 25;
+const VER = 26;
 (async () => {
   try{
     if(sessionStorage.getItem('shirofuchi_verchecked')) return;
@@ -1061,24 +1061,41 @@ el('seg').addEventListener('click', e => {
   shots.forEach(it => { it.panX = 0; it.panY = 0; });   // えらび直したら、まず真ん中を残す
   setZoom(parseFloat(b.dataset.z));
 });
+/* ふちなし（2026-10-22 本人の依頼：内側の線だけつけたいとき）。もう一度押すと、なしの前の太さに戻す。
+   ⚠️ なしの前の太さはつまみを「離したとき」に覚える。なぞるたびに覚えると、0 へ吸いつく直前の
+      0.4% のような値が残る。読み直しても戻れるように、これも保存しておく */
+const KEY_WL = 'shirofuchi_w_last';
+let lastPct = parseFloat(localStorage.getItem(KEY_WL));
+if(!(lastPct > 0 && lastPct <= 8)) lastPct = pct > 0 ? pct : 2;
+let dragFrom = pct;        // なぞり始めの太さ
+const setLast = v => { lastPct = v; localStorage.setItem(KEY_WL, String(v)); };
+el('w').addEventListener('pointerdown', () => { dragFrom = pct; });
 el('w').addEventListener('input', e => {
+  // 書き出し中は太さを変えない（動画の途中でふちが変わり、台紙と角だけ古い太さで残る）
+  if(busy){ e.target.value = String(pct); return; }
   pct = parseFloat(e.target.value);
   // 指で 0 ちょうどに合わせるのは難しいので、0.3% より下は「ふちなし」に吸いつかせる
-  if(pct < 0.3){ pct = 0; e.target.value = '0'; } else lastPct = pct;
+  if(pct < 0.3){ pct = 0; e.target.value = '0'; }
   localStorage.setItem(KEY, String(pct));
   if(pending) disarmSave();   // 見た目を変えたら、書き出しずみのファイルは作り直し
   layout();
 });
-/* ふちなし（2026-10-22 本人の依頼：内側の線だけつけたいとき）。もう一度押すと、なしの前の太さに戻す */
-let lastPct = pct > 0 ? pct : 2;
+el('w').addEventListener('change', () => {
+  if(busy) return;
+  if(pct > 0) setLast(pct);
+  else if(dragFrom > 0) setLast(dragFrom);
+  dragFrom = pct;
+});
 el('nob').addEventListener('click', () => {
   if(busy) return;
-  if(pct > 0){ lastPct = pct; pct = 0; } else pct = lastPct;
+  if(pct > 0){ setLast(pct); pct = 0; } else pct = lastPct;
+  dragFrom = pct;
   localStorage.setItem(KEY, String(pct));
   if(pending) disarmSave();
   layout();
 });
 el('r').addEventListener('input', e => {
+  if(busy){ e.target.value = String(rad); return; }
   rad = parseFloat(e.target.value);
   localStorage.setItem(KEY_R, String(rad));
   if(pending) disarmSave();
