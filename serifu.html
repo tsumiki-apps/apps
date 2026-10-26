@@ -143,8 +143,11 @@
     padding:22px 20px;
     font-size:22px; line-height:1.95; letter-spacing:.02em;
     touch-action:pan-y;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;   /* 長押しで選択メニューを出さない */
   }
-  .stage.scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:auto;}
+  /* 横にあふれる画面：左端に影を出して、続きがあると分かるように */
+  .stage.scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:auto;
+    box-shadow:inset 18px 0 14px -14px var(--shade);}
   .stage-inner{display:block; transform-origin:top right;}
   /* 各セリフ＝1列。名前は固定ガターを確保し、どのセリフも同じ高さから始まるようにそろえる */
   .u{margin-left:1.4em; display:flex; flex-direction:row; align-items:center;}
@@ -184,7 +187,7 @@
   #practiceMain{
     display:flex; flex-direction:column;
     height:100vh; height:100dvh; max-width:1100px; margin:0 auto;
-    padding:calc(env(safe-area-inset-top) + 6px) max(14px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 8px) max(14px, env(safe-area-inset-left));
+    padding:calc(env(safe-area-inset-top) + 6px) max(14px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 8px) max(26px, env(safe-area-inset-left));
   }
   .ptop{display:flex; align-items:center; gap:10px; flex:0 0 auto; min-height:32px;}
   .ptop .ptitle{font-size:15px; font-weight:700; overflow:hidden; text-overflow:ellipsis;
@@ -205,23 +208,24 @@
     display:flex; flex-direction:column; padding:8px 0 calc(env(safe-area-inset-bottom) + 12px);}
   .drawer.open .drawer-panel{transform:translateY(0);}
   .drawer-h{display:flex; align-items:center; justify-content:space-between;
-    font-size:16px; font-weight:700; padding:0 8px 4px 18px;}
+    font-size:16px; font-weight:700; padding:0 8px 4px 26px;}
+  .drawer-h .sp{flex:1;}
   .drawer-x{background:none; border:none; color:var(--sub); cursor:pointer; font-family:inherit;
     width:var(--touch); height:var(--touch); display:flex; align-items:center; justify-content:center;}
   .drawer-item{display:flex; align-items:center; gap:12px; width:100%; text-align:left; background:none; border:none;
     min-height:var(--touch); font-family:inherit; font-size:15px; font-weight:600; color:var(--ink); cursor:pointer;
-    padding:11px 18px; touch-action:manipulation;}
+    padding:11px 18px 11px 26px; touch-action:manipulation;}
   .drawer-item .ic{color:var(--ink-mid);}
-  .drawer-item.danger, .drawer-item.danger .ic{color:var(--warn-ink);}
+  .drawer-item.danger, .drawer-item.danger .ic, .drawer-x.danger{color:var(--warn-ink);}
   .drawer-item:active{background:var(--bg);}
-  .drawer-sec{font-size:12px; font-weight:700; color:var(--sub); padding:14px 18px 6px;
+  .drawer-sec{font-size:12px; font-weight:700; color:var(--sub); padding:14px 18px 6px 26px;
     border-top:1px solid var(--line); margin-top:6px;}
-  .jump{display:flex; gap:8px; padding:0 18px 4px;}
+  .jump{display:flex; gap:8px; padding:0 18px 4px 26px;}
   .jump input{flex:1; min-width:0;}
   .jump .btn{width:auto;}
   .chapter-list{overflow-y:auto; -webkit-overflow-scrolling:touch; flex:1 1 auto;}
   .chapter-list .chap{display:block; width:100%; min-height:var(--touch); text-align:left; background:none; border:none;
-    font-family:inherit; font-size:14px; color:var(--ink); cursor:pointer; padding:11px 18px;
+    font-family:inherit; font-size:14px; color:var(--ink); cursor:pointer; padding:11px 18px 11px 26px;
     border-bottom:1px solid var(--line); touch-action:manipulation; line-height:1.4;}
   .chapter-list .chap:active{background:var(--bg);}
 
@@ -233,9 +237,9 @@
     font-size:14px; opacity:0; pointer-events:none; transition:200ms var(--ease); z-index:70;}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
   .toast.act{pointer-events:auto; padding-right:6px;}
-  .toast button{min-height:var(--touch); padding:0 12px; border:none; background:none; color:var(--accent);
+  .toast button{min-height:var(--touch); padding:0 12px; border:none; background:none; color:var(--accent-wash);
     font-size:14px; font-weight:700; font-family:inherit; cursor:pointer;}
-  @media (prefers-color-scheme:dark){ .toast button{color:var(--accent-wash);} }
+  body.mode-practice .toast{bottom:calc(env(safe-area-inset-bottom) + 128px);}   /* 下の操作に重ねない */
 </style>
 <script src="career.js" defer></script>
 </head>
@@ -360,7 +364,7 @@
     <div id="drawer" class="drawer hidden">
       <div class="drawer-bg" id="drawerBg"></div>
       <div class="drawer-panel">
-        <div class="drawer-h">メニュー<button class="drawer-x" id="drawerX" aria-label="閉じる"><svg class="ic"><use href="#i-x"/></svg></button></div>
+        <div class="drawer-h">メニュー<span class="sp"></span><button class="drawer-x danger" id="dDelete" aria-label="この台本を削除"><svg class="ic"><use href="#i-trash"/></svg></button><button class="drawer-x" id="drawerX" aria-label="閉じる"><svg class="ic"><use href="#i-x"/></svg></button></div>
         <div class="jump">
           <input type="number" id="jumpPage" inputmode="numeric" min="1" placeholder="ページ" aria-label="ページ番号">
           <button class="btn sub" id="jumpBtn">移動</button>
@@ -370,7 +374,6 @@
         <button class="drawer-item" id="dHome"><svg class="ic"><use href="#i-list"/></svg>台本の一覧</button>
         <div id="chapterSec" class="drawer-sec">章</div>
         <div id="chapterList" class="chapter-list"></div>
-        <button class="drawer-item danger" id="dDelete"><svg class="ic"><use href="#i-trash"/></svg>この台本を削除</button>
       </div>
     </div>
   </section>
@@ -391,10 +394,23 @@ const DIR_NAMES = ["", "ト書き", "とがき", "（ト書き）", "ト書", "�
 
 /* ---------- 保存まわり ---------- */
 function loadAll(){
-  try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
-  catch(e){ return []; }
+  const raw = localStorage.getItem(STORE_KEY);
+  try{
+    const v = JSON.parse(raw);
+    if(v == null || Array.isArray(v)) return v || [];
+  }catch(e){}
+  // 読めない中身は、上書きで消える前に別の場所へ控えておく
+  try{ if(!localStorage.getItem(STORE_KEY + "_broken")) localStorage.setItem(STORE_KEY + "_broken", raw); }catch(e){}
+  return [];
 }
-function saveAll(arr){ localStorage.setItem(STORE_KEY, JSON.stringify(arr)); }
+function saveAll(arr){
+  const json = JSON.stringify(arr);
+  try{ localStorage.setItem(STORE_KEY, json); return true; }
+  catch(e){
+    try{ localStorage.removeItem(FIT_KEY); localStorage.setItem(STORE_KEY, json); return true; }   // 控えを捨てて空きを作る
+    catch(e2){ toast("保存できませんでした（端末の空きが足りません）"); return false; }
+  }
+}
 const SEED_FLAG = "serifu_seed_ver";
 const SEED_VERSION = 2;            // ← サンプル台本を更新したら数字を上げる（既存端末にも反映される）
 function ensureSeed(){
@@ -622,8 +638,32 @@ function importFromText(raw){
 
 /* 役名の書き方：「山田・佐藤」＝連名、「山田以外」、「皆」「全員」＝全員、「山田N」＝山田のナレーション */
 const ALL_WHO = /^(皆|みんな|全員|一同)$/;
-function splitWho(who){ return String(who).split(/[・･、,／\/]/).map(w=>w.trim()).filter(Boolean); }
-function baseName(w){ return w.replace(/[\s　]*[（(]?[NＮ][)）]?$/, "") || w; }
+const normWho = w => String(w).normalize("NFKC").trim();   // 全角半角をそろえる
+/* 台本の中で単独で出てくる名前。カタカナだけの「ジョン・スミス」は、
+   全員が単独でも出てくるときだけ連名として切る（1人の名前を取り違えないため） */
+const soloCache = new WeakMap();
+function soloNames(lines){
+  let s = soloCache.get(lines);
+  if(!s){
+    s = new Set();
+    lines.forEach(l=>{ if(!l.dir && l.who) s.add(baseName(normWho(l.who))); });
+    soloCache.set(lines, s);
+  }
+  return s;
+}
+function splitWho(who, lines = cur && cur.lines){
+  const solo = lines ? soloNames(lines) : null;
+  const out = [];
+  normWho(who).split(/[、,\/]/).forEach(p=>{
+    const sub = p.split("・").map(w=>w.trim()).filter(Boolean);
+    const kana = /^[ァ-ヶー・\s]+$/.test(p);
+    if(sub.length > 1 && solo && kana && !sub.every(w=>solo.has(baseName(w)))) out.push(p.trim());
+    else out.push(...sub);
+  });
+  return out.filter(Boolean);
+}
+// 末尾の N はナレーションの印。英字の名前（KEN など）は削らない
+function baseName(w){ return w.replace(/[\s　]*[（(][NＮ][)）]$/, "").replace(/([^A-Za-zＡ-Ｚａ-ｚ\s　])[\s　]*[NＮ]$/, "$1") || w; }
 function isGroupWho(w){ return ALL_WHO.test(w) || /以外$/.test(w); }
 
 /* 役チップに出す個人名（連名は分けて、全員・以外は出さない） */
@@ -631,7 +671,7 @@ function uniqueChars(lines){
   const seen = []; const set = {};
   lines.forEach(l=>{
     if(l.dir || !l.who) return;
-    splitWho(l.who).forEach(w=>{
+    splitWho(l.who, lines).forEach(w=>{
       if(isGroupWho(w)) return;
       const n = baseName(w);
       if(!set[n]){ set[n]=1; seen.push(n); }
@@ -643,11 +683,9 @@ function uniqueChars(lines){
 /* この行を、練習中の役 char が言うか */
 function speaks(who, char){
   if(!who || !char) return false;
-  return splitWho(who).some(w=>{
-    if(ALL_WHO.test(w)) return true;
-    if(/以外$/.test(w)) return splitWho(w.replace(/以外$/, "")).map(baseName).indexOf(char) === -1;
-    return baseName(w) === char;
-  });
+  const w = normWho(who);
+  if(/以外$/.test(w)) return splitWho(w.replace(/以外$/, ""), null).map(baseName).indexOf(char) === -1;   // 「A・B以外」は全体で除く
+  return splitWho(w).some(x=> ALL_WHO.test(x) || baseName(x) === char);
 }
 
 /* 名前の帯に出す短い名前（連名は「山田ら」、練習中の役が入っていればその役で「佐藤ら」） */
@@ -687,7 +725,7 @@ function saveNewScript(){
   const arr = loadAll();
   const rec = { id: uid(), name, lines: pendingLines, char:"", page:0, updated: Date.now() };
   arr.unshift(rec);
-  saveAll(arr);
+  if(!saveAll(arr)) return;
   toast("保存しました");
   openPractice(rec.id);
 }
@@ -697,6 +735,7 @@ function saveNewScript(){
 /* ====================================================== */
 let cur = null;        // 現在の台本レコード
 let curPage = 0;
+let anchorLine = 0;   // 今見ている画面の先頭の行（画面を分け直しても、この行を含む画面を出す）
 let revealed = new Set(); // 答えを開いた行（全行インデックス）。ページを移ると空にする
 let pages = [];        // [{s,e}] ページ（PDFページ or 5行）の区切り。行インデックス基準
 let chapters = [];     // [{idx,label}] 章見出し
@@ -718,11 +757,13 @@ function updateRec(patch){
 function openPractice(id){
   cur = getRec(id);
   if(!cur){ renderHome(); return; }
+  revealed.clear();
   globalFontPx = 0;             // 台本ごとに詰まり具合が違うので、開くたび文字サイズを測り直す
   $("#prTitle").textContent = cur.name;
   $("#prTitle2").textContent = cur.name;
   buildPages();
   curPage = cur.line != null ? pageOfLine(cur.line) : Math.min(cur.page || 0, pages.length - 1);   // 古い保存（画面の番号）も読む
+  anchorLine = cur.line != null ? cur.line : (pages[curPage] || {s:0}).s;
   buildChapters();
   renderCharChips();
   renderChapterList();
@@ -751,7 +792,7 @@ function enterPractice(){
   $("#whoLabel").textContent = cur.char || "";
   // 見えてから実際の幅でページ分け・収まりを作り直す
   requestAnimationFrame(()=>{
-    const topLine = (pages[curPage] || {s:0}).s;
+    const topLine = anchorLine;
     buildPages();
     curPage = pageOfLine(topLine);
     renderStage();
@@ -862,7 +903,8 @@ function renderChapterList(){
 function openDrawer(){
   const d = $("#drawer");
   d.classList.remove("hidden");
-  requestAnimationFrame(()=> d.classList.add("open"));
+  d.offsetWidth;                  // 出す前の位置を一度確定させてから動かす（下から滑って出す）
+  d.classList.add("open");
 }
 function closeDrawer(instant){
   const d = $("#drawer");
@@ -897,7 +939,7 @@ function renderStage(){
   // 幅＝列数、高さ＝1列に入る文字数、どちらも分割に効くので両方を見る（dvh変化で高さだけ変わるケース対策）。
   const stW = $("#stage").clientWidth, stH = $("#stage").clientHeight;
   if(stW > 0 && (builtWidth <= 0 || Math.abs(stW - builtWidth) > 8 || Math.abs(stH - builtHeight) > 8)){
-    const topLine = (pages[curPage] || {s:0}).s;
+    const topLine = anchorLine;
     buildPages();
     curPage = pageOfLine(topLine);
   }
@@ -914,7 +956,7 @@ function renderStage(){
   if(globalFontPx <= 0 ||
      Math.abs($("#stage").clientWidth - fontBuiltWidth) > 2 ||
      Math.abs($("#stage").clientHeight - fontBuiltHeight) > 2){
-    const topLine = (pages[curPage] || {s:0}).s;
+    const topLine = anchorLine;
     computeGlobalFont();
     curPage = pageOfLine(topLine);
   }
@@ -1032,7 +1074,7 @@ function computeGlobalFont(){
   const saved = stage.innerHTML;
   stage.style.setProperty("--nmlen", nameBand());
   // 同じ台本・同じ役・同じ枠の大きさで測ったことがあれば、その結果を使う（開くたびの全ページ計測を省く）
-  const key = [cur.id, cur.lines.length, cur.char, stage.clientWidth, stage.clientHeight].join("|");
+  const key = [FIT_VER, cur.id, cur.lines.length, cur.char, stage.clientWidth, stage.clientHeight].join("|");
   const hit = fitCache()[key];
   if(hit){
     pages = hit.pages.map(p=>Object.assign({}, p));
@@ -1066,6 +1108,7 @@ function computeGlobalFont(){
     if(!split.length) break;
     splitPages(split);
   }
+  mergePages(best);
   globalFontPx = best;
   fontBuiltWidth = stage.clientWidth;     // この幅・高さで測った、と記録
   fontBuiltHeight = stage.clientHeight;
@@ -1075,6 +1118,7 @@ function computeGlobalFont(){
 
 /* 字の大きさと画面の区切りの控え（新しい順に12件まで） */
 const FIT_KEY = "serifu_fit_v1";
+const FIT_VER = 2;   // 分け方・字の大きさの決め方を変えたら上げる（古い控えを使わない）
 function fitCache(){
   try{ return JSON.parse(localStorage.getItem(FIT_KEY)) || {}; }catch(e){ return {}; }
 }
@@ -1096,6 +1140,28 @@ function splitPages(idxs){
     const m = p.s + Math.ceil((p.e - p.s) / 2);
     out.push({s:p.s, e:m, page:p.page}, {s:m, e:p.e, page:p.page});
   });
+  numberParts(out);
+}
+/* 決まった字の大きさで、同じページの続きの画面がまだ入るなら1画面にまとめる
+   （列数の見積りは大まかなので、空きが出た画面を詰める） */
+function mergePages(px){
+  const stage = $("#stage");
+  const fits = pg => [false, true].every(measure=>{
+    stage.innerHTML = '<div class="stage-inner">' + pageInnerHTML(pg, measure) + '</div>';
+    return fitsAt(px);
+  });
+  const out = [];
+  pages.forEach(p=>{
+    const last = out[out.length - 1];
+    if(last && p.page != null && last.page === p.page && !last.scroll && !p.scroll){
+      const both = {s:last.s, e:p.e, page:p.page};
+      if(fits(both)){ out[out.length - 1] = both; return; }
+    }
+    out.push(p);
+  });
+  numberParts(out);
+}
+function numberParts(out){
   let k = 0;
   out.forEach((p, i)=>{
     if(p.page == null){ p.part = 0; p.parts = 1; return; }
@@ -1112,6 +1178,7 @@ function splitPages(idxs){
 
 function gotoPage(p){
   curPage = Math.max(0, Math.min(p, totalPages()-1));
+  anchorLine = (pages[curPage] || {s:0}).s;
   revealed.clear();               // ページを移ったら答えは閉じる
   updateRec({ line: (pages[curPage] || {s:0}).s });   // 画面の番号は幅で変わるので、行番号で覚える
   renderStage();
@@ -1134,7 +1201,8 @@ function deleteCurrent(){
     now.splice(Math.min(i, now.length), 0, rec);
     saveAll(now);
     if(hadFlag) localStorage.setItem(flag, hadFlag);
-    renderHome();
+    if($("#view-home").classList.contains("hidden")) toast("元に戻しました");   // 別の画面にいたら引き戻さない
+    else renderHome();
   });
 }
 
@@ -1227,7 +1295,7 @@ function relayout(){
     // 枠のサイズが本当に変わったときだけ作り直す（無駄な再計算を避ける）
     if(Math.abs(stage.clientWidth - builtWidth) <= 2 &&
        Math.abs(stage.clientHeight - builtHeight) <= 2) return;
-    const topLine = (pages[curPage] || {s:0}).s;   // 今見ている先頭の行をおぼえておく
+    const topLine = anchorLine;                     // 今見ている先頭の行
     buildPages();                                   // 列数のめやすが変わるので分け直す
     globalFontPx = 0;                               // 枠の縦横が変わったので文字サイズも測り直す
     curPage = pageOfLine(topLine);                  // 同じあたりを表示し続ける
@@ -1251,25 +1319,26 @@ async function importLocked(src){
   if(!m || !window.LOCKED_SCRIPTS || !LOCKED_SCRIPTS.length || !window.crypto || !crypto.subtle) return 0;
   if(fromHash) history.replaceState(null, "", location.pathname + location.search);   // 鍵を履歴に残さない
   const b64 = t => Uint8Array.from(atob(t.replace(/-/g,"+").replace(/_/g,"/")), c=>c.charCodeAt(0));
-  let added = 0;
-  try{
-    const key = await crypto.subtle.importKey("raw", b64(m[1]), "AES-GCM", false, ["decrypt"]);
-    for(const L of LOCKED_SCRIPTS){
-      const flag = "serifu_locked_" + L.id;
-      if(localStorage.getItem(flag)) continue;
-      let arr = loadAll();
-      if(arr.some(s=>s.id===L.id)){ localStorage.setItem(flag,"1"); continue; }
-      let lines;
-      try{
-        const buf = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(L.iv)}, key, b64(L.ct));
-        lines = JSON.parse(new TextDecoder().decode(buf));
-      }catch(e){ continue; }                                   // この鍵の台本ではない
-      arr = [{ id:L.id, name:L.name, lines:lines, char:"", page:0, updated:Date.now() }].concat(arr);
-      saveAll(arr); localStorage.setItem(flag,"1"); added++;
+  let added = 0, had = 0;
+  let key = null;
+  try{ key = await crypto.subtle.importKey("raw", b64(m[1]), "AES-GCM", false, ["decrypt"]); }catch(e){}
+  if(key) for(const L of LOCKED_SCRIPTS){
+    const flag = "serifu_locked_" + L.id;
+    let lines;
+    try{
+      const buf = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(L.iv)}, key, b64(L.ct));
+      lines = JSON.parse(new TextDecoder().decode(buf));
+    }catch(e){ continue; }                                     // この鍵の台本ではない
+    // 読み込みは復号のあと（待つあいだに別の取り込みが保存していても上書きしない）
+    const arr = loadAll();
+    if(localStorage.getItem(flag) || arr.some(s=>s.id===L.id)){ localStorage.setItem(flag,"1"); had++; continue; }
+    if(saveAll([{ id:L.id, name:L.name, lines:lines, char:"", page:0, updated:Date.now() }].concat(arr))){
+      localStorage.setItem(flag,"1"); added++;
     }
-  }catch(e){}
+  }
   if(added){ renderHome(); toast("台本を追加しました"); }
-  else if(!fromHash){ toast("この台本はもう入っています"); renderHome(); }
+  else if(had){ if(!fromHash){ toast("この台本はもう入っています"); renderHome(); } }
+  else toast("このリンクでは開けませんでした");
   return added || -1;
 }
 // アプリを開いたままリンクを押したとき（# だけ変わって読み直されない）
