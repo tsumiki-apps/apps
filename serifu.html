@@ -138,6 +138,7 @@
     font-size:22px; line-height:1.95; letter-spacing:.02em;
     touch-action:manipulation;
   }
+  .stage.scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
   /* 内側ラッパー：この要素ごと拡大率を縮めて枠に収める（余白も一緒に縮むので確実に収まる） */
   .stage-inner{display:block; transform-origin:top right;}
   /* 各セリフ＝1列。名前は固定ガター（=台本中で一番長い名前ぶん）を確保し、
@@ -145,7 +146,8 @@
   .u{margin-left:1.4em; display:flex; flex-direction:row; align-items:center;}
   .u:last-child{margin-left:.4em;}
   .u .nm{font-weight:700; color:var(--accent); font-size:.78em; margin-bottom:10px;
-    flex:0 0 calc(var(--nmlen, 3) * 1em + .2em); text-align:center; overflow:hidden;}
+    flex:0 0 calc(var(--nmlen, 3) * 1em + .2em); text-align:center; overflow:hidden;
+    white-space:nowrap; text-overflow:ellipsis;}
   .u .tx{font-weight:500; color:var(--ink); flex:0 1 auto; text-align:center;}
   /* ト書き */
   .u.dir .tx{color:var(--sub); font-size:.82em; font-weight:400;}
@@ -575,11 +577,44 @@ function importFromText(raw){
   acceptLines(lines, "");
 }
 
+/* 役名の書き方：「山田・佐藤」＝連名、「山田以外」、「皆」「全員」＝全員、「山田N」＝山田のナレーション */
+const ALL_WHO = /^(皆|みんな|全員|一同)$/;
+function splitWho(who){ return String(who).split(/[・･、,／\/]/).map(w=>w.trim()).filter(Boolean); }
+function baseName(w){ return w.replace(/[\s　]*[（(]?[NＮ][)）]?$/, "") || w; }
+function isGroupWho(w){ return ALL_WHO.test(w) || /以外$/.test(w); }
+
+/* 役チップに出す個人名（連名は分けて、全員・以外は出さない） */
 function uniqueChars(lines){
   const seen = []; const set = {};
-  lines.forEach(l=>{ if(!l.dir && l.who && !set[l.who]){ set[l.who]=1; seen.push(l.who); } });
+  lines.forEach(l=>{
+    if(l.dir || !l.who) return;
+    splitWho(l.who).forEach(w=>{
+      if(isGroupWho(w)) return;
+      const n = baseName(w);
+      if(!set[n]){ set[n]=1; seen.push(n); }
+    });
+  });
   return seen;
 }
+
+/* この行を、練習中の役 char が言うか */
+function speaks(who, char){
+  if(!who || !char) return false;
+  return splitWho(who).some(w=>{
+    if(ALL_WHO.test(w)) return true;
+    if(/以外$/.test(w)) return splitWho(w.replace(/以外$/, "")).map(baseName).indexOf(char) === -1;
+    return baseName(w) === char;
+  });
+}
+
+/* 名前の帯に出す短い名前（連名は「山田ら」、練習中の役が入っていればその役で「佐藤ら」） */
+function shortWho(who, char){
+  const ws = splitWho(who);
+  if(ws.length < 2) return who;
+  const mine = ws.find(w=>baseName(w) === char);
+  return baseName(mine || ws[0]) + "ら";
+}
+const NM_MAX = 4;   // 名前の帯はこの文字数まで（長い名前で、セリフの列が細くならないように）
 
 function acceptLines(lines, suggestName){
   pendingLines = lines;
@@ -825,23 +860,27 @@ function renderStage(){
   }
   if(curPage > pages.length-1) curPage = pages.length-1;
   if(curPage < 0) curPage = 0;
-  const pg = pages[curPage] || {s:0, e:0};
-  const start = pg.s;
-  const slice = cur.lines.slice(pg.s, pg.e);
   const stage = $("#stage");
-  // 名前ガターの幅＝この台本で一番長い名前の文字数ぶん（どのセリフも同じ位置から始まる）
-  const maxName = Math.max(2, ...uniqueChars(cur.lines).map(c=>[...String(c)].length));
-  stage.style.setProperty("--nmlen", maxName);
+  // 名前ガターの幅＝帯に出す名前の最長（NM_MAX まで）。どのセリフも同じ位置から始まる
+  stage.style.setProperty("--nmlen", nameBand());
 
   // 全ページ共通の文字サイズを先に確定（枠のサイズが変わっていたら測り直す）。
   // ※innerHTML を測定用に差し替えるので、本番の中身を入れる前にやる。
   // 幅だけでなく高さも見る：高さが縮むと、答えを開いたとき縦にあふれて切れてしまうため。
+  // 測るときに画面を分け直すことがあるので、いま見ている行を覚えておいて戻す。
   if(globalFontPx <= 0 ||
      Math.abs($("#stage").clientWidth - fontBuiltWidth) > 2 ||
-     Math.abs($("#stage").clientHeight - fontBuiltHeight) > 2){ computeGlobalFont(); }
+     Math.abs($("#stage").clientHeight - fontBuiltHeight) > 2){
+    const topLine = (pages[curPage] || {s:0}).s;
+    computeGlobalFont();
+    curPage = pageOfLine(topLine);
+  }
+  const pg = pages[curPage] || {s:0, e:0};
+  const start = pg.s;
 
   stage.innerHTML = '<div class="stage-inner">' + pageInnerHTML(pg) + '</div>';
   stage.style.fontSize = (globalFontPx > 0 ? globalFontPx : 22) + "px";   // 全ページ同じサイズ（答えを出しても変えない）
+  stage.classList.toggle("scroll", !!pg.scroll);   // 1行だけでも下限の字で収まらない画面は、切らずに横へ送れるように
 
   stage.querySelectorAll(".reveal").forEach(btn=>{
     btn.onclick = ()=>{
@@ -871,10 +910,10 @@ function pageInnerHTML(pg, measure){
   const start = pg.s;
   return cur.lines.slice(pg.s, pg.e).map((l, i)=>{
     const idx = start + i;
-    const isMe = !l.dir && l.who && l.who === cur.char;
+    const isMe = !l.dir && speaks(l.who, cur.char);
     const cls = "u" + (l.dir?" dir":"") + (isMe?" me":"");
     // 名前ガターは常に確保（ト書きなど名前が無い列も同じ高さから始まるようそろえる）
-    let inner = '<div class="nm">'+(l.who && !l.dir ? esc(l.who) : "")+'</div>';
+    let inner = '<div class="nm">'+(l.who && !l.dir ? esc(shortWho(l.who, cur.char)) : "")+'</div>';
     if(isMe && !measure && !revealed.has(idx)){
       inner += '<button class="reveal" data-idx="'+idx+'">？</button>';
     }else if(isMe){
@@ -886,6 +925,11 @@ function pageInnerHTML(pg, measure){
     }
     return '<div class="'+cls+'" data-idx="'+idx+'">'+inner+'</div>';
   }).join("");
+}
+
+function nameBand(){
+  const lens = (cur.lines || []).filter(l=>!l.dir && l.who).map(l=>[...shortWho(l.who, cur.char)].length);
+  return Math.min(NM_MAX, Math.max(2, ...lens));
 }
 
 /* いまの枠に、指定サイズで中身が収まるか（縦横ともはみ出さないか）。 */
@@ -900,32 +944,67 @@ function fitsAt(px){
    各画面が「？ボタン状態（横幅が最大）」と「答え全文状態（列の長さが最大）」の
    どちらでも枠に収まる最大サイズを調べ、そのうち一番小さいもの
    ＝いちばん詰まった画面に合わせる。
-   こうすると全画面が同じサイズで、どの画面もセリフが切れない。
-   縦書きなので、文章は枠の高さいっぱいまで進んでから次の列へ折り返す。 */
+   ただし FLOOR より小さくしないと収まらない画面は、その画面を2つに分けて測り直す
+   （1ページの長いセリフのせいで、台本全体の字が小さくならないように）。
+   1行だけでも収まらない画面は scroll の印を付ける（黙って切らない）。 */
+const FONT_MAX = 34, FONT_FLOOR = 18;
 function computeGlobalFont(){
   const stage = $("#stage");
   if(!stage || stage.clientWidth <= 0 || stage.clientHeight <= 0) return;
   const saved = stage.innerHTML;
-  const maxName = Math.max(2, ...uniqueChars(cur.lines).map(c=>[...String(c)].length));
-  stage.style.setProperty("--nmlen", maxName);
-  let best = 34;                                  // 文字サイズの上限(px)から下げていく
-  const FLOOR = 10;                               // これ以上は小さくしない下限(px)
-  for(let pi = 0; pi < pages.length && best > FLOOR; pi++){
-    for(const measure of [false, true]){          // ？ボタン状態と答え全文状態の両方で確認
-      stage.innerHTML = '<div class="stage-inner">' + pageInnerHTML(pages[pi], measure) + '</div>';
-      if(fitsAt(best)) continue;                  // いまの best で収まる → この状態は制約にならない
-      let lo = FLOOR, hi = best;                   // best では収まらない → 収まる最大サイズを二分探索
-      for(let it = 0; it < 9; it++){
-        const mid = (lo + hi) / 2;
-        if(fitsAt(mid)){ lo = mid; } else { hi = mid; }
+  stage.style.setProperty("--nmlen", nameBand());
+  buildPages();                                   // 前回の分け直しを捨てて、いまの枠で分け直す
+  let best = FONT_MAX;
+  for(let round = 0; round < 6; round++){
+    best = FONT_MAX;
+    const split = [];
+    for(let pi = 0; pi < pages.length; pi++){
+      pages[pi].scroll = false;
+      for(const measure of [false, true]){        // ？ボタン状態と答え全文状態の両方で確認
+        stage.innerHTML = '<div class="stage-inner">' + pageInnerHTML(pages[pi], measure) + '</div>';
+        if(fitsAt(best)) continue;                // いまの best で収まる → この状態は制約にならない
+        if(!fitsAt(FONT_FLOOR)){                  // 下限でも収まらない → 分ける（1行なら横へ送る）
+          if(pages[pi].e - pages[pi].s > 1) split.push(pi); else pages[pi].scroll = true;
+          break;
+        }
+        let lo = FONT_FLOOR, hi = best;           // 収まる最大サイズを二分探索
+        for(let it = 0; it < 8; it++){
+          const mid = (lo + hi) / 2;
+          if(fitsAt(mid)){ lo = mid; } else { hi = mid; }
+        }
+        best = lo;
       }
-      best = Math.max(FLOOR, lo);
     }
+    if(!split.length) break;
+    splitPages(split);
   }
   globalFontPx = best;
   fontBuiltWidth = stage.clientWidth;     // この幅・高さで測った、と記録
   fontBuiltHeight = stage.clientHeight;
   stage.innerHTML = saved;
+}
+
+/* 指定した画面を行の真ん中で2つに分け、同じページ番号の中の（1/3）などを数え直す */
+function splitPages(idxs){
+  const set = new Set(idxs);
+  const out = [];
+  pages.forEach((p, i)=>{
+    if(!set.has(i)){ out.push(p); return; }
+    const m = p.s + Math.ceil((p.e - p.s) / 2);
+    out.push({s:p.s, e:m, page:p.page}, {s:m, e:p.e, page:p.page});
+  });
+  let k = 0;
+  out.forEach((p, i)=>{
+    if(p.page == null){ p.part = 0; p.parts = 1; return; }
+    k = (i > 0 && out[i-1].page === p.page) ? k + 1 : 0;
+    p.part = k;
+  });
+  for(let i = out.length - 1, n = 0; i >= 0; i--){
+    if(out[i].page == null) continue;
+    n = (i < out.length - 1 && out[i+1].page === out[i].page) ? n : out[i].part + 1;
+    out[i].parts = n;
+  }
+  pages = out;
 }
 
 function gotoPage(p){
