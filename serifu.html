@@ -939,6 +939,7 @@ function deleteCurrent(){
   if(!confirm('「'+cur.name+'」を削除します。よろしいですか？')) return;
   const arr = loadAll().filter(s=>s.id!==cur.id);
   saveAll(arr);
+  localStorage.removeItem("serifu_locked_" + cur.id);   // 鍵つき台本は、同じリンクで入れ直せるように
   toast("削除しました");
   renderHome();
 }
@@ -962,7 +963,11 @@ drop.onclick = ()=> $("#file").click();
 ["dragenter","dragover"].forEach(ev=> drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add("hover"); }));
 ["dragleave","drop"].forEach(ev=> drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove("hover"); }));
 drop.addEventListener("drop", e=>{ if(e.dataTransfer.files[0]) importFromFile(e.dataTransfer.files[0]); });
-$("#pasteBtn").onclick = ()=> importFromText($("#pasteText").value);
+$("#pasteBtn").onclick = async ()=>{
+  const v = $("#pasteText").value;
+  if(/[#&]k=[A-Za-z0-9_-]{40,}/.test(v)){ await importLocked(v.trim()); return; }   // 台本リンクを貼った
+  importFromText(v);
+};
 $("#saveBtn").onclick = saveNewScript;
 
 // 練習：役えらび画面
@@ -1015,10 +1020,11 @@ if(window.ResizeObserver){
 
 /* 鍵つきリンク（#k=…）で開いたときだけ、暗号化して入れてある台本を取り出して足す。
    鍵は # の後ろなのでサーバーには送られない。足すのは一度きり（消したら戻さない）・同じ台本は二重に入れない */
-async function importLocked(){
-  const m = /[#&]k=([A-Za-z0-9_-]+)/.exec(location.hash || "");
-  if(!m || !window.LOCKED_SCRIPTS || !LOCKED_SCRIPTS.length || !window.crypto || !crypto.subtle) return;
-  history.replaceState(null, "", location.pathname + location.search);   // 鍵を履歴に残さない
+async function importLocked(src){
+  const fromHash = src == null;
+  const m = /(?:^|[#&])k=([A-Za-z0-9_-]{40,})/.exec(fromHash ? (location.hash || "") : String(src));
+  if(!m || !window.LOCKED_SCRIPTS || !LOCKED_SCRIPTS.length || !window.crypto || !crypto.subtle) return 0;
+  if(fromHash) history.replaceState(null, "", location.pathname + location.search);   // 鍵を履歴に残さない
   const b64 = t => Uint8Array.from(atob(t.replace(/-/g,"+").replace(/_/g,"/")), c=>c.charCodeAt(0));
   let added = 0;
   try{
@@ -1038,7 +1044,11 @@ async function importLocked(){
     }
   }catch(e){}
   if(added){ renderHome(); toast("台本を追加しました"); }
+  else if(!fromHash){ toast("この台本はもう入っています"); renderHome(); }
+  return added || -1;
 }
+// アプリを開いたままリンクを押したとき（# だけ変わって読み直されない）
+window.addEventListener("hashchange", ()=> importLocked());
 
 // 起動
 ensureSeed();
