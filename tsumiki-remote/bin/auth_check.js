@@ -122,5 +122,25 @@ check('返事の本文に載っていて下に入力欄がある画面では押�
 check('URLが出た後の画面では押さない',
   AUTH.loginMethodOpen(fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8')), false);
 
+// ------------------------------------------------- 通った画面で Enter を押す
+console.log('■ ログインが通った画面（Enter を押してよいか）');
+// 2026-10-28 の実際の画面（スクショから）
+const done = '* Worked for 11s · done 9:49\n\n────────────────────\n\n  Login\n\n'
+  + '  Logged in as someone@example.com\n  Login successful. Press Enter to continue…\n';
+check('通った画面 → 押す', AUTH.loginDone(done), true);
+check('返事の本文に載っていて下に入力欄がある画面では押さない',
+  AUTH.loginDone(done + '────\n❯ \n────\n  ⏵⏵ bypass permissions on'), false);
+check('コードを待っている画面では押さない',
+  AUTH.loginDone('  Paste code here if prompted >'), false);
+check('空の画面では押さない', AUTH.loginDone(''), false);
+
+console.log('■ コードを貼る欄（クリップボードを送ってよいか）');
+const pasteScr = fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8');
+check('貼る欄が開いている → 送ってよい', AUTH.pasteOpen(pasteScr), true);
+check('通った画面では送らない', AUTH.pasteOpen(done), false);
+check('ふつうの入力欄では送らない', AUTH.pasteOpen('⏺ 終わりました\n────\n❯ \n────'), false);
+check('上に古い貼る欄が残っていても、下がふつうの画面なら送らない',
+  AUTH.pasteOpen(pasteScr + '\n⏺ 別の返事\n❯ '), false);
+
 console.log(ng ? `\n✗ 食い違い ${ng} 件` : '\n✓ 全部そろっています');
 process.exit(ng ? 1 : 0);

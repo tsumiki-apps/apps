@@ -133,4 +133,30 @@ function loginMethodOpen(text) {
   return tail.slice(0, cur).some((l) => /^\s*Select login method:\s*$/.test(l));
 }
 
-module.exports = { SOON_MS, stateOf, quiet, whenText, notifyText, findLoginUrl, loginMethodOpen };
+// ------------------------------------------------ ログインが通った画面
+//
+// コードを貼ると「Login successful. Press Enter to continue…」で止まる。
+// 2026-10-28 本人が出先でここに来て、通ったのかどうか分からず、Enter も要るのに
+// 気づけなかった（帯も黄色のまま）。なのでこちらで見つけて Enter を押す。
+// ⚠️ 押してよいのは**いちばん下の意味のある行がこの文**のときだけ。返事の本文に
+//    同じ文が載っていても、下に入力欄などが続いていれば押さない。
+function meaningful(text) {
+  return String(text || '').replace(/\r/g, '').split('\n')
+    .map((l) => l.trim()).filter((l) => l && !/^[│─╭╮╰╯\s]*$/.test(l));
+}
+function loginDone(text) {
+  const lines = meaningful(text);
+  const last = lines[lines.length - 1] || '';
+  return /^Login successful\.\s*Press Enter to continue/i.test(last);
+}
+
+// コードを貼る欄が**いま開いているか**。いちばん下が `Esc to cancel`、そのすぐ上が
+// `Paste code here` の行のときだけ。クリップボードの中身を席へ送ってよいのはこのときだけ
+// ＝通った後や別の画面に送ると、鍵のような文字列がふつうの指示として送られてしまう（反証役）
+function pasteOpen(text) {
+  const lines = meaningful(text);
+  if (!/^Esc to cancel$/.test(lines[lines.length - 1] || '')) return false;
+  return /^Paste code here/i.test(lines[lines.length - 2] || '');
+}
+
+module.exports = { SOON_MS, stateOf, quiet, whenText, notifyText, findLoginUrl, loginMethodOpen, loginDone, pasteOpen };

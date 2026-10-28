@@ -53,7 +53,10 @@ const FAKE_KEYCHAIN = {
   ok: { accessToken: 'a', refreshToken: 'r', expiresAt: now + 3600e3,
     refreshTokenExpiresAt: now + 28 * 86400e3 },
 }[CASE];
-const AUTH_STATE = AUTH.stateOf(FAKE_KEYCHAIN, now);
+let AUTH_STATE = AUTH.stateOf(FAKE_KEYCHAIN, now);
+
+const FAKE_KEYCHAIN_OK = { accessToken: 'a', refreshToken: 'r', expiresAt: now + 3600e3,
+  refreshTokenExpiresAt: now + 28 * 86400e3 };
 
 // ---------------------------------------------------------------- 架空の席2つ
 const SEATS = [
@@ -84,9 +87,17 @@ const MENU_SCREEN = [
 
 const URL_SCREEN = fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8');
 
-let phase = 'idle';        // idle → menu → url
+// コードを貼ったあとの画面（2026-10-28 の実機のスクショから。名前は架空）
+const DONE_SCREEN = [
+  '  Login', '',
+  '  Logged in as someone@example.com',
+  '  Login successful. Press Enter to continue…',
+].join('\n');
+
+let phase = 'idle';        // idle → menu → url → done → idle（Enter で戻る）
 function screen() {
-  return phase === 'url' ? URL_SCREEN : phase === 'menu' ? MENU_SCREEN : IDLE_SCREEN;
+  return phase === 'done' ? DONE_SCREEN : phase === 'url' ? URL_SCREEN
+    : phase === 'menu' ? MENU_SCREEN : IDLE_SCREEN;
 }
 
 function say(s) { console.log('  ' + s); }
@@ -158,15 +169,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (p === '/api/loginurl') {
+    // 本番と同じ判断（lib/auth.js）で、通った画面なら「Enter を押した」ことにする
+    if (AUTH.loginDone(screen())) {
+      phase = 'idle';
+      AUTH_STATE = Object.assign(AUTH.stateOf(FAKE_KEYCHAIN_OK, Date.now()),
+        { renewedAt: Date.now(), renewedBy: 'login' });
+      say('→ 通った画面で Enter を押した（架空）。帯は緑になるはず');
+      return json(res, 200, { url: null, done: true, paste: false, auth: AUTH_STATE });
+    }
     const u = AUTH.findLoginUrl(screen());
     if (u) say('→ URLを1本に戻して返しました（' + u.length + '文字）');
-    return json(res, 200, { url: u });
+    return json(res, 200, { url: u, done: false, paste: AUTH.pasteOpen(screen()), auth: AUTH_STATE });
   }
 
   if (p === '/api/send' && req.method === 'POST') {
     const b = await readBody(req);
     const t = String(b.text || '');
     if (phase === 'menu' && t.trim() === '1') { phase = 'url'; say('→ 1 が押されたので URL の画面へ'); }
+    else if (phase === 'url' && t.trim()) { phase = 'done'; say('→ コードが貼られた（' + t.length + '文字・中身は出さない）。通った画面へ'); }
     else say('→ 送られてきました（' + t.length + '文字）。架空なのでどこにも届きません');
     return json(res, 200, { ok: true });
   }

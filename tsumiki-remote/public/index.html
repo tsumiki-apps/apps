@@ -320,6 +320,10 @@
   #authbar.bad{
     background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.42);color:#fca5a5;
   }
+  /* 入り直した直後だけの緑。通ったことを言葉で言う（帯が黙って消えるだけにしない） */
+  #authbar.good{
+    background:rgba(34,197,94,.13);border-color:rgba(34,197,94,.38);color:var(--accent);
+  }
   #authbar .go{display:block;margin-top:3px;color:var(--fg);opacity:.75}
   #authbar[hidden]{display:none}
   /* 届いていないあいだ、札の「作業中」は今の話ではない（点滅は動いている合図に
@@ -968,6 +972,7 @@
   /* 色は「何が起きるか」で決める。青＝直す・見る、赤＝もう戻せない、
      灰＝画面まわり。赤はこのシートで**終わらせる系だけ**に使う */
   .sic.edit{color:var(--tap)}
+  .sic.good{color:var(--accent)}
   .sic.stop{color:#f2685c}
   .sic.dark{color:#98a2b3}
   .sic.ok{color:var(--accent)}
@@ -2285,9 +2290,28 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
   }
 
+  // 入り直したあとの緑の帯。出す長さ（30分）は Mac 側で決める＝iPhone の時計に頼らない
+  var AUTH_SEEN = 'tsumiki-remote-auth-seen';
+
   function renderAuth(a) {
     auth = a || null;
     var st = auth && auth.state;
+    el.authbar.classList.remove('bad', 'good');
+    // 入り直した直後は緑で言う。帯が黙って消えるだけだと、通ったのか分からない
+    // （2026-10-28 本人：Login successful が出ても黄色い帯が残っていた）
+    var seen = 0;
+    try { seen = Number(localStorage.getItem(AUTH_SEEN)) || 0; } catch (e) { /* 読めなければ出す */ }
+    if (st === 'ok' && auth.renewedAt && auth.renewedAt !== seen) {
+      el.authbar.hidden = false;
+      el.authbar.classList.add('good');
+      // 'auto' ＝こちらで入り直したのではなく、期限が勝手に延びた
+      el.authbar.textContent = auth.renewedBy === 'login' ? '✓ ログインし直しました' : '✓ ログインが延びました';
+      var ok = document.createElement('span');
+      ok.className = 'go';
+      ok.textContent = authWhen(auth.deadline) + ' まで有効';
+      el.authbar.appendChild(ok);
+      return;
+    }
     // unknown（キーチェーンが読めなかった）は黙る。**読めないことと切れたことは別**。
     // ここで一緒にすると、鍵が閉じているだけの朝に「切れました」と嘘をつく
     if (st !== 'expired' && st !== 'soon') { el.authbar.hidden = true; return; }
@@ -2302,7 +2326,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     el.authbar.appendChild(go);
   }
 
-  el.authbar.addEventListener('click', function () { openLoginSheet(); });
+  el.authbar.addEventListener('click', function () {
+    // 緑の帯は押したら片付ける（同じ入り直しでは二度と出さない）
+    if (el.authbar.classList.contains('good')) {
+      try { localStorage.setItem(AUTH_SEEN, String(auth.renewedAt)); } catch (e) { /* 次の巡回でまた出るだけ */ }
+      el.authbar.hidden = true;
+      return;
+    }
+    openLoginSheet();
+  });
 
   // ---- 出先からログインし直す
   //
@@ -2315,9 +2347,17 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //      合言葉のようなものが通る道を増やさない）
   var loginPoll = null;
   var LOGIN_TRIES = 45;      // 2秒おき＝90秒まで待つ
+  // URLを渡したあと、通るのを待つ長さ。サインインに手間取っても切らない長さにする
+  var LOGIN_DONE_TRIES = 200;   // 3秒おき＝10分
+  var loginStep = '';           // いまシートに出している段（'' ＝ログインのシートではない）
+  var loginShown = null;        // 渡したURL（{name,u}）。巡回中に帯を押されたら手順を開き直すだけにする
+  var loginNow = '';            // 3段目の言葉（巡回が描き直しても戻さない）
+  var loginBusy = false;        // コードを送っている最中（二度押しで2回送らない）
 
   function stopLoginPoll() {
     if (loginPoll) { clearInterval(loginPoll); loginPoll = null; }
+    loginShown = null;
+    loginNow = '';
   }
 
   // ログインを打つ先。いま見ている席が Claude ならそこ、違えば最初の Claude の席
@@ -2327,9 +2367,29 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return cs.length ? cs[0].name : '';
   }
 
+  // 2026-10-28 本人：「コードを貼ったあと Login successful で止まっていて、通ったのか
+  // 分からない。手順も分かりにくい」。なので段を番号で見せ（1 開く → 2 貼る → 3 完了）、
+  // 貼るのはシートのボタン1つ、最後の Enter はサーバーが押す、通ったら緑で言う。
+  function loginSteps(name, u, now) {
+    if (now) loginNow = now;
+    now = loginNow;
+    openSheet('ログインし直す');
+    loginStep = 'steps';
+    sheetItem('1  サインインを開く', 'Authorize → コードをコピー',
+      function () { window.open(u, '_blank'); }, { icon: 'check', iconCls: 'edit' });
+    sheetItem('2  コードを貼る', 'コピーしてから押す',
+      function () { pasteLoginCode(name, u); }, { icon: 'pencil', iconCls: 'edit' });
+    sheetItem('3  ' + (now || '完了を待っています'), '',
+      function () {}, { disabled: true, icon: 'clock', iconCls: 'dark' });
+  }
+
   function openLoginSheet() {
+    // URLを渡して待っている最中なら、手順を開き直すだけ。もう一度 /login を打つと、
+    // 開いている貼る欄に「/login」がコードとして入ってしまう（反証役）
+    if (loginPoll && loginShown) return loginSteps(loginShown.name, loginShown.u);
     var name = loginTarget();
     openSheet('ログインし直す');
+    loginStep = '';
     if (!name) {
       sheetItem('Claude の席がありません', '＋Claude で作ってください',
         function () { closeSheet(); }, { disabled: true, wrap: true });
@@ -2340,44 +2400,94 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function startLogin(name) {
-    openSheet('ログイン：' + name);
+    openSheet('ログインし直す');
+    loginStep = 'wait';
     sheetItem('URLを待っています…', '',
       function () {}, { disabled: true, wrap: true });
     api('/api/login', { method: 'POST', body: JSON.stringify({ name: name }) }, 8000)
       .catch(function (e) {
         stopLoginPoll();
-        openSheet('ログイン：' + name);
+        openSheet('ログインし直す');
         sheetItem('/login を打てませんでした', String(e.message || e),
           function () { closeSheet(); }, { disabled: true, wrap: true });
       });
     var tries = 0;
+    var shown = '';
     stopLoginPoll();
     loginPoll = setInterval(function () {
-      // シートを閉じたら見張りも止める（閉じたのに裏で問い合わせ続けない）
-      if (sheet.hidden) return stopLoginPoll();
-      if (++tries > LOGIN_TRIES) {
+      // URLを渡す前は、シートを閉じたら見張りも止める（閉じたのに裏で問い合わせ続けない）。
+      // 渡した後は閉じても続ける＝入力欄から手で貼っても、通った画面の Enter は押す
+      if (!shown && sheet.hidden) return stopLoginPoll();
+      if (++tries > (shown ? LOGIN_DONE_TRIES : LOGIN_TRIES)) {
         stopLoginPoll();
-        openSheet('ログイン：' + name);
+        if (shown) return;   // 待ちくたびれただけ。帯は期限を読み直せば勝手に変わる
+        openSheet('ログインし直す');
         sheetItem('URLが見つかりません', '選択肢が出ていたら 1 を押す',
           function () { closeSheet(); }, { disabled: true, wrap: true });
         return;
       }
       api('/api/loginurl?name=' + encodeURIComponent(name), null, 8000).then(function (d) {
-        if (!d || !d.url) return;
-        stopLoginPoll();
-        showLoginUrl(name, d.url);
+        if (!d) return;
+        if (d.done) { stopLoginPoll(); return loginDone(); }
+        if (!d.url || d.url === shown) return;
+        // 1つ目のURLが出たら、そこから先は通るのを待つ巡回にする（3秒おき）
+        var first = !shown;
+        shown = d.url;
+        loginShown = { name: name, u: d.url };
+        if (!sheet.hidden && (loginStep === 'wait' || loginStep === 'steps')) loginSteps(name, d.url);
+        if (first) { tries = 0; }
       }).catch(function () { /* 1回の失敗では諦めない（次の巡回で拾う） */ });
     }, 2000);
   }
 
-  function showLoginUrl(name, u) {
-    openSheet('ログイン：' + name);
-    // ⚠️ 「戻る」は残す。新しいタブで開くので、サインインが終わった時点で目の前に
-    //    あるのは Claude のページ＝つみきリモートは別のタブにいる。ここを言わないと
-    //    出先で「コードは出たのに貼る場所が無い」になる。
-    //    ただし2項目に分けない＝流れは1行で足りる（短いほうが出先で読める）
-    sheetItem('サインインを開く', '終わったら戻ってコードを貼る',
-      function () { window.open(u, '_blank'); }, { icon: 'check', iconCls: 'edit' });
+  // コードを貼る。クリップボードから読めればその場で席へ送る（iOS は「ペースト」の
+  // 吹き出しが出る）。読めなければ入力欄に任せる＝今までの道に戻すだけ。
+  // ⚠️ コードは画面にもログにも出さない（送るのは /api/send、本文はログに残らない）
+  function pasteLoginCode(name, u) {
+    function byHand() {
+      closeSheet();
+      el.cmd && el.cmd.focus();
+      toast('入力欄にコードを貼って送ってください');
+    }
+    if (loginBusy) return;
+    if (!navigator.clipboard || !navigator.clipboard.readText) return byHand();
+    navigator.clipboard.readText().then(function (t) {
+      var code = String(t || '').trim();
+      // コードは「英数字#英数字」の1語（Claude のサインインが出す形）。形が違えば送らず
+      // 入力欄に任せる＝鍵や合言葉をコピーしたままでも、席には何も送られない
+      // （向こうがコードの形を変えても、入力欄から手で貼る道は残る）
+      if (!/^[A-Za-z0-9_\-.~]{16,}#[A-Za-z0-9_\-.~]{16,}$/.test(code)) return byHand();
+      loginBusy = true;
+      // 送る直前に、席の貼る欄がいま開いているかを確かめる（通った後・別の画面には送らない）
+      return api('/api/loginurl?name=' + encodeURIComponent(name), null, 8000).then(function (d) {
+        if (d && d.done) { stopLoginPoll(); return loginDone(); }
+        if (!d || !d.paste) { toast('貼る欄が開いていません'); return; }
+        return api('/api/send', {
+          method: 'POST',
+          body: JSON.stringify({ name: name, text: code, enter: true, box: true })
+        }).then(function () {
+          if (loginStep === 'steps' && !sheet.hidden) loginSteps(name, u, '確かめています…');
+        });
+      }).catch(function (e) { toast('送信失敗: ' + e.message); })
+        .then(function () { loginBusy = false; });
+    }).catch(byHand);
+  }
+
+  function loginDone() {
+    var show = !sheet.hidden && loginStep;
+    function paint() {
+      if (!show || sheet.hidden || !loginStep) return;
+      openSheet('ログインし直す');
+      loginStep = 'done';
+      var ok = auth && auth.state === 'ok';
+      sheetItem('ログインし直しました', ok ? authWhen(auth.deadline) + ' まで有効' : '期限を確かめています…',
+        function () { closeSheet(); }, { icon: 'check', iconCls: 'good' });
+    }
+    paint();
+    // 期限はサーバーが読み直している最中。少し待ってから帯とシートを描き直す
+    setTimeout(function () {
+      refreshState().then(paint, paint);
+    }, 2500);
   }
 
   // ---- 最後に見た内容を iPhone の中に残す（オフラインでも開けるように）
@@ -6654,7 +6764,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var sheetTitle = document.getElementById('sheettitle');
   var sheetBody = document.getElementById('sheetbody');
 
-  function closeSheet() { sheet.hidden = true; sheetBody.innerHTML = ''; }
+  function closeSheet() { sheet.hidden = true; sheetBody.innerHTML = ''; loginStep = ''; }
   document.getElementById('sheetcancel').onclick = closeSheet;
   sheet.onclick = function (e) { if (e.target === sheet) closeSheet(); };
 
@@ -6771,6 +6881,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function openSheet(title) {
     sheetTitle.textContent = title;
     sheetBody.innerHTML = '';
+    loginStep = '';   // ほかのシートに替わった＝ログインの巡回はもうここを描かない
     sheet.hidden = false;
   }
 

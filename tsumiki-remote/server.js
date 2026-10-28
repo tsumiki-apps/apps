@@ -610,23 +610,56 @@ function authNotify(state, deadline) {
   console.log(`auth ${state}${when ? '（' + when + '）' : ''} → iPhone に知らせた`);
 }
 
+// 入り直した印。画面の緑の帯に使う（帯が黙って消えるだけだと、通ったのか分からない
+// ＝2026-10-28 本人）。値の中ではなく別に持つ＝unknown を挟んでも消えない（反証役）。
+//   by='login' … つみきリモートから入り直して、通った画面で Enter を押した
+//   by='auto'  … こちらは何もしていないのに、もうすぐ／切れた → ok に戻った
+// 出すのは AUTH_RENEW_SHOW のあいだだけ。時刻の比べはここ（Mac の時計）で済ませる
+// ＝iPhone の時計がずれていても出たり消えたりしない
+const AUTH_RENEW_SHOW = 30 * 60 * 1000;
+let authRenew = { at: 0, by: '' };
+let authRenewPending = false;   // Enter を押した。次に ok を読んだら 'login' の印を付ける
+let authAgain = false;          // 読んでいる最中に「今すぐ読み直して」が来た
+
+function authRead() {
+  authFetching = keychainRead()
+    .then((o) => {
+      const v = AUTH.stateOf(o);
+      const before = authCache.value && authCache.value.state;
+      if (v.state === 'ok' && authRenewPending) {
+        authRenew = { at: Date.now(), by: 'login' };
+        authRenewPending = false;
+      } else if (v.state === 'ok' && (before === 'soon' || before === 'expired')) {
+        authRenew = { at: Date.now(), by: 'auto' };
+      }
+      authCache = { at: Date.now(), value: v };
+      if (v.state !== before) console.log(`auth ${before || '—'} → ${v.state}`);
+      authNotify(v.state, v.deadline);
+    })
+    .catch(() => {})
+    .finally(() => {
+      authFetching = null;
+      // 読んでいる最中に頼まれた読み直しは、終わってからもう1回（取りこぼさない）
+      if (authAgain) { authAgain = false; authRead(); }
+    });
+}
+
+// 期限を今すぐ読み直す（通った画面で Enter を押した直後）
+function authRefreshNow() {
+  if (authFetching) { authAgain = true; return; }
+  authRead();
+}
+
 // 待たせない。古ければ裏で読み直して、いま持っている写しを返す（残量と同じ作り）
 function authSnapshot() {
   const now = Date.now();
   const ttl = (authCache.value && authCache.value.state === 'ok') ? AUTH_TTL_OK : AUTH_TTL_BAD;
-  if (!authFetching && now - authCache.at > ttl) {
-    authFetching = keychainRead()
-      .then((o) => {
-        const v = AUTH.stateOf(o);
-        const before = authCache.value && authCache.value.state;
-        authCache = { at: Date.now(), value: v };
-        if (v.state !== before) console.log(`auth ${before || '—'} → ${v.state}`);
-        authNotify(v.state, v.deadline);
-      })
-      .catch(() => {})
-      .finally(() => { authFetching = null; });
+  if (!authFetching && now - authCache.at > ttl) authRead();
+  const v = authCache.value;
+  if (v && v.state === 'ok' && authRenew.at && now - authRenew.at < AUTH_RENEW_SHOW) {
+    return Object.assign({}, v, { renewedAt: authRenew.at, renewedBy: authRenew.by });
   }
-  return authCache.value;
+  return v;
 }
 
 // ⚠️ **画面が開いていなくても見張る。** /api/state からしか呼ばないと、iPhone で
@@ -2993,6 +3026,11 @@ const server = http.createServer(async (req, res) => {
           return json(res, 409, { error: BLOCK_MSG[why] });
         }
       }
+      // コードを貼る欄が開いていたら打たない。`/login` がコードとして送られてしまう（反証役）
+      if (AUTH.pasteOpen(await captureScreen(name))) {
+        console.log(`login ${name} 止めた（コードを貼る欄が開いている）`);
+        return json(res, 409, { error: 'ログインの途中です。コードを貼ってください' });
+      }
       console.log(`login ${name} に /login を打つ`);
       const r = await tmux(['send-keys', '-t', '=' + name + ':', '-l', '--', sendKeysArg('/login')]);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
@@ -3010,7 +3048,25 @@ const server = http.createServer(async (req, res) => {
       // 途中で切れたURLを「押せるリンク」として渡してしまう
       const r = await tmux(['capture-pane', '-p', '-J', '-t', '=' + name + ':', '-S', '-200']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
-      return json(res, 200, { url: AUTH.findLoginUrl(r.out) });
+      // 通った画面なら Enter を押して、期限を今すぐ読み直す（5分待たずに帯を変える）。
+      // ⚠️ Claude の席のときだけ（シェルの席に同じ文が出ていても押さない）。
+      //    押せなかったら done にしない＝届いていないのに「通りました」と言わない（反証役）
+      let done = false;
+      if (AUTH.loginDone(r.out)) {
+        const cmd = await tmux(['display', '-p', '-t', '=' + name + ':', '#{pane_current_command}']);
+        if (cmd.ok && kindOf(cmd.out.trim()) === 'claude') {
+          const e = await tmux(['send-keys', '-t', '=' + name + ':', 'Enter']);
+          console.log(`login ${name} 通った画面で Enter を押した${e.ok ? '' : '（失敗）'}`);
+          forgetScreen(name);
+          if (e.ok) {
+            done = true;
+            authRenewPending = true;
+            authRefreshNow();
+          }
+        }
+      }
+      return json(res, 200, { url: done ? null : AUTH.findLoginUrl(r.out), done: done,
+        paste: AUTH.pasteOpen(r.out), auth: authSnapshot() });
     }
 
     // 文字を送る（末尾で Enter を打つかは enter フラグ）
