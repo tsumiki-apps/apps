@@ -380,6 +380,13 @@ ICONS = {
     "teion": '<path d="M44,50 L44,30 A6,6 0 0 1 56,30 L56,50 A9,9 0 1 1 44,50 Z"/>'
              '<line x1="50" y1="38" x2="50" y2="56"/>'
              '<path d="M18,79 q8,-5.5 16,0 t16,0 t16,0 t16,0"/>',
+    # 整う＝3段の階段に積んだ積み木（習慣が積み上がる）。つみき(index)の三角積みと重ならない形
+    "totonou": '<rect x="22" y="58" width="17" height="17" rx="3.5"/>'
+               '<rect x="42" y="58" width="17" height="17" rx="3.5"/>'
+               '<rect x="42" y="38" width="17" height="17" rx="3.5"/>'
+               '<rect x="62" y="58" width="17" height="17" rx="3.5"/>'
+               '<rect x="62" y="38" width="17" height="17" rx="3.5"/>'
+               '<rect x="62" y="18" width="17" height="17" rx="3.5"/>',
 }
 
 

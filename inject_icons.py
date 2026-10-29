@@ -8,6 +8,7 @@ import re
 TITLES = {
     "index":       "つみき",
     "health":      "からだ帳",
+    "totonou":     "整う",
     "cooking":     "ゆずごはん",
     "credit":      "クレジット明細",
     "forecast":    "資産予測",
