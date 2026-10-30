@@ -10,13 +10,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let keys = HotKeys()
     private let trustItem = NSMenuItem()
     private let loginItem = NSMenuItem(title: "ログイン時に開く", action: #selector(toggleLogin), keyEquivalent: "")
+    private let launchedAt = Date()
+    private var shownTrusted: Bool?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let b = item.button {
-            let img = NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: "まどわけ")
-            img?.isTemplate = true
-            b.image = img
+        updateIcon()
+        // 許可が変わったらアイコンで分かるように（許可なしの間は「！」の形）
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.updateIcon() }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { n in
+            let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            if let app, app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+                Snapper.lastOtherPID = app.processIdentifier
+            }
         }
 
         let menu = NSMenu()
@@ -30,6 +38,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(mi)
         }
         menu.addItem(.separator())
+        keys.register()
+        if !keys.failed.isEmpty {
+            let names = keys.failed.map { $0.title }.joined(separator: "・")
+            let mi = NSMenuItem(title: "ほかのアプリと重なって使えない：\(names)", action: nil, keyEquivalent: "")
+            mi.isEnabled = false
+            menu.addItem(mi)
+        }
         trustItem.target = self
         trustItem.action = #selector(openTrustSettings)
         menu.addItem(trustItem)
@@ -44,11 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if Snapper.snap(side) { return }
             if Snapper.trusted { NSSound.beep() } else { self.explainTrust() }
         }
-        keys.register()
 
-        // 起動時は OS の案内だけ（これで設定の一覧に「まどわけ」が載る）
+        // 起動時は OS の案内だけ（これで設定の一覧に「まどわけ」が載る）。重なるキーの知らせは、案内と重ならないときだけ
         if !Snapper.trusted { Snapper.askForTrust() }
-        if !keys.failed.isEmpty {
+        else if !keys.failed.isEmpty {
             let names = keys.failed.map { $0.title }.joined(separator: "・")
             alert("ほかのアプリが同じショートカットを使っています", "使えないもの：\(names)\nそのアプリを終了してから、まどわけを開き直してください。")
         }
@@ -71,7 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func snapFromMenu(_ sender: NSMenuItem) {
         guard let side = Side(rawValue: UInt32(sender.tag)) else { return }
         // メニューが閉じて元のアプリに前が戻るのを待つ
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { Snapper.snap(side) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            if !Snapper.snap(side) { NSSound.beep() }
+        }
     }
 
     @objc private func toggleLogin() {
@@ -98,7 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // キーを押すたびに出さない（開いているあいだに1回だけ）
     private var explained = false
     private func explainTrust() {
-        guard !explained else { NSSound.beep(); return }
+        // 起動直後は OS の案内が出ているので重ねない
+        guard !explained, Date().timeIntervalSince(launchedAt) > 5 else { NSSound.beep(); return }
         explained = true
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
@@ -107,6 +124,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         a.addButton(withTitle: "設定を開く")
         a.addButton(withTitle: "あとで")
         if a.runModal() == .alertFirstButtonReturn { openTrustSettings() }
+    }
+
+    private func updateIcon() {
+        let ok = Snapper.trusted
+        guard ok != shownTrusted, let b = item.button else { return }
+        shownTrusted = ok
+        let img = NSImage(systemSymbolName: ok ? "rectangle.split.2x1" : "exclamationmark.triangle",
+                          accessibilityDescription: ok ? "まどわけ" : "まどわけ（許可が必要）")
+        img?.isTemplate = true
+        b.image = img
     }
 
     private func alert(_ title: String, _ body: String) {

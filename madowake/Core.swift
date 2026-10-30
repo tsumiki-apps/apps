@@ -56,9 +56,16 @@ enum Snapper {
     /// 動かせたら true
     @discardableResult
     static func snap(_ side: Side) -> Bool {
-        guard let app = NSWorkspace.shared.frontmostApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return false }
-        return snap(side, pid: app.processIdentifier)
+        guard let pid = targetPID else { return false }
+        return snap(side, pid: pid)
+    }
+
+    /// 自分（まどわけ）以外で最後に手前にいたアプリ。案内を閉じたあとも、元のアプリを動かせるように
+    static var lastOtherPID: pid_t?
+    private static var targetPID: pid_t? {
+        let me = ProcessInfo.processInfo.processIdentifier
+        if let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != me { return app.processIdentifier }
+        return lastOtherPID
     }
 
     @discardableResult
@@ -68,6 +75,7 @@ enum Snapper {
         // 固まったアプリが手前でも、こちらまで固まらないように
         AXUIElementSetMessagingTimeout(axApp, 0.5)
         guard let win = targetWindow(axApp) else { return false }
+        AXUIElementSetMessagingTimeout(win, 0.5)
         // 全画面・最小化中は動かせない
         if bool(win, "AXFullScreen") || bool(win, kAXMinimizedAttribute) { return false }
         guard settable(win, kAXSizeAttribute) || settable(win, kAXPositionAttribute) else { return false }
@@ -78,28 +86,53 @@ enum Snapper {
         // 今の位置（AX は左上が原点・下向きが正）→ 中心がある画面を選ぶ。どこにも入らなければマウスのある画面
         let mouse = NSEvent.mouseLocation
         let fallback = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? primary
+        let before: CGRect? = { if let p = point(win), let s = size(win) { return CGRect(origin: p, size: s) }; return nil }()
         let screen: NSScreen
-        if let p = point(win), let s = size(win) {
-            let center = NSPoint(x: p.x + s.width / 2, y: H - (p.y + s.height / 2))
+        if let b = before {
+            let center = NSPoint(x: b.midX, y: H - b.midY)
             screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? fallback
         } else {
             screen = fallback
         }
 
-        let r = side.target(in: screen.visibleFrame)
-        var origin = CGPoint(x: r.minX.rounded(), y: (H - r.maxY).rounded())
+        let vf = screen.visibleFrame
+        let r = side.target(in: vf)
         var sz = CGSize(width: r.width.rounded(), height: r.height.rounded())
+        var origin = CGPoint(x: r.minX.rounded(), y: (H - r.maxY).rounded())
 
         // 大きさ→位置→大きさ の順にすると、画面の端で大きさを削られにくい
-        var ok = false
-        if let v = AXValueCreate(.cgSize, &sz) { _ = AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, v) }
-        if let v = AXValueCreate(.cgPoint, &origin) {
-            ok = AXUIElementSetAttributeValue(win, kAXPositionAttribute as CFString, v) == .success
+        setSize(win, &sz)
+        setPoint(win, &origin)
+        setSize(win, &sz)
+
+        // 最小・最大の大きさがあるアプリは思った大きさにならない。実際の大きさで、寄せる側の端に合わせ直す
+        if let got = size(win), abs(got.width - sz.width) > 1 || abs(got.height - sz.height) > 1 {
+            let top = H - vf.maxY, bottom = H - vf.minY
+            var x = origin.x, y = origin.y
+            if side == .right { x = (vf.maxX - got.width).rounded() }
+            if side == .left { x = vf.minX }
+            // 画面からはみ出さないように（入りきらないときは左上をそろえる）
+            x = max(vf.minX, min(x, vf.maxX - got.width))
+            y = max(top, min(y, bottom - got.height))
+            var fixed = CGPoint(x: x.rounded(), y: y.rounded())
+            setPoint(win, &fixed)
+            origin = fixed
         }
-        if let v = AXValueCreate(.cgSize, &sz) {
-            ok = (AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, v) == .success) || ok
-        }
-        return ok
+
+        // 実際に寄ったか、読み戻して確かめる
+        guard let p = point(win), let after = size(win) else { return false }
+        let now = CGRect(origin: p, size: after)
+        let atTarget = abs(p.x - origin.x) <= 2 && abs(p.y - origin.y) <= 2
+        let moved = before.map { !$0.equalTo(now) } ?? true
+        return atTarget && (moved || before.map { abs($0.width - sz.width) <= 2 && abs($0.height - sz.height) <= 2 } ?? true)
+    }
+
+    private static func setSize(_ w: AXUIElement, _ sz: inout CGSize) {
+        if let v = AXValueCreate(.cgSize, &sz) { _ = AXUIElementSetAttributeValue(w, kAXSizeAttribute as CFString, v) }
+    }
+
+    private static func setPoint(_ w: AXUIElement, _ p: inout CGPoint) {
+        if let v = AXValueCreate(.cgPoint, &p) { _ = AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, v) }
     }
 
     /// 手前のふつうのウインドウ。シートやパネルが手前なら、その持ち主のウインドウ
@@ -137,14 +170,16 @@ enum Snapper {
 
     private static func point(_ w: AXUIElement) -> CGPoint? {
         var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(w, kAXPositionAttribute as CFString, &ref) == .success, let ref else { return nil }
+        guard AXUIElementCopyAttributeValue(w, kAXPositionAttribute as CFString, &ref) == .success,
+              let ref, CFGetTypeID(ref) == AXValueGetTypeID() else { return nil }
         var p = CGPoint.zero
         return AXValueGetValue(ref as! AXValue, .cgPoint, &p) ? p : nil
     }
 
     private static func size(_ w: AXUIElement) -> CGSize? {
         var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(w, kAXSizeAttribute as CFString, &ref) == .success, let ref else { return nil }
+        guard AXUIElementCopyAttributeValue(w, kAXSizeAttribute as CFString, &ref) == .success,
+              let ref, CFGetTypeID(ref) == AXValueGetTypeID() else { return nil }
         var s = CGSize.zero
         return AXValueGetValue(ref as! AXValue, .cgSize, &s) ? s : nil
     }
