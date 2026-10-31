@@ -2630,9 +2630,14 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return el.out.scrollHeight - el.out.scrollTop - el.out.clientHeight < 40;
   }
 
-  // 最新へ。一番下にいるあいだは隠す（判定は自動で下へ付いていく atBottom と同じ）
-  function syncToBottom() { el.toBottom.hidden = atBottom(); }
+  // 最新へ。下から80px以内は隠す。atBottom（40px）に合わせると、少しだけ上にいるとき
+  // 最下段の右端にある押せる部品（質問の選択肢など）を塞ぐ（押せる範囲が44pxあるため）
+  function syncToBottom() {
+    el.toBottom.hidden = el.out.scrollHeight - el.out.scrollTop - el.out.clientHeight < 80;
+  }
   el.out.addEventListener('scroll', syncToBottom, { passive: true });
+  // キーボードの開閉・回転で枠の高さだけが変わるときは scroll が来ない
+  if (window.ResizeObserver) new ResizeObserver(syncToBottom).observe(el.out);
   el.toBottom.addEventListener('mousedown', function (e) { e.preventDefault(); });   // 入力欄のキーボードを閉じない
   el.toBottom.addEventListener('click', function () {
     el.out.scrollTop = el.out.scrollHeight;
@@ -6304,7 +6309,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .then(function (d) {
         var hadDraft = forgetDraft(name, true) || killing[name].had;
         delete killing[name];
-        toast(name + ' を終わらせました' + (hadDraft ? '（書きかけも消しました）' : '') + (d && d.warn ? '（チャットはアーカイブされました）' : ''));
+        toast(name + ' を終わらせました' + (hadDraft ? '（書きかけも消しました）' : '') + (d && d.warn ? '（チャットはアーカイブされた可能性があります）' : ''));
         if (current === name) {
           current = '';
           localStorage.removeItem('tsumiki-remote-session');
@@ -6342,8 +6347,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function killOrConfirm(name) {
     var s = null;
     sessions.forEach(function (x) { if (x.name === name) s = x; });
-    if (!s || !s.keep) return doKill(name);
-    openSheet('保護中の席です');
+    // 作業中の席は Claude Code を途中で強制停止するので、保護と同じくもう1回聞く
+    if (!s || (!s.keep && s.status !== 'busy')) return doKill(name);
+    openSheet(s.keep ? '保護中の席です' : '作業中の席です');
     var head = document.createElement('div');
     head.className = 'sheethead';
     head.textContent = (s.title || s.name) + '（' + s.name + '）';
@@ -6586,7 +6592,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .then(function (d) {
         var msg = d.killed.length + ' 件を終わらせました';
         if (d.skipped.length) msg += '（' + d.skipped.length + ' 件は残しました）';
-        if (d.warned) msg += '（' + d.warned + ' 件のチャットはアーカイブされました）';
+        if (d.warned) msg += '（' + d.warned + ' 件のチャットはアーカイブされた可能性があります）';
         var hadDraft = false;
         d.killed.forEach(function (n) { if (forgetDraft(n, true) || (killing[n] && killing[n].had)) hadDraft = true; });
         names.forEach(function (n) { delete killing[n]; });
