@@ -1784,7 +1784,8 @@ URL の `joinUrlWraps` とはここが違う）。
 ✅ **Claude の一覧にチャットを残す**（2026-10-31）。`/exit` でも `kill-session` でも Claude Code は
 終わるときの後始末でチャットをアーカイブし、Claude の一覧から消える。そこで席を閉じる前に、
 席の中の `claude` を SIGKILL し、その子孫には SIGHUP を送る（`stopClaudeHard`。kill-session と同じ合図なので nohup の常駐は残る）。後始末が走らないのでオフラインのまま一覧に残る。
-実測：kill-session と `/exit` は消えた／SIGKILL は残った（12分半後も）。もっと長く残るかは未確認。
+実測：kill-session と `/exit` は消えた／SIGKILL は残った（1時間以上）。1日以上残るかは未確認。
+SIGKILL した会話は `claude --resume` で続きができ、同じチャットにつながり直す（作業中に止めた会話でも再開できた）。
 止められなかったときも席は閉じる（アーカイブされるだけで、中身は「アーカイブ解除」で戻せる）。claude の席なのに止められなかったら画面に知らせる。席だけ閉じられなかったときは「Claude は停止済み」と返す。
 
 - 戻せないので**シートをもう一枚挟む**。「やめる」が上、「終わらせる」が下。
@@ -1839,6 +1840,11 @@ URL の `joinUrlWraps` とはここが違う）。
 POST /api/keep  {name:'work1', on:true}    # 付ける
 POST /api/keep  {name:'work1', on:false}   # 外す
 ```
+
+## 最新へ（履歴の右下の↓・2026-10-31）
+
+履歴を上へさかのぼると右下に↓が出て、押すと一番下へ飛ぶ。一番下にいるあいだは隠す（判定は自動追従と同じ `atBottom()`＝下から40px以内）。
+見た目は34px、押せる範囲は `::after` で44px。
 
 ## 画面の幅（iPhone / iPad / PC）
 
