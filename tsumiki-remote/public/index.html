@@ -334,7 +334,17 @@
   body.offline .tab.paused,
   body.offline #dest.busy::before{animation:none;box-shadow:none}
 
-  main{flex:1 1 auto;min-height:0;margin:0 10px;border:1px solid var(--line);border-radius:14px;background:#0b0c0f;overflow:hidden}
+  main{position:relative;flex:1 1 auto;min-height:0;margin:0 10px;border:1px solid var(--line);border-radius:14px;background:#0b0c0f;overflow:hidden}
+  /* 最新へ（LINE の右下の↓と同じ役目・2026-10-31 本人が案1を小さめで採用）。
+     上へさかのぼったときだけ出る。見た目は34px、押せる範囲は ::after で44pxに広げる */
+  #tobottom{position:absolute;right:10px;bottom:10px;width:34px;height:34px;padding:0;margin:0;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);
+    box-shadow:0 2px 8px rgba(0,0,0,.45)}
+  #tobottom[hidden]{display:none}
+  #tobottom::after{content:'';position:absolute;inset:-5px}
+  #tobottom:active{background:var(--sunk)}
+  #tobottom svg{width:18px;height:18px}
   #out{
     margin:0;padding:12px;height:100%;overflow:auto;-webkit-overflow-scrolling:touch;
     font-family:var(--mono);font-size:11px;line-height:1.45;color:#d5d9e0;
@@ -1220,7 +1230,9 @@
 
 <div id="stale" hidden></div>
 
-<main><pre id="out">セッションを選んでください。</pre></main>
+<main><pre id="out">セッションを選んでください。</pre><button type="button" id="tobottom" hidden aria-label="最新へ"><svg
+  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button></main>
 
 <footer>
   <div id="dest" hidden><span class="dn"></span><span class="dm" hidden></span><span class="dp" hidden></span><button
@@ -1962,6 +1974,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var el = {
     tabs: document.getElementById('tabs'),
     out: document.getElementById('out'),
+    toBottom: document.getElementById('tobottom'),
     cmd: document.getElementById('cmd'),
     send: document.getElementById('send'),
     conn: document.getElementById('conn'),
@@ -2616,6 +2629,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function atBottom() {
     return el.out.scrollHeight - el.out.scrollTop - el.out.clientHeight < 40;
   }
+
+  // 最新へ。一番下にいるあいだは隠す（判定は自動で下へ付いていく atBottom と同じ）
+  function syncToBottom() { el.toBottom.hidden = atBottom(); }
+  el.out.addEventListener('scroll', syncToBottom, { passive: true });
+  el.toBottom.addEventListener('mousedown', function (e) { e.preventDefault(); });   // 入力欄のキーボードを閉じない
+  el.toBottom.addEventListener('click', function () {
+    el.out.scrollTop = el.out.scrollHeight;
+    syncToBottom();
+  });
 
   // 札の呼吸の周期。⚠️ CSS の .tab.busy/.waiting/.paused の --breath と同じ数にする
   //    （ずれると、作り直しのたびに呼吸が飛ぶ）
@@ -5117,6 +5139,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       else fileRedraw();        // 光らせる描き直しを待たせていたら、いま安全か見る
       fileFreshen();
       if (stick) el.out.scrollTop = el.out.scrollHeight;
+      syncToBottom();           // 席を替えた・短い画面になったときは scroll が来ない
       if (panes[current] !== text) { panes[current] = text; snapDirty = true; }
       saveSnap();
     });
