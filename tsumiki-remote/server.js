@@ -2591,9 +2591,12 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
 // オフラインのチャットとして一覧に残る（使い捨ての席で3通りを比べて実測。12分半後も残った）。
 // 「隠すだけ」には戻さない（下の /api/kill の注）。席は今までどおり本当に閉じる。
 // ⚠️ 撃つのは「この席のペインの中で動いている claude」だけ。見つからなければ何もしない。
-//    SIGKILL は子を道連れにしないので、控えておいた子孫には SIGTERM を送る。
+//    SIGKILL は子を道連れにしないので、控えておいた子孫には SIGHUP を送る。
+//    kill-session が席に送るのと同じ合図＝nohup の常駐は今までどおり残る（SIGTERM だと止めてしまう）。
 // ⚠️ 失敗しても席は閉じる（チャットがアーカイブされるだけで、消えはしない）。
-const CLAUDE_CMD_RE = /^(?:\S*\/)?claude(?:\s|$)/;
+//    claude らしい席なのに止められなかったときは warn を返して画面に知らせる。
+const CLAUDE_CMD_RE = /^(?:\S*\/)?claude(?:\.exe)?(?:\s|$)/;   // 先頭の語だけ見る（`vim /tmp/claude` に当てない）
+const CLAUDE_PANE_RE = /^claude(?:\.exe)?$|^\d+\.\d+\.\d+$/;   // tmux の pane_current_command（版番号で出ることがある）
 function psTable() {
   return new Promise((resolve) => {
     execFile('/bin/ps', ['-axo', 'pid=,ppid=,command='], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
@@ -2622,26 +2625,31 @@ function descendantsOf(table, root) {
   const stack = [root];
   while (stack.length) {
     const cur = stack.pop();
-    for (const r of table) if (r.ppid === cur) { out.push(r.pid); stack.push(r.pid); }
+    for (const r of table) if (r.ppid === cur && r.pid !== process.pid) { out.push(r.pid); stack.push(r.pid); }
   }
   return out;
 }
 async function stopClaudeHard(name) {
   try {
-    const r = await tmux(['list-panes', '-s', '-t', '=' + name + ':', '-F', '#{pane_pid}']);
-    if (!r.ok) return 0;
-    const panePids = String(r.out || '').split('\n').map(Number).filter((n) => n > 1);
-    if (!panePids.length) return 0;
+    const r = await tmux(['list-panes', '-s', '-t', '=' + name + ':', '-F', '#{pane_pid} #{pane_current_command}']);
+    if (!r.ok) { console.log(`kill ${name}: 席が読めず強制停止せず`); return { n: 0, warn: false }; }
+    const panes = String(r.out || '').split('\n').map((l) => l.match(/^(\d+) (.*)$/)).filter(Boolean);
+    const panePids = panes.map((m) => Number(m[1])).filter((n) => n > 1);
+    const looksClaude = panes.some((m) => CLAUDE_PANE_RE.test(m[2]));
     const table = await psTable();
     const pids = claudePidsIn(table, panePids);
     const kids = [];
     pids.forEach((pid) => descendantsOf(table, pid).forEach((k) => kids.push(k)));
     let n = 0;
     for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); n++; } catch (e) {} }
-    for (const k of kids) { if (pids.indexOf(k) < 0) { try { process.kill(k, 'SIGTERM'); } catch (e) {} } }
+    for (const k of kids) { if (pids.indexOf(k) < 0) { try { process.kill(k, 'SIGHUP'); } catch (e) {} } }
     if (n) console.log(`kill ${name}: claude を強制停止 ${pids.join(',')}（チャットを残す）`);
-    return n;
-  } catch (e) { return 0; }
+    else console.log(`kill ${name}: 強制停止した claude なし${looksClaude ? '（⚠️ claude の席に見える）' : ''}`);
+    return { n, warn: !n && looksClaude };
+  } catch (e) {
+    console.log(`kill ${name}: 強制停止で失敗 ${e && e.message}`);
+    return { n: 0, warn: true };
+  }
 }
 
 // ------------------------------------------------ 自分が出した指示を見返す
@@ -3600,15 +3608,15 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
-      await stopClaudeHard(name);   // Claude の一覧にチャットを残す
+      const hard = await stopClaudeHard(name);   // Claude の一覧にチャットを残す
       const r = await tmux(['kill-session', '-t', '=' + name + ':']);
-      if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
+      if (!r.ok) return json(res, 500, { error: (hard.n ? 'Claude は止まりましたが席は閉じられませんでした: ' : '') + r.err.slice(0, 200) });
       sized.delete(name);   // 同じ名前で作り直したとき、寸法を指定し直せるように
       forgetSeat(name);
       resizedAt.delete(name);
       prev.delete(name);    // 前の住人の画面を、新しい席の「動いた／動いていない」に持ち越さない
       console.log(`kill ${name}`);
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, warn: hard.warn });
     }
 
     // まとめて終わらせる。**残すのは3つ＝作業中と中断（hold の印）と保護（鍵の印）**。
@@ -3625,6 +3633,7 @@ const server = http.createServer(async (req, res) => {
 
       const killed = [];
       const skipped = [];
+      let warned = 0;
       for (const name of names) {
         const text = await captureScreen(name);
         if (text === null) { skipped.push({ name, why: 'ありません' }); continue; }
@@ -3636,15 +3645,16 @@ const server = http.createServer(async (req, res) => {
         const st = judge(name, text).status;
         if (st === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         if (st === 'paused') { skipped.push({ name, why: '中断' }); continue; }
-        await stopClaudeHard(name);   // Claude の一覧にチャットを残す
+        const hard = await stopClaudeHard(name);   // Claude の一覧にチャットを残す
+        if (hard.warn) warned++;
         const r = await tmux(['kill-session', '-t', '=' + name + ':']);
         if (r.ok) {
           killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name); forgetSeat(name);
           console.log(`kill ${name} (まとめて)`);
         }
-        else skipped.push({ name, why: '失敗' });
+        else skipped.push({ name, why: hard.n ? '席が残った（Claude は停止済み）' : '失敗' });
       }
-      return json(res, 200, { ok: true, killed, skipped });
+      return json(res, 200, { ok: true, killed, skipped, warned });
     }
 
     return json(res, 404, { error: 'not found' });

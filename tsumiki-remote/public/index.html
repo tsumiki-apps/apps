@@ -6278,10 +6278,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function doKill(name) {
     killing[name] = { had: false };
     api('/api/kill', { method: 'POST', body: JSON.stringify({ name: name }) })
-      .then(function () {
+      .then(function (d) {
         var hadDraft = forgetDraft(name, true) || killing[name].had;
         delete killing[name];
-        toast(name + ' を終わらせました' + (hadDraft ? '（書きかけも消しました）' : ''));
+        toast(name + ' を終わらせました' + (hadDraft ? '（書きかけも消しました）' : '') + (d && d.warn ? '（チャットはアーカイブされました）' : ''));
         if (current === name) {
           current = '';
           localStorage.removeItem('tsumiki-remote-session');
@@ -6563,6 +6563,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .then(function (d) {
         var msg = d.killed.length + ' 件を終わらせました';
         if (d.skipped.length) msg += '（' + d.skipped.length + ' 件は残しました）';
+        if (d.warned) msg += '（' + d.warned + ' 件のチャットはアーカイブされました）';
         var hadDraft = false;
         d.killed.forEach(function (n) { if (forgetDraft(n, true) || (killing[n] && killing[n].had)) hadDraft = true; });
         names.forEach(function (n) { delete killing[n]; });
