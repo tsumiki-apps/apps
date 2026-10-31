@@ -2585,6 +2585,65 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.end(body);
 }
 
+// 席の中の Claude Code を強制停止する（2026-10-31）。
+// Claude Code は `/exit` でも kill-session でも、終わるときの後始末で Remote Control の
+// チャットをアーカイブする＝Claude の一覧から消える。SIGKILL なら後始末が走らず、
+// オフラインのチャットとして一覧に残る（使い捨ての席で3通りを比べて実測。12分半後も残った）。
+// 「隠すだけ」には戻さない（下の /api/kill の注）。席は今までどおり本当に閉じる。
+// ⚠️ 撃つのは「この席のペインの中で動いている claude」だけ。見つからなければ何もしない。
+//    SIGKILL は子を道連れにしないので、控えておいた子孫には SIGTERM を送る。
+// ⚠️ 失敗しても席は閉じる（チャットがアーカイブされるだけで、消えはしない）。
+const CLAUDE_CMD_RE = /^(?:\S*\/)?claude(?:\s|$)/;
+function psTable() {
+  return new Promise((resolve) => {
+    execFile('/bin/ps', ['-axo', 'pid=,ppid=,command='], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+      if (err) return resolve([]);
+      resolve(String(stdout).split('\n').map((l) => l.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean)
+        .map((m) => ({ pid: Number(m[1]), ppid: Number(m[2]), cmd: m[3] })));
+    });
+  });
+}
+function claudePidsIn(table, panePids) {
+  const seen = new Set(panePids);
+  const stack = panePids.slice();
+  const found = [];
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const r of table) {
+      if (r.pid === process.pid || seen.has(r.pid)) continue;
+      if (r.ppid === cur) { seen.add(r.pid); stack.push(r.pid); }
+    }
+  }
+  for (const r of table) if (seen.has(r.pid) && CLAUDE_CMD_RE.test(r.cmd)) found.push(r.pid);
+  return found;
+}
+function descendantsOf(table, root) {
+  const out = [];
+  const stack = [root];
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const r of table) if (r.ppid === cur) { out.push(r.pid); stack.push(r.pid); }
+  }
+  return out;
+}
+async function stopClaudeHard(name) {
+  try {
+    const r = await tmux(['list-panes', '-s', '-t', '=' + name + ':', '-F', '#{pane_pid}']);
+    if (!r.ok) return 0;
+    const panePids = String(r.out || '').split('\n').map(Number).filter((n) => n > 1);
+    if (!panePids.length) return 0;
+    const table = await psTable();
+    const pids = claudePidsIn(table, panePids);
+    const kids = [];
+    pids.forEach((pid) => descendantsOf(table, pid).forEach((k) => kids.push(k)));
+    let n = 0;
+    for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); n++; } catch (e) {} }
+    for (const k of kids) { if (pids.indexOf(k) < 0) { try { process.kill(k, 'SIGTERM'); } catch (e) {} } }
+    if (n) console.log(`kill ${name}: claude を強制停止 ${pids.join(',')}（チャットを残す）`);
+    return n;
+  } catch (e) { return 0; }
+}
+
 // ------------------------------------------------ 自分が出した指示を見返す
 //
 // 返事を読んでいて「何を頼んだんだっけ」となったときに、Claude に聞き直さずに
@@ -3541,6 +3600,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
+      await stopClaudeHard(name);   // Claude の一覧にチャットを残す
       const r = await tmux(['kill-session', '-t', '=' + name + ':']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       sized.delete(name);   // 同じ名前で作り直したとき、寸法を指定し直せるように
@@ -3576,6 +3636,7 @@ const server = http.createServer(async (req, res) => {
         const st = judge(name, text).status;
         if (st === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         if (st === 'paused') { skipped.push({ name, why: '中断' }); continue; }
+        await stopClaudeHard(name);   // Claude の一覧にチャットを残す
         const r = await tmux(['kill-session', '-t', '=' + name + ':']);
         if (r.ok) {
           killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name); forgetSeat(name);
