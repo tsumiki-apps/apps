@@ -2595,7 +2595,8 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
 //    kill-session が席に送るのと同じ合図＝nohup の常駐は今までどおり残る（SIGTERM だと止めてしまう）。
 // ⚠️ 失敗しても席は閉じる（チャットがアーカイブされるだけで、消えはしない）。
 //    claude らしい席なのに止められなかったときは warn を返して画面に知らせる。
-const CLAUDE_CMD_RE = /^(?:\S*\/)?claude(?:\.exe)?(?:\s|$)/;   // 先頭の語だけ見る（`vim /tmp/claude` に当てない）
+//    アーカイブされたかまでは見ていないので、画面は「可能性」と言う。
+const CLAUDE_CMD_RE = /^(?:\S*\/)?claude(?:\.exe)?(?:\s|$)|^(?:\S*\/)?node\s+\S*claude-code\S*\/cli\.js(?:\s|$)/;   // 先頭の語だけ見る（`vim /tmp/claude` に当てない）
 const CLAUDE_PANE_RE = /^claude(?:\.exe)?$|^\d+\.\d+\.\d+$/;   // tmux の pane_current_command（版番号で出ることがある）
 function psTable() {
   return new Promise((resolve) => {
@@ -2629,26 +2630,38 @@ function descendantsOf(table, root) {
   }
   return out;
 }
+// 席のコマンドが claude そのものだと、強制停止した時点で席も消えている。
+// そのときの「席が見つからない」は閉じられた扱いにする
+async function closeSeatAfterStop(name, hard) {
+  const r = await tmux(['kill-session', '-t', '=' + name + ':']);
+  if (!r.ok && hard.n && /can't find session/.test(r.err || '')) return { ok: true };
+  return r;
+}
+
 async function stopClaudeHard(name) {
+  let looksClaude = false;
   try {
     const r = await tmux(['list-panes', '-s', '-t', '=' + name + ':', '-F', '#{pane_pid} #{pane_current_command}']);
     if (!r.ok) { console.log(`kill ${name}: 席が読めず強制停止せず`); return { n: 0, warn: false }; }
     const panes = String(r.out || '').split('\n').map((l) => l.match(/^(\d+) (.*)$/)).filter(Boolean);
     const panePids = panes.map((m) => Number(m[1])).filter((n) => n > 1);
-    const looksClaude = panes.some((m) => CLAUDE_PANE_RE.test(m[2]));
+    looksClaude = panes.some((m) => CLAUDE_PANE_RE.test(m[2]));
     const table = await psTable();
     const pids = claudePidsIn(table, panePids);
     const kids = [];
     pids.forEach((pid) => descendantsOf(table, pid).forEach((k) => kids.push(k)));
     let n = 0;
-    for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); n++; } catch (e) {} }
+    const killedPids = [];
+    for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); n++; killedPids.push(pid); } catch (e) {} }
     for (const k of kids) { if (pids.indexOf(k) < 0) { try { process.kill(k, 'SIGHUP'); } catch (e) {} } }
     if (n) console.log(`kill ${name}: claude を強制停止 ${pids.join(',')}（チャットを残す）`);
     else console.log(`kill ${name}: 強制停止した claude なし${looksClaude ? '（⚠️ claude の席に見える）' : ''}`);
-    return { n, warn: !n && looksClaude };
+    // SIGKILL は Claude Code の後始末を飛ばすので、pid ごとの空のソケットだけ代わりに片付ける
+    for (const pid of killedPids) { try { fs.unlinkSync('/tmp/cc-socks/' + pid + '.sock'); } catch (e) {} }
+    return { n, warn: n < pids.length || (!n && looksClaude) };
   } catch (e) {
     console.log(`kill ${name}: 強制停止で失敗 ${e && e.message}`);
-    return { n: 0, warn: true };
+    return { n: 0, warn: looksClaude };
   }
 }
 
@@ -3609,7 +3622,7 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || '');
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
       const hard = await stopClaudeHard(name);   // Claude の一覧にチャットを残す
-      const r = await tmux(['kill-session', '-t', '=' + name + ':']);
+      const r = await closeSeatAfterStop(name, hard);
       if (!r.ok) return json(res, 500, { error: (hard.n ? 'Claude は止まりましたが席は閉じられませんでした: ' : '') + r.err.slice(0, 200) });
       sized.delete(name);   // 同じ名前で作り直したとき、寸法を指定し直せるように
       forgetSeat(name);
@@ -3646,9 +3659,9 @@ const server = http.createServer(async (req, res) => {
         if (st === 'busy') { skipped.push({ name, why: '作業中' }); continue; }
         if (st === 'paused') { skipped.push({ name, why: '中断' }); continue; }
         const hard = await stopClaudeHard(name);   // Claude の一覧にチャットを残す
-        if (hard.warn) warned++;
-        const r = await tmux(['kill-session', '-t', '=' + name + ':']);
+        const r = await closeSeatAfterStop(name, hard);
         if (r.ok) {
+          if (hard.warn) warned++;
           killed.push(name); sized.delete(name); resizedAt.delete(name); prev.delete(name); forgetSeat(name);
           console.log(`kill ${name} (まとめて)`);
         }
