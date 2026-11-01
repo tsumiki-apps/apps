@@ -60,7 +60,7 @@ for d in range(1,LAST+1):
 staff_fx=[dict(s,fixed_days=fx[s["id"]][0],fixed_min=fx[s["id"]][1]) for s in staff]
 
 REQUESTS=[
- {"id":"r1","staff_id":"s2","name":"さとう けんた","d":key(9), "k":"night","kind":"drop","note":"急な用ができてしまいました"},
+ {"id":"r1","staff_id":"s2","name":"さとう けんた","d":key(9), "k":"night","kind":"add", "note":""},
  {"id":"r2","staff_id":"s5","name":"いとう さくら","d":key(13),"k":"night","kind":"add", "note":""},
 ]
 
@@ -213,7 +213,7 @@ TEAM={"open":True,"view":"full",
       "totals":[{"name":x["name"],"days":x["fixed_days"],"min":x["fixed_min"],"me":x["id"]==ME}
                 for x in sorted(staff_fx,key=lambda x:-x["fixed_min"]) if x["fixed_days"]]}
 
-SREQ=[{"id":"q1","d":key(9),"k":"night","kind":"drop","status":"open","note":""}]
+SREQ=[{"id":"q1","d":key(9),"k":"day","kind":"add","status":"open","note":""}]
 SSCENES={
  "empty":  smonth(),
  "sheet":  smonth(av=mine,submitted=True),
