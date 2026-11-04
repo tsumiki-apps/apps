@@ -41,7 +41,7 @@ textarea,input[type=text]{width:100%;font:inherit;font-size:16px;color:var(--ink
 textarea{min-height:76px;line-height:1.5}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .sw{width:44px;height:44px;border-radius:9999px;border:1px solid var(--line-2);padding:0;cursor:pointer;position:relative;flex:none}
-.sw[aria-pressed=true]{box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--accent)}
+.sw[aria-pressed=true],.sw.on{box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--accent)}
 .sw.custom{background:conic-gradient(var(--rb-1),var(--rb-2),var(--rb-3),var(--rb-4),var(--rb-5),var(--rb-1));overflow:hidden}
 .sw.custom input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
 .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -67,7 +67,7 @@ button.b:disabled{opacity:.45;cursor:default}
           写真を選ぶ
         </button>
       </div>
-      <p class="note" id="note"></p>
+      <p class="note" id="note" aria-live="polite"></p>
     </div>
     <div class="card">
       <label class="f">見出し
@@ -81,7 +81,7 @@ button.b:disabled{opacity:.45;cursor:default}
           <button class="sw" type="button" data-v="--logo-white" aria-label="白" style="background:var(--logo-white)"></button>
           <button class="sw" type="button" data-v="--logo-black" aria-label="黒" style="background:var(--logo-black)"></button>
           <button class="sw" type="button" data-v="--logo-gray" aria-label="グレー" style="background:var(--logo-gray)"></button>
-          <label class="sw custom" aria-label="好きな色"><input type="color" id="cc"></label>
+          <label class="sw custom"><input type="color" id="cc" aria-label="好きな色"></label>
         </div>
       </div>
       <div class="btns">
@@ -102,16 +102,32 @@ const KEY='kotonose.v1';
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 for(const b of document.querySelectorAll('#sws [data-v]'))b.dataset.c=css(b.dataset.v);
 $('cc').value=css('--logo-free');
-const st=Object.assign({t1:'',t2:'',logo:css('--logo-white')},JSON.parse(localStorage.getItem(KEY)||'{}'));
+const st={t1:'',t2:'',logo:css('--logo-white')};
+try{const o=JSON.parse(localStorage.getItem(KEY)||'{}')||{};
+  for(const k of ['t1','t2'])if(typeof o[k]==='string')st[k]=o[k];
+  if(typeof o.logo==='string'&&/^#[0-9a-f]{6}$/i.test(o.logo))st.logo=o.logo;
+}catch(e){}
 let photo=null; // {img, sx, sy, sw, sh}
+let overflow=false,trimmed=false,errMsg='';
+function showNote(){
+  $('note').textContent=errMsg||(overflow?'文章が長くて入りきりません。短くしてください':(trimmed?'16:9 でないので、真ん中を切り出しました':''));
+}
+/* 1 保存用の画像は先に作っておく（押したときに待たずに共有を開くため） */
+let blob=null,blobVer=0,blobTimer=0,ver=0;
+function queueBlob(){
+  ver++;blob=null;clearTimeout(blobTimer);
+  if(!photo)return;
+  const my=ver;
+  blobTimer=setTimeout(()=>cv.toBlob(b=>{if(my===ver){blob=b;blobVer=my}},'image/jpeg',0.92),400);
+}
 
 /* ロゴ：差し替えるときはこの SVG だけを替える（色は塗りなおすので形だけでよい） */
-const LOGO_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 52"><path d="M22 16c-4-3-10-3-14 1-5 5-4 15 0 22 3 6 7 10 11 9 2 0 2-1 3-1s1 1 3 1c4 1 8-3 11-9 4-7 5-17 0-22-4-4-10-4-14-1z"/><path d="M23 13c0-6 4-10 9-11 0 6-4 10-9 11z"/></svg>';
+const LOGO_SVG='<svg xmlns="http://www.w3.org/2000/svg" width="44" height="52" viewBox="0 0 44 52"><path d="M22 16c-4-3-10-3-14 1-5 5-4 15 0 22 3 6 7 10 11 9 2 0 2-1 3-1s1 1 3 1c4 1 8-3 11-9 4-7 5-17 0-22-4-4-10-4-14-1z"/><path d="M23 13c0-6 4-10 9-11 0 6-4 10-9 11z"/></svg>';
 const logoImg=new Image();
 const logoReady=new Promise(r=>{logoImg.onload=r;logoImg.onerror=r});
 logoImg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(LOGO_SVG);
 
-function save(){localStorage.setItem(KEY,JSON.stringify(st))}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
 
 function wrap(text,font,maxW){
   ctx.font=font;const out=[];
@@ -124,6 +140,8 @@ function wrap(text,font,maxW){
         if(/^[、。，．・）」』】！？ー〜…]$/.test(ch)){line=t;continue}
         out.push(line);line=ch;
       }else line=t;
+      // 行末に開きかっこを残さない
+      if(/[（「『【]$/.test(line)&&line.length>1&&ctx.measureText(line).width>maxW*0.9){out.push(line.slice(0,-1));line=line.slice(-1)}
     }
     out.push(line);
   }
@@ -147,22 +165,34 @@ function draw(){
   if(photo){ctx.drawImage(photo.img,photo.sx,photo.sy,photo.sw,photo.sh,0,0,W,H)}
   // 2. 文章（白50%の四角の上）
   const t1=st.t1.trim(),t2=st.t2.trim();
+  overflow=false;
   if(t1||t2){
     const fam='"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif';
-    const f1=`700 ${34*u}px ${fam}`,f2=`400 ${20*u}px ${fam}`;
-    const lh1=34*u*1.38,lh2=20*u*1.6;
     const mx=W*0.04,padX=26*u,padY=20*u,gap=t1&&t2?4*u:0;
     const boxW=W-mx*2,inner=boxW-padX*2;
-    const L1=t1?wrap(t1,f1,inner):[],L2=t2?wrap(t2,f2,inner):[];
-    const boxH=padY*2+L1.length*lh1+gap+L2.length*lh2;
+    const maxH=H-H*0.05-H*0.17; // ロゴ（上から約15%）にかからない高さまで
+    let k=1,f1,f2,lh1,lh2,L1,L2,boxH;
+    for(;;){
+      f1=`700 ${34*u*k}px ${fam}`;f2=`400 ${20*u*k}px ${fam}`;lh1=34*u*k*1.38;lh2=20*u*k*1.6;
+      L1=t1?wrap(t1,f1,inner):[];L2=t2?wrap(t2,f2,inner):[];
+      boxH=padY*2+L1.length*lh1+gap+L2.length*lh2;
+      if(boxH<=maxH||k<=0.45)break;
+      k*=0.92;
+    }
+    overflow=boxH>maxH;
+    if(overflow)boxH=maxH;
     const boxY=H-H*0.05-boxH;
+    ctx.save();rr(mx,boxY,boxW,boxH,14*u);ctx.clip();
     ctx.fillStyle=css('--out-box');ctx.globalAlpha=0.5;rr(mx,boxY,boxW,boxH,14*u);ctx.fill();ctx.globalAlpha=1;
     ctx.fillStyle=css('--out-ink');ctx.textBaseline='middle';
     let y=boxY+padY;
     ctx.font=f1;for(const l of L1){ctx.fillText(l,mx+padX,y+lh1/2);y+=lh1}
     y+=gap;
     ctx.fillStyle=css('--out-ink-2');ctx.font=f2;for(const l of L2){ctx.fillText(l,mx+padX,y+lh2/2);y+=lh2}
+    ctx.restore();
   }
+  showNote();
+  queueBlob();
   // 3. ロゴ（右上）
   if(logoImg.naturalWidth||logoImg.width){
     const lh=H*0.1,lw=lh*(44/52);
@@ -174,12 +204,15 @@ function setPhoto(img){
   const iw=img.naturalWidth,ih=img.naturalHeight,R=16/9;
   let sw=iw,sh=ih,sx=0,sy=0;
   if(iw/ih>R+0.01){sw=ih*R;sx=(iw-sw)/2}else if(iw/ih<R-0.01){sh=iw/R;sy=(ih-sh)/2}
-  const trimmed=sx>0||sy>0;
-  const W=Math.min(3840,Math.round(sw));
-  cv.width=W;cv.height=Math.round(W/R);
-  photo={img,sx,sy,sw,sh};
+  trimmed=sx>0||sy>0;
+  const W=Math.min(3840,Math.round(sw)),H=Math.round(W/R);
+  // 切り出し＋縮小を1回だけして、元の大きな写真は手放す
+  const keep=document.createElement('canvas');keep.width=W;keep.height=H;
+  keep.getContext('2d').drawImage(img,sx,sy,sw,sh,0,0,W,H);
+  cv.width=W;cv.height=H;
+  photo={img:keep,sx:0,sy:0,sw:W,sh:H};
   $('pickBig').hidden=true;$('save').disabled=false;
-  $('note').textContent=trimmed?'16:9 でないので、真ん中を切り出しました':'';
+  errMsg='';
   draw();
 }
 
@@ -188,18 +221,21 @@ $('pick').onclick=openPicker;$('pickBig').onclick=openPicker;
 $('file').onchange=e=>{
   const f=e.target.files[0];if(!f)return;
   const url=URL.createObjectURL(f),img=new Image();
-  img.onload=()=>setPhoto(img);
-  img.onerror=()=>{$('note').textContent='この写真は読めませんでした'};
+  img.onload=()=>{try{setPhoto(img)}catch(e){errMsg='この写真は大きすぎて読めませんでした';showNote()}URL.revokeObjectURL(url)};
+  img.onerror=()=>{errMsg='この写真は読めませんでした';showNote();URL.revokeObjectURL(url)};
   img.src=url;
 };
 
-for(const k of ['t1','t2']){$(k).value=st[k];$(k).addEventListener('input',e=>{st[k]=e.target.value;save();draw()})}
+const FAM='"Zen Maru Gothic"';
+function loadFont(){const t=st.t1+st.t2+'あ';return Promise.all([document.fonts.load('700 34px '+FAM,t),document.fonts.load('400 20px '+FAM,t)]).catch(()=>{})}
+for(const k of ['t1','t2']){$(k).value=st[k];$(k).addEventListener('input',e=>{st[k]=e.target.value;save();draw();loadFont()})}
+document.fonts.addEventListener('loadingdone',draw);
 
 const sws=[...document.querySelectorAll('#sws .sw')];
 function markSw(){
   let hit=false;
   for(const b of sws){if(b.dataset.c){const on=b.dataset.c===st.logo;b.setAttribute('aria-pressed',on);hit=hit||on}}
-  const c=sws[sws.length-1];c.setAttribute('aria-pressed',!hit);
+  const c=sws[sws.length-1];c.classList.toggle('on',!hit);
   if(!hit){$('cc').value=st.logo;c.style.background=st.logo}else c.style.background='';
 }
 for(const b of sws)if(b.dataset.c)b.onclick=()=>{st.logo=b.dataset.c;save();markSw();draw()};
@@ -207,19 +243,25 @@ $('cc').addEventListener('input',e=>{st.logo=e.target.value;save();markSw();draw
 markSw();
 
 $('save').onclick=async()=>{
-  draw();
-  const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));
+  let b=(blob&&blobVer===ver)?blob:null;
+  const ready=!!b;
+  if(!b)b=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));
+  if(!b){errMsg='保存できませんでした';showNote();return}
   const d=new Date(),p=n=>String(n).padStart(2,'0');
   const name=`ことのせ_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.jpg`;
-  const file=new File([blob],name,{type:'image/jpeg'});
+  const file=new File([b],name,{type:'image/jpeg'});
   if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file]});return}catch(e){if(e.name==='AbortError')return}
+    try{await navigator.share({files:[file]});return}
+    catch(e){
+      if(e.name==='AbortError')return;
+      if(!ready){blob=b;blobVer=ver;$('note').textContent='用意できました。もう一度「保存」を押してください';return}
+    }
   }
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 };
 
-Promise.all([logoReady,document.fonts.load('700 34px "Zen Maru Gothic"'),document.fonts.load('400 20px "Zen Maru Gothic"')]).then(draw,draw);
+Promise.all([logoReady,loadFont()]).then(draw,draw);
 draw();
 })();
 </script>
