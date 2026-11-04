@@ -1033,6 +1033,11 @@
        折り返される。max-content にして、上限だけ max-width で止める */
     width:max-content}
   .toast.show{opacity:1}
+  /* 押せる知らせ（toastAct）。見えているあいだだけ指を受ける。ボタンは押せる高さ44px */
+  .toast.act.show{pointer-events:auto;display:flex;align-items:center;gap:10px;padding:0 6px 0 14px}
+  .toast .tact{min-height:44px;padding:0 12px;border:none;background:none;color:var(--tap);
+    font:inherit;font-size:13px;font-weight:700}
+  .toast .tact:active{opacity:.55}
 
   /* ==========================================================================
      画面が広いとき（iPad・ノート・デスクトップ）
@@ -2079,10 +2084,30 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     '"/></svg>';
 
   function toast(msg, ms) {
+    el.toast.classList.remove('act');
     el.toast.textContent = msg;
     el.toast.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, ms || 1600);
+  }
+
+  // 押せるボタン付きの知らせ（ふだんの知らせは指を通すので押せない）。
+  // 押すか時間が来たら消える。裏に回っているあいだに時間が来ても、戻ったときに残らない
+  function toastAct(msg, label, fn, ms) {
+    el.toast.textContent = msg;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tact';
+    b.textContent = label;
+    b.onclick = function () {
+      clearTimeout(toastTimer);
+      el.toast.classList.remove('show', 'act');
+      fn();
+    };
+    el.toast.appendChild(b);
+    el.toast.classList.add('show', 'act');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.toast.classList.remove('show', 'act'); }, ms || 6000);
   }
 
   // 読み取り（/api/state と /api/pane）だけに入れる待ちの上限。
@@ -4267,55 +4292,20 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var FILES_BASE = '/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Kodai/';
 
   function openInFiles(rel) {
-    var left = false, fellBack = false;
-    // ⚠️ iPad はファイルアプリへの切り替えが遅く、1.8秒の見張りが「開けなかった」と取り違えて
-    //    中のプレビューを出し、そのあとでファイルアプリへ移っていた。戻るとプレビューの画面になる
-    //    （2026-10-03 本人「つみきリモートに戻ったとき、セッションの画面に普通に戻して」）。
-    //    戻しを出したあとも LATE_MS まで見張り、画面が隠れたら＝結局ファイルアプリへ移ったら、
-    //    出したプレビューを閉じて元の席の画面に戻す。
-    //    遅い段の blur は「枠に指が入っただけ」のものを数えない（プレビューの枠に指が入るだけで blur が立つため）
-    // ⚠️ 2026-11-04 本人「ピンク文字を押すとファイルが開くとともにリモートの画面も変わる」（iPad・スクショ）。
-    //    iPad の窓表示ではファイルアプリが別の窓として前に出るだけで、こちらは隠れない
-    //    （visibilitychange が来ない）。来るのは blur だけで、それを遅い段で捨てていたので
-    //    プレビューが出たまま残っていた。遅い段の blur は「枠の中に指が入った」のでなければ
-    //    ＝この画面がフォーカスを失い、枠も持っていなければ、よそのアプリへ移ったと見て閉じる。
-    //    隠れていく途中の blur は従来どおり、戻ってきたときに閉じる（下の back）。
-    //    iPhone の全画面切り替えは blur が hidden より先に来るので、待ちは切り替えの動き（0.5秒前後）より長く取る。
-    //    短いと、隠れかけのページで history.back を走らせてしまう（反証役 2026-11-04）。
-    //    ⚠️ 通知センター・コントロールセンターを引き下げても blur だけ来るので、プレビューを見ている最中なら閉じる。
-    //       押してから12秒のあいだだけの話で、閉じても元の席の画面に戻るだけなので受け入れている
-    var LATE_MS = 12000;
+    var left = false;
+    // ⚠️ 1.8秒で画面が隠れなかったとき、前は**自動で**中のプレビューを出していた。
+    //    iPad のウインドウ表示アプリでは、ファイルアプリが別の窓で前に出てもこちらには
+    //    visibilitychange も blur も来ない（2026-11-04 本人の iPad・server.log の流れで実測：
+    //    「押した → 1.8秒で戻しを出した」のあと何も来ない）。ページからは移ったことが分からず、
+    //    ファイルが開くのと同時にこちらの画面もプレビューに変わっていた。
+    //    （その前の手当て＝遅い段の blur で閉じる・戻ったら閉じる も、合図が来ないので効かなかった）
+    //    そこで勝手には出さず、「ここで見る」を押せる知らせだけ出す。開けていれば放っておけば消える。
+    //    フルスクリーンで遅れて移った場合（2026-10-03 の件）も、画面は変わらない
     imeNote('ファイル: 押した');
     function gone(e) {
-      if (fellBack) {
-        if (e && e.type === 'blur') {
-          setTimeout(function () {
-            if (!fellBack || document.hidden) return;              // 隠れた＝visibilitychange の道に任せる
-            if (document.hasFocus() || document.activeElement === viewerFrame) return;   // 枠に指が入っただけ
-            imeNote('ファイル: 遅れて移った（隠れない）');
-            imeReport('ファイル遅れ移り');   // 戻しの報告とは種類を分ける（5分の間引きで消えないように）
-            fellBack = false;
-            done();
-            el.toast.classList.remove('show');
-            if (!viewer.hidden && viewerRel === rel) document.getElementById('viewerback').onclick();
-          }, 900);
-          return;
-        }
-        if (e && e.type === 'visibilitychange' && !document.hidden) return;
-        // 閉じるのは**戻ってきたとき**。隠れているあいだに history.back() を走らせると、
-        // 裏に回ったページでは popstate とタイマーの順が読めず、履歴の印がずれうる（反証役）
-        fellBack = false;
-        done();
-        var back = function () {
-          if (document.hidden) return;
-          document.removeEventListener('visibilitychange', back);
-          el.toast.classList.remove('show');      // 取り違えて出した「開けませんでした」も消す
-          if (!viewer.hidden && viewerRel === rel) document.getElementById('viewerback').onclick();
-        };
-        document.addEventListener('visibilitychange', back);
-        return;
-      }
+      if (e && e.type === 'visibilitychange' && !document.hidden) return;
       left = true;
+      done();
     }
     function done() {
       document.removeEventListener('visibilitychange', gone);
@@ -4326,16 +4316,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     window.addEventListener('pagehide', gone);
     window.addEventListener('blur', gone);
     setTimeout(function () {
-      if (left) return done();
+      done();
+      if (left) return;
+      imeNote('ファイル: 1.8秒で隠れず');
       // shortcut・動画などは中で見られない（サーバーの PREVIEW_EXT の外）＝知らせるだけ
-      if (!RE_VIEWABLE.test(rel)) { toast('ファイルアプリで開けませんでした'); return done(); }
-      toast('ファイルアプリで開けませんでした');
-      openPreview(rel);
-      fellBack = true;
-      imeNote('ファイル: 1.8秒で戻しを出した');
-      // あとで何が起きたかを Mac の server.log で確かめられるよう、少し待ってから流れを送る
-      setTimeout(function () { imeReport('ファイル戻し'); }, LATE_MS + 500);
-      setTimeout(function () { if (fellBack) { fellBack = false; done(); } }, LATE_MS);
+      if (!RE_VIEWABLE.test(rel)) return toast('ファイルアプリで開けなかったときは、もう一度押してください', 3200);
+      toastAct('ファイルアプリが開かないときは', 'ここで見る', function () { openPreview(rel); }, 6000);
     }, 1800);
     // パスの区切りは残し、名前の日本語・空白・# などだけ符号化する
     location.href = 'shareddocuments://'
