@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ことのせ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f5f4f0;--surface:#fffefb;--surface-2:#efece5;--ink:#1d1a15;--ink-mid:#5b554a;--ink-soft:#666154;
+  --ghost:#887f70;
+  /* 画像の中身の色（画面の配色とは別・ダークでも変えない） */
+  --out-ink:#1d1a15;--out-ink-2:#2b2619;--out-box:#ffffff;
+  --logo-white:#ffffff;--logo-black:#1d1d1f;--logo-gray:#a1a1a6;--logo-free:#bf4b3c;
+  --rb-1:#e0574a;--rb-2:#e8b04a;--rb-3:#5dae6a;--rb-4:#4a8fe0;--rb-5:#9a62d8;--line:#e2ded4;--line-2:#d8d3c7;--accent:#b06f26;--accent-2:#8a5a24;--accent-wash:#f0e4d1;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0f0d07;--surface:#211d14;--surface-2:#2b2619;--ink:#efe8da;--ink-mid:#a89e8b;--ink-soft:#9f988a;
+  --line:#36301f;--line-2:#443d2b;--accent:#d59a4d;--accent-2:#e0ab63;--accent-wash:#362a19;
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif;
+  min-height:100dvh;-webkit-text-size-adjust:100%}
+.wrap{max-width:1200px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+h1{font-size:20px;font-weight:700;margin:4px 0 14px}
+.grid{display:grid;gap:16px}
+@media (min-width:900px){.grid{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start}}
+.stage{position:relative;border-radius:12px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line)}
+.stage canvas{display:block;width:100%;height:auto}
+.pick{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  background:transparent;border:0;color:var(--ink-mid);font:inherit;font-size:15px;cursor:pointer;min-height:44px}
+.pick svg{width:40px;height:40px}
+.pick[hidden]{display:none}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px;display:grid;gap:14px}
+label.f{display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)}
+textarea,input[type=text]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;min-height:44px;resize:vertical}
+textarea{min-height:76px;line-height:1.5}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sw{width:44px;height:44px;border-radius:9999px;border:1px solid var(--line-2);padding:0;cursor:pointer;position:relative;flex:none}
+.sw[aria-pressed=true]{box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--accent)}
+.sw.custom{background:conic-gradient(var(--rb-1),var(--rb-2),var(--rb-3),var(--rb-4),var(--rb-5),var(--rb-1));overflow:hidden}
+.sw.custom input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button.b{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:12px;border:0;
+  font:inherit;font-size:15px;font-weight:500;cursor:pointer;padding:10px 12px}
+button.b svg{width:20px;height:20px;flex:none}
+.quiet{background:var(--surface-2);color:var(--ink)}
+.main{background:var(--accent-2);color:var(--paper)}
+button.b:disabled{opacity:.45;cursor:default}
+.note{font-size:13px;color:var(--ink-soft);margin:0;min-height:1.5em}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ことのせ</h1>
+  <div class="grid">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="1600" height="900" aria-label="仕上がり"></canvas>
+        <button class="pick" id="pickBig" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>
+          写真を選ぶ
+        </button>
+      </div>
+      <p class="note" id="note"></p>
+    </div>
+    <div class="card">
+      <label class="f">見出し
+        <textarea id="t1" rows="2" placeholder="ここに見出し"></textarea>
+      </label>
+      <label class="f">添え書き
+        <textarea id="t2" rows="2" placeholder="なくても大丈夫"></textarea>
+      </label>
+      <div class="f" style="display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)">ロゴの色
+        <div class="row" id="sws" role="group" aria-label="ロゴの色">
+          <button class="sw" type="button" data-v="--logo-white" aria-label="白" style="background:var(--logo-white)"></button>
+          <button class="sw" type="button" data-v="--logo-black" aria-label="黒" style="background:var(--logo-black)"></button>
+          <button class="sw" type="button" data-v="--logo-gray" aria-label="グレー" style="background:var(--logo-gray)"></button>
+          <label class="sw custom" aria-label="好きな色"><input type="color" id="cc"></label>
+        </div>
+      </div>
+      <div class="btns">
+        <button class="b quiet" id="pick" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>写真</button>
+        <button class="b main" id="save" type="button" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>保存</button>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="file" accept="image/*" hidden>
+</div>
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d');
+const KEY='kotonose.v1';
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+for(const b of document.querySelectorAll('#sws [data-v]'))b.dataset.c=css(b.dataset.v);
+$('cc').value=css('--logo-free');
+const st=Object.assign({t1:'',t2:'',logo:css('--logo-white')},JSON.parse(localStorage.getItem(KEY)||'{}'));
+let photo=null; // {img, sx, sy, sw, sh}
+
+/* ロゴ：差し替えるときはこの SVG だけを替える（色は塗りなおすので形だけでよい） */
+const LOGO_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 52"><path d="M22 16c-4-3-10-3-14 1-5 5-4 15 0 22 3 6 7 10 11 9 2 0 2-1 3-1s1 1 3 1c4 1 8-3 11-9 4-7 5-17 0-22-4-4-10-4-14-1z"/><path d="M23 13c0-6 4-10 9-11 0 6-4 10-9 11z"/></svg>';
+const logoImg=new Image();
+const logoReady=new Promise(r=>{logoImg.onload=r;logoImg.onerror=r});
+logoImg.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(LOGO_SVG);
+
+function save(){localStorage.setItem(KEY,JSON.stringify(st))}
+
+function wrap(text,font,maxW){
+  ctx.font=font;const out=[];
+  for(const para of String(text).split('\n')){
+    let line='';
+    for(const ch of Array.from(para)){
+      const t=line+ch;
+      if(ctx.measureText(t).width>maxW&&line){
+        // 行頭に句読点・閉じかっこを置かない
+        if(/^[、。，．・）」』】！？ー〜…]$/.test(ch)){line=t;continue}
+        out.push(line);line=ch;
+      }else line=t;
+    }
+    out.push(line);
+  }
+  while(out.length&&out[out.length-1]==='')out.pop();
+  return out;
+}
+
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+
+function tinted(w,h,color){
+  const c=document.createElement('canvas');c.width=Math.ceil(w);c.height=Math.ceil(h);
+  const g=c.getContext('2d');g.drawImage(logoImg,0,0,c.width,c.height);
+  g.globalCompositeOperation='source-in';g.fillStyle=color;g.fillRect(0,0,c.width,c.height);
+  return c;
+}
+
+function draw(){
+  const W=cv.width,H=cv.height,u=W/1000;
+  ctx.clearRect(0,0,W,H);
+  // 1. 写真
+  if(photo){ctx.drawImage(photo.img,photo.sx,photo.sy,photo.sw,photo.sh,0,0,W,H)}
+  // 2. 文章（白50%の四角の上）
+  const t1=st.t1.trim(),t2=st.t2.trim();
+  if(t1||t2){
+    const fam='"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif';
+    const f1=`700 ${34*u}px ${fam}`,f2=`400 ${20*u}px ${fam}`;
+    const lh1=34*u*1.38,lh2=20*u*1.6;
+    const mx=W*0.04,padX=26*u,padY=20*u,gap=t1&&t2?4*u:0;
+    const boxW=W-mx*2,inner=boxW-padX*2;
+    const L1=t1?wrap(t1,f1,inner):[],L2=t2?wrap(t2,f2,inner):[];
+    const boxH=padY*2+L1.length*lh1+gap+L2.length*lh2;
+    const boxY=H-H*0.05-boxH;
+    ctx.fillStyle=css('--out-box');ctx.globalAlpha=0.5;rr(mx,boxY,boxW,boxH,14*u);ctx.fill();ctx.globalAlpha=1;
+    ctx.fillStyle=css('--out-ink');ctx.textBaseline='middle';
+    let y=boxY+padY;
+    ctx.font=f1;for(const l of L1){ctx.fillText(l,mx+padX,y+lh1/2);y+=lh1}
+    y+=gap;
+    ctx.fillStyle=css('--out-ink-2');ctx.font=f2;for(const l of L2){ctx.fillText(l,mx+padX,y+lh2/2);y+=lh2}
+  }
+  // 3. ロゴ（右上）
+  if(logoImg.naturalWidth||logoImg.width){
+    const lh=H*0.1,lw=lh*(44/52);
+    ctx.drawImage(tinted(lw,lh,st.logo),W-W*0.035-lw,H*0.045,lw,lh);
+  }
+}
+
+function setPhoto(img){
+  const iw=img.naturalWidth,ih=img.naturalHeight,R=16/9;
+  let sw=iw,sh=ih,sx=0,sy=0;
+  if(iw/ih>R+0.01){sw=ih*R;sx=(iw-sw)/2}else if(iw/ih<R-0.01){sh=iw/R;sy=(ih-sh)/2}
+  const trimmed=sx>0||sy>0;
+  const W=Math.min(3840,Math.round(sw));
+  cv.width=W;cv.height=Math.round(W/R);
+  photo={img,sx,sy,sw,sh};
+  $('pickBig').hidden=true;$('save').disabled=false;
+  $('note').textContent=trimmed?'16:9 でないので、真ん中を切り出しました':'';
+  draw();
+}
+
+function openPicker(){$('file').value='';$('file').click()}
+$('pick').onclick=openPicker;$('pickBig').onclick=openPicker;
+$('file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const url=URL.createObjectURL(f),img=new Image();
+  img.onload=()=>setPhoto(img);
+  img.onerror=()=>{$('note').textContent='この写真は読めませんでした'};
+  img.src=url;
+};
+
+for(const k of ['t1','t2']){$(k).value=st[k];$(k).addEventListener('input',e=>{st[k]=e.target.value;save();draw()})}
+
+const sws=[...document.querySelectorAll('#sws .sw')];
+function markSw(){
+  let hit=false;
+  for(const b of sws){if(b.dataset.c){const on=b.dataset.c===st.logo;b.setAttribute('aria-pressed',on);hit=hit||on}}
+  const c=sws[sws.length-1];c.setAttribute('aria-pressed',!hit);
+  if(!hit){$('cc').value=st.logo;c.style.background=st.logo}else c.style.background='';
+}
+for(const b of sws)if(b.dataset.c)b.onclick=()=>{st.logo=b.dataset.c;save();markSw();draw()};
+$('cc').addEventListener('input',e=>{st.logo=e.target.value;save();markSw();draw()});
+markSw();
+
+$('save').onclick=async()=>{
+  draw();
+  const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  const name=`ことのせ_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.jpg`;
+  const file=new File([blob],name,{type:'image/jpeg'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file]});return}catch(e){if(e.name==='AbortError')return}
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+};
+
+Promise.all([logoReady,document.fonts.load('700 34px "Zen Maru Gothic"'),document.fonts.load('400 20px "Zen Maru Gothic"')]).then(draw,draw);
+draw();
+})();
+</script>
+<!-- tsumiki-back-button -->
+<style>
+  #tsumikiEdge{position:fixed; top:0; bottom:0; left:0; width:22px; z-index:999;}
+  #tsumikiPeek{
+    position:fixed; top:50%; left:0; z-index:1001; margin-top:-23px;
+    width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border:1px solid rgba(0,0,0,.06); border-radius:50%;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);
+    color:#0071e3; font-size:24px; font-weight:600; line-height:1;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",Arial,sans-serif;
+    transform:translateX(-70px) scale(.8); opacity:0; pointer-events:none;
+  }
+</style>
+<div id="tsumikiEdge"></div>
+<div id="tsumikiPeek">‹</div>
+<script>
+  (function(){
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+    var fromTsumiki = false;
+    try{
+      if(document.referrer){
+        var r = new URL(document.referrer);
+        fromTsumiki = (r.origin === location.origin);
+      }
+    }catch(e){}
+    if(!(standalone && fromTsumiki)) return;
+
+    var peek = document.getElementById('tsumikiPeek');
+    var edge = document.getElementById('tsumikiEdge');
+
+    function goBack(){ location.href = 'index.html'; }
+
+    /* --- 左端エッジスワイプで戻る（iOS純正の戻る操作。見えるボタンは置かない） --- */
+    var sx=0, sy=0, prog=0, dragging=false, W=window.innerWidth;
+    var TRIGGER = Math.min(120, W*0.32);
+    window.addEventListener('resize', function(){ W=window.innerWidth; TRIGGER=Math.min(120, W*0.32); });
+
+    function reset(){
+      dragging = false; prog = 0;
+      peek.style.transition = 'transform .25s ease, opacity .25s ease';
+      peek.style.transform = 'translateX(-70px) scale(.8)';
+      peek.style.opacity = 0;
+    }
+    function start(e){
+      var t = e.touches ? e.touches[0] : e;
+      if(t.clientX > 26) return;
+      sx = t.clientX; sy = t.clientY; prog = 0; dragging = true;
+      peek.style.transition = 'none';
+    }
+    function move(e){
+      if(!dragging) return;
+      var t = e.touches ? e.touches[0] : e;
+      var dx = t.clientX - sx, dy = t.clientY - sy;
+      if(Math.abs(dy) > Math.abs(dx) + 12){ reset(); return; }
+      if(dx < 0) dx = 0;
+      prog = Math.min(dx / TRIGGER, 1);
+      peek.style.transform = 'translateX(' + (-70 + prog*82) + 'px) scale(' + (0.8 + prog*0.2) + ')';
+      peek.style.opacity = prog;
+      if(dx > 6 && e.cancelable) e.preventDefault();
+    }
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      if(prog >= 0.999){
+        peek.style.transition = 'transform .25s ease, opacity .25s ease';
+        peek.style.transform = 'translateX(20px) scale(1.05)';
+        peek.style.opacity = 1;
+        goBack();
+      }else{
+        reset();
+      }
+    }
+    edge.addEventListener('touchstart', start, {passive:true});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end, {passive:true});
+    window.addEventListener('touchcancel', end, {passive:true});
+  })();
+</script>
+<!-- /tsumiki-back-button -->
+</body>
+</html>
