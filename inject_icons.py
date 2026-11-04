@@ -38,6 +38,7 @@ TITLES = {
     "kagu-erabi":  "かぐえらび",
     "uraomote":    "うらおもて",
     "sakiyuki":    "さきゆき",
+    "kotonose":    "ことのせ",
 }
 
 VIEWPORT_RE = re.compile(r'(<meta\s+name="viewport"[^>]*>)', re.IGNORECASE)
