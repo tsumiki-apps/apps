@@ -4274,10 +4274,28 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     //    戻しを出したあとも LATE_MS まで見張り、画面が隠れたら＝結局ファイルアプリへ移ったら、
     //    出したプレビューを閉じて元の席の画面に戻す。
     //    遅い段では blur を数えない（プレビューの枠に指が入るだけで blur が立つため）
+    // ⚠️ 2026-11-04 本人「ピンク文字を押すとファイルが開くとともにリモートの画面も変わる」（iPad・スクショ）。
+    //    iPad の窓表示ではファイルアプリが別の窓として前に出るだけで、こちらは隠れない
+    //    （visibilitychange が来ない）。来るのは blur だけで、それを遅い段で捨てていたので
+    //    プレビューが出たまま残っていた。遅い段の blur は「枠の中に指が入った」のでなければ
+    //    ＝この画面がフォーカスを失い、枠も持っていなければ、よそのアプリへ移ったと見て閉じる。
+    //    隠れていく途中の blur は従来どおり、戻ってきたときに閉じる（下の back）
     var LATE_MS = 12000;
+    imeNote('ファイル: 押した');
     function gone(e) {
       if (fellBack) {
-        if (e && e.type === 'blur') return;
+        if (e && e.type === 'blur') {
+          setTimeout(function () {
+            if (!fellBack || document.hidden) return;              // 隠れた＝visibilitychange の道に任せる
+            if (document.hasFocus() || document.activeElement === viewerFrame) return;   // 枠に指が入っただけ
+            imeNote('ファイル: 遅れて移った（隠れない）');
+            fellBack = false;
+            done();
+            el.toast.classList.remove('show');
+            if (!viewer.hidden && viewerRel === rel) document.getElementById('viewerback').onclick();
+          }, 300);
+          return;
+        }
         if (e && e.type === 'visibilitychange' && !document.hidden) return;
         // 閉じるのは**戻ってきたとき**。隠れているあいだに history.back() を走らせると、
         // 裏に回ったページでは popstate とタイマーの順が読めず、履歴の印がずれうる（反証役）
@@ -4309,6 +4327,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       toast('ファイルアプリで開けませんでした');
       openPreview(rel);
       fellBack = true;
+      imeNote('ファイル: 1.8秒で戻しを出した');
+      // あとで何が起きたかを Mac の server.log で確かめられるよう、少し待ってから流れを送る
+      setTimeout(function () { imeReport('ファイル戻し'); }, LATE_MS + 500);
       setTimeout(function () { if (fellBack) { fellBack = false; done(); } }, LATE_MS);
     }, 1800);
     // パスの区切りは残し、名前の日本語・空白・# などだけ符号化する
