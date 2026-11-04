@@ -4273,13 +4273,17 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     //    （2026-10-03 本人「つみきリモートに戻ったとき、セッションの画面に普通に戻して」）。
     //    戻しを出したあとも LATE_MS まで見張り、画面が隠れたら＝結局ファイルアプリへ移ったら、
     //    出したプレビューを閉じて元の席の画面に戻す。
-    //    遅い段では blur を数えない（プレビューの枠に指が入るだけで blur が立つため）
+    //    遅い段の blur は「枠に指が入っただけ」のものを数えない（プレビューの枠に指が入るだけで blur が立つため）
     // ⚠️ 2026-11-04 本人「ピンク文字を押すとファイルが開くとともにリモートの画面も変わる」（iPad・スクショ）。
     //    iPad の窓表示ではファイルアプリが別の窓として前に出るだけで、こちらは隠れない
     //    （visibilitychange が来ない）。来るのは blur だけで、それを遅い段で捨てていたので
     //    プレビューが出たまま残っていた。遅い段の blur は「枠の中に指が入った」のでなければ
     //    ＝この画面がフォーカスを失い、枠も持っていなければ、よそのアプリへ移ったと見て閉じる。
-    //    隠れていく途中の blur は従来どおり、戻ってきたときに閉じる（下の back）
+    //    隠れていく途中の blur は従来どおり、戻ってきたときに閉じる（下の back）。
+    //    iPhone の全画面切り替えは blur が hidden より先に来るので、待ちは切り替えの動き（0.5秒前後）より長く取る。
+    //    短いと、隠れかけのページで history.back を走らせてしまう（反証役 2026-11-04）。
+    //    ⚠️ 通知センター・コントロールセンターを引き下げても blur だけ来るので、プレビューを見ている最中なら閉じる。
+    //       押してから12秒のあいだだけの話で、閉じても元の席の画面に戻るだけなので受け入れている
     var LATE_MS = 12000;
     imeNote('ファイル: 押した');
     function gone(e) {
@@ -4289,11 +4293,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
             if (!fellBack || document.hidden) return;              // 隠れた＝visibilitychange の道に任せる
             if (document.hasFocus() || document.activeElement === viewerFrame) return;   // 枠に指が入っただけ
             imeNote('ファイル: 遅れて移った（隠れない）');
+            imeReport('ファイル遅れ移り');   // 戻しの報告とは種類を分ける（5分の間引きで消えないように）
             fellBack = false;
             done();
             el.toast.classList.remove('show');
             if (!viewer.hidden && viewerRel === rel) document.getElementById('viewerback').onclick();
-          }, 300);
+          }, 900);
           return;
         }
         if (e && e.type === 'visibilitychange' && !document.hidden) return;
