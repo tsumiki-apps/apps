@@ -4283,16 +4283,22 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 置き場（PREVIEW_ROOT＝iCloud Drive の Kodai。rel はそこからの相対）は iPhone のファイルアプリにも
   // 同じ形で見えている。`shareddocuments://` に iPhone 側のフルパスを渡すと、
   // ファイルアプリがそのファイルを直接開く（フォルダ止まりではない）。
-  // ⚠️ Apple の文書に載っていない口。行けなかったら（画面が隠れなかったら）従来のプレビューに戻す。
+  // ⚠️ Apple の文書に載っていない口。行けなかったら（画面が隠れなかったら）「ここで見る」を押せる知らせを出す
+  //    （自動ではプレビューに戻さない。理由は openInFiles の中）。
   // ⚠️ ファイルアプリは **iPhone に落ちてきている所までしか進めない**。iCloud にしか無い
   //    （雲のマークが付いた）フォルダの先を渡すと、黙って手前（iCloud Drive の一番上など）を開く。
   //    本人の iPhone で置き場を「ダウンロードしたままにする」にして直った（2026-09-27 実機。当時は 11_やりとり出力）。
-  //    このとき画面は離れるので、プレビューへの戻しは効かない。
+  //    このとき画面は離れるので、「ここで見る」の知らせも出ない。
   var RE_VIEWABLE = /\.(?:html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;   // server.js の PREVIEW_EXT と同じ
   var FILES_BASE = '/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Kodai/';
 
+  // 押した名前の見張りは1つだけ。続けて別の名前を押したら前の見張りを片付ける
+  // ＝「ここで見る」が前に押した名前を開くことがない（反証役 2026-11-04）
+  var filesWatch = null;
   function openInFiles(rel) {
-    var left = false;
+    if (filesWatch) filesWatch();
+    if (el.toast.classList.contains('act')) el.toast.classList.remove('show', 'act');   // 前の名前の「ここで見る」も下げる
+    var left = false, timer = null;
     // ⚠️ 1.8秒で画面が隠れなかったとき、前は**自動で**中のプレビューを出していた。
     //    iPad のウインドウ表示アプリでは、ファイルアプリが別の窓で前に出てもこちらには
     //    visibilitychange も blur も来ない（2026-11-04 本人の iPad・server.log の流れで実測：
@@ -4308,6 +4314,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       done();
     }
     function done() {
+      clearTimeout(timer);
+      if (filesWatch === done) filesWatch = null;
       document.removeEventListener('visibilitychange', gone);
       window.removeEventListener('pagehide', gone);
       window.removeEventListener('blur', gone);
@@ -4315,9 +4323,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     document.addEventListener('visibilitychange', gone);
     window.addEventListener('pagehide', gone);
     window.addEventListener('blur', gone);
-    setTimeout(function () {
+    filesWatch = done;
+    timer = setTimeout(function () {
+      if (left) return done();
       done();
-      if (left) return;
       imeNote('ファイル: 1.8秒で隠れず');
       // shortcut・動画などは中で見られない（サーバーの PREVIEW_EXT の外）＝知らせるだけ
       if (!RE_VIEWABLE.test(rel)) return toast('ファイルアプリで開けなかったときは、もう一度押してください', 3200);
