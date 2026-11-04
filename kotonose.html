@@ -14,7 +14,7 @@
   --paper:#f5f4f0;--surface:#fffefb;--surface-2:#efece5;--ink:#1d1a15;--ink-mid:#5b554a;--ink-soft:#666154;
   --ghost:#887f70;
   /* 画像の中身の色（画面の配色とは別・ダークでも変えない） */
-  --out-ink:#1d1a15;--out-ink-2:#2b2619;--out-box:#ffffff;
+  --out-ink:#1d1a15;--out-ink-2:#2b2619;--out-star:#b06f26;--out-box:#ffffff;
   --logo-white:#ffffff;--logo-black:#1d1d1f;--logo-gray:#a1a1a6;--logo-free:#bf4b3c;
   --rb-1:#e0574a;--rb-2:#e8b04a;--rb-3:#5dae6a;--rb-4:#4a8fe0;--rb-5:#9a62d8;--line:#e2ded4;--line-2:#d8d3c7;--accent:#b06f26;--accent-2:#8a5a24;--accent-wash:#f0e4d1;
 }
@@ -40,7 +40,7 @@ h1{font-size:20px;font-weight:700;margin:4px 0 14px}
 label.f{display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)}
 textarea,input[type=text]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
   border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;min-height:44px;resize:vertical}
-textarea{min-height:76px;line-height:1.5}
+textarea{min-height:120px;line-height:1.5}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .sw{width:44px;height:44px;border-radius:9999px;border:1px solid var(--line-2);padding:0;cursor:pointer;position:relative;flex:none}
 .sw[aria-pressed=true],.sw.on{box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--accent)}
@@ -80,11 +80,11 @@ button.b:disabled{opacity:.45;cursor:default}
       <p class="note" id="note" aria-live="polite"></p>
     </div>
     <div class="card">
-      <label class="f">見出し
-        <textarea id="t1" rows="2" placeholder="ここに見出し"></textarea>
+      <label class="f">名前
+        <input type="text" id="t1" placeholder="さくら" autocomplete="off" enterkeyhint="next">
       </label>
-      <label class="f">添え書き
-        <textarea id="t2" rows="2" placeholder="なくても大丈夫"></textarea>
+      <label class="f">いいところ
+        <textarea id="t2" rows="4" placeholder="1行に1つ"></textarea>
       </label>
       <div class="f" style="display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)">四角の位置
         <div class="seg" id="pos" role="group" aria-label="四角の位置">
@@ -187,34 +187,57 @@ function draw(){
   // 1. 写真
   if(photo){ctx.drawImage(photo.img,photo.sx,photo.sy,photo.sw,photo.sh,0,0,W,H)}
   // 2. 文章（白50%の四角の上）
-  const t1=st.t1.trim(),t2=st.t2.trim();
+  const t1=st.t1.replace(/\s+/g,' ').trim(),t2=st.t2.trim();
   overflow=false;
   if(t1||t2){
     const fam='"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif';
-    const mx=W*0.04,padX=26*u,padY=20*u,gap=t1&&t2?4*u:0;
+    const LS='letterSpacing' in ctx;
+    const mx=W*0.04,padX=36*u,padY=26*u;
     const my=H*0.05,logoZone=H*0.17; // ロゴ（上から約15%）にかからない
     const logoW=H*0.1*(logoImg.naturalWidth/logoImg.naturalHeight||0.8);
     // 上のときは、右上のロゴの手前で四角を止める
     const boxW=st.pos==='top'?W-mx-(W*0.035+logoW+W*0.025):W-mx*2,inner=boxW-padX*2;
     const maxH=st.pos==='top'?H-my*2:st.pos==='middle'?H-logoZone*2:H-my-logoZone;
-    let k=1,f1,f2,lh1,lh2,L1,L2,boxH;
+    // 名前（「さん」を自動で添える。敬称が付いていれば足さない）
+    const san=t1&&!/(さん|様|さま|くん|君|ちゃん|先生)$/.test(t1)?'さん':'';
+    // いいところ（1行に1つ。空行は飛ばす・先頭の「・」「-」などは外す）
+    const items=t2.split('\n').map(x=>x.replace(/^[\s・\-－*＊★☆●•]+/,'').trim()).filter(Boolean);
+    let k=1,fN,fS,fI,lhN,lhI,starW,gapNI,L,boxH,nameW;
     for(;;){
-      f1=`700 ${34*u*k}px ${fam}`;f2=`400 ${20*u*k}px ${fam}`;lh1=34*u*k*1.38;lh2=20*u*k*1.6;
-      L1=t1?wrap(t1,f1,inner):[];L2=t2?wrap(t2,f2,inner):[];
-      boxH=padY*2+L1.length*lh1+gap+L2.length*lh2;
-      if(boxH<=maxH||k<=0.45)break;
-      k*=0.92;
+      fN=`700 ${41*u*k}px ${fam}`;fS=`500 ${24*u*k}px ${fam}`;fI=`400 ${22*u*k}px ${fam}`;
+      lhN=41*u*k*1.3;lhI=22*u*k*1.6;starW=30*u*k;gapNI=t1&&items.length?10*u*k:0;
+      if(LS)ctx.letterSpacing=(1.6*u*k)+'px';
+      L=items.map(t=>wrap(t,fI,inner-starW));
+      boxH=padY*2+(t1?lhN:0)+gapNI+L.reduce((n,l)=>n+l.length,0)*lhI;
+      ctx.font=fN;nameW=ctx.measureText(t1).width;ctx.font=fS;nameW+=san?ctx.measureText(san).width+6*u*k:0;
+      if((boxH<=maxH&&nameW<=inner)||k<=0.4)break;
+      k*=0.93;
     }
     overflow=boxH>maxH;
     if(overflow)boxH=maxH;
     const boxY=st.pos==='top'?my:st.pos==='middle'?(H-boxH)/2:H-my-boxH;
     ctx.save();rr(mx,boxY,boxW,boxH,14*u);ctx.clip();
     ctx.fillStyle=css('--out-box');ctx.globalAlpha=st.alpha/100;rr(mx,boxY,boxW,boxH,14*u);ctx.fill();ctx.globalAlpha=1;
-    ctx.fillStyle=css('--out-ink');ctx.textBaseline='middle';
-    let y=boxY+padY;
-    ctx.font=f1;for(const l of L1){ctx.fillText(l,mx+padX,y+lh1/2);y+=lh1}
-    y+=gap;
-    ctx.fillStyle=css('--out-ink-2');ctx.font=f2;for(const l of L2){ctx.fillText(l,mx+padX,y+lh2/2);y+=lh2}
+    ctx.textBaseline='alphabetic';
+    const x0=mx+padX;let y=boxY+padY;
+    if(t1){
+      const base=y+lhN*0.78;
+      ctx.fillStyle=css('--out-ink');ctx.font=fN;ctx.fillText(t1,x0,base);
+      if(san){const w=ctx.measureText(t1).width;ctx.font=fS;ctx.fillText(san,x0+w+6*u*k,base)}
+      y+=lhN;
+    }
+    y+=gapNI;
+    const star=css('--out-star'),ink2=css('--out-ink-2');
+    for(const lines of L){
+      // 星（1行目の字の高さの真ん中に）
+      const sr=8.2*u*k,scx=x0+sr,scy=y+lhI/2;
+      ctx.beginPath();
+      for(let i=0;i<10;i++){const r=i%2?sr*0.45:sr,a=Math.PI*i/5-Math.PI/2;ctx.lineTo(scx+r*Math.cos(a),scy+r*Math.sin(a))}
+      ctx.closePath();ctx.fillStyle=star;ctx.fill();
+      ctx.fillStyle=ink2;ctx.font=fI;
+      for(const l of lines){ctx.fillText(l,x0+starW,y+lhI*0.72);y+=lhI}
+    }
+    if(LS)ctx.letterSpacing='0px';
     ctx.restore();
   }
   showNote();
@@ -253,7 +276,8 @@ $('file').onchange=e=>{
 };
 
 const FAM='"Zen Maru Gothic"';
-function loadFont(){const t=st.t1+st.t2+'あ';return Promise.all([document.fonts.load('700 34px '+FAM,t),document.fonts.load('400 20px '+FAM,t)]).catch(()=>{})}
+function loadFont(){const t=st.t1+st.t2+'あ';return Promise.all([document.fonts.load('700 34px '+FAM,t),document.fonts.load('400 20px '+FAM,t),document.fonts.load('500 20px '+FAM,'さん')]).catch(()=>{})}
+$('t1').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();$('t2').focus()}});
 for(const k of ['t1','t2']){$(k).value=st[k];$(k).addEventListener('input',e=>{st[k]=e.target.value;save();draw();loadFont()})}
 document.fonts.addEventListener('loadingdone',draw);
 
