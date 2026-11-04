@@ -51,6 +51,9 @@ textarea{min-height:76px;line-height:1.5}
   background:transparent;color:var(--ink-mid);font:inherit;font-size:15px;font-weight:500;cursor:pointer}
 .seg button svg{width:20px;height:20px;flex:none}
 .seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-2)}
+.lab{display:flex;justify-content:space-between;align-items:baseline}
+.lab output{font-size:16px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;min-height:44px;margin:0;accent-color:var(--accent-2);font-size:16px}
 .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 button.b{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:12px;border:0;
   font:inherit;font-size:15px;font-weight:500;cursor:pointer;padding:10px 12px}
@@ -90,6 +93,10 @@ button.b:disabled{opacity:.45;cursor:default}
           <button type="button" data-p="bottom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="5.5" y="13" width="13" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>下</button>
         </div>
       </div>
+      <div class="f" style="display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)">
+        <span class="lab"><label for="al">四角の濃さ</label><output id="alv" for="al">50%</output></span>
+        <input type="range" id="al" min="0" max="100" step="5" value="50">
+      </div>
       <div class="f" style="display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)">ロゴの色
         <div class="row" id="sws" role="group" aria-label="ロゴの色">
           <button class="sw" type="button" data-v="--logo-white" aria-label="白" style="background:var(--logo-white)"></button>
@@ -116,10 +123,11 @@ const KEY='kotonose.v1';
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 for(const b of document.querySelectorAll('#sws [data-v]'))b.dataset.c=css(b.dataset.v);
 $('cc').value=css('--logo-free');
-const st={t1:'',t2:'',logo:css('--logo-white'),pos:'bottom'};
+const st={t1:'',t2:'',logo:css('--logo-white'),pos:'bottom',alpha:50};
 try{const o=JSON.parse(localStorage.getItem(KEY)||'{}')||{};
   for(const k of ['t1','t2'])if(typeof o[k]==='string')st[k]=o[k];
   if(['bottom','middle','top'].includes(o.pos))st.pos=o.pos;
+  if(Number.isFinite(o.alpha)&&o.alpha>=0&&o.alpha<=100)st.alpha=Math.round(o.alpha);
   if(typeof o.logo==='string'&&/^#[0-9a-f]{6}$/i.test(o.logo))st.logo=o.logo;
 }catch(e){}
 let photo=null; // {img, sx, sy, sw, sh}
@@ -201,7 +209,7 @@ function draw(){
     if(overflow)boxH=maxH;
     const boxY=st.pos==='top'?my:st.pos==='middle'?(H-boxH)/2:H-my-boxH;
     ctx.save();rr(mx,boxY,boxW,boxH,14*u);ctx.clip();
-    ctx.fillStyle=css('--out-box');ctx.globalAlpha=0.5;rr(mx,boxY,boxW,boxH,14*u);ctx.fill();ctx.globalAlpha=1;
+    ctx.fillStyle=css('--out-box');ctx.globalAlpha=st.alpha/100;rr(mx,boxY,boxW,boxH,14*u);ctx.fill();ctx.globalAlpha=1;
     ctx.fillStyle=css('--out-ink');ctx.textBaseline='middle';
     let y=boxY+padY;
     ctx.font=f1;for(const l of L1){ctx.fillText(l,mx+padX,y+lh1/2);y+=lh1}
@@ -263,6 +271,9 @@ const posBtns=[...document.querySelectorAll('#pos button')];
 function markPos(){for(const b of posBtns)b.setAttribute('aria-pressed',b.dataset.p===st.pos)}
 for(const b of posBtns)b.onclick=()=>{st.pos=b.dataset.p;save();markPos();draw()};
 markPos();
+function markAl(){$('al').value=st.alpha;$('alv').textContent=st.alpha+'%'}
+$('al').addEventListener('input',e=>{st.alpha=+e.target.value;save();markAl();draw()});
+markAl();
 
 $('save').onclick=async()=>{
   let b=(blob&&blobVer===ver)?blob:null;
