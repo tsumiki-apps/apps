@@ -81,7 +81,7 @@ button.b:disabled{opacity:.45;cursor:default}
     </div>
     <div class="card">
       <label class="f">名前
-        <input type="text" id="t1" placeholder="さくら" autocomplete="off" enterkeyhint="next">
+        <input type="text" id="t1" maxlength="30" placeholder="さくら" autocomplete="off" enterkeyhint="next">
       </label>
       <label class="f">いいところ
         <textarea id="t2" rows="4" placeholder="1行に1つ"></textarea>
@@ -126,6 +126,7 @@ $('cc').value=css('--logo-free');
 const st={t1:'',t2:'',logo:css('--logo-white'),pos:'bottom',alpha:50};
 try{const o=JSON.parse(localStorage.getItem(KEY)||'{}')||{};
   for(const k of ['t1','t2'])if(typeof o[k]==='string')st[k]=o[k];
+  st.t1=st.t1.replace(/\s+/g,' ').trim().slice(0,30);
   if(['bottom','middle','top'].includes(o.pos))st.pos=o.pos;
   if(Number.isFinite(o.alpha)&&o.alpha>=0&&o.alpha<=100)st.alpha=Math.round(o.alpha);
   if(typeof o.logo==='string'&&/^#[0-9a-f]{6}$/i.test(o.logo))st.logo=o.logo;
@@ -174,10 +175,13 @@ function wrap(text,font,maxW){
 
 function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
 
+let tintKey='',tintC=null;
 function tinted(w,h,color){
+  const key=Math.ceil(w)+'x'+Math.ceil(h)+color;if(key===tintKey)return tintC;
   const c=document.createElement('canvas');c.width=Math.ceil(w);c.height=Math.ceil(h);
   const g=c.getContext('2d');g.drawImage(logoImg,0,0,c.width,c.height);
   g.globalCompositeOperation='source-in';g.fillStyle=color;g.fillRect(0,0,c.width,c.height);
+  if(logoImg.naturalWidth){tintKey=key;tintC=c}
   return c;
 }
 
@@ -199,9 +203,9 @@ function draw(){
     const boxW=st.pos==='top'?W-mx-(W*0.035+logoW+W*0.025):W-mx*2,inner=boxW-padX*2;
     const maxH=st.pos==='top'?H-my*2:st.pos==='middle'?H-logoZone*2:H-my-logoZone;
     // 名前（「さん」を自動で添える。敬称が付いていれば足さない）
-    const san=t1&&!/(さん|様|さま|くん|君|ちゃん|先生)$/.test(t1)?'さん':'';
+    const san=t1&&!/(さん|様|さま|くん|君|ちゃん|先生|殿|氏|-san)$/i.test(t1)?'さん':'';
     // いいところ（1行に1つ。空行は飛ばす・先頭の「・」「-」などは外す）
-    const items=t2.split('\n').map(x=>x.replace(/^[\s・\-－*＊★☆●•]+/,'').trim()).filter(Boolean);
+    const items=t2.split('\n').map(x=>x.replace(/^[\s・*＊★☆●○■◆◇□•]+|^[\-－–—](?!\d)\s*|^\d{1,2}[.．)）、]\s*/g,'').trim()).filter(Boolean);
     let k=1,fN,fS,fI,lhN,lhI,starW,gapNI,L,boxH,nameW;
     for(;;){
       fN=`700 ${41*u*k}px ${fam}`;fS=`500 ${24*u*k}px ${fam}`;fI=`400 ${22*u*k}px ${fam}`;
@@ -210,11 +214,20 @@ function draw(){
       L=items.map(t=>wrap(t,fI,inner-starW));
       boxH=padY*2+(t1?lhN:0)+gapNI+L.reduce((n,l)=>n+l.length,0)*lhI;
       ctx.font=fN;nameW=ctx.measureText(t1).width;ctx.font=fS;nameW+=san?ctx.measureText(san).width+6*u*k:0;
-      if((boxH<=maxH&&nameW<=inner)||k<=0.4)break;
+      if(boxH<=maxH||k<=0.5)break;
       k*=0.93;
     }
-    overflow=boxH>maxH;
-    if(overflow)boxH=maxH;
+    // 名前が長いときは名前だけを縮める（いいところの字は小さくしない）
+    let nk=k;
+    if(nameW>inner){
+      nk=Math.max(k*0.5,k*inner/nameW);
+      fN=`700 ${41*u*nk}px ${fam}`;fS=`500 ${24*u*nk}px ${fam}`;
+      boxH-=lhN-41*u*nk*1.3;lhN=41*u*nk*1.3;
+      if(LS)ctx.letterSpacing=(1.6*u*nk)+'px';
+      ctx.font=fN;nameW=ctx.measureText(t1).width;ctx.font=fS;nameW+=san?ctx.measureText(san).width+6*u*nk:0;
+    }
+    overflow=boxH>maxH||nameW>inner;
+    if(boxH>maxH)boxH=maxH;
     const boxY=st.pos==='top'?my:st.pos==='middle'?(H-boxH)/2:H-my-boxH;
     ctx.save();rr(mx,boxY,boxW,boxH,14*u);ctx.clip();
     ctx.fillStyle=css('--out-box');ctx.globalAlpha=st.alpha/100;rr(mx,boxY,boxW,boxH,14*u);ctx.fill();ctx.globalAlpha=1;
@@ -222,11 +235,13 @@ function draw(){
     const x0=mx+padX;let y=boxY+padY;
     if(t1){
       const base=y+lhN*0.78;
+      if(LS)ctx.letterSpacing=(1.6*u*nk)+'px';
       ctx.fillStyle=css('--out-ink');ctx.font=fN;ctx.fillText(t1,x0,base);
-      if(san){const w=ctx.measureText(t1).width;ctx.font=fS;ctx.fillText(san,x0+w+6*u*k,base)}
+      if(san){const w=ctx.measureText(t1).width;ctx.font=fS;ctx.fillText(san,x0+w+6*u*nk,base)}
       y+=lhN;
     }
     y+=gapNI;
+    if(LS)ctx.letterSpacing=(1.6*u*k)+'px';
     const star=css('--out-star'),ink2=css('--out-ink-2');
     for(const lines of L){
       // 星（1行目の字の高さの真ん中に）
@@ -299,8 +314,10 @@ function markAl(){$('al').value=st.alpha;$('alv').textContent=st.alpha+'%'}
 $('al').addEventListener('input',e=>{st.alpha=+e.target.value;save();markAl();draw()});
 markAl();
 
+let saving=false;
 $('save').onclick=async()=>{
-  let b=(blob&&blobVer===ver)?blob:null;
+  if(saving)return;
+  const myVer=ver;let b=(blob&&blobVer===myVer)?blob:null;
   const ready=!!b;
   if(!b)b=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));
   if(!b){errMsg='保存できませんでした';showNote();return}
@@ -308,11 +325,11 @@ $('save').onclick=async()=>{
   const name=`ことのせ_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.jpg`;
   const file=new File([b],name,{type:'image/jpeg'});
   if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file]});return}
+    try{saving=true;await navigator.share({files:[file]});return}
     catch(e){
-      if(e.name==='AbortError')return;
-      if(!ready){blob=b;blobVer=ver;$('note').textContent='用意できました。もう一度「保存」を押してください';return}
-    }
+      if(e.name==='AbortError'||e.name==='InvalidStateError')return;
+      if(!ready){if(ver===myVer){blob=b;blobVer=myVer}$('note').textContent='用意できました。もう一度「保存」を押してください';return}
+    }finally{saving=false}
   }
   const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
