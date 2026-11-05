@@ -1571,6 +1571,11 @@ const ASK_NUM_RE = new RegExp([
   ASK_NUM.num + ASK_NUM.only + ASK_NUM.gap + ASK_NUM.vOnly + '\\s*' + ASK_NUM.end,
   '(チャット欄|この欄|ここ)[にへ]' + ASK_NUM.gap + ASK_NUM.num + ASK_NUM.only + '?' + ASK_NUM.gap + ASK_NUM.vOnly + '\\s*' + ASK_NUM.end,
   ASK_NUM.num + '(を|で|は)?' + ASK_NUM.vAsk + '\\s*' + ASK_NUM.end,
+  // 「だけ」が無い言い回し（2026-11-06）：「番号を返してください」「ここに数字を送ってください」。
+  // ⚠️ 返す・送るを許すのは**直前が行頭・句読点・かっこ・コロンのときだけ**（空白と「に／へ」は拾いすぎるので外した。反証役の指摘）。「行番号を返して」
+  // 「電話番号を返して」「注文の番号を返して」（複合語・の）は、ふつうの頼みごとなので落とす。
+  // 結びは「ください」だけ（「ね」「文末」は入れない）
+  '(^|[、。「（(：:])' + ASK_NUM.num + 'を(返|送)(して|信して)(ください|下さい)',
 ].join('|'), 'm');
 
 // ⚠️ 端末は桁で折り返すので、長い文の途中に**本物の改行**が入る（2026-09-02 実測）。
@@ -2067,7 +2072,7 @@ const PREVIEW_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;
 //    見られない種類はファイルアプリで開く（shortcut なら取り込み画面が出る）。
 // ⚠️ 同じ一覧が public/index.html の RE_FILE・RE_SENT_EXT にもある。変えたら
 //    `node bin/link_ext_check.js`（3か所の一致と、印に多い種類の漏れを見る）
-const LINK_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|docx|xlsx|zip)$/i;
+const LINK_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|key|docx|xlsx|zip)$/i;
 
 // ------------------------------------------------------------------ 「最近」
 //
