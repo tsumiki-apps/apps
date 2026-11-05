@@ -512,6 +512,11 @@
   #dest.waiting::before{background:var(--wait)}
   #dest.paused{color:var(--pause)}
   #dest.paused::before{background:var(--pause)}
+  /* 古い札（Mac から今の姿を読めなかった席。JS が stale を付ける）。タブの .stale と同じく
+     薄くし、点は中を抜いた輪にして「いまの状態ではない」と分かるようにする。
+     輪は点の位置に固定なので、長い題名が切れても消えない */
+  #dest.stale{opacity:.6}
+  #dest.stale::before{background:transparent;box-shadow:inset 0 0 0 1px var(--dim);animation:none}
   /* 長い題名は1行で切る。ここで折り返すと入力欄が下に押されて動くので、
      縦の高さは何があっても変えない */
   /* 幅は「文字のぶんだけ」（1 1 auto にすると行いっぱいに伸びて、隣のモデル名が
@@ -755,7 +760,6 @@
      押せる大きさ（44px）は文字を消しても変えない（2026-08-31） */
   #viewerback{flex:0 0 44px;padding:0;display:flex;align-items:center;justify-content:center}
   /* 名前が画面のまんなかに来るように、右側に同じ幅を空けておく */
-  .viewerbar .spacer{flex:0 0 44px}
   /* 本文をぜんぶ写す札。戻ると同じ 44px で、名前を挟んで左右つり合う。
      写せない相手（画像・PDF）のときは消すが、場所は空けたままにする＝
      ファイル名が中央から動かない（消したり出したりで字が跳ねない） */
@@ -799,7 +803,6 @@
     color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     opacity:0;transition:opacity .18s}
   #fbartitle.show{opacity:1}
-  .fbar .spacer{flex:0 0 44px}
   /* 大見出し・検索・札は中身と一緒に流す（Apple と同じで、めくると上に消える） */
   #fscroll{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
     padding:0 12px calc(24px + env(safe-area-inset-bottom))}
@@ -4084,7 +4087,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var FILE_IDX_MAX = 3000;     // 覚えておく名前の数。超えたら全部忘れて聞き直す
   var fileRedrawWanted = false;
   // 答えを待っている枠が、画面の下のほうにあるか（renderScreen が毎回書く）。
-  // ⚠️ liveBox() では足りない。あれは「いちばん最後の枠」を見るだけなので、
+  // ⚠️ （消した liveBox() のような）「いちばん最後の枠」を見るだけでは足りない。
   //    履歴の上のほうに残った古い枠でも真になり、名前が**永久に光らなかった**
   //    （2026-09-16 実測：clear したあとも、400行の履歴に残った枠で止まった）
   var screenBoxWaiting = false;
@@ -4493,7 +4496,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var RE_FILE = new RegExp(
     '[^\\s/\\\\:*?"<>|「」『』（）()【】\\[\\]、。，,`：＝=・→]{1,60}'
     + '(?:[ 　]?(?:\\([0-9]{1,3}\\)|（[0-9]{1,3}）))?'
-    + '\\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|docx|xlsx|zip)(?![A-Za-z0-9])', 'g');
+    + '\\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|key|docx|xlsx|zip)(?![A-Za-z0-9])', 'g');
   // 折り返しの続きではない行の頭（別のかたまりの始まり）
   var RE_NOT_WRAP = /^[⏺⎿❯✻✽✶✳✢│┃╭╮╰╯├┤─━*+•]|^-\s/;
 
@@ -4580,7 +4583,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var RE_SENT_UNIT = /\s*[KMG]?B?\)\s*$/;
   var PATH_IDX_MAX = 500;      // 覚えておくパスの数。超えたら全部忘れて聞き直す
   // ⚠️ 光らせる種類は server.js の LINK_EXT・上の RE_FILE と同じ一覧（`node bin/link_ext_check.js`）
-  var RE_SENT_EXT = /\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|docx|xlsx|zip)$/i;
+  var RE_SENT_EXT = /\.(?:png|jpe?g|gif|webp|svg|pdf|html?|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|key|docx|xlsx|zip)$/i;
   var pathIdx = {};            // パス → {rel: 置き場の中の場所 または null, at}
   var pathAsking = {};
   var pathPend = {};
@@ -5774,16 +5777,6 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return p.classList.contains('done') ? null : p;
   }
 
-  // いま答えを待っている枠。質問パネル（.askp）と許可ダイアログ（角丸の箱）の
-  // どちらも `.dlg` を持っている。**枠が出ているあいだは言葉を送らない**ための目印で、
-  // 枠に文字を打ち込むと、選ぶどころか枠の中の入力欄に吸い込まれる
-  function liveBox() {
-    var ds = el.out.querySelectorAll('.dlg');
-    if (!ds.length) return null;
-    var d = ds[ds.length - 1];
-    return d.classList.contains('done') ? null : d;
-  }
-
   // 同じ選択肢の二度押しよけ（2026-09-02）。
   //
   // 押しても画面が新しくなるのは 0.6〜1.5秒あと。その間に**同じ番号**をもう一度押すと、
@@ -6194,11 +6187,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       b._p = relP.then(function (rel) {
         if (fileTextCache[rel] != null) return fileTextCache[rel];
         return ensurePreviewCookie().then(function () {
-          return fetch(previewUrl(rel), { credentials: 'same-origin' });
-        }).then(function (r) {
-          if (r.status === 401) { cookieReady = null; throw new Error('合言葉が切れました。開き直してください'); }
-          if (!r.ok) throw new Error('読み込めません');
-          return r.text();
+          return readPreviewText(rel);
         }).then(function (t) {
           // 末尾の改行・空白は落とす。テキストファイルは最後を改行で終えるのが普通で、
           // そのまま写すと貼った先の最後に空行が1つ入る（2026-09-27 本人の指摘）
@@ -6755,7 +6744,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // iOS が毎回「サインイン」のシートを出し、Web からは消せないのでやめた。Face ID は合言葉の決め直しだけに使う）。
   // Mac 側は ~/制作物/tsumiki-lock（全画面の幕。Mac の前では Touch ID か合言葉で外す）。
   // ⚠️ iOS は Face ID の呼び出しを「指で押した流れの中」でしか許さない。押してから問い
-  //    （challenge）を取りに行くと断られることがあるので、**先に取っておく**（45秒で取り直す）。
+  //    （challenge）を取りに行くと断られることがあるので、**先に取っておく**（30秒で取り直す）。
   var lockSt = null;
   var lockBusy = false;
   var chal = {};
@@ -8185,17 +8174,23 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 一度取った中身は覚えておく（見た目の確認とコピーで二度取りに行かないため）
   var srcCache = { rel: '', text: null };
 
+  // 制作物の中身を文字で取る共通の道（見た目の確認のコピーと、履歴の名前の横の札で共用）。
+  // netMsg を渡すと、つながらなかったときの文をそれに替える（無ければ元のエラーのまま）
+  function readPreviewText(rel, netMsg) {
+    var f = fetch(previewUrl(rel), { credentials: 'same-origin' });
+    if (netMsg) f = f.catch(function () { throw new Error(netMsg); });
+    return f.then(function (r) {
+      // 合言葉が切れていたら、次に開くとき挨拶からやり直す
+      // （やり直せないと、画面を開き直すまでプレビューが全部 401 になる）
+      if (r.status === 401) { cookieReady = null; throw new Error('合言葉が切れました。開き直してください'); }
+      if (!r.ok) throw new Error('読み込めません');
+      return r.text();
+    });
+  }
+
   function fetchText(rel) {
     if (srcCache.rel === rel && srcCache.text !== null) return Promise.resolve(srcCache.text);
-    return fetch(previewUrl(rel), { credentials: 'same-origin' })
-      .catch(function () { throw new Error('MacBook に届きません'); })
-      .then(function (r) {
-        // 合言葉が切れていたら、次に開くとき挨拶からやり直す
-        // （やり直せないと、画面を開き直すまでプレビューが全部 401 になる）
-        if (r.status === 401) { cookieReady = null; throw new Error('合言葉が切れました。開き直してください'); }
-        if (!r.ok) throw new Error('読み込めません');
-        return r.text();
-      })
+    return readPreviewText(rel, 'MacBook に届きません')
       .then(function (t) { srcCache = { rel: rel, text: t }; return t; });
   }
 
@@ -8204,7 +8199,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return fetchText(rel).then(function (src) {
       if (!HTML_RE.test(rel)) return src.replace(/\s+$/, '');   // md/txt/csv は元のまま＝改行や空白が崩れない（末尾の改行だけ落とす）
       var t = htmlToText(src);
-      return t || src;                      // 字が取れなければ元の中身を渡す
+      // ⚠️ 字が取れないとき**生のソースを渡さない**（前は渡して「コピーしました」と出していた＝
+      // JS で本文を描く制作物だと、貼ると HTML のタグと script の山になる）。
+      // 取れた字がごく短いのに script が長く載っている形も、同じく「描いてから出る」ものと見なす
+      var scriptLen = 0;
+      src.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, function (m, body) { scriptLen += body.length; return m; });
+      if (!t || (t.length < 30 && scriptLen > 400)) {
+        throw new Error('この制作物は字を取り出せません。画面を長押しして選んでください');
+      }
+      return t;
     });
   }
 
@@ -8224,12 +8227,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       }
       viewerPick.textContent = text;
       viewerPick.hidden = false;
-      var range = document.createRange();
-      range.selectNodeContents(viewerPick);
-      var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-      return true;
+      return selectNode(viewerPick);
     } catch (e) { return false; }
   }
 
