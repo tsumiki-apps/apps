@@ -50,7 +50,9 @@ function tightenPerms(dir, depth) {
     } catch (e) { tightenFailed++; }
   }
 }
-tightenPerms(CONF_DIR, 0);
+// 歯止め：既定の置き場か、もう token がある置き場（＝前に起動したことがある）だけ締める。
+// 試験で TSUMIKI_REMOTE_CONF を /tmp や $HOME のような広い場所に向けても、よそのファイルを締めない
+if (!process.env.TSUMIKI_REMOTE_CONF || fs.existsSync(TOKEN_FILE) || fs.readdirSync(CONF_DIR).length === 0) tightenPerms(CONF_DIR, 0);
 if (tightenFailed) console.log(`!! 設定フォルダの権限を締められなかった：${tightenFailed}件`);
 if (!fs.existsSync(TOKEN_FILE)) {
   fs.writeFileSync(TOKEN_FILE, crypto.randomBytes(24).toString('hex'), { mode: 0o600 });
@@ -2779,7 +2781,7 @@ function json(res, code, obj) {
 const JSON_GZIP_MIN = 1024;
 function jsonZ(req, res, code, obj) {
   const raw = Buffer.from(JSON.stringify(obj));
-  if (raw.length < JSON_GZIP_MIN || !/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+  if (raw.length < JSON_GZIP_MIN || !/\bgzip\b(?!\s*;\s*q=0(?:\.0+)?\b)/.test(String(req.headers['accept-encoding'] || ''))) {
     return send(res, code, raw);
   }
   zlib.gzip(raw, { level: 6 }, (err, z) => {
@@ -3761,11 +3763,11 @@ process.on('unhandledRejection', (e) => {
   console.log('!! 未処理の失敗: ' + String((e && e.stack) || e).slice(0, 500));
 });
 
-// 同じポートが埋まっていたら、黙って居座らず exit(1) する（launchd が KeepAlive で立て直せる）。
-// ほかの失敗は上の「落とさず続ける」方針のまま
+// ポートを取れなかったら（使用中・アドレスが無い・権限が無い）、黙って居座らず exit(1) する
+// （launchd が KeepAlive で立て直せる）。listen 以外の失敗は上の「落とさず続ける」方針のまま
 server.on('error', (e) => {
-  if (e && e.code === 'EADDRINUSE') {
-    console.log(`!! ポート ${PORT} が使用中のため終了します (EADDRINUSE)`);
+  if (e && (e.code === 'EADDRINUSE' || e.syscall === 'listen')) {
+    console.log(`!! ポート ${PORT} を取れないため終了します (${e.code})`);
     process.exit(1);
   }
   console.log('!! server error: ' + String((e && e.stack) || e).slice(0, 500));
@@ -3776,4 +3778,16 @@ server.listen(PORT, HOST, () => {
   console.log(`つみきリモート: http://${HOST}:${PORT}/?t=…`);
   console.log(`tmux: ${TMUX}`);
   fixEmojiWidths();   // いま動いている席にも効かせる（tmux がまだ無ければ何もしない）
+  sweepPasteBufs();   // 前のサーバーが送信の途中で落ちて残した貼り付けの置き場を片付ける
 });
+
+// 貼り付けの置き場は送信ごとに pid 入りの名前なので、途中で落ちると上書きされずに残る。
+// 起動時に、自分以外の pid の tsumiki-remote-* だけを消す（ほかの名前のバッファには触らない）
+async function sweepPasteBufs() {
+  const r = await tmux(['list-buffers', '-F', '#{buffer_name}']);
+  if (!r.ok) return;
+  const mine = 'tsumiki-remote-' + process.pid + '-';
+  for (const n of String(r.out || '').split('\n')) {
+    if (/^tsumiki-remote(-\d+-\d+)?$/.test(n) && !n.startsWith(mine)) await tmux(['delete-buffer', '-b', n]);
+  }
+}
