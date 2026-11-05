@@ -4107,7 +4107,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   // 光らせるための描き直し。**いつでも描き直してよいわけではない。**
   // ⚠️ 字が変わっていないのに描き直すと、質問パネルと確認の枠が別の物として
-  //    作り直される。二度押しの錠（pickedTwice）は「同じ枠か」で見ているので外れ、
+  //    作り直される。二度押しの錠（pickedTwice）は以前「同じ枠か」で見ていたので外れた（いまは質問の指紋で見る）。
   //    押した直後に進めておいた位置（dataset.cur）も古い値に戻る
   //    ＝「二度押しで Enter が3本飛んだ」事故の入口を、こちらから開けていた
   //    （2026-09-16 反証役の BLOCKER）。指を置いている間も同じで、差し替えると
@@ -5630,9 +5630,15 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           ? sentSeat + ' の書きかけに戻しました' : '書きかけにも戻せませんでした'), 3600);
       }
       // 書いている途中に戻ってきたときは、いま打っている字を消さない
+      // 打ちかけがあっても送れなかった文は消さない＝打ちかけの前に戻し、後ろに改行でつなげる。
+      // （この .catch は1送信につき1回しか走らないので二重には戻らない）
       var back = false;
-      if (!el.cmd.value) { imeNote('送れなかった字を戻した'); el.cmd.value = keepText; autoGrow(); back = true; }
-      if (!atts.length) { atts = keepAtts; renderAtts(); }
+      if (keepText) {
+        imeNote('送れなかった字を戻した');
+        el.cmd.value = el.cmd.value ? keepText + '\n' + el.cmd.value : keepText;
+        autoGrow(); back = true;
+      }
+      if (keepAtts.length) { atts = keepAtts.concat(atts); renderAtts(); }
       saveDraft();
       // ⚠️ トーストは1枠しかない（後から出したものが前を塗り潰す）。理由を混ぜないと
       // 「本文が大きすぎます」も「MacBook に届きません」も一度も読めなくなる
@@ -5723,11 +5729,22 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //
   // 枠は画面を描き直すたびに作り直されるので、次の巡回で自然に解ける。
   // 画面が動かないまま固まったときのために、時間でも解けるようにしてある。
-  var lastPick = null;                 // { panel: 枠, mv: 行, at: 時刻 }
+  var lastPick = null;                 // { fp: 質問の指紋, mv: 行, at: 時刻 }
   var PICK_LOCK_MS = 4000;
 
+  // 質問の指紋＝席名＋本文の段落＋各行の字（選ばれている印・❯の位置は含めない）。
+  // 錠を枠のDOM要素に持たせると、描き直しで枠が作り直されたとき外れる（9/03 重大）。
+  // 中身が同じ質問なら、枠が別物になっても同じ錠が効く
+  function askFp(panel) {
+    var parts = [current || ''];
+    Array.prototype.forEach.call(panel.querySelectorAll('.dtx, .aopt'), function (n) {
+      parts.push(n.classList.contains('aopt') ? (n.dataset.num || '') + ':' + (n.dataset.label || '') : n.textContent);
+    });
+    return parts.join('\u0001');
+  }
+
   function pickedTwice(panel, to) {
-    if (!lastPick || lastPick.panel !== panel) return false;
+    if (!lastPick || lastPick.fp !== askFp(panel)) return false;
     if (Date.now() - lastPick.at > PICK_LOCK_MS) return false;
     // 複数選べる質問は、同じ行の押し直し（＝チェックを外す）も含めて通す
     if (panel.dataset.multi === '1') return false;
@@ -5751,7 +5768,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var free = row.dataset.free === '1' && panel.dataset.multi !== '1';
     if (!free) keys.push('Enter');
     panel.dataset.cur = to;            // 送った直後の位置。次に画面を取れば本物に直る
-    lastPick = { panel: panel, mv: to, at: Date.now() };
+    lastPick = { fp: askFp(panel), mv: to, at: Date.now() };
     // ⚠️ 送れなかったなら錠を外す。外さないと、圏外で1回押しただけで4秒間
     // 押し直せず、しかも「送っています」と嘘を言うことになる
     if (free) lastPick = null;         // 合わせただけ＝まだ答えていない。錠をかけない

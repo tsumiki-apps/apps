@@ -716,8 +716,11 @@ function batterySnapshot() {
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 
-// 複数行の指示を貼り付けるときに使う、名前つきの控え置き場
-const PASTE_BUF = 'tsumiki-remote';
+// 複数行の指示を貼り付けるときに使う、名前つきの控え置き場。
+// 送信ごとに別の名前にする（固定名だと、load と paste の間の await に別の送信が
+// 割り込んで、指示が別の席に入った＝60回中60回食い違い）
+let pasteSeq = 0;
+const nextPasteBuf = () => `tsumiki-remote-${process.pid}-${++pasteSeq}`;
 
 // 1行の本文を tmux の引数として渡すときの下ごしらえ（2026-09-02）。
 //
@@ -3206,10 +3209,17 @@ const server = http.createServer(async (req, res) => {
         // 複数行は「角括弧ペースト」で入れる（-p）。素直に送ると、改行のたびに
         // Enter を押したのと同じ＝1行ごとに実行されてしまう（2026-08-13 実測）。
         // 名前つきの控えに置いて、貼ったら消す（-d）＝tmux の貼り付け履歴を汚さない
-        const r = await tmuxStdin(['load-buffer', '-b', PASTE_BUF, '-'], text);
-        if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
-        const p = await tmux(['paste-buffer', '-b', PASTE_BUF, '-d', '-p', '-t', '=' + name + ':']);
-        if (!p.ok) return json(res, 500, { error: p.err.slice(0, 200) });
+        const buf = nextPasteBuf();
+        const r = await tmuxStdin(['load-buffer', '-b', buf, '-'], text);
+        if (!r.ok) {
+          await tmux(['delete-buffer', '-b', buf]);   // 途中まで作られた分の片付け（無ければ何もしない）
+          return json(res, 500, { error: r.err.slice(0, 200) });
+        }
+        const p = await tmux(['paste-buffer', '-b', buf, '-d', '-p', '-t', '=' + name + ':']);
+        if (!p.ok) {
+          await tmux(['delete-buffer', '-b', buf]);   // 貼れなかった控えを残さない
+          return json(res, 500, { error: p.err.slice(0, 200) });
+        }
       } else if (text) {
         // ⚠️ 引数の終わり印（--）と末尾セミコロンの二重エスケープが要る。
         // 詳しくは sendKeysArg のコメント（2026-09-02 点検で判明した2件）
