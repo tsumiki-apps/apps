@@ -32,6 +32,24 @@ const TMUX = [process.env.TMUX_BIN, '/opt/homebrew/bin/tmux', '/usr/local/bin/tm
 // ---------------------------------------------------------------- トークン
 
 fs.mkdirSync(CONF_DIR, { recursive: true, mode: 0o700 });
+// 設定フォルダと中のファイルの権限を締める（追加のみ・冪等・中身は読まない／変えない）。
+// フォルダ 0700・ファイル 0600。launchd が作る server.log などは 0644 で来るので、起動のたびに締め直す。
+// 入れ子（status/・uploads/・thumbs/）も同じ。シンボリックリンクは辿らない（lstat）
+function tightenPerms(dir, depth) {
+  try { fs.chmodSync(dir, 0o700); } catch (e) { return; }
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (e) { return; }
+  for (const n of names) {
+    const f = path.join(dir, n);
+    try {
+      const st = fs.lstatSync(f);
+      if (st.isSymbolicLink()) continue;
+      if (st.isDirectory()) { if (depth < 3) tightenPerms(f, depth + 1); }
+      else if (st.isFile() && (st.mode & 0o077)) fs.chmodSync(f, 0o600);
+    } catch (e) { /* 締められなくても動きは変わらない */ }
+  }
+}
+tightenPerms(CONF_DIR, 0);
 if (!fs.existsSync(TOKEN_FILE)) {
   fs.writeFileSync(TOKEN_FILE, crypto.randomBytes(24).toString('hex'), { mode: 0o600 });
 }
@@ -2903,6 +2921,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/preview/') {
       res.writeHead(204, {
         'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
         'set-cookie': `tsumiki_t=${encodeURIComponent(TOKEN)}; Path=/preview/; Max-Age=2592000; HttpOnly; SameSite=Lax`,
       });
       return res.end();
@@ -2956,6 +2975,8 @@ const server = http.createServer(async (req, res) => {
       // 入っていて、絵が変われば URL も変わるので、端末に置いておいてよい
       'cache-control': serving === real ? 'no-store' : 'private, max-age=604800',
       'x-content-type-options': 'nosniff',
+      // 制作物から外のリンク・画像へ出るとき、元の URL（合言葉つきのことがある）を渡さない
+      'referrer-policy': 'no-referrer',
       // ⚠️ ここで配るものは**アプリと同じ出どころ（オリジン）**で開く。つまり
       // 制作物の中の JavaScript から、このサーバの /api/send がそのまま叩ける＝
       // 開いただけで、どれかの席に好きな文字を打てる（2026-09-01 点検で判明）。
@@ -3698,7 +3719,8 @@ process.on('unhandledRejection', (e) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`つみきリモート: http://${HOST}:${PORT}/?t=${TOKEN}`);
+  // 合言葉はログに残さない（server.log は端末の履歴やバックアップに写る）。URLは伏せる。QR は bin/qr.sh
+  console.log(`つみきリモート: http://${HOST}:${PORT}/?t=…`);
   console.log(`tmux: ${TMUX}`);
   fixEmojiWidths();   // いま動いている席にも効かせる（tmux がまだ無ければ何もしない）
 });
