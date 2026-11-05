@@ -2761,7 +2761,31 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       { attributes: true, attributeFilter: ['class'] });
   }
 
+  // 札の署名：**札に出す項目だけ**から作る（state 全体にしない＝now と quietMs が毎回変わる）。
+  // 同じなら札のボタンを作り直さない＝タップの最中に札が差し替わって落ちるのを防ぎ、
+  // 呼吸の位相も途切れない。字になる部分（stHtml・ctxHtml）は出来上がりの文字列を入れるので、
+  // 「◯分」の進みのような時間で変わる表示も、変わったときだけ描き直される
+  var tabsSig = '';
+  function tabsSigOf() {
+    var parts = sessions.map(function (s, i) {
+      var st = shownStatus(s);
+      var chip = modelChip(s), pchip = permChip(s);
+      return [i, s.name, s.title || '', s.kind, st, s.stale ? 1 : 0, s.keep ? 1 : 0,
+        chip ? chip.label + chip.cls : '', pchip ? pchip.label + pchip.cls : '',
+        stHtml(s, st), ctxHtml(s, st), ORB_STATE[st] || ''].join('\u0001');
+    });
+    return current + '\u0002' + parts.join('\u0003');
+  }
+
   function renderTabs() {
+    var sig = tabsSigOf();
+    var keep = sig === tabsSig && el.tabs.children.length === sessions.length + 1;
+    tabsSig = sig;
+    if (!keep) renderTabButtons();
+    renderTabsRest(!keep);
+  }
+
+  function renderTabButtons() {
     el.tabs.innerHTML = '';
     sessions.forEach(function (s, i) {
       var b = document.createElement('button');
@@ -2811,7 +2835,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     add.innerHTML = '＋' + CLAUDE_MARK;
     add.onclick = function () { newClaudeMenu(); };
     el.tabs.appendChild(add);
+  }
 
+  function renderTabsRest(rebuilt) {
     // ＋シェルは置かない（使っていないので、押し間違いの元だけが残る）。
     // シェルの席を作る道は残してある（newSession('shell') とサーバーの /api/new）。
     // すでにある席がシェルだったときの表示も、下の文言や札の色でそのまま効く
@@ -2846,7 +2872,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       syncMemo(cur.name);
     }
     // 札を作り直したので球も敷き直す（canvas は作り直しで白紙に戻る）
-    syncOrbs();
+    if (rebuilt) syncOrbs();
     // 止める札の濃さは席の状態で決まる。状態は画面が動かなくても変わる
     // （5秒だまると作業中→待機）ので、画面を描き直したときだけでは足りない
     syncKeys();

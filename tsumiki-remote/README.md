@@ -2045,6 +2045,7 @@ iPhone は前の画面を動かし続けるので、ボタンを押しても古�
   `TSUMIKI_REMOTE_CONF`（合言葉・usage.json・枠の記録・写しの置き場を丸ごと別に。2026-10-22）・
   `TSUMIKI_STATUS_DIR`（写しの置き場だけ別に。包みも同じ名前を読む）・`TSUMIKI_VIBE_RL`（空で Vibe Island の写しを見ない）・
   `TSUMIKI_STATUSLINE_NEXT`（包みの渡し先。空で渡さない＝⚠️ 試験で本物の Vibe Island に渡すと、その偽の値が `rl.json` に入る）・
+  `TSUMIKI_USAGE_OFF=1`（本物の残量の口＝api.anthropic.com/api/oauth/usage と、ログイン状態の読み取り＝キーチェーン `security` を止める。試験サーバーは必ず立てる）・
   `TSUMIKI_LOCK_KEY_FILE`・`TSUMIKI_PASSKEY_FILE` で本番に触らずに回せる。
   架空の認証器（Node で EC 鍵を作って署名）で、正しい署名だけ通り、他人の鍵・別の出どころ・
   使い回し・用途違い・UV なし・IP の Host は断られることを確かめた。**実機の Face ID は未確認**

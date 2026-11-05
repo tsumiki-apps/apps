@@ -109,6 +109,7 @@ const USAGE_KEEP = 12 * 3600 * 1000; // 取れなくなっても、これだけ�
 const USAGE_STALE = 15 * 60 * 1000;  // これを超えたら「少し前の値」と断って薄くする
 const USAGE_MAX_PER_HOUR = 6;        // 1時間にこれ以上は叩かない（429を招かないための蓋）
 const USAGE_FILE = path.join(CONF_DIR, 'usage.json');
+const USAGE_OFF = process.env.TSUMIKI_USAGE_OFF === '1';   // 試験用の止め（README 試験の節）
 
 let usageCache = { at: 0, value: null };
 let usageFetching = null;
@@ -166,6 +167,7 @@ function usageBackoff(status, retryAfter) {
 // ⚠️ 返すのは claudeAiOauth の丸ごと。鍵そのものはここから外へ出さない
 //    （/api/state に乗せるのは「いつ切れるか」だけ。値は絶対に乗せない）。
 function keychainRead() {
+  if (USAGE_OFF) return Promise.resolve(null);   // 試験：本物のキーチェーンに触れない
   return new Promise((resolve) => {
     execFile('/usr/bin/security',
       ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
@@ -196,6 +198,7 @@ function usageBucket(b) {
 }
 
 async function fetchUsage() {
+  if (USAGE_OFF) return null;
   const token = await keychainToken();
   if (!token) {
     // 鍵が読めない（ログインしていない・キーチェーンが閉じている）。
@@ -261,6 +264,8 @@ function usageDue() {
 
 // 取りにいってよいか。**429を招かないための蓋**で、ここが今回の肝。
 function usageMayFetch() {
+  // 試験用：TSUMIKI_USAGE_OFF=1 なら本物の残量の口（キーチェーン・api.anthropic.com）に一切触れない
+  if (USAGE_OFF) return false;
   const now = Date.now();
   if (now < usageRetryAt) return false;      // 相手に「まだ来るな」と言われている
   usageStamps = usageStamps.filter((t) => now - t < 3600 * 1000);
@@ -2744,6 +2749,27 @@ function json(res, code, obj) {
   send(res, code, JSON.stringify(obj));
 }
 
+// /api/state・/api/pane 用：Accept-Encoding に gzip があり、1KB以上のときだけ gzip（それ以外は今までどおり）。
+// 差分を返す方式にはしない（改善点 B1）。非同期の gzip＝巡回の最中に他のリクエストを止めない
+const JSON_GZIP_MIN = 1024;
+function jsonZ(req, res, code, obj) {
+  const raw = Buffer.from(JSON.stringify(obj));
+  if (raw.length < JSON_GZIP_MIN || !/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+    return send(res, code, raw);
+  }
+  zlib.gzip(raw, { level: 6 }, (err, z) => {
+    if (err) return send(res, code, raw);
+    res.writeHead(code, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      'content-encoding': 'gzip',
+      vary: 'accept-encoding',
+    });
+    res.end(z);
+  });
+}
+
 function cookieToken(req) {
   const raw = req.headers.cookie || '';
   const m = /(?:^|;\s*)tsumiki_t=([^;]+)/.exec(raw);
@@ -3044,7 +3070,7 @@ const server = http.createServer(async (req, res) => {
         const t = memoOf(st.name, st.created);
         if (t) memoOut[st.name] = t;
       }
-      return json(res, 200, {
+      return jsonZ(req, res, 200, {
         sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
         battery: batterySnapshot(), auth: authSnapshot(), memos: memoOut, lock: LOCK.snapshot(),
         version: currentVersion(), now: Date.now(),
@@ -3085,7 +3111,7 @@ const server = http.createServer(async (req, res) => {
       try { got = await within(body, PANE_MS, '画面の読み取り'); }
       catch (e) { return json(res, 503, { error: 'Mac が画面を返しません（' + Math.round(PANE_MS / 1000) + '秒待ちました）' }); }
       if (got === null) return json(res, 404, { error: 'no such session' });
-      return json(res, 200, got);
+      return jsonZ(req, res, 200, got);
     }
 
     // ------------------------------------------------ 出先からログインし直す
@@ -3705,6 +3731,16 @@ process.on('uncaughtException', (e) => {
 });
 process.on('unhandledRejection', (e) => {
   console.log('!! 未処理の失敗: ' + String((e && e.stack) || e).slice(0, 500));
+});
+
+// 同じポートが埋まっていたら、黙って居座らず exit(1) する（launchd が KeepAlive で立て直せる）。
+// ほかの失敗は上の「落とさず続ける」方針のまま
+server.on('error', (e) => {
+  if (e && e.code === 'EADDRINUSE') {
+    console.log(`!! ポート ${PORT} が使用中のため終了します (EADDRINUSE)`);
+    process.exit(1);
+  }
+  console.log('!! server error: ' + String((e && e.stack) || e).slice(0, 500));
 });
 
 server.listen(PORT, HOST, () => {
