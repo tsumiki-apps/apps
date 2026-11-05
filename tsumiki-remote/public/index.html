@@ -1217,6 +1217,34 @@
     }
     .toast{max-width:min(560px, calc(100% - 20px))}
   }
+  /* ===== 改善（11〜15）===== */
+  /* 11・12: iPhone の幅（600未満）だけ。指の当たりを44pxに。数字キーは少し広く、⏎は60px＋hold との間をあける。
+     tab は38px・hold は44px（出力が35px低くなるのは承知）。600以上は下の既存の規則（44px）のまま */
+  @media (max-width:599px){
+    #keys button{min-height:44px}
+    #keys [data-text]{min-width:36px;padding-left:0;padding-right:0}
+    #keys #khold,#keys #kunhold{min-width:44px;padding-left:8px;padding-right:8px}
+    #keys [data-key=Enter]{min-width:60px;padding-left:0;padding-right:0;margin-left:4px}
+    #keys [data-key=Tab]{padding-left:3px;padding-right:3px;min-width:38px}
+    #pick,#send{width:44px;height:44px}
+    #menu,#reload{min-width:44px;min-height:44px}
+    #usage,#batt{min-width:44px;min-height:44px;justify-content:center;padding:0}
+    header{gap:2px;padding-right:8px}
+  }
+  /* 15: 広い画面（768〜1100）ではキー行を折り返す。高さ600以上のときだけ＝横向き iPhone（844×390）は今のまま */
+  @media (min-width:600px) and (min-height:600px){ #keys{flex-wrap:wrap;overflow-x:visible;row-gap:6px} }
+  /* 14: 圏外の帯＝「Mac に届きません」＋最後に届いた時刻＋再接続ボタン */
+  #stale .sm{display:block;line-height:1.45;flex:1 1 auto;min-width:0}
+  #stale .sm i{display:block;font-style:normal;opacity:.75}
+  body.offline #stale:not([hidden]){display:flex;align-items:center;gap:6px;padding:6px 6px 6px 12px}
+  #restale{flex:0 0 auto;min-width:88px;min-height:44px;border-radius:10px;border:1px solid rgba(245,158,11,.5);
+    background:rgba(245,158,11,.22);color:var(--fg);font:inherit;font-size:14px;font-weight:700}
+  #restale:disabled{opacity:.5}
+  /* 13: 席の「終了」＝その場で「やめる／終了」の2択（ダイアログは使わない） */
+  .sheetbody .confirm2{display:flex;align-items:center;gap:8px;padding:6px 8px;min-height:56px}
+  .sheetbody .confirm2 button{flex:1 1 0;text-align:center;min-width:84px;min-height:44px;border-radius:12px;
+    border:1px solid var(--line);background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
+  .sheetbody .confirm2 button.yes{background:var(--crit-bg);border-color:var(--crit);color:var(--crit);font-weight:700}
 </style>
 </head>
 <body>
@@ -2601,16 +2629,36 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     el.send.disabled = offline || !current;
   }
 
+  var reconnecting = false;   // 再接続ボタンを押して4秒以内
   function setOffline(yes) {
     offline = !!yes;
     el.stale.hidden = !offline;
+    if (!offline) { el.stale.textContent = ''; reconnecting = false; }
     document.body.classList.toggle('offline', offline);
     syncSendEnabled();
     if (!offline) return;
     // 375px で1行に収まる長さにする（折り返して1文字だけ次の行に残ると読みにくい）
-    el.stale.textContent = snapAt
-      ? 'MacBook に届きません・下は ' + stampText(snapAt) + ' 時点の内容です'
-      : 'MacBook に届きません・保存された内容はまだありません';
+    // 帯がすでに出ているときは作り直さない（指が触れている間にボタンが差し替わると iOS で click が落ちる）。
+    // 時刻の行だけ更新する。「再接続しています…」は押してから4秒だけ出し、そのあと元に戻す
+    var sub = snapAt ? stampText(snapAt) + ' 時点の内容' : '保存された内容なし';
+    var rb = document.getElementById('restale');
+    if (rb) {
+      if (!reconnecting) rb.previousElementSibling.lastChild.textContent = sub;
+      return;
+    }
+    el.stale.innerHTML = '<span class="sm">Mac に届きません<i></i></span>'
+      + '<button type="button" id="restale">再接続</button>';
+    el.stale.querySelector('i').textContent = sub;
+    document.getElementById('restale').onclick = function () {
+      var b = this, line = b.previousElementSibling.lastChild;
+      if (reconnecting) return;
+      reconnecting = true; b.disabled = true; line.textContent = '再接続しています…';
+      setTimeout(function () {
+        reconnecting = false; b.disabled = false;
+        line.textContent = snapAt ? stampText(snapAt) + ' 時点の内容' : '保存された内容なし';
+      }, 4000);
+      tick(true);
+    };
   }
 
   // 届かないときに、残してある画面を出す
@@ -6434,7 +6482,20 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     // 取り消せないことは**赤い電源の絵**で示す＝文で言わない。
     // 動いている席のときだけ、右端に赤で「作業中」を出す
     // ⚠️ 保護している席と作業中の席だけは確認を1枚はさむ（守ると決めた席・途中で止まる席なので）
-    sheetItem('終了', '', function () { closeSheet(); killOrConfirm(s.name); },
+    var killB = sheetItem('終了', '', function () {
+        // 確認のダイアログは使わず、その場で「やめる／終了」の2択に替える。押さずにいたら元に戻す
+        var c = document.createElement('div');
+        c.className = 'confirm2';
+        c.innerHTML = '<button type="button" class="no">やめる</button><button type="button" class="yes">終了</button>';
+        var back = function () { if (c.isConnected) c.replaceWith(killB); };
+        var timer = setTimeout(back, 5000);
+        c.querySelector('.no').onclick = function () { clearTimeout(timer); back(); };
+        c.querySelector('.yes').onclick = function () { clearTimeout(timer); closeSheet(); killOrConfirm(s.name); };
+        // 替わった直後の連打で確認なしに終了しないよう、「終了」は0.4秒だけ押せなくする
+        var yes = c.querySelector('.yes'); yes.disabled = true;
+        setTimeout(function () { yes.disabled = false; }, 400);
+        killB.replaceWith(c);
+      },
       { icon: 'power', iconCls: 'stop',
         val: s.status === 'busy' ? '作業中' : s.keep ? '保護中' : '', valCls: 'danger' });
   }
@@ -6968,7 +7029,12 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       sheetItem('Mac の幕', '', function () { openLockSheet(); },
         { icon: lockSt.locked ? 'lock' : 'unlock', iconCls: 'dark', val: lockSt.locked ? '掛けています' : '' });
     }
-    sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + current : '',
+    sheetItem('この作業場所を終わらせる', current ? '⚠️ ' + (function () {
+        // 内部名（zz-3）ではなく、札と同じ「番号・名前」を出す
+        var n = '', i = -1;
+        sessions.forEach(function (x, k) { if (x.name === current) { n = x.title || x.name; i = k; } });
+        return i >= 0 ? (i + 1) + '・' + n : current;
+      })() : '',
       function () { closeSheet(); killOrConfirm(current); },
       { disabled: !current, icon: 'power', iconCls: 'stop' });
     sheetItem('ログインし直す',
