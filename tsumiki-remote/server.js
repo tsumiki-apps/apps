@@ -35,8 +35,9 @@ fs.mkdirSync(CONF_DIR, { recursive: true, mode: 0o700 });
 // 設定フォルダと中のファイルの権限を締める（追加のみ・冪等・中身は読まない／変えない）。
 // フォルダ 0700・ファイル 0600。launchd が作る server.log などは 0644 で来るので、起動のたびに締め直す。
 // 入れ子（status/・uploads/・thumbs/）も同じ。シンボリックリンクは辿らない（lstat）
+let tightenFailed = 0;
 function tightenPerms(dir, depth) {
-  try { fs.chmodSync(dir, 0o700); } catch (e) { return; }
+  try { fs.chmodSync(dir, 0o700); } catch (e) { tightenFailed++; return; }
   let names = [];
   try { names = fs.readdirSync(dir); } catch (e) { return; }
   for (const n of names) {
@@ -45,11 +46,12 @@ function tightenPerms(dir, depth) {
       const st = fs.lstatSync(f);
       if (st.isSymbolicLink()) continue;
       if (st.isDirectory()) { if (depth < 3) tightenPerms(f, depth + 1); }
-      else if (st.isFile() && (st.mode & 0o077)) fs.chmodSync(f, 0o600);
-    } catch (e) { /* 締められなくても動きは変わらない */ }
+      else if (st.isFile() && (st.mode & 0o077)) fs.chmodSync(f, (st.mode & 0o100) ? 0o700 : 0o600);   // 実行ビットは残す
+    } catch (e) { tightenFailed++; }
   }
 }
 tightenPerms(CONF_DIR, 0);
+if (tightenFailed) console.log(`!! 設定フォルダの権限を締められなかった：${tightenFailed}件`);
 if (!fs.existsSync(TOKEN_FILE)) {
   fs.writeFileSync(TOKEN_FILE, crypto.randomBytes(24).toString('hex'), { mode: 0o600 });
 }
