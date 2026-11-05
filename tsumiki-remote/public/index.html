@@ -515,7 +515,7 @@
   /* 古い札（Mac から今の姿を読めなかった席。JS が stale を付ける）。タブの .stale と同じく
      薄くし、点は中を抜いた輪にして「いまの状態ではない」と分かるようにする。
      輪は点の位置に固定なので、長い題名が切れても消えない */
-  #dest.stale{opacity:.6}
+  #dest.stale .dn,#dest.stale .dm,#dest.stale .dp{opacity:.6}   /* メモ欄は薄くしない（読めなくなる） */
   #dest.stale::before{background:transparent;box-shadow:inset 0 0 0 1px var(--dim);animation:none}
   /* 長い題名は1行で切る。ここで折り返すと入力欄が下に押されて動くので、
      縦の高さは何があっても変えない */
@@ -5796,7 +5796,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // ・**複数選べる質問**（「決定」の行があるもの）＝止めない。1→2→3 と続けて押すのも、
   //   同じ番号をもう一度押して**チェックを外す**のも正規の操作で、枠は閉じないため。
   //
-  // 枠は画面を描き直すたびに作り直されるので、次の巡回で自然に解ける。
+  // 錠は質問の中身（指紋）に付く。その質問が画面から消えたら解く（syncKeys）。
   // 画面が動かないまま固まったときのために、時間でも解けるようにしてある。
   var lastPick = null;                 // { fp: 質問の指紋, mv: 行, at: 時刻 }
   var PICK_LOCK_MS = 4000;
@@ -5849,6 +5849,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // キー行を、いま出ている画面に合わせる。描き直すたびに呼ぶ
   function syncKeys() {
     var p = livePanel();
+    // 錠は「その質問が画面から消えた」ら解く。消えずに同じ質問が残っている間だけ効く。
+    // 解かないと、同じ文面の次の質問（同じコマンドの許可が続くときなど）が4秒押せない
+    if (lastPick && (!p || askFp(p) !== lastPick.fp)) lastPick = null;
     el.kgo.hidden = !(p && p.querySelector('[data-go]'));
     Array.prototype.forEach.call(el.keys.querySelectorAll('button[data-text]'), function (b) {
       var dead = !!p && !p.querySelector('.aopt[data-num="' + b.dataset.text + '"]');
