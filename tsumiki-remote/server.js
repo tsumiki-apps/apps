@@ -2102,7 +2102,7 @@ const PREVIEW_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json)$/i;
 //    見られない種類はファイルアプリで開く（shortcut なら取り込み画面が出る）。
 // ⚠️ 同じ一覧が public/index.html の RE_FILE・RE_SENT_EXT にもある。変えたら
 //    `node bin/link_ext_check.js`（3か所の一致と、印に多い種類の漏れを見る）
-const LINK_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|key|docx|xlsx|zip)$/i;
+const LINK_EXT = /\.(html?|svg|pdf|png|jpe?g|gif|webp|md|txt|csv|json|shortcut|mp4|mov|m4a|mp3|heic|pptx|key|numbers|docx|xlsx|zip)$/i;
 
 // ------------------------------------------------------------------ 「最近」
 //
