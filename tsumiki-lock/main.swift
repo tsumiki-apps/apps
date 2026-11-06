@@ -13,7 +13,6 @@ import Security
 import CommonCrypto
 import CoreLocation
 import IOKit.ps
-import EventKit
 
 // MARK: - 置き場
 
@@ -278,9 +277,6 @@ func batteryNow() -> (pct: Int, charging: Bool)? {
 
 struct Persist: Codable { var locked: Bool; var since: Double; var fails: Int; var waitUntil: Double }
 
-// リマインダー（本人の指定 2026-10-14：その日の分を全部・見出しなし）。期限が今日まで＝今日の分と期限切れ。済んだもの・期限なしは出さない
-struct Todo { let title: String; let at: Date?; let overdue: Bool }
-
 struct Seat: Identifiable { let id: String; let title: String; let status: String }
 
 final class Model: ObservableObject {
@@ -306,7 +302,6 @@ final class Model: ObservableObject {
   @Published var battery: Int? = nil
   @Published var hours: [Hour] = []
   @Published var charging = false
-  @Published var todos: [Todo] = []
   var fails = 0
 
   func load() {
@@ -340,24 +335,11 @@ func zen(_ size: CGFloat, _ bold: Bool = false) -> Font {
   .custom(bold ? "ZenMaruGothic-Bold" : "ZenMaruGothic-Medium", size: size)
 }
 
-// 中身の真ん中を y に置く。はみ出すときは枠の中に収まるようずらす（入りきらなければ上をそろえる）
-struct CenterAt: Layout {
-  let y: CGFloat
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize { proposal.replacingUnspecifiedDimensions() }
-  func placeSubviews(in b: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    guard let v = subviews.first else { return }
-    let sz = v.sizeThatFits(ProposedViewSize(width: b.width, height: b.height))
-    let top = max(0, min(y - sz.height / 2, b.height - sz.height))
-    v.place(at: CGPoint(x: b.minX, y: b.minY + top), proposal: ProposedViewSize(width: b.width, height: b.height))
-  }
-}
-
 struct Curtain: View {
   @ObservedObject var m: Model
   let onKey: (String) -> Void
   let onTouch: () -> Void
   let touchOK: Bool
-  var showTodos = true   // リマインダーの題名を出す画面か（Mac 本体の画面だけ）
 
   var clock: String { let f = DateFormatter(); f.dateFormat = "H:mm"; return f.string(from: m.now) }
   var day: String { let f = DateFormatter(); f.locale = Locale(identifier: "ja_JP"); f.dateFormat = "M月d日 EEEE"; return f.string(from: m.now) }
@@ -411,51 +393,6 @@ struct Curtain: View {
     .overlay(alignment: .top) { corners(u) }
     .overlay(alignment: .bottomTrailing) { batteryTag(u) }
     .overlay(alignment: .bottomLeading) { weather(u) }
-    // 左：リストの真ん中を画面の真ん中に（本人の選択 2026-10-14：案2）。欄は日の出の下〜天気の上で、
-    // 多くて入らないときだけ欄（日の出の下 110u〜天気の上・画面の下から 180u）の中に収まるようずらす。左端は日の出・天気と同じ 40
-    .overlay(alignment: .topLeading) {
-      if showTodos {
-        CenterAt(y: size.height / 2 - 110 * u) { todoBox(u) }
-          // 下端は天気の上（画面の下から 180u）。縦に長い画面でも天気まで使う（反証役）
-          .frame(width: 520 * u, height: max(0, size.height - 290 * u)).padding(.top, 110 * u).padding(.leading, 40 * u)
-      }
-    }
-  }
-
-  // 全部を出す。入らなければ字を小さく → 2列に。それでも入らなければ（41件から）2列に入るだけ出して「ほか N」
-  @ViewBuilder func todoBox(_ u: CGFloat) -> some View {
-    if !m.todos.isEmpty {
-      ViewThatFits(in: .vertical) {
-        todoList(u, 1, m.todos); todoList(u, 0.85, m.todos); todoList(u, 0.72, m.todos)
-        // 1列に入らなければ2列（前半・後半）。それでも入らなければ入るだけ出して「ほか N」
-        HStack(alignment: .top, spacing: 28 * u) {
-          let half = (m.todos.count + 1) / 2
-          todoList(u, 0.72, Array(m.todos.prefix(half))).frame(width: 246 * u, alignment: .leading)
-          todoList(u, 0.72, Array(m.todos.dropFirst(half))).frame(width: 246 * u, alignment: .leading)
-        }
-        // 2列×19件（下の「ほか N」の1行ぶんを空ける）
-        VStack(alignment: .leading, spacing: 8 * u) {
-          HStack(alignment: .top, spacing: 28 * u) {
-            todoList(u, 0.72, Array(m.todos.prefix(19))).frame(width: 246 * u, alignment: .leading)
-            todoList(u, 0.72, Array(m.todos.dropFirst(19).prefix(19))).frame(width: 246 * u, alignment: .leading)
-          }
-          if m.todos.count > 38 { Text("ほか \(m.todos.count - 38)").font(zen(15 * u)).foregroundColor(.mid).padding(.leading, 22 * u) }
-        }
-      }
-    }
-  }
-  func todoList(_ u: CGFloat, _ k: CGFloat, _ shown: [Todo]) -> some View {
-    return VStack(alignment: .leading, spacing: 14 * u * k) {
-      ForEach(shown.indices, id: \.self) { i in
-        let t = shown[i]
-        HStack(spacing: 12 * u * k) {
-          Circle().stroke(t.overdue ? Color.accent : Color.mid, lineWidth: 1.6 * u).frame(width: 18 * u * k, height: 18 * u * k)
-          Text(t.title).font(zen(19 * u * k)).foregroundColor(.ink).lineLimit(1).truncationMode(.tail)
-          if let at = t.at, !t.overdue { Text(hm(at)).font(zen(15 * u * k)).foregroundColor(.mid).monospacedDigit().fixedSize() }
-          if t.overdue { Text("期限切れ").font(zen(13 * u * k)).foregroundColor(.accent).fixedSize() }
-        }
-      }
-    }
   }
 
   var sun: (rise: Date, set: Date)? { sunTimes(m.place, on: m.now) }
@@ -713,9 +650,6 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
   var lastFingerFail = Date.distantPast
   var lastErr: LAError.Code?
   let locMan = CLLocationManager()
-  let todoStore = EKEventStore()
-  var todoDay = Date.distantPast
-  var todoAccess = EKAuthorizationStatus.notDetermined, todoSeq = 0, todoTick = 0
   var authStart = Date.distantPast
   var lastFrontName = "", lastFrontLog = Date.distantPast
   // 幕の下でメモを前に出してよい間（純正メモにチェックリストを作るとき・本人の依頼 2026-10-20）。
@@ -776,13 +710,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     if let d = try? Data(contentsOf: PLACE_FILE), let p = try? JSONDecoder().decode(Place.self, from: d) { m.place = p }
     locMan.delegate = self
     locMan.desiredAccuracy = kCLLocationAccuracyKilometer
-    if !m.locked { askPlace(); askTodos() } else { loadTodos() }
-    // リマインダーが変わったら（iPhone で足した・済ませた）macOS が知らせる。ほかに毎分の見回り（newDayTodos）・ロック時・起きたときにも読み直す
-    NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: todoStore, queue: .main) { [weak self] _ in self?.loadTodos() }
-    // スリープから起きたら、幕を掛けたままでもすぐ読み直す（5分の見回りを待たない・反証役）
-    NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-      self?.todoStore.refreshSourcesIfNecessary(); self?.loadTodos()
-    }
+    if !m.locked { askPlace() }
     readBattery()
     checkTouch()
     Pin.refresh()
@@ -815,7 +743,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     }
     if m.locked { log("起動時に幕が掛かっていた → 掛け直す"); showCurtain() }
     // 朝のまとめは幕が外れていても送る（幕の tick は掛けているあいだしか回らないので別に回す）
-    morningTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.morningReport(); self?.refreshWeather(); self?.newDayTodos() }
+    morningTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.morningReport(); self?.refreshWeather() }
     refreshWeather()
   }
 
@@ -859,7 +787,6 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     lastAlert = .distantPast; quietAlerts = 0
     m.save()
     log("ロック（\(who)）")
-    loadTodos()   // 幕を下ろすときは最新を読んでから
     showCurtain()
   }
 
@@ -870,66 +797,6 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     case .authorized, .authorizedAlways: locMan.requestLocation()
     default: break   // 断られた＝最後の場所（無ければ東京）のまま
     }
-  }
-  // リマインダーも、許可を聞くのは幕が外れているときだけ（窓が幕の裏に隠れないように）
-  func askTodos() {
-    switch EKEventStore.authorizationStatus(for: .reminder) {
-    case .notDetermined:
-      todoStore.requestFullAccessToReminders { [weak self] ok, _ in
-        DispatchQueue.main.async { if ok { self?.todoStore.reset(); self?.loadTodos() } }
-      }
-    case .fullAccess: loadTodos()
-    default: break   // 断られた＝出さない
-    }
-  }
-  func loadTodos() {
-    // 許可が変わっていたら、どの入口から呼ばれても入れ物を空にしてから読む（許可の前に作った入れ物は空のまま返すことがある・反証役）
-    let access = EKEventStore.authorizationStatus(for: .reminder)
-    if access != todoAccess { todoStore.reset() }
-    todoAccess = access
-    // 許可が外されたら、最後に読んだ題名も幕から消す。番号も進めて、読みかけの古い結果を書き戻させない（反証役）
-    todoSeq += 1; let seq = todoSeq
-    let cal = Calendar.current, today = cal.startOfDay(for: Date())
-    todoDay = today   // 断られている間も毎分読み直さない（許可の変化は todoAccess で拾う）
-    guard todoAccess == .fullAccess else { m.todos = []; return }
-    guard let tomorrow = cal.date(byAdding: .day, value: 1, to: today) else { return }
-    let pred = todoStore.predicateForIncompleteReminders(withDueDateStarting: nil, ending: tomorrow, calendars: nil)
-    todoStore.fetchReminders(matching: pred) { [weak self] rs in
-      let list: [(Todo, Date)] = (rs ?? []).compactMap { r in
-        guard let c = r.dueDateComponents, let d = c.date ?? cal.date(from: c) else { return nil }
-        let title = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return nil }
-        let timed = c.hour != nil
-        return (Todo(title: title, at: timed ? d : nil, overdue: d < today), d)
-      }
-      // 期限切れ（古い順・時刻の有無は問わない）→ 今日の時刻つき（早い順）→ 今日の時刻なし
-      let sorted = list.sorted { a, b in
-        if a.0.overdue != b.0.overdue { return a.0.overdue }
-        if !a.0.overdue && (a.0.at == nil) != (b.0.at == nil) { return a.0.at != nil }
-        return a.1 < b.1
-      }.map { $0.0 }
-      // 読み込みが重なったら（同期中は知らせが続けて来る）最後に始めた分だけを使う
-      DispatchQueue.main.async {
-        guard let self = self, self.todoSeq == seq else { return }
-        // 何分で幕に届いたかを後から突き合わせるため、件数が変わったときだけ1行残す（題名は残さない）
-        if sorted.count != self.m.todos.count { log("リマインダー \(self.m.todos.count)→\(sorted.count)件") }
-        self.m.todos = sorted
-      }
-    }
-  }
-  // 日付が変わったら読み直す（昨日の「今日」を残さない）
-  // システム設定で許可を足した・外したときも、次の1分で拾う
-  // 変わった知らせ（EKEventStoreChanged）は iPhone での変更だと遅れたり来なかったりする。
-  // 幕が出ている間だけ、毎分 取りに行くよう頼み、5分ごとに入れ物を空にして読み直す（知らせが来なくても5分で追いつく）
-  // 幕が外れている間は回さない（ロックした瞬間に読み直すので失うものはない）
-  func newDayTodos() {
-    let access = EKEventStore.authorizationStatus(for: .reminder)
-    if m.locked && access == .fullAccess {
-      todoTick += 1
-      todoStore.refreshSourcesIfNecessary()
-      if todoTick % 5 == 0 { todoStore.reset(); loadTodos(); return }
-    }
-    if Calendar.current.startOfDay(for: Date()) != todoDay || access != todoAccess { loadTodos() }
   }
   func locationManagerDidChangeAuthorization(_ mgr: CLLocationManager) {
     if mgr.authorizationStatus == .authorized || mgr.authorizationStatus == .authorizedAlways { mgr.requestLocation() }
@@ -974,19 +841,12 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
     m.save()
     log("解除（\(who)）")
     hideCurtain()
-    askPlace(); askTodos()
+    askPlace()
   }
 
   func showCurtain() {
     checkTouch()
     windows.forEach { $0.orderOut(nil) }
-    // リマインダーの題名は Mac 本体の画面だけ（外部ディスプレイ・プロジェクターには出さない・本人の選択 2026-10-14）。
-    // 本体がミラーリング中（外に同じ画面が映る）なら、どこにも出さない（反証役）。
-    // 本体の画面が見つからないとき：電池のある Mac（ふたを閉じて外部だけ）は出さない／デスクトップの Mac は1枚目に
-    func did(_ sc: NSScreen) -> CGDirectDisplayID? { (sc.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value }
-    let inner = NSScreen.screens.first { did($0).map { CGDisplayIsBuiltin($0) != 0 } ?? false }
-    let builtin: NSScreen? = inner.map { sc in did(sc).map { CGDisplayIsInMirrorSet($0) != 0 } == true ? nil : sc }
-      ?? (batteryNow() == nil ? NSScreen.screens.first : nil)
     windows = NSScreen.screens.map { sc in
       let w = CurtainWindow(contentRect: sc.frame, styleMask: [.borderless], backing: .buffered, defer: false)
       w.level = topLevel
@@ -996,8 +856,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
       w.hasShadow = false
       w.isReleasedWhenClosed = false
       w.contentView = NSHostingView(rootView: Curtain(m: m, onKey: { [weak self] k in self?.press(k) },
-                                                     onTouch: { [weak self] in self?.touch() }, touchOK: touchOK,
-                                                     showTodos: sc == builtin))
+                                                     onTouch: { [weak self] in self?.touch() }, touchOK: touchOK))
       w.setFrame(sc.frame, display: true)
       w.makeKeyAndOrderFront(nil)
       return w
@@ -1432,8 +1291,7 @@ final class App: NSObject, NSApplicationDelegate, CLLocationManagerDelegate {
      "armed": authing, "authFront": NSWorkspace.shared.frontmostApplication.map { isAuthAgent($0) } ?? false,
      "armedFor": authing ? Date().timeIntervalSince(authStart) : -1,
      "sinceEnd": Date().timeIntervalSince(lastAuthEnd), "failStreak": failStreak, "showPin": m.showPin,
-     "weatherHours": m.hours.count, "battery": m.battery ?? -1, "todos": m.todos.count,
-     "todoAccess": EKEventStore.authorizationStatus(for: .reminder).rawValue,
+     "weatherHours": m.hours.count, "battery": m.battery ?? -1,
      "passFor": max(0, passUntil.timeIntervalSinceNow)]
   }
 }
@@ -1456,13 +1314,6 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render" {
   m.battery = 82
   // 天気の見本（10/14 東京の Open-Meteo の予報から）
   let day0 = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1791936000))
-  // リマインダーの見本（架空）。TSUMIKI_RENDER_TODOS=件数 で多いときの見た目も
-  let todoN = Int(ProcessInfo.processInfo.environment["TSUMIKI_RENDER_TODOS"] ?? "") ?? 5
-  let samples = ["請求書の支払い", "牛乳を買う", "クリーニング受け取り", "歯医者の予約", "植木に水", "本を返す", "電球を買う", "荷物を出す"]
-  let t0 = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1791936000))
-  m.todos = (0..<todoN).map { i in
-    Todo(title: samples[i % samples.count], at: i == 1 ? t0.addingTimeInterval(18 * 3600) : i == 2 ? t0.addingTimeInterval(19.5 * 3600) : nil, overdue: i == 0)
-  }
   m.hours = [(6, 19.4, 1, 0), (9, 23.1, 2, 6), (12, 25.3, 1, 49), (15, 20.7, 3, 55), (18, 20.0, 61, 45), (21, 19.4, 2, 53)]
     .map { Hour(at: day0.addingTimeInterval(Double($0.0) * 3600), temp: $0.1, code: $0.2, rain: $0.3) }
   // 7つ目に "15:20" のように時刻を渡すと、10/14 のその時刻の空で描く（東京）
