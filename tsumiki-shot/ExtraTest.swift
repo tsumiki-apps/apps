@@ -1,5 +1,6 @@
 // `--extratest [出力先フォルダ]`：書き込み（焼き込み）・文字の読み取り・編集画面を、画面収録の許可なしで確かめる。
 import AppKit
+import AVFoundation
 
 enum ExtraTest {
     static func run(outDir: String?) -> Bool {
@@ -80,7 +81,44 @@ enum ExtraTest {
             check("編集画面を描ける", rep.pixelsWide > 0)
         }
 
-        // 4. 窓の一覧（許可なしでも位置は取れる）
+        // 4. 録画の書き出し（作りものの30コマ/秒×1.5秒 → MP4）
+        let mv = URL(fileURLWithPath: dir + "/録画テスト.mp4")
+        try? FileManager.default.removeItem(at: mv)
+        if let w = try? MovieWriter(url: mv, width: 641, height: 361) {
+            for i in 0..<45 {
+                var pb: CVPixelBuffer?
+                CVPixelBufferCreate(nil, 640, 360, kCVPixelFormatType_32BGRA, nil, &pb)
+                CVPixelBufferLockBaseAddress(pb!, [])
+                let p = CVPixelBufferGetBaseAddress(pb!)!.assumingMemoryBound(to: UInt8.self)
+                let bpr = CVPixelBufferGetBytesPerRow(pb!)
+                for y in 0..<360 { for x in 0..<640 { let o = y * bpr + x * 4
+                    let on = x / 40 == i % 16
+                    p[o] = on ? 60 : 240; p[o + 1] = on ? 150 : 240; p[o + 2] = on ? 210 : 240; p[o + 3] = 255 } }
+                CVPixelBufferUnlockBaseAddress(pb!, [])
+                // 本物は1/30秒おきに来る＝書き手の手が空くまで待ってから渡す（速すぎるコマは捨てる作り）
+                if i > 0 { var n = 0; while !w.input.isReadyForMoreMediaData && n < 2000 { usleep(1000); n += 1 } }
+                w.append(pb!, at: CMTime(value: CMTimeValue(1000 + i), timescale: 30))
+            }
+            let sem = DispatchSemaphore(value: 0)
+            var done = false
+            w.finish(end: CMTime(value: 1000 + 60, timescale: 30)) { ok in done = ok; sem.signal() }
+            sem.wait()
+            let asset = AVURLAsset(url: mv)
+            let dur = CMTimeGetSeconds(asset.duration)
+            let size = asset.tracks(withMediaType: .video).first?.naturalSize ?? .zero
+            check("録画の書き出し（MP4）", done && w.frames == 45 && abs(dur - 2.0) < 0.05 && size == CGSize(width: 640, height: 360),
+                  "\(w.frames)コマ・\(String(format: "%.2f", dur))秒（止めた時刻まで）・\(Int(size.width))×\(Int(size.height))")
+        } else { check("録画の書き出し（MP4）", false, "書き手を作れない") }
+
+        // 5. ピン
+        let pinP = makePin(shot, unit: 1) { _ in }
+        if let v = pinP.contentView {
+            let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
+            v.cacheDisplay(in: v.bounds, to: rep)
+            check("ピンを描ける", rep.pixelsWide > 0 && v.bounds.width > 40, "\(Int(v.bounds.width))×\(Int(v.bounds.height))")
+        }
+
+        // 6. 窓の一覧（許可なしでも位置は取れる）
         let ws = onScreenWindows()
         print("・画面に出ている窓：\(ws.count)個")
         return ok

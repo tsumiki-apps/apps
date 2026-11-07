@@ -1,5 +1,5 @@
 // つみきショット：メニューバーに常駐するスクショアプリ（自分専用）。
-// ⌥⇧4 範囲 ／ ⌥⇧3 全画面 ／ ⌥⇧S スクロール（もう一度押すと完了）／ ⌥⇧W ウィンドウ ／ ⌥⇧T 文字を読む
+// ⌥⇧4 範囲 ／ ⌥⇧3 全画面 ／ ⌥⇧S スクロール（もう一度押すと完了）／ ⌥⇧W ウィンドウ ／ ⌥⇧T 文字を読む ／ ⌥⇧R 録画（もう一度で停止）
 // 撮ったものは ~/Pictures/つみきショット に PNG で保存し、クリップボードにも入れる。
 import AppKit
 import Carbon
@@ -30,7 +30,7 @@ struct Region {
 // MARK: - 撮影（ScreenCaptureKit・自分のウィンドウは写さない）
 
 final class Capturer {
-    private var filter: SCContentFilter?
+    private(set) var filter: SCContentFilter?
     private let config = SCStreamConfiguration()
     let region: Region
     var includeSelf = false     // 通しテストだけ自分の窓も写す
@@ -376,6 +376,8 @@ final class PreviewPanel: NSObject {
     private var url: URL?
     private var image: CGImage?
     var onEdit: ((CGImage, URL) -> Void)?
+    var onPin: ((CGImage) -> Void)?
+    private var isMovie = false
 
     /// 小窓の中身（縮小画像と2つのボタン）。--render でも使う
     func makeContent(image: CGImage, url: URL) -> ([NSView], NSSize) {
@@ -394,12 +396,17 @@ final class PreviewPanel: NSObject {
         iv.onClick = { [weak self] in NSWorkspace.shared.open(url); self?.close() }
         iv.toolTip = "\(image.width) × \(image.height)"
 
-        let edit = symbolButton("pencil.tip", "編集", self, #selector(edit))
-        let folder = symbolButton("folder", "場所", self, #selector(reveal))
-        let x = symbolButton("xmark", "", self, #selector(close))
-        x.toolTip = "閉じる"
-        x.widthAnchor.constraint(equalToConstant: 32).isActive = true
-        let row = NSStackView(views: [edit, folder, x]); row.spacing = 6
+        func icon(_ sym: String, _ tip: String, _ a: Selector) -> NSButton {
+            let b = symbolButton(sym, "", self, a); b.toolTip = tip
+            b.widthAnchor.constraint(equalToConstant: 36).isActive = true
+            return b
+        }
+        let movie = url.pathExtension == "mp4"
+        let edit = symbolButton(movie ? "play.fill" : "pencil.tip", movie ? "再生" : "編集", self, movie ? #selector(openFile) : #selector(edit))
+        var views: [NSView] = [edit]
+        if !movie { views.append(icon("pin", "画面に浮かべる", #selector(pin))) }
+        views += [icon("folder", "場所", #selector(reveal)), icon("xmark", "閉じる", #selector(close))]
+        let row = NSStackView(views: views); row.spacing = 6
         let size = NSSize(width: w + 20, height: h + 56)
         row.frame = NSRect(x: 10, y: 8, width: w, height: 32)
         row.distribution = .fill
@@ -430,6 +437,8 @@ final class PreviewPanel: NSObject {
         }
     }
 
+    @objc func openFile() { if let url { NSWorkspace.shared.open(url) }; close() }
+    @objc func pin() { if let image { close(); onPin?(image) } }
     @objc func edit() { if let url, let image { close(); onEdit?(image, url) } }
     @objc func reveal() { if let url { NSWorkspace.shared.activateFileViewerSelecting([url]) }; close() }
     @objc func close() { hideTimer?.invalidate(); hideTimer = nil; panel?.orderOut(nil); panel = nil }
@@ -524,6 +533,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.addItem(item("スクロール", "arrow.down.to.line.compact", #selector(captureScroll), "s"))
         m.addItem(item("ウィンドウ", "macwindow.on.rectangle", #selector(captureWindowMenu), "w"))
         m.addItem(item("文字を読む", "text.viewfinder", #selector(captureText), "t"))
+        m.addItem(item("録画", "record.circle", #selector(captureMovie), "r"))
         m.addItem(.separator())
         let open = NSMenuItem(title: "保存先", action: #selector(openFolder), keyEquivalent: "")
         open.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil); open.target = self
@@ -541,6 +551,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             (3, kVK_ANSI_S, { [weak self] in self?.captureScroll() }),
             (4, kVK_ANSI_W, { [weak self] in self?.captureWindowMenu() }),
             (5, kVK_ANSI_T, { [weak self] in self?.captureText() }),
+            (6, kVK_ANSI_R, { [weak self] in self?.captureMovie() }),
         ])
         // 他のアプリが使っているキーは、メニューの項目からキー表示を外して知らせる
         for id in failedKeys {
@@ -550,6 +561,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // 許可の案内は最初の1回だけ（以後は撮ろうとして失敗したときに出す）
         preview.onEdit = { [weak self] img, url in self?.openEditor(img, url) }
+        preview.onPin = { [weak self] img in self?.pinImage(img) }
         // 文字読みの初回は仕組みの読み込みで20秒ほどかかる＝起動時に裏で1回済ませておく
         DispatchQueue.global(qos: .utility).async {
             let c = CGContext(data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
@@ -581,8 +593,44 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var winPicker: WindowPicker?
     var editors: [EditorWindow] = []
+    var recorder: Recorder?
+    var pins: [NSPanel] = []
     var shooting = 0                        // 撮っている最中の数（範囲・全画面）
-    var busy: Bool { picker != nil || winPicker != nil || session != nil || shooting > 0 }
+    var busy: Bool { picker != nil || winPicker != nil || session != nil || recorder != nil || shooting > 0 }
+
+    /// 範囲を選んで録画。もう一度 ⌥⇧R（か札の停止）で止める
+    @objc func captureMovie() {
+        if let r = recorder { r.finish(); return }
+        guard !busy else { return }
+        if !CGPreflightScreenCaptureAccess() { failed(); return }
+        let p = RegionPicker(); picker = p
+        p.pick { [weak self] region in
+            self?.picker = nil
+            guard let self, let region else { return }
+            try? FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
+            var url = saveDir.appendingPathComponent("録画 \(stamp()).mp4")
+            var n = 2
+            while FileManager.default.fileExists(atPath: url.path) { url = saveDir.appendingPathComponent("録画 \(stamp()) \(n).mp4"); n += 1 }
+            let r = Recorder(region: region, url: url)
+            r.onFinish = { [weak self, weak r] out, thumb, failed in
+                guard let self else { return }
+                if self.recorder === r { self.recorder = nil }
+                guard let out else { if failed { self.failed() }; return }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([out as NSURL])      // ファイルとして貼れる
+                NSSound(named: "Tink")?.play()
+                if let thumb { self.preview.show(image: thumb, url: out) }
+            }
+            self.recorder = r
+            r.start()
+        }
+    }
+
+    func pinImage(_ img: CGImage) {
+        let p = makePin(img, unit: NSScreen.main?.backingScaleFactor ?? 2) { [weak self] p in self?.pins.removeAll { $0 === p } }
+        pins.append(p)
+        p.orderFrontRegardless()
+    }
 
     @objc func captureWindowMenu() {
         guard !busy else { return }
