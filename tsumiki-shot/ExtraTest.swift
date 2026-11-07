@@ -1,6 +1,7 @@
 // `--extratest [出力先フォルダ]`：書き込み（焼き込み）・文字の読み取り・編集画面を、画面収録の許可なしで確かめる。
 import AppKit
 import AVFoundation
+import Carbon
 
 enum ExtraTest {
     static func run(outDir: String?) -> Bool {
@@ -117,6 +118,85 @@ enum ExtraTest {
             v.cacheDisplay(in: v.bounds, to: rep)
             check("ピンを描ける", rep.pixelsWide > 0 && v.bounds.width > 40, "\(Int(v.bounds.width))×\(Int(v.bounds.height))")
         }
+
+        // 7. 自動スクロール：本物のつなぎ手に、送った量だけ動く架空のページを見せて、端まで行って止まるか
+        func autoRun(sign: Int, horizontal: Bool) -> (Bool, String) {
+            let body = SelfTest.makeBody(height: 2400)
+            let mid = SelfTest.viewH - SelfTest.header - SelfTest.footer
+            let maxOff = body.height - mid
+            let st = AutoStitcher()
+            let pilot = AutoPilot(viewLength: CGFloat(horizontal ? SelfTest.viewH : SelfTest.viewH))
+            var off = 0, n = 0, turns = 0
+            func shot() -> CGImage {
+                let f = SelfTest.frame(body: body, offset: off)
+                return horizontal ? rotate90(f, clockwise: false)! : f
+            }
+            _ = st.add(shot())
+            var next = pilot.begin()
+            while n < 200 {
+                n += 1
+                guard case let .scroll(dx, dy) = next else { break }
+                // 合図の向き：sign＝-1 ならナチュラルのように逆。横は dx が効く
+                let amount = horizontal ? dx : dy
+                off = min(maxOff, max(0, off - sign * amount))
+                let r = st.add(shot())
+                if let a = st.axis { pilot.axisDecided(a) }
+                let before = pilot.dirIndex
+                next = pilot.next(after: r)
+                if pilot.dirIndex != before { turns += 1 }
+            }
+            guard let out = st.compose() else { return (false, "合成できない") }
+            let len = horizontal ? out.width : out.height
+            let want = SelfTest.header + body.height + SelfTest.footer
+            let ok = next == .finish && len == want && st.axis == (horizontal ? .horizontal : .vertical)
+            return (ok, "\(len)px（正解 \(want)）・\(n)回・向きの試し直し \(turns)回")
+        }
+        let r1 = autoRun(sign: 1, horizontal: false); check("自動スクロール：縦・ふつうの向きで端まで", r1.0, r1.1)
+        let r2 = autoRun(sign: -1, horizontal: false); check("自動スクロール：縦・合図が逆向きでも端まで", r2.0, r2.1)
+        let r3 = autoRun(sign: 1, horizontal: true); check("自動スクロール：横で端まで", r3.0, r3.1)
+        // 送りすぎ（×）のあとは戻して半分に
+        let pl = AutoPilot(viewLength: 600)
+        _ = pl.begin(); _ = pl.next(after: .added(180))
+        let back = pl.next(after: .lost)
+        check("自動スクロール：送りすぎたら少し戻して半分に", back == .scroll(dx: 0, dy: 90) && pl.step == 90, "\(back)")
+
+        // 8. ショートカット
+        let k = KeyCombo.from(code: UInt16(kVK_ANSI_K), flags: [.command, .shift], chars: "k")
+        check("キーの表示", k?.display == "⇧⌘K" && k?.menuKey.0 == "k", k?.display ?? "nil")
+        check("修飾キーなしは受けない（F キーは可）", KeyCombo.from(code: UInt16(kVK_ANSI_K), flags: [], chars: "k") == nil
+              && KeyCombo.from(code: UInt16(kVK_F5), flags: [], chars: nil)?.display == "F5")
+        let suite = "tsumikishot.selftest"
+        let ud = UserDefaults(suiteName: suite)!
+        ud.removePersistentDomain(forName: suite)
+        let keep = Shortcuts.defaults
+        Shortcuts.defaults = ud
+        let s3 = Shortcuts.combo(3)
+        let cleared = Shortcuts.set(1, s3)                       // 範囲に、スクロールと同じキー
+        check("同じキーは片方だけ（もう片方はなしに）", cleared == [3] && Shortcuts.combo(3) == nil && Shortcuts.combo(1) == s3)
+        Shortcuts.set(2, nil)
+        check("なしにできる", Shortcuts.combo(2) == nil)
+        Shortcuts.resetAll()
+        check("既定に戻す", Shortcuts.actions.allSatisfy { Shortcuts.combo($0.id) == $0.def })
+        let f = ShortcutField(id: 4)
+        var heard: KeyCombo?? = .none
+        f.onChange = { heard = .some($0) }
+        f.handle(code: UInt16(kVK_Escape), flags: [], chars: nil)
+        let escOK = heard == nil
+        f.handle(code: UInt16(kVK_Delete), flags: [], chars: nil)
+        check("覚える欄：esc はやめる・delete はなし", escOK && heard == .some(nil))
+        let sw = SettingsWindow()
+        sw.window?.appearance = NSAppearance(named: .darkAqua)
+        if let v = sw.window?.contentView {
+            v.wantsLayer = true
+            NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { v.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor }
+            v.layoutSubtreeIfNeeded()
+            let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
+            v.cacheDisplay(in: v.bounds, to: rep)
+            SelfTest.save(rep.cgImage!, to: dir + "/設定.png")
+            check("設定の窓を描ける", rep.pixelsWide > 200, "\(Int(v.bounds.width))×\(Int(v.bounds.height))")
+        }
+        Shortcuts.defaults = keep
+        ud.removePersistentDomain(forName: suite)
 
         // 6. 窓の一覧（許可なしでも位置は取れる）
         let ws = onScreenWindows()

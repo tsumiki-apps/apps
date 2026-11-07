@@ -259,11 +259,10 @@ final class EditorWindow: NSWindowController, NSWindowDelegate {
         }
         tools.selectedSegment = 0
         tools.target = self; tools.action = #selector(pickTool)
-        let undo = symbolButton("arrow.uturn.backward", "戻す", self, #selector(undoMark))
+        let undo = iconButton("arrow.uturn.backward", "戻す（⌘Z）", self, #selector(undoMark))
         undo.keyEquivalent = "z"; undo.keyEquivalentModifierMask = .command
-        let save = symbolButton("checkmark", "保存", self, #selector(save))
+        let save = iconButton("square.and.arrow.down", "保存（⌘S）＝元は残して「〜 編集.png」を作る", self, #selector(save), prominent: true)
         save.keyEquivalent = "s"; save.keyEquivalentModifierMask = .command
-        save.bezelColor = accent
         let row = NSStackView()
         row.spacing = 8
         row.addView(tools, in: .leading)

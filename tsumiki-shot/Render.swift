@@ -61,14 +61,14 @@ enum Render {
         for (i, lost) in [false, true].enumerated() {
             let s = ScrollSession(region: Region(screen: screen, rect: area))
             let bar = s.makeBar()
-            s.showState(height: lost ? 0 : 3420, lost: lost)
+            s.showState(height: lost ? 0 : 3420, lost: lost, auto: !lost)
             let size = bar.fittingSize
             bar.frame = NSRect(origin: .zero, size: size)
             let box = hud([bar], size: size, radius: 12)
             let y = i == 0 ? area.minY - size.height - 14 : r2.minY + 10
             ctx.draw(snapshot(box), in: CGRect(x: r2.midX - size.width / 2, y: y, width: size.width, height: size.height))
         }
-        label("2 スクロール（下＝速すぎ）", r2.minX, 716)
+        label("2 スクロール（上＝自動・下＝速すぎ）", r2.minX, 716)
 
         // ③ 撮影直後の小窓（右）
         let r3 = CGRect(x: 820, y: 40, width: 360, height: 660)

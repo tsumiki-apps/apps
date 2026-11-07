@@ -194,6 +194,20 @@ func symbolButton(_ name: String, _ label: String, _ target: AnyObject, _ action
     return b
 }
 
+/// アイコンだけのボタン（説明は指を乗せると出る）。prominent＝色つきの主ボタン
+func iconButton(_ name: String, _ tip: String, _ target: AnyObject, _ action: Selector, prominent: Bool = false) -> NSButton {
+    let img = NSImage(systemSymbolName: name, accessibilityDescription: tip)!
+        .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))!
+    let b = NSButton(image: img, target: target, action: action)
+    b.bezelStyle = .rounded
+    b.controlSize = .large
+    b.imagePosition = .imageOnly
+    b.toolTip = tip
+    if prominent { b.bezelColor = accent; b.contentTintColor = .white }
+    b.widthAnchor.constraint(equalToConstant: 40).isActive = true
+    return b
+}
+
 final class ScrollSession: NSObject {
     let region: Region
     let capturer: Capturer
@@ -207,6 +221,9 @@ final class ScrollSession: NSObject {
     private var timer: Timer?
     private var busy = false
     private var lostStreak = 0
+    private var pilot: AutoPilot?                   // 自動スクロール中だけ
+    private let watcher = HandWatcher()
+    private var autoButton: NSButton!
     private var ended = false                       // 完了・取消は一度きり
     private let queue = DispatchQueue(label: "stitch")   // つなぐ処理はこの列だけで（画面を固めない）
     var onFinish: ((CGImage?, Bool) -> Void)?       // (画像, 撮れなかった)
@@ -219,8 +236,9 @@ final class ScrollSession: NSObject {
 
     /// 操作札の中身（矢印・案内・高さ・取消・完了）。--render でも使う
     func makeBar() -> NSStackView {
-        let done = symbolButton("checkmark", "完了", self, #selector(finish))
-        let cancel = symbolButton("xmark", "取消", self, #selector(cancel))
+        let done = iconButton("checkmark", "完了（ショートカットをもう一度でも）", self, #selector(finish), prominent: true)
+        let cancel = iconButton("xmark", "取消", self, #selector(cancel))
+        autoButton = iconButton("play.fill", "自動スクロール（アクセシビリティの許可が要る）", self, #selector(toggleAuto))
         heightLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         heightLabel.alignment = .right
         // 札の幅は最初に決まる＝数字が増えても切れないよう「120,000 px」ぶんの幅を取っておく
@@ -230,16 +248,21 @@ final class ScrollSession: NSObject {
         let icon = arrowIcon
         icon.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "スクロール")
         icon.contentTintColor = accent
-        let stack = NSStackView(views: [icon, hintLabel, heightLabel, cancel, done])
+        icon.symbolConfiguration = .init(pointSize: 15, weight: .semibold)
+        let stack = NSStackView(views: [icon, hintLabel, heightLabel, autoButton, cancel, done])
         stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 10)
         return stack
     }
 
     /// 見た目の確認用：高さと「ゆっくり」の状態を直接入れる
-    func showState(height: Int, lost: Bool, full: Bool = false) {
+    func showState(height: Int, lost: Bool, full: Bool = false, auto: Bool = false) {
         frameView.warn = lost || full
-        hintLabel.stringValue = full ? "上限" : lost ? "ゆっくり" : "スクロール"
+        hintLabel.stringValue = full ? "上限" : lost ? "ゆっくり" : auto ? "自動" : "スクロール"
+        let sym = auto ? "pause.fill" : "play.fill"
+        autoButton?.image = NSImage(systemSymbolName: sym, accessibilityDescription: auto ? "自動を止める" : "自動スクロール")?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
+        autoButton?.toolTip = auto ? "自動を止める（手で触っても止まる）" : "自動スクロール（アクセシビリティの許可が要る）"
         hintLabel.textColor = lost || full ? .systemRed : .secondaryLabelColor
         heightLabel.stringValue = height > 0 ? "\(height.formatted()) px" : "—"
     }
@@ -304,7 +327,8 @@ final class ScrollSession: NSObject {
                     // 向きが決まったら矢印もそちらに（縦↓・横→）
                     if axis == .horizontal { self.arrowIcon.image = NSImage(systemSymbolName: "arrow.right", accessibilityDescription: "横スクロール") }
                     self.update(r, height: h)
-                    if r == .full { self.finish() }      // 上限に達したらそこで仕上げる
+                    if r == .full { self.finish(); return }      // 上限に達したらそこで仕上げる
+                    self.drive(r, axis: axis)
                 }
             }
         }
@@ -313,7 +337,45 @@ final class ScrollSession: NSObject {
     private func update(_ r: StepResult?, height: Int) {
         if case .lost = r { lostStreak += 1 } else if r != nil, r != .still { lostStreak = 0 }
         if r == .full { showState(height: height, lost: false, full: true); return }
-        showState(height: height, lost: lostStreak >= 2)
+        showState(height: height, lost: lostStreak >= 2 && pilot == nil, auto: pilot != nil)
+    }
+
+    private var center: NSPoint { NSPoint(x: region.rect.midX, y: region.rect.midY) }
+
+    /// 自動スクロールの入り切り
+    @objc func toggleAuto() {
+        if pilot != nil { stopAuto(); return }
+        guard !ended else { return }
+        guard Wheel.trusted(ask: true) else {
+            Toast.show("アクセシビリティを許可してください", symbol: "hand.raised")
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            return
+        }
+        let horizontal = stitcher.axis == .horizontal
+        let p = AutoPilot(viewLength: horizontal ? region.rect.width : region.rect.height)
+        if let a = stitcher.axis { p.axisDecided(a) }
+        pilot = p
+        Wheel.moveMouse(to: center)            // 範囲の上で回したことにする（指している所に届くアプリが多い）
+        watcher.start { [weak self] in self?.stopAuto() }
+        update(nil, height: stitcher.length)
+        if case let .scroll(dx, dy) = p.begin() { Wheel.post(dx: dx, dy: dy, at: center) }
+    }
+
+    func stopAuto() {
+        guard pilot != nil else { return }
+        pilot = nil
+        watcher.stop()
+        update(nil, height: stitcher.length)
+    }
+
+    /// 1コマ継ぐごとに、次の一送りを決めて送る
+    private func drive(_ r: StepResult, axis: ScrollAxis?) {
+        guard let p = pilot, !ended else { return }
+        if let axis { p.axisDecided(axis) }
+        switch p.next(after: r) {
+        case let .scroll(dx, dy): Wheel.post(dx: dx, dy: dy, at: center)
+        case .finish: finish()                 // 端まで来た
+        }
     }
 
     @objc func finish() {
@@ -352,6 +414,7 @@ final class ScrollSession: NSObject {
     }
 
     private func stop() {
+        watcher.stop(); pilot = nil
         frameWin?.orderOut(nil); panel?.orderOut(nil)
     }
 }
@@ -403,17 +466,13 @@ final class PreviewPanel: NSObject {
         iv.onClick = { [weak self] in NSWorkspace.shared.open(url); self?.close() }
         iv.toolTip = "\(image.width) × \(image.height)"
 
-        func icon(_ sym: String, _ tip: String, _ a: Selector) -> NSButton {
-            let b = symbolButton(sym, "", self, a); b.toolTip = tip
-            b.widthAnchor.constraint(equalToConstant: 36).isActive = true
-            return b
-        }
+        // ボタンはアイコンだけ（説明は指を乗せると出る）。主ボタン（編集・再生）だけ色つき
         let movie = url.pathExtension == "mp4"
-        let edit = symbolButton(movie ? "play.fill" : "pencil.tip", movie ? "再生" : "編集", self, movie ? #selector(openFile) : #selector(edit))
-        var views: [NSView] = [edit]
-        if !movie { views.append(icon("pin", "画面に浮かべる", #selector(pin))) }
-        views += [icon("folder", "場所", #selector(reveal)), icon("xmark", "閉じる", #selector(close))]
-        let row = NSStackView(views: views); row.spacing = 6
+        var views: [NSView] = [movie ? iconButton("play.fill", "再生", self, #selector(openFile), prominent: true)
+                                     : iconButton("pencil.tip", "編集（矢印・四角・文字・モザイク）", self, #selector(edit), prominent: true)]
+        if !movie { views.append(iconButton("pin", "画面に浮かべる", self, #selector(pin))) }
+        views += [iconButton("folder", "Finder で表示", self, #selector(reveal)), iconButton("xmark", "閉じる", self, #selector(close))]
+        let row = NSStackView(views: views); row.spacing = 8
         let size = NSSize(width: w + 20, height: h + 56)
         row.frame = NSRect(x: 10, y: 8, width: w, height: 32)
         row.distribution = .fill
@@ -486,35 +545,6 @@ func output(_ img: CGImage, kind: String, _ done: @escaping (URL?) -> Void) {
     }
 }
 
-// MARK: - グローバルショートカット（Carbon）
-
-var hotKeyActions: [UInt32: () -> Void] = [:]
-var hotKeyRefs: [EventHotKeyRef?] = []
-
-/// 登録できなかった（他のアプリが使っている）キーの番号を返す
-@discardableResult
-func installHotKeys(_ list: [(UInt32, Int, () -> Void)]) -> [UInt32] {
-    var failed: [UInt32] = []
-    var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-    InstallEventHandler(GetApplicationEventTarget(), { _, ev, _ in
-        var hid = EventHotKeyID()
-        GetEventParameter(ev, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
-                          nil, MemoryLayout<EventHotKeyID>.size, nil, &hid)
-        let id = hid.id
-        DispatchQueue.main.async { hotKeyActions[id]?() }
-        return noErr
-    }, 1, &spec, nil, nil)
-    for (id, key, fn) in list {
-        var ref: EventHotKeyRef?
-        let st = RegisterEventHotKey(UInt32(key), UInt32(optionKey | shiftKey),
-                                     EventHotKeyID(signature: OSType(0x54534854), id: id), GetApplicationEventTarget(), 0, &ref)
-        if st != noErr { failed.append(id); continue }
-        hotKeyRefs.append(ref)
-        hotKeyActions[id] = fn
-    }
-    return failed
-}
-
 // MARK: - アプリ本体
 
 final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -522,52 +552,42 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var picker: RegionPicker?
     var session: ScrollSession?
     let preview = PreviewPanel()
-    var loginItem: NSMenuItem!
+    var menu: NSMenu!
+    var settings: SettingsWindow?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "つみきショット")
         let m = NSMenu()
         m.delegate = self
-        func item(_ t: String, _ sym: String, _ a: Selector, _ key: String, tag: Int) -> NSMenuItem {
-            let i = NSMenuItem(title: t, action: a, keyEquivalent: key)
-            i.tag = tag                       // ショートカットの番号と同じ
-            i.keyEquivalentModifierMask = [.option, .shift]
-            i.image = NSImage(systemSymbolName: sym, accessibilityDescription: t)
+        let sels: [UInt32: Selector] = [1: #selector(captureArea), 2: #selector(captureScreen), 3: #selector(captureScroll),
+                                        4: #selector(captureWindowMenu), 5: #selector(captureText), 6: #selector(captureMovie)]
+        for a in Shortcuts.actions {
+            let i = NSMenuItem(title: a.name, action: sels[a.id], keyEquivalent: "")
+            i.tag = Int(a.id)                       // ショートカットの番号と同じ
+            i.image = NSImage(systemSymbolName: a.symbol, accessibilityDescription: a.name)
             i.target = self
-            return i
+            m.addItem(i)
         }
-        m.addItem(item("範囲", "rectangle.dashed", #selector(captureArea), "4", tag: 1))
-        m.addItem(item("全画面", "macwindow", #selector(captureScreen), "3", tag: 2))
-        m.addItem(item("スクロール", "arrow.down.to.line.compact", #selector(captureScroll), "s", tag: 3))
-        m.addItem(item("ウィンドウ", "macwindow.on.rectangle", #selector(captureWindowMenu), "w", tag: 4))
-        m.addItem(item("文字を読む", "text.viewfinder", #selector(captureText), "t", tag: 5))
-        m.addItem(item("録画", "record.circle", #selector(captureMovie), "r", tag: 6))
         m.addItem(.separator())
         let open = NSMenuItem(title: "保存先", action: #selector(openFolder), keyEquivalent: "")
         open.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil); open.target = self
         m.addItem(open)
-        loginItem = NSMenuItem(title: "ログイン時に起動", action: #selector(toggleLogin), keyEquivalent: "")
-        loginItem.target = self
-        m.addItem(loginItem)
+        let set = NSMenuItem(title: "設定…", action: #selector(openSettings), keyEquivalent: ",")
+        set.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil); set.target = self
+        m.addItem(set)
         m.addItem(.separator())
-        let q = NSMenuItem(title: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"); m.addItem(q)
+        let q = NSMenuItem(title: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        q.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
+        m.addItem(q)
         status.menu = m
+        menu = m
 
-        let failedKeys = installHotKeys([
-            (1, kVK_ANSI_4, { [weak self] in self?.captureArea() }),
-            (2, kVK_ANSI_3, { [weak self] in self?.captureScreen() }),
-            (3, kVK_ANSI_S, { [weak self] in self?.captureScroll() }),
-            (4, kVK_ANSI_W, { [weak self] in self?.captureWindowMenu() }),
-            (5, kVK_ANSI_T, { [weak self] in self?.captureText() }),
-            (6, kVK_ANSI_R, { [weak self] in self?.captureMovie() }),
-        ])
-        // 他のアプリが使っているキーは、メニューの項目からキー表示を外して知らせる
-        for id in failedKeys {
-            guard let it = m.items.first(where: { $0.tag == Int(id) }) else { continue }
-            it.keyEquivalent = ""
-            it.title += "（キーは使用中）"
-        }
+        HotKeys.actions = [1: { [weak self] in self?.captureArea() }, 2: { [weak self] in self?.captureScreen() },
+                           3: { [weak self] in self?.captureScroll() }, 4: { [weak self] in self?.captureWindowMenu() },
+                           5: { [weak self] in self?.captureText() }, 6: { [weak self] in self?.captureMovie() }]
+        HotKeys.apply()
+        refreshMenuKeys()
         // 許可の案内は最初の1回だけ（以後は撮ろうとして失敗したときに出す）
         preview.onEdit = { [weak self] img, url, s in self?.openEditor(img, url, scale: s) }
         preview.onPin = { [weak self] img, s in self?.pinImage(img, scale: s) }
@@ -606,8 +626,31 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return main
     }
 
-    func menuWillOpen(_ menu: NSMenu) {
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    /// メニューのキー表示をいまの設定に合わせる（他のアプリが使っているキーは ⚠︎ を付けて外す）
+    func refreshMenuKeys() {
+        for a in Shortcuts.actions {
+            guard let it = menu.items.first(where: { $0.tag == Int(a.id) }) else { continue }
+            it.title = a.name
+            if let c = Shortcuts.combo(a.id), !HotKeys.failed.contains(a.id) {
+                (it.keyEquivalent, it.keyEquivalentModifierMask) = c.menuKey
+            } else {
+                it.keyEquivalent = ""
+                if HotKeys.failed.contains(a.id) { it.title += "  ⚠︎" }
+            }
+        }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) { refreshMenuKeys() }
+
+    @objc func openSettings() {
+        if settings == nil {
+            let w = SettingsWindow()
+            w.loginState = { SMAppService.mainApp.status == .enabled }
+            w.onLogin = { [weak self] on in if on != (SMAppService.mainApp.status == .enabled) { self?.toggleLogin() } }
+            w.onKeysChanged = { [weak self] in self?.refreshMenuKeys() }
+            settings = w
+        }
+        settings?.show()
     }
 
     func askPermission() {

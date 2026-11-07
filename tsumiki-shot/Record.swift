@@ -99,7 +99,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
         let dot = NSImageView(image: NSImage(systemSymbolName: "record.circle", accessibilityDescription: "録画中")!)
         dot.contentTintColor = .systemRed
         timeLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        let stop = symbolButton("stop.fill", "停止", self, #selector(finish))
+        let stop = iconButton("stop.fill", "停止（ショートカットをもう一度でも）", self, #selector(finish))
+        stop.contentTintColor = .systemRed
+        dot.symbolConfiguration = .init(pointSize: 15, weight: .semibold)
         let row = NSStackView(views: [dot, timeLabel, stop]); row.spacing = 10
         row.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 8)
         let size = row.fittingSize
