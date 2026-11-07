@@ -16,6 +16,7 @@ final class MovieWriter {
 
     init(url: URL, width: Int, height: Int) throws {
         writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        writer.movieFragmentInterval = CMTime(value: 2, timescale: 1)   // 途中で落ちても、2秒ごとまでは再生できる
         let w = max(2, width & ~1), h = max(2, height & ~1)     // H.264 は偶数の大きさ
         input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h,
@@ -27,22 +28,37 @@ final class MovieWriter {
         writer.add(input)
     }
 
+    /// 書き手が壊れた（容量不足・大きすぎるなど）。録画側はこれを見て止める
+    var failed: Bool { writer.status == .failed }
+
     func append(_ pb: CVPixelBuffer, at t: CMTime) {
         if !started {
-            guard writer.startWriting() else { return }
+            guard writer.startWriting() else { return }        // 失敗は failed に出る
             writer.startSession(atSourceTime: t); started = true
         }
         guard input.isReadyForMoreMediaData, !lastTime.isValid || t > lastTime else { return }
         if adaptor.append(pb, withPresentationTime: t) { frames += 1; lastTime = t }
     }
 
+    /// H.264 の大きさの上限（4096×2304）に収まる倍率
+    static func fit(_ w: Int, _ h: Int) -> (Int, Int) {
+        let k = min(1, 4096 / Double(max(w, h)), 2304 / Double(min(w, h)))
+        return (Int(Double(w) * k) & ~1, Int(Double(h) * k) & ~1)
+    }
+
     /// end：止めた時刻（画面が動かず最後のコマが古くても、そこまでの長さにする）
     func finish(end: CMTime?, _ done: @escaping (Bool) -> Void) {
-        guard started, frames > 0 else { writer.cancelWriting(); done(false); return }
+        guard started, frames > 0, writer.status == .writing else {
+            writer.cancelWriting(); try? FileManager.default.removeItem(at: writer.outputURL); done(false); return
+        }
         let tail = CMTimeAdd(lastTime, CMTime(value: 1, timescale: 30))
         writer.endSession(atSourceTime: end.map { CMTimeMaximum($0, tail) } ?? tail)
         input.markAsFinished()
-        writer.finishWriting { done(self.writer.status == .completed) }
+        writer.finishWriting {
+            let ok = self.writer.status == .completed
+            if !ok { try? FileManager.default.removeItem(at: self.writer.outputURL) }   // 壊れた動画を残さない
+            done(ok)
+        }
     }
 }
 
@@ -61,6 +77,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var clock: Timer?
     private var began = Date()
     private var thumb: CGImage?
+    private var stopping = false            // record の列だけで触る
     private var ended = false
     var onFinish: ((URL?, CGImage?, Bool) -> Void)?    // (動画, 見出し画像, 撮れなかった)
 
@@ -105,8 +122,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
             let s = self.region.scale
             let cfg = SCStreamConfiguration()
             cfg.sourceRect = self.region.sourceRect
-            cfg.width = Int((self.region.rect.width * s).rounded()) & ~1
-            cfg.height = Int((self.region.rect.height * s).rounded()) & ~1
+            // 5K など大きな画面は H.264 の上限に収まるよう縮めて撮る
+            (cfg.width, cfg.height) = MovieWriter.fit(Int((self.region.rect.width * s).rounded()), Int((self.region.rect.height * s).rounded()))
+            cfg.scalesToFit = true
             cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)
             cfg.pixelFormat = kCVPixelFormatType_32BGRA
             cfg.showsCursor = true
@@ -132,7 +150,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
         guard type == .screen, let pb = sb.imageBuffer,
               let att = (CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]])?.first,
               let raw = att[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete else { return }
-        writer?.append(pb, at: sb.presentationTimeStamp)
+        guard let w = writer else { return }
+        w.append(pb, at: sb.presentationTimeStamp)
+        if w.failed, !stopping { stopping = true; DispatchQueue.main.async { self.finish() } }   // 書けなくなったらすぐ止めて知らせる
         if thumb == nil { thumb = CIContext().createCGImage(CIImage(cvPixelBuffer: pb), from: CIImage(cvPixelBuffer: pb).extent) }
     }
 
@@ -156,20 +176,13 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    @objc func cancel() {
-        guard !ended else { return }
-        ended = true
-        stream?.stopCapture { _ in }
-        try? FileManager.default.removeItem(at: url)
-        end(nil, failed: false)
-    }
-
     private var delivered = false
     private func end(_ out: URL?, failed: Bool) {
         guard !delivered else { return }
         delivered = true; ended = true
         clock?.invalidate(); clock = nil
         frameWin?.orderOut(nil); panel?.orderOut(nil)
+        stream = nil                         // SCStream が自分を抱えたままにならないように
         onFinish?(out, thumb, failed)
     }
 }
@@ -219,7 +232,7 @@ func makePin(_ img: CGImage, unit: CGFloat, onClose: @escaping (NSPanel) -> Void
     let vf = screen.visibleFrame
     var size = NSSize(width: CGFloat(img.width) / unit, height: CGFloat(img.height) / unit)
     let k = min(1, vf.width * 0.6 / size.width, vf.height * 0.6 / size.height)
-    size = NSSize(width: max(40, size.width * k), height: max(40, size.height * k))
+    size = NSSize(width: size.width * k, height: size.height * k)        // 縦横比は保つ（細長い画像は細長いまま）
     let p = PinPanel(contentRect: NSRect(x: vf.midX - size.width / 2, y: vf.midY - size.height / 2, width: size.width, height: size.height),
                      styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
     p.level = .floating; p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true

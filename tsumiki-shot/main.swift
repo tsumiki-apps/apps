@@ -283,6 +283,7 @@ final class ScrollSession: NSObject {
         capturer.prepare { [weak self] err in
             guard let self else { return }
             if err != nil { self.end(nil, failed: true); return }
+            guard !self.ended else { return }            // 準備の間に完了・取消が押された
             self.tick()
             self.timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in self?.tick() }
         }
@@ -380,8 +381,9 @@ final class PreviewPanel: NSObject {
     private var hideTimer: Timer?
     private var url: URL?
     private var image: CGImage?
-    var onEdit: ((CGImage, URL) -> Void)?
-    var onPin: ((CGImage) -> Void)?
+    var onEdit: ((CGImage, URL, CGFloat) -> Void)?
+    var onPin: ((CGImage, CGFloat) -> Void)?
+    private var scale: CGFloat = 2              // 撮った画面の倍率（書き込みの太さ・ピンの大きさに使う）
     private var isMovie = false
 
     /// 小窓の中身（縮小画像と2つのボタン）。--render でも使う
@@ -419,7 +421,8 @@ final class PreviewPanel: NSObject {
         return ([iv, row], size)
     }
 
-    func show(image: CGImage, url: URL) {
+    func show(image: CGImage, url: URL, scale: CGFloat) {
+        self.scale = scale
         close()
         self.url = url; self.image = image
         let (views, size) = makeContent(image: image, url: url)
@@ -438,13 +441,13 @@ final class PreviewPanel: NSObject {
         panel = p
         hideTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
             guard let self, let p = self.panel else { return }
-            if !p.frame.contains(NSEvent.mouseLocation) { self.close() }   // 指を乗せている間は消さない
+            if !p.frame.contains(NSEvent.mouseLocation) && NSEvent.pressedMouseButtons == 0 { self.close() }   // ドラッグ中も消さない   // 指を乗せている間は消さない
         }
     }
 
     @objc func openFile() { if let url { NSWorkspace.shared.open(url) }; close() }
-    @objc func pin() { if let image { close(); onPin?(image) } }
-    @objc func edit() { if let url, let image { close(); onEdit?(image, url) } }
+    @objc func pin() { if let image { let s = scale; close(); onPin?(image, s) } }
+    @objc func edit() { if let url, let image { let s = scale; close(); onEdit?(image, url, s) } }
     @objc func reveal() { if let url { NSWorkspace.shared.activateFileViewerSelecting([url]) }; close() }
     @objc func close() { hideTimer?.invalidate(); hideTimer = nil; panel?.orderOut(nil); panel = nil }
 }
@@ -526,19 +529,20 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         status.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "つみきショット")
         let m = NSMenu()
         m.delegate = self
-        func item(_ t: String, _ sym: String, _ a: Selector, _ key: String) -> NSMenuItem {
+        func item(_ t: String, _ sym: String, _ a: Selector, _ key: String, tag: Int) -> NSMenuItem {
             let i = NSMenuItem(title: t, action: a, keyEquivalent: key)
+            i.tag = tag                       // ショートカットの番号と同じ
             i.keyEquivalentModifierMask = [.option, .shift]
             i.image = NSImage(systemSymbolName: sym, accessibilityDescription: t)
             i.target = self
             return i
         }
-        m.addItem(item("範囲", "rectangle.dashed", #selector(captureArea), "4"))
-        m.addItem(item("全画面", "macwindow", #selector(captureScreen), "3"))
-        m.addItem(item("スクロール", "arrow.down.to.line.compact", #selector(captureScroll), "s"))
-        m.addItem(item("ウィンドウ", "macwindow.on.rectangle", #selector(captureWindowMenu), "w"))
-        m.addItem(item("文字を読む", "text.viewfinder", #selector(captureText), "t"))
-        m.addItem(item("録画", "record.circle", #selector(captureMovie), "r"))
+        m.addItem(item("範囲", "rectangle.dashed", #selector(captureArea), "4", tag: 1))
+        m.addItem(item("全画面", "macwindow", #selector(captureScreen), "3", tag: 2))
+        m.addItem(item("スクロール", "arrow.down.to.line.compact", #selector(captureScroll), "s", tag: 3))
+        m.addItem(item("ウィンドウ", "macwindow.on.rectangle", #selector(captureWindowMenu), "w", tag: 4))
+        m.addItem(item("文字を読む", "text.viewfinder", #selector(captureText), "t", tag: 5))
+        m.addItem(item("録画", "record.circle", #selector(captureMovie), "r", tag: 6))
         m.addItem(.separator())
         let open = NSMenuItem(title: "保存先", action: #selector(openFolder), keyEquivalent: "")
         open.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil); open.target = self
@@ -560,13 +564,14 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ])
         // 他のアプリが使っているキーは、メニューの項目からキー表示を外して知らせる
         for id in failedKeys {
-            let it = m.items[Int(id) - 1]
+            guard let it = m.items.first(where: { $0.tag == Int(id) }) else { continue }
             it.keyEquivalent = ""
             it.title += "（キーは使用中）"
         }
         // 許可の案内は最初の1回だけ（以後は撮ろうとして失敗したときに出す）
-        preview.onEdit = { [weak self] img, url in self?.openEditor(img, url) }
-        preview.onPin = { [weak self] img in self?.pinImage(img) }
+        preview.onEdit = { [weak self] img, url, s in self?.openEditor(img, url, scale: s) }
+        preview.onPin = { [weak self] img, s in self?.pinImage(img, scale: s) }
+        NSApp.mainMenu = editMenu()   // 常駐アプリにはメニューがない＝文字欄で ⌘C・⌘V などが効くように、見えない編集メニューを持つ
         // 文字読みの初回は仕組みの読み込みで20秒ほどかかる＝起動時に裏で1回済ませておく
         DispatchQueue.global(qos: .utility).async {
             let c = CGContext(data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
@@ -578,6 +583,27 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             UserDefaults.standard.set(true, forKey: "askedPermission")
             askPermission()
         }
+    }
+
+    /// 録画中に終了したら、動画を閉じ終えてから終わる（途中で切ると再生できないファイルが残る）
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let r = recorder else { return .terminateNow }
+        let prev = r.onFinish
+        r.onFinish = { a, b, c in prev?(a, b, c); NSApp.reply(toApplicationShouldTerminate: true) }
+        r.finish()
+        return .terminateLater
+    }
+
+    func editMenu() -> NSMenu {
+        let main = NSMenu()
+        let top = NSMenuItem(); main.addItem(top)
+        let m = NSMenu(title: "編集"); top.submenu = m
+        for (t, sel, k) in [("取り消す", Selector(("undo:")), "z"), ("カット", #selector(NSText.cut(_:)), "x"),
+                            ("コピー", #selector(NSText.copy(_:)), "c"), ("ペースト", #selector(NSText.paste(_:)), "v"),
+                            ("すべてを選択", #selector(NSText.selectAll(_:)), "a")] {
+            m.addItem(NSMenuItem(title: t, action: sel, keyEquivalent: k))
+        }
+        return main
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -624,15 +650,15 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([out as NSURL])      // ファイルとして貼れる
                 NSSound(named: "Tink")?.play()
-                if let thumb { self.preview.show(image: thumb, url: out) }
+                if let thumb { self.preview.show(image: thumb, url: out, scale: region.scale) }
             }
             self.recorder = r
             r.start()
         }
     }
 
-    func pinImage(_ img: CGImage) {
-        let p = makePin(img, unit: NSScreen.main?.backingScaleFactor ?? 2) { [weak self] p in self?.pins.removeAll { $0 === p } }
+    func pinImage(_ img: CGImage, scale: CGFloat) {
+        let p = makePin(img, unit: scale) { [weak self] p in self?.pins.removeAll { $0 === p } }
         pins.append(p)
         p.orderFrontRegardless()
     }
@@ -645,9 +671,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.winPicker = nil
             guard let self, let id else { return }
             self.shooting += 1
-            captureWindow(id) { img in
+            captureWindow(id) { img, scale in
                 guard let img else { self.shooting -= 1; self.failed(); return }
-                self.deliver(img, kind: "ウィンドウ") { self.shooting -= 1 }
+                self.deliver(img, kind: "ウィンドウ", scale: scale) { self.shooting -= 1 }
             }
         }
     }
@@ -655,6 +681,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 範囲を選んで、写っている文字をクリップボードへ（画像は保存しない）
     @objc func captureText() {
         guard !busy else { return }
+        if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p
         p.pick { [weak self] region in
             self?.picker = nil
@@ -681,16 +708,18 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    func openEditor(_ img: CGImage, _ url: URL) {
-        let e = EditorWindow(image: img, url: url, unit: NSScreen.main?.backingScaleFactor ?? 2)
-        e.onClose = { [weak self, weak e] in self?.editors.removeAll { $0 === e } }
-        e.onSaved = { [weak self] img, url in NSSound(named: "Tink")?.play(); self?.preview.show(image: img, url: url) }
+    func openEditor(_ img: CGImage, _ url: URL, scale: CGFloat) {
+        let e = EditorWindow(image: img, url: url, unit: scale)
+        // 閉じる処理の最中に自分が解放されないよう、外すのは次の周回で
+        e.onClose = { [weak self, weak e] in DispatchQueue.main.async { self?.editors.removeAll { $0 === e } } }
+        e.onSaved = { [weak self] img, url in NSSound(named: "Tink")?.play(); self?.preview.show(image: img, url: url, scale: scale) }
         editors.append(e)
         e.show()
     }
 
     @objc func captureArea() {
         guard !busy else { return }
+        if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p
         p.pick { [weak self] region in
             self?.picker = nil
@@ -701,6 +730,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func captureScreen() {
         guard !busy else { return }
+        if !CGPreflightScreenCaptureAccess() { failed(); return }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main!
         shoot(Region(screen: screen, rect: screen.frame), kind: "スクショ")
     }
@@ -712,14 +742,15 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard err == nil else { self?.shooting -= 1; self?.failed(); return }
             c.shot { img in
                 guard let img else { self?.shooting -= 1; self?.failed(); return }
-                self?.deliver(img, kind: kind) { self?.shooting -= 1 }
+                self?.deliver(img, kind: kind, scale: region.scale) { self?.shooting -= 1 }
             }
         }
     }
 
     @objc func captureScroll() {
         if let s = session { s.finish(); return }        // 2回目の ⌥⇧S は完了
-        guard picker == nil, shooting == 0 else { return }
+        guard !busy else { return }                      // 録画中・ウィンドウ選択中などは始めない
+        if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p
         p.pick { [weak self] region in
             self?.picker = nil
@@ -728,20 +759,20 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             s.onFinish = { [weak self, weak s] img, failed in
                 guard let self else { return }
                 if self.session === s { self.session = nil }   // 別の新しいセッションは消さない
-                if let img { self.deliver(img, kind: "スクロール") } else if failed { self.failed() }
+                if let img { self.deliver(img, kind: "スクロール", scale: region.scale) } else if failed { self.failed() }
             }
             self.session = s
             s.start()
         }
     }
 
-    func deliver(_ img: CGImage, kind: String, then: (() -> Void)? = nil) {
+    func deliver(_ img: CGImage, kind: String, scale: CGFloat, then: (() -> Void)? = nil) {
         output(img, kind: kind) { [weak self] url in
             then?()
             guard let self else { return }
             guard let url else { self.failed(); return }
             NSSound(named: "Tink")?.play()
-            self.preview.show(image: img, url: url)
+            self.preview.show(image: img, url: url, scale: scale)
         }
     }
 

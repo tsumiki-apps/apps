@@ -27,7 +27,7 @@ enum Annotate {
         guard r.width >= 1, r.height >= 1, let part = base.cropping(to: r) else { return nil }
         let sw = max(1, Int(r.width) / block), sh = max(1, Int(r.height) / block)
         guard let small = CGContext(data: nil, width: sw, height: sh, bitsPerComponent: 8, bytesPerRow: 0,
-                                    space: CGColorSpaceCreateDeviceRGB(),
+                                    space: base.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,   // 元と同じ色空間（P3 の色がずれない）
                                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         small.interpolationQuality = .medium
         small.draw(part, in: CGRect(x: 0, y: 0, width: sw, height: sh))
@@ -103,11 +103,25 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     var onChange: (() -> Void)?
     private var downAt: CGPoint?
     private var field: NSTextField?
+    /// 表示用に一度だけ縮めた画像（大きな縦長でも、描き直すたびに元の大きさを縮めない）
+    private let shown: CGImage
 
     init(base: CGImage, unit: CGFloat, width: CGFloat) {
         self.base = base; self.unit = unit
         let s = width / CGFloat(base.width)
+        shown = CanvasView.shrink(base, toWidth: Int(width * 2)) ?? base
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: CGFloat(base.height) * s))
+    }
+
+    static func shrink(_ img: CGImage, toWidth w: Int) -> CGImage? {
+        guard img.width > w else { return img }
+        let h = max(1, Int(Double(img.height) * Double(w) / Double(img.width)))
+        guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: img.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        c.interpolationQuality = .high
+        c.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return c.makeImage()
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
@@ -119,7 +133,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         ctx.saveGState()
         ctx.scaleBy(x: viewScale, y: viewScale)
         ctx.interpolationQuality = .high
-        Annotate.put(base, in: CGRect(x: 0, y: 0, width: base.width, height: base.height), ctx)
+        Annotate.put(shown, in: CGRect(x: 0, y: 0, width: base.width, height: base.height), ctx)
         Annotate.draw(marks + (draft.map { [$0] } ?? []), base: base, unit: unit, in: ctx)
         ctx.restoreGState()
     }
@@ -183,7 +197,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         return false
     }
 
-    func undo() { commitText(); if !marks.isEmpty { marks.removeLast() } }
+    /// 文字を打っている最中の ⌘Z は、その文字の取り消し（確定済みの書き込みは消さない）
+    func undo() {
+        if let f = field {
+            if let um = f.currentEditor()?.undoManager, um.canUndo { um.undo(); return }
+            f.stringValue = ""; commitText(); return
+        }
+        if !marks.isEmpty { marks.removeLast() }
+    }
     override var acceptsFirstResponder: Bool { true }
 }
 
@@ -255,23 +276,48 @@ final class EditorWindow: NSWindowController, NSWindowDelegate {
     @objc func undoMark() { canvas.undo() }
 
     /// 「〜 編集.png」として横に保存（元は残す）
+    private var saving = false
+
     @objc func save() {
         canvas.commitText()
-        guard let img = Annotate.flatten(canvas.base, canvas.marks, unit: canvas.unit) else { NSSound.beep(); return }
+        guard !saving else { return }
+        saving = true
+        let base = canvas.base, marks = canvas.marks, unit = canvas.unit
+        window?.title = "保存中…"
+        // 大きな画像でも画面が固まらないよう、焼き込みと PNG 化は裏で
+        DispatchQueue.global(qos: .userInitiated).async {
+            let img = Annotate.flatten(base, marks, unit: unit)
+            let data = NSMutableData()
+            var ok = false
+            if let img, let d = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) {
+                CGImageDestinationAddImage(d, img, nil); ok = CGImageDestinationFinalize(d)
+            }
+            DispatchQueue.main.async { self.finishSave(ok ? img : nil, data as Data) }
+        }
+    }
+
+    private func finishSave(_ img: CGImage?, _ data: Data) {
+        saving = false
+        window?.title = url.deletingPathExtension().lastPathComponent
+        guard let img else { failAlert("画像を作れませんでした（大きすぎる可能性があります）"); return }
         let stem = url.deletingPathExtension().lastPathComponent
         var out = url.deletingLastPathComponent().appendingPathComponent("\(stem) 編集.png")
         var n = 2
         while FileManager.default.fileExists(atPath: out.path) {
             out = url.deletingLastPathComponent().appendingPathComponent("\(stem) 編集 \(n).png"); n += 1
         }
-        let data = NSMutableData()
-        guard let d = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return }
-        CGImageDestinationAddImage(d, img, nil)
-        guard CGImageDestinationFinalize(d), (try? (data as Data).write(to: out)) != nil else { NSSound.beep(); return }
+        do { try data.write(to: out, options: .withoutOverwriting) } catch { failAlert(error.localizedDescription); return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setData(data as Data, forType: .png)
+        NSPasteboard.general.setData(data, forType: .png)
+        let cb = onSaved                      // 閉じると自分が外されるので、先に控える
         window?.close()
-        onSaved?(img, out)
+        cb?(img, out)
+    }
+
+    private func failAlert(_ why: String) {
+        guard let w = window else { NSSound.beep(); return }
+        let a = NSAlert(); a.messageText = "保存できませんでした"; a.informativeText = why
+        a.beginSheetModal(for: w)
     }
 
     func show() {

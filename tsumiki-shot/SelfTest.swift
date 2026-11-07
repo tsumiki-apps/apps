@@ -52,7 +52,7 @@ enum SelfTest {
         return ctx.makeImage()!
     }
 
-    struct Noise { var scrollbar = false; var hover = false }
+    struct Noise { var scrollbar = false; var hover = false; var scrollbarLeft = false }
 
     /// 本体の offset 行目から見た1コマ（ヘッダー・フッター・飾りつき）
     static func frame(body: CGImage, offset: Int, header hdr: Int = header, footer ftr: Int = footer,
@@ -72,6 +72,12 @@ enum SelfTest {
             let pos = min(track, offset * track / 3400)
             ctx.setFillColor(CGColor(gray: 0.45, alpha: 0.8))
             ctx.fill(CGRect(x: W - 12, y: ftr + mid - thumb - pos, width: 7, height: thumb))
+        }
+        if noise.scrollbarLeft {                  // 左端の濃いバー＝横向きに回すと下端の横スクロールバーになる
+            let thumb = 120, track = mid - thumb
+            let pos = min(track, offset * track / 3400)
+            ctx.setFillColor(CGColor(gray: 0.2, alpha: 0.9))
+            ctx.fill(CGRect(x: 3, y: ftr + mid - thumb - pos, width: 12, height: thumb))
         }
         if hdr > 0 {
             ctx.setFillColor(CGColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 1))
@@ -116,7 +122,40 @@ enum SelfTest {
         var noiseAt: (Int) -> Noise = { _ in Noise() }
         var maxPixels = 160_000_000
         var ignoreRight = 0          // 画素比較で右端を見ない幅（スクロールバーの写り込み）
+        var ignoreLeft = 0           // 同じく左端（横の下端スクロールバー）
         var horizontal = false       // 横スクロール：コマを左に90°回して流す（ヘッダー→左のサイドバー）
+    }
+
+    static func slowWide() -> Bool {
+        let w = 1000, h = 600, side = 60, pageW = 3000
+        let page = CGContext(data: nil, width: pageW, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        page.setFillColor(CGColor(gray: 0.98, alpha: 1)); page.fill(CGRect(x: 0, y: 0, width: pageW, height: h))
+        let font = CTFontCreateWithName("HiraginoSans-W3" as CFString, 26, nil)
+        var seed: UInt64 = 66
+        func rnd(_ n: Int) -> Int { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Int(seed >> 33) % n }
+        var y = 30
+        while y < h - 40 {
+            let str = String((0..<(3 + rnd(60))).map { _ in Character(UnicodeScalar(0x3041 + rnd(80))!) })
+            let attr = NSAttributedString(string: str, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font,
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0.15, alpha: 1)])
+            page.textPosition = CGPoint(x: 36 + rnd(4) * 20, y: h - y); CTLineDraw(CTLineCreateWithAttributedString(attr), page)
+            y += 40 + (rnd(6) == 0 ? 60 : 0)
+        }
+        let body = page.makeImage()!
+        let st = AutoStitcher()
+        var steps: [String] = []
+        for i in 0..<12 {
+            let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                              space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            c.draw(body.cropping(to: CGRect(x: i * 5, y: 0, width: w, height: h))!, in: CGRect(x: 0, y: 0, width: w, height: h))
+            c.setFillColor(CGColor(red: 0.3, green: 0.1, blue: 0.1, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: side, height: h))
+            steps.append(symbol(st.add(c.makeImage()!), scale: 1))
+        }
+        let out = st.compose()
+        let ok = st.axis == .horizontal && out?.width == w + 55 && out?.height == h
+        print("\(ok ? "✓" : "✗") 横に長いページをゆっくり送る（縦と取り違えない）：\(out?.width ?? 0)×\(out?.height ?? 0)（正解 \(w + 55)×\(h)・\(st.axis == .horizontal ? "横" : st.axis == .vertical ? "縦" : "未定")）　[\(steps.joined(separator: " "))]")
+        return ok
     }
 
     static func symbol(_ r: StepResult, scale: Int) -> String {
@@ -152,6 +191,10 @@ enum SelfTest {
             Case(name: "横：サイドバーなし", offsets: [0, 90, 250, 251, 500, 760, 1010], expect: "始 +90 +160 +1 +249 +260 +250",
                  header: 0, footer: 0, horizontal: true),
             Case(name: "横：Retina（2倍）", offsets: [0, 45, 200, 420, 700], expect: "始 +45 +155 +220 +280", scale: 2, horizontal: true),
+            Case(name: "横：ゆっくり送る（縦と取り違えない）", offsets: Array(stride(from: 0, through: 200, by: 5)),
+                 expect: (["始"] + Array(repeating: "+5", count: 40)).joined(separator: " "), horizontal: true),
+            Case(name: "横：下端のスクロールバー", offsets: [0, 70, 200, 390, 600, 820], expect: "始 +70 +130 +190 +210 +220",
+                 noiseAt: { _ in Noise(scrollbarLeft: true) }, ignoreLeft: 16, horizontal: true),
             Case(name: "横：ダークモード", offsets: [0, 50, 180, 400, 640], expect: "始 +50 +130 +220 +240", look: .dark, horizontal: true),
         ]
         var allOK = true
@@ -189,18 +232,20 @@ enum SelfTest {
                 ctx.draw(botF.cropping(to: CGRect(x: 0, y: viewH - c.footer, width: W, height: c.footer))!,
                          in: CGRect(x: 0, y: 0, width: W, height: c.footer))
             }
-            var expect = scaled(ctx.makeImage()!, c.scale)
-            if c.horizontal { expect = rotate90(expect, clockwise: false)! }
+            let expectV = scaled(ctx.makeImage()!, c.scale)
+            let expect = c.horizontal ? rotate90(expectV, clockwise: false)! : expectV
             let wantAxis: ScrollAxis = c.horizontal ? .horizontal : .vertical
             let axisOK = st.axis == nil || st.axis == wantAxis
             var pixOK = out.height == expect.height && out.width == expect.width
             var diffRows = 0
             if pixOK {
-                let a = pixels(out), b = pixels(expect)
-                let rowBytes = expect.width * 4, cmp = (expect.width - (c.horizontal ? 0 : c.ignoreRight * c.scale)) * 4
-                for y in 0..<expect.height {
+                // 横は縦の向きに戻して比べる（見ない端を縦と同じに扱える）
+                let a = pixels(c.horizontal ? rotate90(out, clockwise: true)! : out), b = pixels(expectV)
+                let rowBytes = expectV.width * 4
+                let from = c.ignoreLeft * c.scale * 4, to = (expectV.width - c.ignoreRight * c.scale) * 4
+                for y in 0..<expectV.height {
                     let r = y * rowBytes
-                    if a[r..<(r + cmp)] != b[r..<(r + cmp)] { diffRows += 1 }
+                    if a[(r + from)..<(r + to)] != b[(r + from)..<(r + to)] { diffRows += 1 }
                 }
                 pixOK = diffRows == 0
             }
@@ -212,6 +257,19 @@ enum SelfTest {
             }
             allOK = allOK && ok
         }
+        // 横に長い本物らしいページ（横書きの行が並ぶ）をゆっくり横に送る。
+        // 縦のページを回しただけのテストでは、行が縦になるので「縦が1行ずれで継ぐ」誤判定が起きない
+        let wideOK = slowWide()
+        allOK = allOK && wideOK
+        // 回す向きそのもの：右回りは「左端が上」に来る（往復だけでは向きの取り違えが見えない）
+        let lr = CGContext(data: nil, width: 2, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                           space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        lr.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1)); lr.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        lr.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1)); lr.fill(CGRect(x: 1, y: 0, width: 1, height: 1))
+        let px = pixels(rotate90(lr.makeImage()!, clockwise: true)!)     // 1×2・上の行から
+        let dirOK = px.count == 8 && px[0] > 200 && px[2] < 50 && px[6] > 200
+        print("\(dirOK ? "✓" : "✗") 回す向き：右回りで左端（赤）が上・右端（青）が下")
+        allOK = allOK && dirOK
         return allOK
     }
 

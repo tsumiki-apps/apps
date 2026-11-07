@@ -17,7 +17,8 @@ final class Frame {
     let rowVar: [Float]          // 行の中のばらつき（真っ白な行の見分け）
     static let cells = 32
 
-    init?(_ image: CGImage) {
+    /// barOnLeft＝左端を指紋から外す（横スクロールを回したコマ。元の下端のスクロールバーが左に来る）
+    init?(_ image: CGImage, barOnLeft: Bool = false) {
         self.image = image
         let width = image.width, height = image.height
         self.width = width; self.height = height
@@ -30,7 +31,8 @@ final class Frame {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         let cells = Frame.cells
         // 右端は指紋に入れない（スクロール中だけ出るスクロールバーが写るため）
-        let usable = width - min(40, width / 16)
+        let skip = min(40, width / 16)
+        let usable = width - skip, x0base = barOnLeft ? skip : 0
         var rs = [[Float]](), vs = [Float]()
         rs.reserveCapacity(height); vs.reserveCapacity(height)
         // CGContext の data は上の行から並ぶ
@@ -39,7 +41,7 @@ final class Frame {
                 var v = [Float](repeating: 0, count: cells)
                 let base = y * bpr
                 for c in 0..<cells {
-                    let x0 = c * usable / cells, x1 = max(x0 + 1, (c + 1) * usable / cells)
+                    let x0 = x0base + c * usable / cells, x1 = max(x0 + 1, x0base + (c + 1) * usable / cells)
                     var s = 0
                     for x in x0..<x1 {
                         let i = base + x * 4
@@ -95,7 +97,8 @@ final class Stitcher {
     let maxPixels: Int                    // できあがりの画素数の上限（メモリを守る）
     let tolerance: Float = 2.0
 
-    init(maxPixels: Int = 160_000_000) { self.maxPixels = maxPixels }
+    let barOnLeft: Bool
+    init(maxPixels: Int = 160_000_000, barOnLeft: Bool = false) { self.maxPixels = maxPixels; self.barOnLeft = barOnLeft }
 
     var height: Int {
         guard first != nil else { return 0 }
@@ -149,7 +152,7 @@ final class Stitcher {
     @discardableResult
     func add(_ img: CGImage) -> StepResult {
         if isFull { return .full }
-        guard let cur = Frame(img) else { return .lost }
+        guard let cur = Frame(img, barOnLeft: barOnLeft) else { return .lost }
         guard let prev = last else {
             first = cur; last = cur
             bodyHeight = cur.height
@@ -217,9 +220,11 @@ import Accelerate
 /// 90°回す。clockwise＝右回り（左端が上に来る＝左へ流れる中身が上へ流れる）
 func rotate90(_ img: CGImage, clockwise: Bool) -> CGImage? {
     let w = img.width, h = img.height
+    // 元の色空間のまま回す（Display P3 の色が縦と横で変わらないように）
+    let space = img.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
     var src = [UInt8](repeating: 0, count: w * h * 4)
     guard let sctx = CGContext(data: &src, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                               space: CGColorSpaceCreateDeviceRGB(),
+                               space: space,
                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
     sctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
     var dst = [UInt8](repeating: 0, count: w * h * 4)
@@ -235,24 +240,37 @@ func rotate90(_ img: CGImage, clockwise: Bool) -> CGImage? {
     guard err == kvImageNoError else { return nil }
     return dst.withUnsafeMutableBytes { dp in
         CGContext(data: dp.baseAddress, width: h, height: w, bitsPerComponent: 8, bytesPerRow: h * 4,
-                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
+                  space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
     }
 }
 
 enum ScrollAxis { case vertical, horizontal }
 
-/// 縦と横を両方で試し、先に継げたほうの向きに決める（決まったら、もう片方は捨てる）。
+/// 縦と横を両方で試し、はっきり多く進んだほうの向きに決める（決まったら、もう片方は捨てる）。
+/// 「先に継げたほう」で決めると、ゆっくり横に送ったとき縦が1行ずれの誤判定で先に継いでしまう。
 /// 横では左右の固定サイドバーが「固定ヘッダー／フッター」として外れる。
 final class AutoStitcher {
-    private let v: Stitcher
-    private let h: Stitcher
+    private var v: Stitcher
+    private var h: Stitcher
     private(set) var axis: ScrollAxis?
+    private var vFirst = 0, hFirst = 0     // 最初のコマの長さ（縦は高さ・横は幅）
+    static let decide = 24          // この長さ（画素）以上進み、もう片方の2倍以上なら決める
+    static let force = 64           // ここまで進んだら多いほうに決める
 
-    init(maxPixels: Int = 160_000_000) { v = Stitcher(maxPixels: maxPixels); h = Stitcher(maxPixels: maxPixels) }
+    init(maxPixels: Int = 160_000_000) {
+        v = Stitcher(maxPixels: maxPixels)
+        // 横は回して戻す分だけメモリを多く使うので、上限を縦の半分に
+        h = Stitcher(maxPixels: maxPixels / 2, barOnLeft: true)
+    }
 
-    var isFull: Bool { axis == .horizontal ? h.isFull : v.isFull }
+    private var vGain: Int { max(0, v.height - vFirst) }
+    private var hGain: Int { max(0, h.height - hFirst) }
+    /// 決まる前は、多く進んだほう（同じなら縦）
+    private var leader: ScrollAxis { axis ?? (hGain > vGain ? .horizontal : .vertical) }
+
+    var isFull: Bool { leader == .horizontal ? h.isFull : v.isFull }
     /// 継いだ向きの長さ（縦なら高さ、横なら幅）
-    var length: Int { axis == .horizontal ? h.height : v.height }
+    var length: Int { leader == .horizontal ? h.height : v.height }
 
     @discardableResult
     func add(_ img: CGImage) -> StepResult {
@@ -262,18 +280,26 @@ final class AutoStitcher {
         case nil:
             let rv = v.add(img)
             let rh = rotate90(img, clockwise: true).map { h.add($0) } ?? .lost
-            switch (rv, rh) {
-            case (.added, _): axis = .vertical; return rv          // 両方継げたら縦を採る
-            case (_, .added): axis = .horizontal; return rh
-            default:
-                if rv == .still || rh == .still { return .still }
-                return rv
-            }
+            if case .first = rv { vFirst = v.height; hFirst = h.height; return rv }
+            let a = vGain, b = hGain
+            if (a >= Self.decide && a >= 2 * b) || (a >= Self.force && a >= b) { lock(.vertical) }
+            else if (b >= Self.decide && b >= 2 * a) || (b >= Self.force && b > a) { lock(.horizontal) }
+            let mine = leader == .horizontal ? rh : rv, other = leader == .horizontal ? rv : rh
+            if case .added = mine { return mine }
+            if case .full = mine { return mine }
+            if mine == .still || other == .still { return .still }
+            return mine
         }
     }
 
+    /// 向きを決め、使わないほうを捨てる（画像を持ち続けない）
+    private func lock(_ a: ScrollAxis) {
+        axis = a
+        if a == .vertical { h = Stitcher(maxPixels: 1) } else { v = Stitcher(maxPixels: 1) }
+    }
+
     func compose() -> CGImage? {
-        if axis == .horizontal { return h.compose().flatMap { rotate90($0, clockwise: false) } }
+        if leader == .horizontal { return h.compose().flatMap { rotate90($0, clockwise: false) } }
         return v.compose()
     }
 }

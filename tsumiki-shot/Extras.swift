@@ -148,17 +148,19 @@ final class WindowPicker {
 }
 
 /// その窓だけを撮る（重なった他の窓は写らない・角の外は透明）
-func captureWindow(_ id: CGWindowID, _ done: @escaping (CGImage?) -> Void) {
+func captureWindow(_ id: CGWindowID, _ done: @escaping (CGImage?, CGFloat) -> Void) {
     SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: true) { content, _ in
-        guard let w = content?.windows.first(where: { $0.windowID == id }) else { DispatchQueue.main.async { done(nil) }; return }
+        guard let w = content?.windows.first(where: { $0.windowID == id }) else { DispatchQueue.main.async { done(nil, 2) }; return }
         let filter = SCContentFilter(desktopIndependentWindow: w)
         let cfg = SCStreamConfiguration()
         let s = CGFloat(filter.pointPixelScale)
         cfg.width = Int(filter.contentRect.width * s); cfg.height = Int(filter.contentRect.height * s)
         cfg.showsCursor = false
         cfg.captureResolution = .best
+        cfg.scalesToFit = false
+        cfg.ignoreShadowsSingleWindow = true     // 影を入れない＝窓の大きさそのまま（影入りを窓の大きさへ押し込んで縮むのを防ぐ）
         SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg) { img, _ in
-            DispatchQueue.main.async { done(img) }
+            DispatchQueue.main.async { done(img, s) }
         }
     }
 }
