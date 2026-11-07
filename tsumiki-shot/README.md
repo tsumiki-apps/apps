@@ -28,6 +28,7 @@
 
 ## 組み立てと検査
 ```
+swift make_manual.swift 説明書.pdf   # 説明書（PDF・5ページ・SF Symbols）
 ./build.sh                       # 自己テスト（つなぎ19種（横7種を含む）＋横長ページのゆっくり送り・回す向き・画素まで照合／書き込み・文字読み・編集画面・自動スクロール（架空のページで端まで・逆向き・横）・ショートカットの保存と重なり・設定の窓）→ ~/Applications/TsumikiShot.app
 open -W --stdout 結果.txt ~/Applications/TsumikiShot.app --args --probe 出力.png   # 本物の撮影を通した通しテスト（要・画面収録の許可）
 ```
