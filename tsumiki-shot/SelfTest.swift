@@ -116,6 +116,7 @@ enum SelfTest {
         var noiseAt: (Int) -> Noise = { _ in Noise() }
         var maxPixels = 160_000_000
         var ignoreRight = 0          // 画素比較で右端を見ない幅（スクロールバーの写り込み）
+        var horizontal = false       // 横スクロール：コマを左に90°回して流す（ヘッダー→左のサイドバー）
     }
 
     static func symbol(_ r: StepResult, scale: Int) -> String {
@@ -144,15 +145,25 @@ enum SelfTest {
             Case(name: "同じ行の繰り返し（決められない＝継がない）", offsets: [0, 20, 45, 70], expect: "始 × × ×", look: .periodic),
             Case(name: "ほとんど空白（ゆっくりなら継げる）", offsets: [0, 60, 150, 240, 330, 420], expect: "始 +60 +90 +90 +90 +90", look: .sparse),
             Case(name: "上限で止まる", offsets: [0, 200, 400, 600], expect: "始 +200 満 満", maxPixels: 480 * 900),
+            Case(name: "横：左右に固定サイドバー", offsets: [0, 37, 120, 121, 260, 410, 410, 655, 900, 1180, 1500, 1820],
+                 expect: "始 +37 +83 +1 +139 +150 止 +245 +245 +280 +320 +320", horizontal: true),
+            Case(name: "横：途中で戻る・止まる", offsets: [0, 200, 120, 80, 200, 330, 330, 330, 520, 700],
+                 expect: "始 +200 × × 止 +130 止 止 +190 +180", horizontal: true),
+            Case(name: "横：サイドバーなし", offsets: [0, 90, 250, 251, 500, 760, 1010], expect: "始 +90 +160 +1 +249 +260 +250",
+                 header: 0, footer: 0, horizontal: true),
+            Case(name: "横：Retina（2倍）", offsets: [0, 45, 200, 420, 700], expect: "始 +45 +155 +220 +280", scale: 2, horizontal: true),
+            Case(name: "横：ダークモード", offsets: [0, 50, 180, 400, 640], expect: "始 +50 +130 +220 +240", look: .dark, horizontal: true),
         ]
         var allOK = true
         for c in cases {
             let body = makeBody(height: 4000, look: c.look)
-            let st = Stitcher(maxPixels: c.maxPixels * c.scale * c.scale)
+            // 縦も横も、本番と同じ「向きを自分で決める」つなぎ手で通す
+            let st = AutoStitcher(maxPixels: c.maxPixels * c.scale * c.scale)
             var results: [StepResult] = []
             var reached = 0
             for (i, o) in c.offsets.enumerated() {
-                let f = scaled(frame(body: body, offset: o, header: c.header, footer: c.footer, noise: c.noiseAt(i)), c.scale)
+                var f = scaled(frame(body: body, offset: o, header: c.header, footer: c.footer, noise: c.noiseAt(i)), c.scale)
+                if c.horizontal { f = rotate90(f, clockwise: false)! }
                 let r = st.add(f)
                 results.append(r)
                 if case .added = r { reached = o }
@@ -178,20 +189,23 @@ enum SelfTest {
                 ctx.draw(botF.cropping(to: CGRect(x: 0, y: viewH - c.footer, width: W, height: c.footer))!,
                          in: CGRect(x: 0, y: 0, width: W, height: c.footer))
             }
-            let expect = scaled(ctx.makeImage()!, c.scale)
+            var expect = scaled(ctx.makeImage()!, c.scale)
+            if c.horizontal { expect = rotate90(expect, clockwise: false)! }
+            let wantAxis: ScrollAxis = c.horizontal ? .horizontal : .vertical
+            let axisOK = st.axis == nil || st.axis == wantAxis
             var pixOK = out.height == expect.height && out.width == expect.width
             var diffRows = 0
             if pixOK {
                 let a = pixels(out), b = pixels(expect)
-                let rowBytes = expect.width * 4, cmp = (expect.width - c.ignoreRight * c.scale) * 4
+                let rowBytes = expect.width * 4, cmp = (expect.width - (c.horizontal ? 0 : c.ignoreRight * c.scale)) * 4
                 for y in 0..<expect.height {
                     let r = y * rowBytes
                     if a[r..<(r + cmp)] != b[r..<(r + cmp)] { diffRows += 1 }
                 }
                 pixOK = diffRows == 0
             }
-            let ok = seqOK && pixOK
-            print("\(ok ? "✓" : "✗") \(c.name)：高さ \(out.height)（正解 \(expect.height)）違う行 \(diffRows)　[\(steps)]"
+            let ok = seqOK && pixOK && axisOK
+            print("\(ok ? "✓" : "✗") \(c.name)：\(out.width)×\(out.height)（正解 \(expect.width)×\(expect.height)・\(st.axis == .horizontal ? "横" : st.axis == .vertical ? "縦" : "未定")）違う行 \(diffRows)　[\(steps)]"
                   + (seqOK ? "" : "　期待 [\(c.expect)]"))
             if let dir = outDir, !ok {
                 save(out, to: "\(dir)/\(c.name)_結果.png"); save(expect, to: "\(dir)/\(c.name)_正解.png")

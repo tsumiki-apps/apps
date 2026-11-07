@@ -209,3 +209,71 @@ final class Stitcher {
         return ctx.makeImage()
     }
 }
+
+// MARK: - 横スクロール（画像を90°回して縦として継ぎ、できあがりを戻す）
+
+import Accelerate
+
+/// 90°回す。clockwise＝右回り（左端が上に来る＝左へ流れる中身が上へ流れる）
+func rotate90(_ img: CGImage, clockwise: Bool) -> CGImage? {
+    let w = img.width, h = img.height
+    var src = [UInt8](repeating: 0, count: w * h * 4)
+    guard let sctx = CGContext(data: &src, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                               space: CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    sctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+    var dst = [UInt8](repeating: 0, count: w * h * 4)
+    let err: vImage_Error = src.withUnsafeMutableBytes { sp in
+        dst.withUnsafeMutableBytes { dp in
+            var s = vImage_Buffer(data: sp.baseAddress, height: vImagePixelCount(h), width: vImagePixelCount(w), rowBytes: w * 4)
+            var d = vImage_Buffer(data: dp.baseAddress, height: vImagePixelCount(w), width: vImagePixelCount(h), rowBytes: h * 4)
+            var bg: [UInt8] = [0, 0, 0, 0]
+            return vImageRotate90_ARGB8888(&s, &d, UInt8(clockwise ? kRotate90DegreesClockwise : kRotate90DegreesCounterClockwise),
+                                           &bg, vImage_Flags(kvImageNoFlags))
+        }
+    }
+    guard err == kvImageNoError else { return nil }
+    return dst.withUnsafeMutableBytes { dp in
+        CGContext(data: dp.baseAddress, width: h, height: w, bitsPerComponent: 8, bytesPerRow: h * 4,
+                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
+    }
+}
+
+enum ScrollAxis { case vertical, horizontal }
+
+/// 縦と横を両方で試し、先に継げたほうの向きに決める（決まったら、もう片方は捨てる）。
+/// 横では左右の固定サイドバーが「固定ヘッダー／フッター」として外れる。
+final class AutoStitcher {
+    private let v: Stitcher
+    private let h: Stitcher
+    private(set) var axis: ScrollAxis?
+
+    init(maxPixels: Int = 160_000_000) { v = Stitcher(maxPixels: maxPixels); h = Stitcher(maxPixels: maxPixels) }
+
+    var isFull: Bool { axis == .horizontal ? h.isFull : v.isFull }
+    /// 継いだ向きの長さ（縦なら高さ、横なら幅）
+    var length: Int { axis == .horizontal ? h.height : v.height }
+
+    @discardableResult
+    func add(_ img: CGImage) -> StepResult {
+        switch axis {
+        case .vertical: return v.add(img)
+        case .horizontal: return rotate90(img, clockwise: true).map { h.add($0) } ?? .lost
+        case nil:
+            let rv = v.add(img)
+            let rh = rotate90(img, clockwise: true).map { h.add($0) } ?? .lost
+            switch (rv, rh) {
+            case (.added, _): axis = .vertical; return rv          // 両方継げたら縦を採る
+            case (_, .added): axis = .horizontal; return rh
+            default:
+                if rv == .still || rh == .still { return .still }
+                return rv
+            }
+        }
+    }
+
+    func compose() -> CGImage? {
+        if axis == .horizontal { return h.compose().flatMap { rotate90($0, clockwise: false) } }
+        return v.compose()
+    }
+}

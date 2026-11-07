@@ -197,7 +197,8 @@ func symbolButton(_ name: String, _ label: String, _ target: AnyObject, _ action
 final class ScrollSession: NSObject {
     let region: Region
     let capturer: Capturer
-    let stitcher = Stitcher()
+    let stitcher = AutoStitcher()
+    private let arrowIcon = NSImageView()
     private var frameWin: NSWindow!
     private var frameView = FrameView()
     private var panel: NSPanel!
@@ -226,7 +227,8 @@ final class ScrollSession: NSObject {
         heightLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 86).isActive = true
         hintLabel.font = .systemFont(ofSize: 13, weight: .medium)
         hintLabel.textColor = .secondaryLabelColor
-        let icon = NSImageView(image: NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "スクロール")!)
+        let icon = arrowIcon
+        icon.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "スクロール")
         icon.contentTintColor = accent
         let stack = NSStackView(views: [icon, hintLabel, heightLabel, cancel, done])
         stack.spacing = 10
@@ -294,9 +296,12 @@ final class ScrollSession: NSObject {
             guard let img, !self.ended else { self.busy = false; return }
             self.queue.async {
                 let r = self.stitcher.add(img)
-                let h = self.stitcher.height
+                let h = self.stitcher.length
+                let axis = self.stitcher.axis
                 DispatchQueue.main.async {
                     self.busy = false
+                    // 向きが決まったら矢印もそちらに（縦↓・横→）
+                    if axis == .horizontal { self.arrowIcon.image = NSImage(systemSymbolName: "arrow.right", accessibilityDescription: "横スクロール") }
                     self.update(r, height: h)
                     if r == .full { self.finish() }      // 上限に達したらそこで仕上げる
                 }
