@@ -557,7 +557,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        status.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "つみきショット")
+        status.button?.image = AppIcon.menuImage()
         let m = NSMenu()
         m.delegate = self
         let sels: [UInt32: Selector] = [1: #selector(captureArea), 2: #selector(captureScreen), 3: #selector(captureScroll),
@@ -847,6 +847,7 @@ if args.contains("--selftest") {
     let dir = args.count > i + 1 ? args[i + 1] : nil
     exit(SelfTest.run(outDir: dir) ? 0 : 1)
 }
+if let i = args.firstIndex(of: "--icons") { AppIcon.writeIconset(args[i + 1]); exit(0) }
 if args.contains("--extratest") { exit(ExtraTest.run(outDir: args.last!.hasPrefix("--") ? nil : args.last) ? 0 : 1) }
 if let i = args.firstIndex(of: "--render") {
     Render.run(out: args.count > i + 1 ? args[i + 1] : NSTemporaryDirectory() + "render.png")

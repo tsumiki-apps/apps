@@ -198,6 +198,19 @@ enum ExtraTest {
         Shortcuts.defaults = keep
         ud.removePersistentDomain(forName: suite)
 
+        // 9. アイコン
+        let icon = NSBitmapImageRep(data: AppIcon.png(64))
+        let mid = icon?.colorAt(x: 32, y: 32)
+        check("アプリのアイコンを描ける（真ん中は積み木の色）", icon?.pixelsWide == 64 && (mid?.alphaComponent ?? 0) > 0.9)
+        let menu = AppIcon.menuImage()
+        let mrep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 36, pixelsHigh: 36, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                    isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: mrep)
+        menu.draw(in: NSRect(x: 0, y: 0, width: 36, height: 36)); NSGraphicsContext.restoreGraphicsState()
+        var inked = 0
+        for yy in 0..<36 { for xx in 0..<36 where (mrep.colorAt(x: xx, y: yy)?.alphaComponent ?? 0) > 0.5 { inked += 1 } }
+        check("メニューバーのアイコン（テンプレート・18pt）", menu.isTemplate && menu.size == NSSize(width: 18, height: 18) && inked > 150 && inked < 900, "塗り \(inked)/1296")
+
         // 6. 窓の一覧（許可なしでも位置は取れる）
         let ws = onScreenWindows()
         print("・画面に出ている窓：\(ws.count)個")

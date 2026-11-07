@@ -160,8 +160,13 @@ func notes(_ items: [(String, String)]) {
 
 newPage("", "")
 y = 120
-round(NSRect(x: (W - 96) / 2, y: y, width: 96, height: 96), 28, fill: wash)
-symbol("camera.viewfinder", NSRect(x: (W - 56) / 2, y: y + 20, width: 56, height: 56), accent2, weight: .medium)
+// アプリのアイコン（./build.sh が書き出したもの。なければ記号で代わり）
+if let icon = NSImage(contentsOfFile: "build/AppIcon.iconset/icon_512x512.png") {
+    icon.draw(in: NSRect(x: (W - 116) / 2, y: y - 10, width: 116, height: 116), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+} else {
+    round(NSRect(x: (W - 96) / 2, y: y, width: 96, height: 96), 28, fill: wash)
+    symbol("camera.viewfinder", NSRect(x: (W - 56) / 2, y: y + 20, width: 56, height: 56), accent2, weight: .medium)
+}
 y += 120
 _ = text("つみきショット", 0, y, 34, ink, weight: "Bold", width: W, center: true)
 y += 50
@@ -169,7 +174,7 @@ _ = text("説明書", 0, y, 15, inkMid, width: W, center: true)
 y += 70
 
 heading("はじめに", "sparkles")
-steps(["メニューバーの カメラ から、またはキーで撮る",
+steps(["メニューバーの 積み木 から、またはキーで撮る",
        "撮れたら画面の左下に小窓が出る（押すと開く・ドラッグで貼れる）",
        "画像は保存＋クリップボードへ。そのまま貼れる"])
 
@@ -191,7 +196,7 @@ rows([("rectangle.dashed", "範囲", "⌥⇧4", "ドラッグで選ぶ。esc・�
       ("text.viewfinder", "文字を読む", "⌥⇧T", "範囲の文字をコピー（日本語・英語）"),
       ("record.circle", "録画", "⌥⇧R", "範囲を MP4 に。もう一度押すと停止")])
 notes([("gearshape", "キーは「設定…」で好きなものに変えられる → 5ページ"),
-       ("menubar.rectangle", "メニューバーの カメラ からも同じ操作ができる")])
+       ("menubar.rectangle", "メニューバーの 積み木 からも同じ操作ができる")])
 
 heading("録画中", "record.circle")
 bar([("stop.fill", "停止", true)])
@@ -245,7 +250,7 @@ rows([("arrow.up.right", "矢印", nil, "ドラッグで引く"),
 // MARK: - 5 設定・困ったとき
 
 newPage("設定", "gearshape")
-notes([("menubar.rectangle", "メニューバーの カメラ →「設定…」（⌘,）")])
+notes([("menubar.rectangle", "メニューバーの 積み木 →「設定…」（⌘,）")])
 heading("ショートカットを変える", "keyboard")
 steps(["変えたい操作の欄を押す",
        "使いたいキーを押す（⌘ ⌃ ⌥ のどれかと一緒に。F キーは単独でも可）"])
