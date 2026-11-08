@@ -62,7 +62,12 @@ textarea{min-height:120px;line-height:1.5}
 .inp .clr{position:absolute;right:0;top:0;width:44px;height:44px;border:0;border-radius:8px;background:transparent;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .inp .clr svg{width:18px;height:18px}
 .inp:has(:placeholder-shown) .clr,.inp:has(input[type=date]:invalid) .clr{display:none}
-.inp input[type=date]{min-height:48px;-webkit-appearance:none;appearance:none;text-align:left}
+.inp input[type=date]{min-height:44px;color-scheme:light dark;-webkit-appearance:none;appearance:none;text-align:left}
+/* 空の日付欄：iPhone では何も出ないので「日付を選ぶ」を見せる（パソコンの年/月/日の目印は隠す） */
+.inp:has(input[type=date]:invalid)::after{content:'日付を選ぶ';position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--ink-soft);font-size:16px;pointer-events:none}
+.inp input[type=date]:invalid::-webkit-datetime-edit{color:transparent}
+.inp.old .clr{display:flex!important}
+.oldnote{margin:6px 0 0;font-size:13px;color:var(--ink-soft)}
 .inp input[type=date]::-webkit-date-and-time-value{text-align:left}
 .inp .clr:focus-visible{outline:2px solid var(--accent-2);outline-offset:-2px}
 .img{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -239,14 +244,21 @@ function sparkle(cx,cy,r,color,lw){
 /* ---------- 型（ここに足せば型が増える） ----------
    fields の並び＝入力欄の並び。kind: 'img'（画像）/ 'area'（複数行）/ なし（1行） */
 /* 締切はカレンダーで選ぶ。中身は 2026-11-30 の形で持ち、画像には 11/30 と書く。
-   前に手で入れた文字（11/30 など）は、そのまま画像に出し、欄には読み取れればその日を入れて見せる（保存は選び直したときだけ） */
+   前に手で入れた文字は、日付として読めればその日（11/30）で画像に出し、欄にも同じ日を見せる（保存は選び直したときだけ）。
+   読めない文字（今週中 など）はそのまま画像に出し、欄の下に知らせて ✕ で消せるようにする */
 const ISO=/^(\d{4})-(\d{2})-(\d{2})$/;
-const dateText=v=>{const m=ISO.exec(v||'');return m?`${+m[2]}/${+m[3]}`:(v||'')};
 const p2=n=>String(n).padStart(2,'0');
-const dateISO=v=>{if(ISO.test(v||''))return v;const m=/^\s*(\d{1,2})\s*[\/月]\s*(\d{1,2})/.exec(v||'');if(!m)return '';
-  const now=new Date(),mo=+m[1],d=+m[2];if(mo<1||mo>12||d<1||d>31)return '';
-  let y=now.getFullYear();if(new Date(y,mo-1,d)<new Date(now.getFullYear(),now.getMonth(),now.getDate()-60))y++;
-  return `${y}-${p2(mo)}-${p2(d)}`};
+const realDay=(y,mo,d)=>{const x=new Date(y,mo-1,d);return x.getFullYear()===y&&x.getMonth()===mo-1&&x.getDate()===d};
+const dateISO=v=>{v=(v||'').normalize('NFKC');
+  let m=ISO.exec(v);if(m)return realDay(+m[1],+m[2],+m[3])?v:'';
+  m=/^\s*(\d{4})\s*[\/.\-年]\s*(\d{1,2})\s*[\/.\-月]\s*(\d{1,2})/.exec(v);
+  if(m)return realDay(+m[1],+m[2],+m[3])?`${m[1]}-${p2(+m[2])}-${p2(+m[3])}`:'';
+  m=/^\s*(\d{1,2})\s*[\/.月]\s*(\d{1,2})/.exec(v);if(!m)return '';
+  const now=new Date(),mo=+m[1],d=+m[2],lim=new Date(now.getFullYear(),now.getMonth(),now.getDate()-60);
+  // 今日から60日より前になる日は来年。2/29 は次のうるう年まで探す
+  for(let y=now.getFullYear();y<now.getFullYear()+5;y++)if(realDay(y,mo,d)&&new Date(y,mo-1,d)>=lim)return `${y}-${p2(mo)}-${p2(d)}`;
+  return ''};
+const dateText=v=>{const iso=dateISO(v),m=ISO.exec(iso);return m?`${+m[2]}/${+m[3]}`:(v||'')};
 const DEF_DATE=(()=>{const n=new Date(),e=new Date(n.getFullYear(),n.getMonth()+1,0);return `${e.getFullYear()}-${p2(e.getMonth()+1)}-${p2(e.getDate())}`})();
 const TYPES={
   roadmap:{
@@ -651,7 +663,8 @@ function buildForm(){
       h+=`<div class="f">${lb(fd)}<div class="rows" data-rows="${fd.k}"></div>
         <button type="button" class="b add" data-add="${fd.k}">${svgIcon('plus')}追加</button></div>`;
     }else if(fd.kind==='date'){
-      h+=`<div class="f"><label for="k-${fd.k}">${lb(fd)}</label><span class="inp"><input type="date" id="k-${fd.k}" data-k="${fd.k}" value="${esc(dateISO(v[fd.k]))}" required>${clr(fd)}</span></div>`;
+      const raw=(v[fd.k]||'').trim(),iso=dateISO(raw),old=raw&&!iso;
+      h+=`<div class="f"><label for="k-${fd.k}">${lb(fd)}</label><span class="inp${old?' old':''}"><input type="date" id="k-${fd.k}" data-k="${fd.k}" value="${esc(iso)}" min="2000-01-01" max="2099-12-31" required${old?` aria-describedby="old-${fd.k}"`:''}>${clr(fd)}</span>${old?`<p class="oldnote" id="old-${fd.k}">前の入力「${esc(raw)}」が画像に出ています。日付を選ぶか ✕ で消せます</p>`:''}</div>`;
     }else if(fd.kind==='area'){
       h+=`<div class="f"><label for="k-${fd.k}">${lb(fd)}</label><span class="inp"><textarea id="k-${fd.k}" data-k="${fd.k}" rows="${fd.rows||4}" placeholder=" ">${esc(v[fd.k])}</textarea>${clr(fd)}</span></div>`;
     }else{
@@ -660,11 +673,15 @@ function buildForm(){
   }
   h+=`<p class="note" id="note" role="status"></p><button type="button" class="b main" id="save">${svgIcon('save')}画像を保存</button>`;
   $('form').innerHTML=h;
-  $('form').querySelectorAll('[data-k]').forEach(el=>el.oninput=()=>{v[el.dataset.k]=el.value;save();if(msgOk)msg='';draw()});
+  $('form').querySelectorAll('[data-k]').forEach(el=>el.oninput=el.onchange=ev=>{
+    // 日付：打ちかけ（空・年が4桁でない・2000〜2099年の外）は保存しない。空にするのは ✕ と、欄を離れたとき（change）だけ
+    if(el.type==='date'){const m=ISO.exec(el.value);if(el.value?!(m&&+m[1]>=2000&&+m[1]<=2099):ev.type!=='change')return}
+    if(v[el.dataset.k]===el.value)return;v[el.dataset.k]=el.value;save();if(msgOk)msg='';draw();
+    const ip=el.closest('.inp');if(ip&&ip.classList.contains('old')){ip.classList.remove('old');el.removeAttribute('aria-describedby');const n=ip.parentNode.querySelector('.oldnote');if(n)n.remove()}});
   $('form').querySelectorAll('[data-xk]').forEach(b=>b.onclick=()=>{const el=$('form').querySelector(`[data-k="${b.dataset.xk}"]`);
     // 選んで消す（⌘Z・iPhoneの取り消しで戻せる）。消せない環境だけ直接空にする
     el.focus();let ok=false;if(el.type!=='date')try{el.select();ok=document.execCommand('delete')}catch(e){}
-    if(!ok||el.value){el.value='';el.dispatchEvent(new Event('input'))}});
+    if(!ok||el.value||v[b.dataset.xk]){el.value='';el.dispatchEvent(new Event(el.type==='date'?'change':'input'))}});
   $('form').querySelectorAll('[data-file]').forEach(fi=>fi.onchange=()=>{if(fi.files[0])takeFile(fi.files[0],fi.dataset.file);fi.value=''});
   $('form').querySelectorAll('[data-clr]').forEach(c=>c.onclick=()=>{const key=ik(st.type,c.dataset.clr);delete imgs[key];saveImg(key,null);say('');thumb();draw()});
   $('form').querySelectorAll('[data-c]').forEach(bt=>bt.onclick=()=>{v[bt.dataset.c]=bt.dataset.v;save();
