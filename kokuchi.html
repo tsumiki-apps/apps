@@ -72,15 +72,18 @@ button.main{background:var(--accent-2);color:var(--paper);width:100%}
 [data-lib][hidden],.f[hidden]{display:none}
 .lib.del{outline:2px dashed var(--warn-ink);outline-offset:6px;border-radius:16px}
 .lib .ic.armed i{background:var(--warn-ink);opacity:1}
-.lib .ic.armed{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--warn-ink)}
 .lib{display:flex;flex-wrap:wrap;gap:10px}
 .lib .ic{position:relative;width:56px;height:56px;border-radius:14px;border:1px solid var(--line-2);background:var(--surface-2) center/cover no-repeat;padding:0;cursor:pointer;flex:none}
-.lib .ic[aria-pressed=true]{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--accent-2)}
+/* 画像のタイルは、できあがりと同じに見せる（枠線なし・白い下地・薄い影） */
+.lib .ic[data-ic]{border-color:transparent;background-origin:border-box;background-color:var(--o-white);box-shadow:0 3px 10px var(--o-img-shadow)}
+.lib .ic[aria-pressed=true]{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--accent-2),0 3px 10px var(--o-img-shadow)}
 .lib.full .ic[aria-pressed=false]:not(.del){opacity:.55}
-.lib .ic.sample{background:radial-gradient(circle at 50% 56%,var(--o-white) 0 18%,color-mix(in srgb,var(--o-white) 38%,transparent) 18% 28%,color-mix(in srgb,var(--o-white) 20%,transparent) 28% 37%,color-mix(in srgb,var(--o-white) 12%,transparent) 37% 46%,transparent 46%),linear-gradient(var(--o-app-top),var(--o-app-bot))}
+.lib .ic.sample{box-shadow:0 2px 8px var(--o-shadow)}
+.lib .ic.sample[aria-pressed=true]{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--accent-2),0 2px 8px var(--o-shadow)}
 .lib .ic.keep{opacity:.35;cursor:default}
+.lib .ic.armed{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--warn-ink)}
 .lib .ic b{position:absolute;right:-6px;top:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent-2);color:var(--surface);font-size:12px;display:flex;align-items:center;justify-content:center}
-.lib .ic i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);border-radius:13px;color:#fff}
+.lib .ic i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);border-radius:14px;color:#fff}
 .lib .ic i svg,.lib .add svg{width:22px;height:22px}
 .lib .ic.add{display:flex;align-items:center;justify-content:center;border-style:dashed;color:var(--ink-soft);background:transparent;overflow:hidden}
 .lib .ic.add input{position:absolute;inset:0;opacity:0;font-size:16px;cursor:pointer}
@@ -201,6 +204,15 @@ function warnBox(w,count){
   const sz=fitText(wt,700,36,maxTW,24,count?'注意':null);const t=clipText(wt,maxTW);const tw=ctx.measureText(t).width;
   const pw=tw+130;return {x:1814-pw,y:662,w:pw,t,sz};
 }
+/* 水色の見本のアイコン（輪は下ほど白くならないよう控えめに）。できあがりと「使うアイコン」の一覧の両方をこの1つで描く */
+function sampleIcon(g,ax,ay,as,shadow){const k=as/216,R=()=>{g.beginPath();g.roundRect(ax,ay,as,as,as*.24)};
+  g.save();if(shadow){g.shadowColor=C('shadow');g.shadowBlur=30;g.shadowOffsetY=8}
+  const gr=g.createLinearGradient(ax,ay,ax,ay+as);gr.addColorStop(0,C('app-top'));gr.addColorStop(1,C('app-bot'));
+  R();g.fillStyle=gr;g.fill();g.restore();
+  g.save();R();g.clip();g.fillStyle=C('white');
+  [[100,.12],[80,.2],[60,.38],[40,1]].forEach(([r,a],i)=>{g.globalAlpha=a;g.beginPath();g.arc(ax+as/2,ay+as/2+(10+i*6)*k,r*k,0,7);g.fill()});
+  g.restore()}
+let sampleURL='';const sampleTile=()=>{if(!sampleURL){const c=document.createElement('canvas');c.width=c.height=112;sampleIcon(c.getContext('2d'),0,0,112,false);sampleURL=c.toDataURL()}return sampleURL};
 /* アプリのアイコン：正方形に切り抜き（真ん中を使う）、角を丸め、影を付ける */
 function appIcon(im,x,y,a){
   const r=a*.24;
@@ -258,16 +270,8 @@ const TYPES={
       ctx.fillStyle=C('rule');rr(1076,290,pw0-80,4,2);ctx.fill();
       if(off){}
       else{
-        // 水色の見本のアイコン（輪は下ほど白くならないよう控えめに）。選べるアイコンの1つでもある
-        const sample=(ax,ay,as)=>{const k=as/216;
-          ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;
-          const g=ctx.createLinearGradient(ax,ay,ax,ay+as);g.addColorStop(0,C('app-top'));g.addColorStop(1,C('app-bot'));
-          rr(ax,ay,as,as,as*.24);ctx.fillStyle=g;ctx.fill();ctx.restore();
-          ctx.save();rr(ax,ay,as,as,as*.24);ctx.clip();ctx.fillStyle=C('white');
-          [[100,.12],[80,.2],[60,.38],[40,1]].forEach(([r,a],i)=>{ctx.globalAlpha=a;ctx.beginPath();ctx.arc(ax+as/2,ay+as/2+(10+i*6)*k,r*k,0,7);ctx.fill()});
-          ctx.restore()};
-        if(!apps.length)sample(ax,ay,as);
-        else apps.forEach((im,i)=>im===SAMPLE?sample(ax+i*(as+gap),ay,as):appIcon(im,ax+i*(as+gap),ay,as));
+        if(!apps.length)sampleIcon(ctx,ax,ay,as,true);
+        else apps.forEach((im,i)=>im===SAMPLE?sampleIcon(ctx,ax+i*(as+gap),ay,as,true):appIcon(im,ax+i*(as+gap),ay,as));
       }
       // 研修名（研修の画面の右・締切の札の下と注意の札の上のあいだの真ん中）
       // 折り返しは語のまとまりで。行頭に句読点・閉じ括弧を置かず、行末に開き括弧を残さない
@@ -531,7 +535,7 @@ function paintLib(){
   const off=v.appshow==='off';if(off){libEdit=false;armed=''}
   const f=box.closest('.f');if(f)f.hidden=off;
   box.innerHTML=`<div class="lib${libEdit?' del':''}${!libEdit&&cur.length>=2?' full':''}">${(()=>{const n=cur.indexOf(SAMPLE);
-      return `<button type="button" class="ic sample${libEdit?' keep':''}" data-ic="${SAMPLE}" aria-pressed="${n>=0}" aria-label="水色の見本${libEdit?'（消せません）':n>=0?'・'+(n+1)+'番目':''}">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}</button>`})()}${iconIds.filter(id=>icons[id]).map((id,k)=>{const n=cur.indexOf(id),nm='アイコン'+(k+1);
+      return `<button type="button" class="ic sample${libEdit?' keep':''}" data-ic="${SAMPLE}" style="background-image:url(${sampleTile()})" aria-pressed="${n>=0}" aria-label="水色の見本${libEdit?'（消せません）':n>=0?'・'+(n+1)+'番目':''}">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}</button>`})()}${iconIds.filter(id=>icons[id]).map((id,k)=>{const n=cur.indexOf(id),nm='アイコン'+(k+1);
       return `<button type="button" class="ic${libEdit?' del':''}${armed===id?' armed':''}" data-ic="${id}" aria-pressed="${n>=0}" aria-label="${nm}${libEdit?(armed===id?'・もう一度押すと消えます':'を消す'):n>=0?'・'+(n+1)+'番目':''}" style="background-image:url(${icons[id].src})">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}${libEdit?`<i>${svgIcon(armed===id?'trash':'x')}</i>`:''}</button>`}).join('')}
     <label class="ic add" aria-label="アイコンを入れる">${svgIcon('plus')}<input type="file" accept="image/*" data-iconfile></label></div>
     ${iconIds.length?`<button type="button" class="b add" data-libedit>${svgIcon(libEdit?'check':'trash')}${libEdit?'終わる':'消す'}</button>`:''}`;
