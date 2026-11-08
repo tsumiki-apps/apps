@@ -56,6 +56,13 @@ h1{font-size:20px;font-weight:700;margin:4px 0 14px}
 textarea,input[type=text],input[type=url]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
   border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;min-height:44px;resize:vertical}
 textarea{min-height:120px;line-height:1.5}
+/* 1つずつ中身を消す× */
+.inp{position:relative;display:block}
+.inp input,.inp textarea{padding-right:48px}
+.inp .clr{position:absolute;right:0;top:0;width:44px;height:44px;border:0;border-radius:8px;background:transparent;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.inp .clr svg{width:18px;height:18px}
+.inp:has(:placeholder-shown) .clr{display:none}
+.inp .clr:focus-visible{outline:2px solid var(--accent-2);outline-offset:-2px}
 .img{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .img .thumb{width:88px;height:50px;border-radius:6px;border:1px solid var(--line-2);background:var(--surface-2) center/contain no-repeat;flex:none}
 button.b,label.b{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:12px;border:0;
@@ -147,9 +154,6 @@ const IC={
   ipad:['M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z','M12 18h.01'],
   x:['M18 6L6 18','M6 6l12 12'],
   warn:['M10.3 3.9a2 2 0 0 1 3.4 0l8.2 14.2a2 2 0 0 1-1.7 3H3.8a2 2 0 0 1-1.7-3z','M12 9.5v4.5','M12 17.6v.1'],
-  txtS:['M9 16l3-8 3 8','M10.1 13.4h3.8'],
-  txtM:['M7.5 17.5l4.5-11 4.5 11','M9.4 14h5.2'],
-  txtL:['M5.5 19.5l6.5-16 6.5 16','M8.2 15h7.6'],
   alignL:['M4 6h16','M4 12h10','M4 18h13'],
   alignC:['M4 6h16','M7 12h10','M5.5 18h13'],
   alignR:['M4 6h16','M10 12h10','M7 18h13'],
@@ -240,7 +244,6 @@ const TYPES={
       {k:'t1',label:'見出し',def:'Learning Roadmap'},
       {k:'t2',label:'見出し2',hint:'赤',def:'Product Zone'},
       {k:'title',label:'研修名',hint:'空なら出しません',def:'サンプル研修\n基礎編',kind:'area',rows:3},
-      {k:'tsize',label:'研修名の大きさ',hint:'長いと自動で小さく',kind:'choice',def:'m',opts:[['s','小','txtS'],['m','標準','txtM'],['l','大','txtL']]},
       {k:'talign',label:'研修名の揃え',kind:'choice',def:'left',opts:[['left','左','alignL'],['center','中央','alignC'],['right','右','alignR']]},
       {k:'date',label:'締切',def:'11/30'},
       {k:'appshow',label:'アプリのアイコン',kind:'choice',def:'on',opts:[['on','表示','eye'],['off','非表示','eyeOff']]},
@@ -319,13 +322,18 @@ const TYPES={
             push();
           }
           return out};
-        // 大きさ（小52・標準64・大80）から縮めて3行に（48pxまで）。だめなら 4行まで（44pxまで）
-        let tp={s:52,l:80}[s.tsize]||64,tl=wrap(tp);
-        while(tp>48&&tl.length>3){tp-=2;tl=wrap(tp)}
-        while(tp>44&&tl.length>4){tp-=2;tl=wrap(tp)}
+        // 入る中でいちばん大きく：120px から縮め、4行以内で、締切の線と注意の札のあいだ（上下に余白24）に収まる大きさにする（44pxまで）
+        const top0=324,bot0=s.warn.trim()?662:834,room=bot0-top0-48;
+        const hOf=(p,n)=>p*.92+p*1.22*(n-1);
+        const fits=(p,l)=>l.length<=4&&hOf(p,l.length)<=room;
+        let tp=120,tl=wrap(tp);
+        while(tp>44&&!fits(tp,tl)){tp-=2;tl=wrap(tp)}
+        // 自分で改行した1行が途中で割れるなら、割れない大きさ（56px以上なら）を選ぶ
+        if(tl.length>tsrc.length){let p2=tp,l2=tl;while(p2>56&&l2.length>tsrc.length){p2-=2;l2=wrap(p2)}
+          if(l2.length===tsrc.length&&fits(p2,l2)){tp=p2;tl=l2}}
         if(tl.length>4){warns.push('研修名が長くて入りきりません');tl=tl.slice(0,4);tl[3]=clipText(tl[3]+'…',tmw)}
         const LH=tp*1.22,blockH=tp*.92+LH*(tl.length-1);
-        const top=324,bottom=s.warn.trim()?662:834;
+        const top=top0,bottom=bot0;
         const y0=top+(bottom-top-blockH)/2+tp*.92;
         // 中央と右は注意の札にそろえる（札がないときは右の列 1036〜1814 に）。どの行も 1036〜1814 からは出さない
         // ※ warnBox は字の大きさを変えるので、先に測ってから研修名の字にする
@@ -590,6 +598,7 @@ function buildForm(){
   const slot=(k,sq,nm)=>`<div class="img"><div class="thumb${sq?' sq':''}" data-th="${k}"></div>
         <label class="b">${svgIcon('photo')}選ぶ<input type="file" accept="image/*" data-file="${k}" aria-label="${nm}を選ぶ"></label>
         <button type="button" class="b" data-clr="${k}" aria-label="${nm}を外す">${svgIcon('x')}外す</button></div>`;
+  const clr=fd=>`<button type="button" class="clr" data-xk="${fd.k}" aria-label="${fd.label}を消す">${svgIcon('x')}</button>`;
   let h='';
   for(const fd of t.fields){
     if(fd.kind==='img'){
@@ -605,14 +614,15 @@ function buildForm(){
       h+=`<div class="f">${lb(fd)}<div class="rows" data-rows="${fd.k}"></div>
         <button type="button" class="b add" data-add="${fd.k}">${svgIcon('plus')}追加</button></div>`;
     }else if(fd.kind==='area'){
-      h+=`<label class="f">${lb(fd)}<textarea data-k="${fd.k}" rows="${fd.rows||4}">${esc(v[fd.k])}</textarea></label>`;
+      h+=`<div class="f"><label for="k-${fd.k}">${lb(fd)}</label><span class="inp"><textarea id="k-${fd.k}" data-k="${fd.k}" rows="${fd.rows||4}" placeholder=" ">${esc(v[fd.k])}</textarea>${clr(fd)}</span></div>`;
     }else{
-      h+=`<label class="f">${lb(fd)}<input type="text" data-k="${fd.k}" value="${esc(v[fd.k])}"></label>`;
+      h+=`<div class="f"><label for="k-${fd.k}">${lb(fd)}</label><span class="inp"><input type="text" id="k-${fd.k}" data-k="${fd.k}" value="${esc(v[fd.k])}" placeholder=" ">${clr(fd)}</span></div>`;
     }
   }
   h+=`<p class="note" id="note" role="status"></p><button type="button" class="b main" id="save">${svgIcon('save')}画像を保存</button>`;
   $('form').innerHTML=h;
   $('form').querySelectorAll('[data-k]').forEach(el=>el.oninput=()=>{v[el.dataset.k]=el.value;save();if(msgOk)msg='';draw()});
+  $('form').querySelectorAll('[data-xk]').forEach(b=>b.onclick=()=>{const el=$('form').querySelector(`[data-k="${b.dataset.xk}"]`);el.value='';el.dispatchEvent(new Event('input'));el.focus()});
   $('form').querySelectorAll('[data-file]').forEach(fi=>fi.onchange=()=>{if(fi.files[0])takeFile(fi.files[0],fi.dataset.file);fi.value=''});
   $('form').querySelectorAll('[data-clr]').forEach(c=>c.onclick=()=>{const key=ik(st.type,c.dataset.clr);delete imgs[key];saveImg(key,null);say('');thumb();draw()});
   $('form').querySelectorAll('[data-c]').forEach(bt=>bt.onclick=()=>{v[bt.dataset.c]=bt.dataset.v;save();
