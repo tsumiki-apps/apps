@@ -225,6 +225,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     var loginState: () -> Bool = { false }
     var onLogin: ((Bool) -> Void)?
     private let login = NSSwitch()
+    private let folderLabel = NSTextField(labelWithString: "")
+    private let folderReset = NSButton()
 
     init() {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 420),
@@ -286,11 +288,29 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
                                 target: self, action: #selector(resetAllKeys))
         resetAll.imagePosition = .imageLeading; resetAll.bezelStyle = .rounded
 
+        // 保存先：今の場所・変える・既定に戻す
+        let folderIcon = NSImageView(image: NSImage(systemSymbolName: "folder", accessibilityDescription: nil)!)
+        folderIcon.contentTintColor = accent
+        folderLabel.font = .systemFont(ofSize: 13); folderLabel.lineBreakMode = .byTruncatingMiddle
+        folderLabel.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        let choose = NSButton(title: "変更…", target: self, action: #selector(chooseFolder)); choose.bezelStyle = .rounded
+        folderReset.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: "既定に戻す")
+        folderReset.target = self; folderReset.action = #selector(resetFolder)
+        folderReset.bezelStyle = .accessoryBarAction; folderReset.isBordered = false
+        folderReset.toolTip = "既定（~/Pictures/つみきショット）に戻す"
+        let folderSpacer = NSView(); folderSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        let folderRow = NSStackView(views: [folderIcon, folderLabel, folderSpacer, choose, folderReset]); folderRow.spacing = 10
+
         let sep = NSBox(); sep.boxType = .separator
-        let stack = NSStackView(views: [header("keyboard", "ショートカット"), grid, resetAll, sep, header("gearshape", "起動"), loginRow])
+        let sep2 = NSBox(); sep2.boxType = .separator
+        let stack = NSStackView(views: [header("keyboard", "ショートカット"), grid, resetAll, sep,
+                                        header("folder", "保存先"), folderRow, sep2, header("gearshape", "起動"), loginRow])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 22, bottom: 20, right: 22)
         stack.setCustomSpacing(18, after: resetAll); stack.setCustomSpacing(18, after: sep)
+        stack.setCustomSpacing(18, after: folderRow); stack.setCustomSpacing(18, after: sep2)
+        sep2.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
+        folderRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         sep.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         loginRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         stack.widthAnchor.constraint(greaterThanOrEqualTo: grid.widthAnchor, constant: 44).isActive = true   // 右端の「戻す」が切れないように
@@ -304,7 +324,25 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
             warns[a.id]?.isHidden = !HotKeys.failed.contains(a.id)
         }
         login.state = loginState() ? .on : .off
+        folderLabel.stringValue = SaveFolder.display
+        folderLabel.toolTip = SaveFolder.url.path
+        folderReset.isHidden = !SaveFolder.isCustom
     }
+
+    @objc func chooseFolder() {
+        fields.values.forEach { $0.stop() }
+        let p = NSOpenPanel()
+        p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
+        p.allowsMultipleSelection = false
+        p.prompt = "ここに保存"; p.message = "撮った画像と録画を保存するフォルダ"
+        p.directoryURL = SaveFolder.url
+        p.beginSheetModal(for: window!) { [weak self] r in
+            guard r == .OK, let u = p.url else { return }
+            SaveFolder.set(u); self?.refresh()
+        }
+    }
+
+    @objc func resetFolder() { SaveFolder.set(nil); refresh() }
 
     private func change(_ id: UInt32, _ c: KeyCombo?) {
         Shortcuts.set(id, c)

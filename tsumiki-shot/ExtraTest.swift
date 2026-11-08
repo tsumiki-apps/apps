@@ -195,6 +195,16 @@ enum ExtraTest {
             SelfTest.save(rep.cgImage!, to: dir + "/設定.png")
             check("設定の窓を描ける", rep.pixelsWide > 200, "\(Int(v.bounds.width))×\(Int(v.bounds.height))")
         }
+        // 保存先
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("tsumikishot-保存先テスト", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        let firstDir = saveDir
+        SaveFolder.set(tmpDir)
+        let chosen = saveDir.standardizedFileURL.path == tmpDir.standardizedFileURL.path
+        try? FileManager.default.removeItem(at: tmpDir)
+        let gone = saveDir == SaveFolder.standard          // 選んだフォルダが消えたら既定へ
+        SaveFolder.set(nil)
+        check("保存先を変える・消えたら既定・既定に戻す", firstDir == SaveFolder.standard && chosen && gone && !SaveFolder.isCustom && saveDir == SaveFolder.standard)
         Shortcuts.defaults = keep
         ud.removePersistentDomain(forName: suite)
 

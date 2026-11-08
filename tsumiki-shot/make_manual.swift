@@ -183,7 +183,8 @@ rows([("rectangle.dashed.badge.record", "画面収録", "必須", "撮るのに�
       ("accessibility", "アクセシビリティ", "自動だけ", "自動スクロールを使うときだけ。初回に案内が出る")])
 
 heading("保存先", "folder")
-notes([("folder", "~/Pictures/つみきショット/（PNG・録画は MP4）"),
+notes([("folder", "既定は ~/Pictures/つみきショット/（PNG・録画は MP4）"),
+       ("gearshape", "「設定…」の 保存先 →「変更…」で好きなフォルダに"),
        ("doc.on.clipboard", "クリップボードにも入る")])
 
 // MARK: - 2 撮る
@@ -259,6 +260,7 @@ rows([("delete.left", "なしにする", "delete", "その操作のキーを外�
       ("exclamationmark.triangle", "使用中", nil, "他のアプリが使っているキー。別のキーに"),
       ("arrow.counterclockwise", "既定に戻す", nil, "1つずつ・すべてまとめても")])
 notes([("arrow.triangle.2.circlepath", "同じキーを2つに付けると、前のほうは「なし」になる"),
+       ("folder", "保存先も「変更…」で選べる（フォルダが消えたら既定に戻る）"),
        ("power", "「ログイン時に起動」もここで")])
 
 heading("困ったとき", "questionmark.circle")

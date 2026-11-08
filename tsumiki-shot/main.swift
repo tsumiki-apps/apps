@@ -7,8 +7,26 @@ import ScreenCaptureKit
 import ServiceManagement
 
 let accent = NSColor(srgbRed: 0xd5 / 255.0, green: 0x9a / 255.0, blue: 0x4d / 255.0, alpha: 1)
-let saveDir = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Pictures/つみきショット", isDirectory: true)
+/// 保存先（設定で変えられる。選んだフォルダが無くなった・作れないときは既定に戻って保存する）
+enum SaveFolder {
+    static let standard = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Pictures/つみきショット", isDirectory: true)
+    static var isCustom: Bool { Shortcuts.defaults.string(forKey: "saveDir") != nil }
+    static var url: URL {
+        guard let p = Shortcuts.defaults.string(forKey: "saveDir") else { return standard }
+        let u = URL(fileURLWithPath: p, isDirectory: true)
+        var dir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: p, isDirectory: &dir), dir.boolValue, FileManager.default.isWritableFile(atPath: p) { return u }
+        return standard
+    }
+    /// nil＝既定に戻す
+    static func set(_ u: URL?) {
+        if let u { Shortcuts.defaults.set(u.path, forKey: "saveDir") } else { Shortcuts.defaults.removeObject(forKey: "saveDir") }
+    }
+    /// 画面に出す短い形（ホームは ~）
+    static var display: String { (url.path as NSString).abbreviatingWithTildeInPath }
+}
+var saveDir: URL { SaveFolder.url }
 
 // MARK: - 選択した範囲（どの画面の、どこか）
 
@@ -846,6 +864,11 @@ if args.contains("--selftest") {
     let i = args.firstIndex(of: "--selftest")!
     let dir = args.count > i + 1 ? args[i + 1] : nil
     exit(SelfTest.run(outDir: dir) ? 0 : 1)
+}
+// 許可の状態をファイルに書いて終わる（open -n で起動すると、アプリ自身の許可として調べられる）
+if let i = args.firstIndex(of: "--perm") {
+    let s = "画面収録=\(CGPreflightScreenCaptureAccess() ? "OK" : "なし") アクセシビリティ=\(Wheel.trusted(ask: false) ? "OK" : "なし")\n"
+    try? s.write(toFile: args[i + 1], atomically: true, encoding: .utf8); exit(0)
 }
 if let i = args.firstIndex(of: "--icons") { AppIcon.writeIconset(args[i + 1]); exit(0) }
 if args.contains("--extratest") { exit(ExtraTest.run(outDir: args.last!.hasPrefix("--") ? nil : args.last) ? 0 : 1) }
