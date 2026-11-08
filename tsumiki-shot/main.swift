@@ -1,5 +1,5 @@
 // つみきショット：メニューバーに常駐するスクショアプリ（自分専用）。
-// ⌥⇧4 範囲 ／ ⌥⇧3 全画面 ／ ⌥⇧S スクロール（もう一度押すと完了）／ ⌥⇧W ウィンドウ ／ ⌥⇧T 文字を読む ／ ⌥⇧R 録画（もう一度で停止）
+// ⇧⌘4 範囲 ／ ⇧⌘3 全画面 ／ ⇧⌘6 スクロール（もう一度押すと完了）／ ⇧⌘7 ウィンドウ ／ ⇧⌘2 文字を読む ／ ⇧⌘5 録画（もう一度で停止）
 // 撮ったものは ~/Pictures/つみきショット に PNG で保存し、クリップボードにも入れる。
 import AppKit
 import Carbon
@@ -144,13 +144,19 @@ final class SelectView: NSView {
     }
     override func rightMouseDown(with event: NSEvent) { onDone?(nil) }
     override var acceptsFirstResponder: Bool { true }
-    override func keyDown(with e: NSEvent) { if e.keyCode == 53 { onDone?(nil) } }   // Esc
+    var onSpace: (() -> Void)?
+    override func keyDown(with e: NSEvent) {
+        if e.keyCode == 53 { onDone?(nil) }                                     // Esc
+        else if e.keyCode == 49, start == nil, let onSpace { onSpace() }        // スペース＝窓を選ぶ（Mac の ⇧⌘4 と同じ）
+    }
 }
 
 final class RegionPicker {
     private var windows: [OverlayWindow] = []
     private var finished = false
     private let prevApp = NSWorkspace.shared.frontmostApplication
+    /// 範囲選びの途中でスペース → これを呼んで幕を閉じる（nil なら何もしない）
+    var onSpace: (() -> Void)?
 
     func pick(_ done: @escaping (Region?) -> Void) {
         for screen in NSScreen.screens {
@@ -167,6 +173,14 @@ final class RegionPicker {
                 self.close()
                 if let r { done(Region(screen: screen, rect: r.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY))) }
                 else { done(nil) }
+            }
+            if onSpace != nil {
+                v.onSpace = { [weak self] in
+                    guard let self, !self.finished else { return }
+                    self.finished = true
+                    self.close()
+                    self.onSpace?()
+                }
             }
             w.contentView = v
             w.setFrame(screen.frame, display: true)
@@ -690,7 +704,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var shooting = 0                        // 撮っている最中の数（範囲・全画面）
     var busy: Bool { picker != nil || winPicker != nil || session != nil || recorder != nil || shooting > 0 }
 
-    /// 範囲を選んで録画。もう一度 ⌥⇧R（か札の停止）で止める
+    /// 範囲を選んで録画。もう一度 ⇧⌘5（か札の停止）で止める
     @objc func captureMovie() {
         if let r = recorder { r.finish(); return }
         guard !busy else { return }
@@ -782,6 +796,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !busy else { return }
         if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p
+        p.onSpace = { [weak self] in self?.picker = nil; self?.captureWindowMenu() }
         p.pick { [weak self] region in
             self?.picker = nil
             guard let self, let region else { return }
@@ -809,7 +824,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func captureScroll() {
-        if let s = session { s.finish(); return }        // 2回目の ⌥⇧S は完了
+        if let s = session { s.finish(); return }        // 2回目の ⇧⌘6 は完了
         guard !busy else { return }                      // 録画中・ウィンドウ選択中などは始めない
         if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p

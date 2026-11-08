@@ -190,12 +190,12 @@ notes([("folder", "既定は ~/Pictures/つみきショット/（PNG・録画は
 // MARK: - 2 撮る
 
 newPage("撮る", "camera.viewfinder")
-rows([("rectangle.dashed", "範囲", "⌥⇧4", "ドラッグで選ぶ。esc・右クリックで取消"),
-      ("macwindow", "全画面", "⌥⇧3", "マウスのある画面"),
-      ("arrow.down.to.line.compact", "スクロール", "⌥⇧S", "長いページを1枚に（縦も横も）→ 3ページ"),
-      ("macwindow.on.rectangle", "ウィンドウ", "⌥⇧W", "窓を指すと色で囲む。押すとその窓だけ"),
-      ("text.viewfinder", "文字を読む", "⌥⇧T", "範囲の文字をコピー（日本語・英語）"),
-      ("record.circle", "録画", "⌥⇧R", "範囲を MP4 に。もう一度押すと停止")])
+rows([("rectangle.dashed", "範囲", "⇧⌘4", "ドラッグで選ぶ。スペースで窓に・esc で取消"),
+      ("macwindow", "全画面", "⇧⌘3", "マウスのある画面"),
+      ("arrow.down.to.line.compact", "スクロール", "⇧⌘6", "長いページを1枚に（縦も横も）→ 3ページ"),
+      ("macwindow.on.rectangle", "ウィンドウ", "⇧⌘7", "窓を指すと色で囲む。押すとその窓だけ"),
+      ("text.viewfinder", "文字を読む", "⇧⌘2", "範囲の文字をコピー（日本語・英語）"),
+      ("record.circle", "録画", "⇧⌘5", "範囲を MP4 に。もう一度押すと停止")])
 notes([("gearshape", "キーは「設定…」で好きなものに変えられる → 5ページ"),
        ("menubar.rectangle", "メニューバーの 積み木 からも同じ操作ができる")])
 
@@ -207,9 +207,9 @@ notes([("rectangle.dashed", "撮っている範囲は赤い枠・経過時間つ
 // MARK: - 3 スクロール
 
 newPage("スクロール", "arrow.down.to.line.compact")
-steps(["⌥⇧S で範囲を選ぶ",
+steps(["⇧⌘6 で範囲を選ぶ",
        "手でゆっくりスクロール。または ▶︎ で自動",
-       "端まで来たら ✓（もう一度 ⌥⇧S でも）"])
+       "端まで来たら ✓（もう一度 ⇧⌘6 でも）"])
 
 heading("札のボタン", "slider.horizontal.3")
 bar([("arrow.down", "向き", false), ("play.fill", "自動", false), ("pause.fill", "自動を止める", false),

@@ -70,14 +70,15 @@ struct ShotAction {
 }
 
 enum Shortcuts {
-    static let optShift = UInt32(optionKey | shiftKey)
+    /// 既定は Mac の標準（⇧⌘3 全画面・⇧⌘4 範囲・⇧⌘5 録画）に合わせ、残りを数字の並びに
+    static let cmdShift = UInt32(cmdKey | shiftKey)
     static let actions: [ShotAction] = [
-        ShotAction(id: 1, name: "範囲", symbol: "rectangle.dashed", def: KeyCombo(code: UInt32(kVK_ANSI_4), mods: optShift, char: "4")),
-        ShotAction(id: 2, name: "全画面", symbol: "macwindow", def: KeyCombo(code: UInt32(kVK_ANSI_3), mods: optShift, char: "3")),
-        ShotAction(id: 3, name: "スクロール", symbol: "arrow.down.to.line.compact", def: KeyCombo(code: UInt32(kVK_ANSI_S), mods: optShift, char: "S")),
-        ShotAction(id: 4, name: "ウィンドウ", symbol: "macwindow.on.rectangle", def: KeyCombo(code: UInt32(kVK_ANSI_W), mods: optShift, char: "W")),
-        ShotAction(id: 5, name: "文字を読む", symbol: "text.viewfinder", def: KeyCombo(code: UInt32(kVK_ANSI_T), mods: optShift, char: "T")),
-        ShotAction(id: 6, name: "録画", symbol: "record.circle", def: KeyCombo(code: UInt32(kVK_ANSI_R), mods: optShift, char: "R")),
+        ShotAction(id: 1, name: "範囲", symbol: "rectangle.dashed", def: KeyCombo(code: UInt32(kVK_ANSI_4), mods: cmdShift, char: "4")),
+        ShotAction(id: 2, name: "全画面", symbol: "macwindow", def: KeyCombo(code: UInt32(kVK_ANSI_3), mods: cmdShift, char: "3")),
+        ShotAction(id: 3, name: "スクロール", symbol: "arrow.down.to.line.compact", def: KeyCombo(code: UInt32(kVK_ANSI_6), mods: cmdShift, char: "6")),
+        ShotAction(id: 4, name: "ウィンドウ", symbol: "macwindow.on.rectangle", def: KeyCombo(code: UInt32(kVK_ANSI_7), mods: cmdShift, char: "7")),
+        ShotAction(id: 5, name: "文字を読む", symbol: "text.viewfinder", def: KeyCombo(code: UInt32(kVK_ANSI_2), mods: cmdShift, char: "2")),
+        ShotAction(id: 6, name: "録画", symbol: "record.circle", def: KeyCombo(code: UInt32(kVK_ANSI_5), mods: cmdShift, char: "5")),
     ]
 
     static var defaults: UserDefaults = .standard
