@@ -197,9 +197,10 @@ function clipText(t,maxW){
   while(t.length>1&&ctx.measureText(t+'…').width>maxW)t=t.slice(0,-1);
   return t+'…';
 }
-/* 新しい研修の注意の札：揃え（左＝1036／中央＝右の列の真ん中／右＝1814）に置き、研修の画面にかからない幅まで（count=true のときだけ入りきらない知らせを積む） */
+/* 新しい研修の注意の札：研修名の揃えと一緒に動く（左＝1036／中央＝右の列の真ん中／右＝1814）に置き、研修の画面にかからない幅まで（count=true のときだけ入りきらない知らせを積む） */
 function warnBox(w,count,al){
   const wt=(w||'').trim();if(!wt)return null;
+  if(!['left','center','right'].includes(al))al='left'; // 研修名と同じ読み方（無ければ左）
   const maxTW=1814-1040-130;
   const sz=fitText(wt,700,36,maxTW,24,count?'注意':null);const t=clipText(wt,maxTW);const tw=ctx.measureText(t).width;
   const pw=tw+130,x=al==='left'?1036:al==='center'?Math.round((1036+1814-pw)/2):1814-pw;return {x,y:662,w:pw,t,sz};
@@ -241,7 +242,6 @@ const TYPES={
       {k:'appshow',label:'アプリのアイコン',kind:'choice',def:'on',opts:[['on','表示','eye'],['off','非表示','eyeOff']]},
       {k:'apps',label:'使うアイコン',hint:'2つまで・＋で足す',kind:'iconlib',def:''},
       {k:'warn',label:'注意',hint:'空なら出しません',def:'契約用iPadじゃないとできません！'},
-      {k:'walign',label:'注意の揃え',kind:'choice',def:'right',opts:[['left','左','alignL'],['center','中央','alignC'],['right','右','alignR']]},
     ],
     draw(s,img,gi){
       ctx.fillStyle=C('rm-bg');ctx.fillRect(0,0,W,H);
@@ -325,7 +325,7 @@ const TYPES={
         const y0=top+(bottom-top-blockH)/2+tp*.92;
         // 中央と右は注意の札にそろえる（札がないときは右の列 1036〜1814 に）。どの行も 1036〜1814 からは出さない
         // ※ warnBox は字の大きさを変えるので、先に測ってから研修名の字にする
-        const wb=warnBox(s.warn,false,s.walign),cx=wb?wb.x+wb.w/2:(1036+1814)/2,rx=1814;
+        const wb=warnBox(s.warn,false,s.talign),cx=wb?wb.x+wb.w/2:(1036+1814)/2,rx=1814;
         ctx.font=f(TW,tp);ctx.fillStyle=C('rm-ink');ctx.textAlign='left';ctx.textBaseline='alphabetic';
         const mw=Math.max(...tl.map(l=>ctx.measureText(l).width));
         const ccx=(cx-mw/2>=1036&&cx+mw/2<=1814)?cx:(1036+1814)/2; // 注意が短くて札の真ん中に置けないときは列の真ん中
@@ -334,7 +334,7 @@ const TYPES={
           ctx.fillText(l,x,y0+k*LH)});
       }
       // 注意の札（研修の画面にかからない幅まで）
-      const wb=warnBox(s.warn,true,s.walign);
+      const wb=warnBox(s.warn,true,s.talign);
       if(wb){
         const {x:px,y:py,w:pw,t}=wb;
         rr(px,py,pw,80,40);ctx.fillStyle=C('warn-bg');ctx.fill();ctx.strokeStyle=C('warn-line');ctx.lineWidth=3;ctx.stroke();
