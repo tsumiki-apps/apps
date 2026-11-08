@@ -69,7 +69,8 @@ button.main{background:var(--accent-2);color:var(--paper);width:100%}
 .opt button svg{width:20px;height:20px;flex:none}
 .opt button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-2)}
 .img .thumb.sq{width:50px}
-[data-lib][hidden]{display:none}
+[data-lib][hidden],.f[hidden]{display:none}
+.lib .ic.armed i{background:var(--warn-ink)}
 .lib{display:flex;flex-wrap:wrap;gap:10px}
 .lib .ic{position:relative;width:56px;height:56px;border-radius:14px;border:1px solid var(--line-2);background:var(--surface-2) center/cover no-repeat;padding:0;cursor:pointer;flex:none}
 .lib .ic[aria-pressed=true]{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--accent-2)}
@@ -222,7 +223,7 @@ const TYPES={
       {k:'talign',label:'研修名の揃え',kind:'choice',def:'left',opts:[['left','左','alignL'],['center','中央','alignC'],['right','右','alignR']]},
       {k:'date',label:'締切',def:'11/30'},
       {k:'appshow',label:'アプリのアイコン',kind:'choice',def:'on',opts:[['on','表示','eye'],['off','非表示','eyeOff']]},
-      {k:'apps',label:'使うアイコン',hint:'押して選ぶ・2つまで',kind:'iconlib',def:''},
+      {k:'apps',label:'使うアイコン',hint:'押して選ぶ・2つまで・選ばなければ見本',kind:'iconlib',def:''},
       {k:'warn',label:'注意',hint:'空なら出しません',def:'契約用iPadじゃないとできません！'},
     ],
     draw(s,img,gi){
@@ -477,13 +478,20 @@ function loadIcons(){
   // 前の形（新しい研修の2枠 roadmap.app1/app2）に入っているアイコンも一覧に出す。
   // 写さずに元の場所をそのまま読む（写すと容量があふれて黙って失敗するため）。毎回見て、消したものだけ出さない
   let gone=[];try{const g=JSON.parse(localStorage.getItem(KEY+'.iconsGone')||'[]');if(Array.isArray(g))gone=g}catch(e){}
+  let moved=false;try{moved=localStorage.getItem(KEY+'.iconsMoved')==='1'}catch(e){}
   const picked=[];
-  for(const id in LEG){if(gone.includes(id))continue;let d=null;try{d=localStorage.getItem(LEG[id])}catch(e){}
+  for(const id in LEG){if(gone.includes(id))continue;
+    if(moved&&!iconIds.includes(id)){let cp=null;try{cp=localStorage.getItem(KEY+'.icon.'+id)}catch(e){}if(!cp)continue} // 1つ前の版で写して、そのあと消したもの
+    let d=null;try{d=localStorage.getItem(LEG[id])}catch(e){}
     if(d&&!iconIds.includes(id))picked.push(id)}
   iconIds.unshift(...picked);
+  for(const id in LEG)try{if(localStorage.getItem(LEG[id])&&localStorage.getItem(KEY+'.icon.'+id))localStorage.removeItem(KEY+'.icon.'+id)}catch(e){}
   if(picked.length){saveIconIds();if(!selIcons(st.v.roadmap.apps).length){st.v.roadmap.apps=picked.join(',');save()}}
   return Promise.all(iconIds.map(id=>new Promise(r=>{let d=null;try{d=localStorage.getItem(iconKey(id))}catch(e){}
-    if(!d)return r();const im=new Image();im.onload=()=>{icons[id]=im;r()};im.onerror=()=>r();im.src=d})))
+    if(!d)return r();const im=new Image();im.onload=()=>{icons[id]=im;r()};im.onerror=()=>r();im.src=d}))).then(()=>{
+    const bad=iconIds.filter(id=>!icons[id]);if(!bad.length)return;
+    iconIds=iconIds.filter(id=>icons[id]);saveIconIds();
+    const v=st.v.roadmap,c=String(v.apps||'').split(',').filter(id=>id&&icons[id]);v.apps=c.join(',');save()})
 }
 function takeIcon(file){
   if(!file)return;if(file.type&&!/^image\//.test(file.type)){say('画像のファイルを選んでください');return}
@@ -495,32 +503,36 @@ function takeIcon(file){
     const im2=new Image();im2.onload=()=>{
       let ok=true;try{localStorage.setItem(KEY+'.icon.'+id,data)}catch(e){ok=false}
       if(!ok){say('いっぱいで覚えておけません。使わないアイコンを消してください');return}
-      icons[id]=im2;iconIds.push(id);saveIconIds();
-      const v=st.v.roadmap,cur=selIcons(v.apps);if(cur.length<2){v.apps=[...cur,id].join(',');save()}
-      say('');paintLib();draw()};
+      icons[id]=im2;iconIds.push(id);
+      if(!saveIconIds()){try{localStorage.removeItem(KEY+'.icon.'+id)}catch(e){}iconIds.pop();delete icons[id];say('いっぱいで覚えておけません。使わないアイコンを消してください');return}
+      const v=st.v.roadmap,cur=selIcons(v.apps);if(cur.length<2){v.apps=[...cur,id].join(',');if(save())say('')}
+      else say('入れました。使うには選んだものを1つ外してください',true);paintLib();draw()};
     im2.src=data};
   im.onerror=()=>{URL.revokeObjectURL(url);say('この画像は読めませんでした')};
   im.src=url;
 }
-let libEdit=false;
+let libEdit=false,armed=''; // 消すは2回押し（1回目で「もう一度で消す」）
 function paintLib(){
   const box=document.querySelector('[data-lib]');if(!box)return;
   const v=st.v.roadmap,cur=selIcons(v.apps);
-  box.hidden=v.appshow==='off';
-  box.innerHTML=`<div class="lib">${iconIds.filter(id=>icons[id]).map(id=>{const n=cur.indexOf(id);
-      return `<button type="button" class="ic${libEdit?' del':''}" data-ic="${id}" aria-pressed="${n>=0}" aria-label="${libEdit?'消す':n>=0?'選択中'+(n+1):'選ぶ'}" style="background-image:url(${icons[id].src})">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}${libEdit?`<i>${svgIcon('x')}</i>`:''}</button>`}).join('')}
+  const off=v.appshow==='off';if(off){libEdit=false;armed=''}
+  const f=box.closest('.f');if(f)f.hidden=off;
+  box.innerHTML=`<div class="lib">${iconIds.filter(id=>icons[id]).map((id,k)=>{const n=cur.indexOf(id),nm='アイコン'+(k+1);
+      return `<button type="button" class="ic${libEdit?' del':''}${armed===id?' armed':''}" data-ic="${id}" aria-pressed="${n>=0}" aria-label="${nm}${libEdit?(armed===id?'・もう一度押すと消えます':'を消す'):n>=0?'・'+(n+1)+'番目':''}" style="background-image:url(${icons[id].src})">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}${libEdit?`<i>${svgIcon(armed===id?'trash':'x')}</i>`:''}</button>`}).join('')}
     <label class="ic add" aria-label="アイコンを入れる">${svgIcon('plus')}<input type="file" accept="image/*" data-iconfile></label></div>
     ${iconIds.length?`<button type="button" class="b add" data-libedit>${svgIcon(libEdit?'check':'trash')}${libEdit?'終わる':'消す'}</button>`:''}`;
   box.querySelector('[data-iconfile]').onchange=e=>{const f=e.target.files[0];if(f)takeIcon(f);e.target.value=''};
-  const ed=box.querySelector('[data-libedit]');if(ed)ed.onclick=()=>{libEdit=!libEdit;paintLib()};
+  const ed=box.querySelector('[data-libedit]');if(ed)ed.onclick=()=>{libEdit=!libEdit;armed='';say('');paintLib();const b=document.querySelector('[data-libedit]');if(b)b.focus({preventScroll:true})};
   box.querySelectorAll('[data-ic]').forEach(bt=>bt.onclick=()=>{const id=bt.dataset.ic;let c=selIcons(v.apps);
-    if(libEdit){iconIds=iconIds.filter(x=>x!==id);delete icons[id];saveIconIds();try{localStorage.removeItem(iconKey(id));localStorage.removeItem(KEY+'.icon.'+id);
+    if(libEdit&&armed!==id){armed=id;say('もう一度押すと消えます');paintLib();return}
+    if(libEdit){armed='';iconIds=iconIds.filter(x=>x!==id);delete icons[id];saveIconIds();try{localStorage.removeItem(iconKey(id));localStorage.removeItem(KEY+'.icon.'+id);
         if(LEG[id]){let g=[];try{g=JSON.parse(localStorage.getItem(KEY+'.iconsGone')||'[]')}catch(_){}if(!Array.isArray(g))g=[];if(!g.includes(id))g.push(id);localStorage.setItem(KEY+'.iconsGone',JSON.stringify(g))}}catch(e){}
       c=c.filter(x=>x!==id);if(!iconIds.length)libEdit=false}
     else if(c.includes(id))c=c.filter(x=>x!==id);
     else if(c.length>=2){say('2つまでです。外してから選んでください');return}
     else c.push(id);
-    v.apps=c.join(',');save();say('');paintLib();draw()});
+    v.apps=c.join(',');if(save())say('');paintLib();draw();
+    const back=document.querySelector(`[data-ic="${id}"]`)||document.querySelector('[data-libedit]')||document.querySelector('[data-iconfile]');if(back)back.focus({preventScroll:true})});
 }
 const imgs={}; // 画像（保存は別キー）。名前は 型（主の画像）か 型.欄（アプリのアイコンなど）
 const ik=(t,k)=>k&&k!=='img'?t+'.'+k:t;
@@ -548,6 +560,7 @@ function buildSeg(){
 }
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function buildForm(){
+  libEdit=false;armed='';
   const t=TYPES[st.type],v=st.v[st.type];
   const lb=fd=>`<span class="lb">${fd.label}${fd.hint?`<small>${fd.hint}</small>`:''}</span>`;
   const slot=(k,sq,nm)=>`<div class="img"><div class="thumb${sq?' sq':''}" data-th="${k}"></div>
