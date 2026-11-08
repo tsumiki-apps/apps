@@ -63,12 +63,23 @@ button.b,label.b{position:relative;display:inline-flex;align-items:center;justif
 button.b svg,label.b svg{width:20px;height:20px;flex:none}
 button.main{background:var(--accent-2);color:var(--paper);width:100%}
 .img input{position:absolute;inset:0;opacity:0;width:100%;height:100%;font-size:16px;cursor:pointer}
-.opt{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;background:var(--surface-2);border-radius:12px;padding:4px}
+.opt{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;background:var(--surface-2);border-radius:12px;padding:4px}
 .opt button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:0;border-radius:9px;background:transparent;
   color:var(--ink-mid);font:inherit;font-size:15px;font-weight:500;cursor:pointer}
 .opt button svg{width:20px;height:20px;flex:none}
 .opt button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-2)}
 .img .thumb.sq{width:50px}
+[data-lib][hidden]{display:none}
+.lib{display:flex;flex-wrap:wrap;gap:10px}
+.lib .ic{position:relative;width:56px;height:56px;border-radius:14px;border:1px solid var(--line-2);background:var(--surface-2) center/cover no-repeat;padding:0;cursor:pointer;flex:none}
+.lib .ic[aria-pressed=true]{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--accent-2)}
+.lib .ic[aria-pressed=false]:not(.del){opacity:.55}
+.lib .ic b{position:absolute;right:-6px;top:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent-2);color:var(--surface);font-size:12px;display:flex;align-items:center;justify-content:center}
+.lib .ic i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);border-radius:13px;color:#fff}
+.lib .ic i svg,.lib .add svg{width:22px;height:22px}
+.lib .ic.add{display:flex;align-items:center;justify-content:center;border-style:dashed;color:var(--ink-soft);background:transparent;overflow:hidden}
+.lib .ic.add input{position:absolute;inset:0;opacity:0;font-size:16px;cursor:pointer}
+.lib .ic:focus-visible,.lib .ic.add:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:3px}
 .b:focus-visible,.opt button:focus-visible,textarea:focus-visible,input[type=text]:focus-visible,input[type=url]:focus-visible,.img label.b:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:2px}
 .row.pair.over{opacity:.55}
 .row.pair.over::after{content:'画像に出ません';grid-column:1/-1;font-size:12px;color:var(--ink-soft)}
@@ -132,6 +143,9 @@ const IC={
   alignC:['M4 6h16','M7 12h10','M5.5 18h13'],
   alignR:['M4 6h16','M10 12h10','M7 18h13'],
   plus:['M12 5v14','M5 12h14'],
+  eye:['M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z','M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'],
+  eyeOff:['M3 3l18 18','M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4','M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6','M9.9 9.9a3 3 0 0 0 4.2 4.2'],
+  trash:['M4 7h16','M10 11v6','M14 11v6','M6 7l1 13h10l1-13','M9 7V4h6v3'],
   app:['M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4z'],
   save:['M12 3v12','M7 10l5 5 5-5','M5 21h14'],
 };
@@ -207,7 +221,8 @@ const TYPES={
       {k:'title',label:'研修名',hint:'空なら出しません',def:'サンプル研修\n基礎編',kind:'area',rows:3},
       {k:'talign',label:'研修名の揃え',kind:'choice',def:'left',opts:[['left','左','alignL'],['center','中央','alignC'],['right','右','alignR']]},
       {k:'date',label:'締切',def:'11/30'},
-      {k:'apps',label:'アプリのアイコン',hint:'2つまで・空なら見本',kind:'imgs',slots:['app1','app2']},
+      {k:'appshow',label:'アプリのアイコン',kind:'choice',def:'on',opts:[['on','表示','eye'],['off','非表示','eyeOff']]},
+      {k:'apps',label:'使うアイコン',hint:'押して選ぶ・2つまで',kind:'iconlib',def:''},
       {k:'warn',label:'注意',hint:'空なら出しません',def:'契約用iPadじゃないとできません！'},
     ],
     draw(s,img,gi){
@@ -224,18 +239,20 @@ const TYPES={
         ctx.drawImage(img,r.x,r.y,r.w,r.h);ctx.restore();ctx.strokeStyle=C('frame');ctx.lineWidth=2;ctx.strokeRect(r.x,r.y,r.w,r.h)}
       else placeholder(bx,by,bw,bh,'研修の画面');
       // アプリのアイコン：0〜1つは札の右に216角。2つのときは176角を2つ並べ、札を細くして高さの真ん中をそろえる
-      const apps=['app1','app2'].map(gi).filter(Boolean);
+      const off=s.appshow==='off';
+      const apps=off?[]:selIcons(s.apps).map(id=>icons[id]).filter(Boolean);
       const two=apps.length===2,as=two?176:216,gap=20;
       const ax=two?1814-as*2-gap:1596,ay=two?106+(218-as)/2:108;
-      const pw0=two?ax-36-1036:518;
+      const pw0=off?1814-1036:two?ax-36-1036:518; // 出さないときは札を右端まで伸ばす
       // 締切の札
       ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;
       rr(1036,106,pw0,218,36);ctx.fillStyle=C('white');ctx.fill();ctx.restore();
       icon('cal',1082,142,56,C('orange'),1.9);
-      {const l=two?1150:1110,r=1036+pw0-(two?28:66),dw=r-l,dc=two?(l+r)/2:1300,mw=two?dw:380;
+      {const l=two?1150:1110,r=1036+pw0-(two?28:66),dw=r-l,dc=two?(l+r)/2:off?(1150+r)/2:1300,mw=two?dw:off?dw-60:380;
         ctx.fillStyle=C('rm-ink');ctx.textAlign='center';fitText(s.date,400,90,mw,40,'締切');ctx.fillText(clipText(s.date,mw),dc,243);}
       ctx.fillStyle=C('rule');rr(1076,290,pw0-80,4,2);ctx.fill();
-      if(!apps.length){
+      if(off){}
+      else if(!apps.length){
         // 見本のアイコン（輪は下ほど白くならないよう控えめに）
         ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;
         const g=ctx.createLinearGradient(ax,ay,ax,ay+as);g.addColorStop(0,C('app-top'));g.addColorStop(1,C('app-bot'));
@@ -448,6 +465,58 @@ function parseLinks(str){
   }
   return out;
 }
+/* アプリのアイコンの置き場：一度入れたら端末に覚えて、あとは押して選ぶだけ。
+   一覧＝KEY.icons（idの並び）／中身＝KEY.icon.<id>。選んだものは st.v.roadmap.apps（id を , でつなぐ・順番どおり） */
+const ICK=KEY+'.icons',icons={};let iconIds=[];
+const selIcons=v=>String(v||'').split(',').filter(id=>id&&iconIds.includes(id)).slice(0,2);
+function saveIconIds(){try{localStorage.setItem(ICK,JSON.stringify(iconIds));return true}catch(e){return false}}
+function loadIcons(){
+  try{const a=JSON.parse(localStorage.getItem(ICK)||'[]');iconIds=Array.isArray(a)?a.filter(x=>typeof x==='string'):[]}catch(e){iconIds=[]}
+  // 前の形（型ごとの2枠 roadmap.app1/app2）から一度だけ置き場へ写す。写すだけで消さない
+  try{if(!localStorage.getItem(KEY+'.iconsMoved')){const picked=[];
+    for(const k of ['app1','app2']){const d=localStorage.getItem(KEY+'.img.roadmap.'+k);if(!d)continue;
+      const id='m'+k;if(!iconIds.includes(id)){localStorage.setItem(KEY+'.icon.'+id,d);iconIds.push(id)}picked.push(id)}
+    if(picked.length&&!selIcons(st.v.roadmap.apps).length)st.v.roadmap.apps=picked.join(',');
+    saveIconIds();localStorage.setItem(KEY+'.iconsMoved','1');save()}}catch(e){}
+  return Promise.all(iconIds.map(id=>new Promise(r=>{let d=null;try{d=localStorage.getItem(KEY+'.icon.'+id)}catch(e){}
+    if(!d)return r();const im=new Image();im.onload=()=>{icons[id]=im;r()};im.onerror=()=>r();im.src=d})))
+}
+function takeIcon(file){
+  if(!file)return;if(file.type&&!/^image\//.test(file.type)){say('画像のファイルを選んでください');return}
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{const m=512,sc=Math.min(1,m/Math.max(im.width,im.height));
+    const c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*sc));c.height=Math.max(1,Math.round(im.height*sc));
+    const x=c.getContext('2d');x.fillStyle=C('white');x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(url);
+    const data=c.toDataURL('image/jpeg',0.92),id=Date.now().toString(36)+Math.floor(performance.now()%1000).toString(36);
+    const im2=new Image();im2.onload=()=>{
+      let ok=true;try{localStorage.setItem(KEY+'.icon.'+id,data)}catch(e){ok=false}
+      if(!ok){say('いっぱいで覚えておけません。使わないアイコンを消してください');return}
+      icons[id]=im2;iconIds.push(id);saveIconIds();
+      const v=st.v.roadmap,cur=selIcons(v.apps);if(cur.length<2){v.apps=[...cur,id].join(',');save()}
+      say('');paintLib();draw()};
+    im2.src=data};
+  im.onerror=()=>{URL.revokeObjectURL(url);say('この画像は読めませんでした')};
+  im.src=url;
+}
+let libEdit=false;
+function paintLib(){
+  const box=document.querySelector('[data-lib]');if(!box)return;
+  const v=st.v.roadmap,cur=selIcons(v.apps);
+  box.hidden=v.appshow==='off';
+  box.innerHTML=`<div class="lib">${iconIds.filter(id=>icons[id]).map(id=>{const n=cur.indexOf(id);
+      return `<button type="button" class="ic${libEdit?' del':''}" data-ic="${id}" aria-pressed="${n>=0}" aria-label="${libEdit?'消す':n>=0?'選択中'+(n+1):'選ぶ'}" style="background-image:url(${icons[id].src})">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}${libEdit?`<i>${svgIcon('x')}</i>`:''}</button>`}).join('')}
+    <label class="ic add" aria-label="アイコンを入れる">${svgIcon('plus')}<input type="file" accept="image/*" data-iconfile></label></div>
+    ${iconIds.length?`<button type="button" class="b add" data-libedit>${svgIcon(libEdit?'check':'trash')}${libEdit?'終わる':'消す'}</button>`:''}`;
+  box.querySelector('[data-iconfile]').onchange=e=>{const f=e.target.files[0];if(f)takeIcon(f);e.target.value=''};
+  const ed=box.querySelector('[data-libedit]');if(ed)ed.onclick=()=>{libEdit=!libEdit;paintLib()};
+  box.querySelectorAll('[data-ic]').forEach(bt=>bt.onclick=()=>{const id=bt.dataset.ic;let c=selIcons(v.apps);
+    if(libEdit){iconIds=iconIds.filter(x=>x!==id);delete icons[id];saveIconIds();try{localStorage.removeItem(KEY+'.icon.'+id)}catch(e){}
+      c=c.filter(x=>x!==id);if(!iconIds.length)libEdit=false}
+    else if(c.includes(id))c=c.filter(x=>x!==id);
+    else if(c.length>=2){say('2つまでです。外してから選んでください');return}
+    else c.push(id);
+    v.apps=c.join(',');save();say('');paintLib();draw()});
+}
 const imgs={}; // 画像（保存は別キー）。名前は 型（主の画像）か 型.欄（アプリのアイコンなど）
 const ik=(t,k)=>k&&k!=='img'?t+'.'+k:t;
 const slotsOf=t=>TYPES[t].fields.flatMap(fd=>fd.kind==='img'?[fd.k]:fd.kind==='imgs'?fd.slots:[]);
@@ -483,6 +552,8 @@ function buildForm(){
   for(const fd of t.fields){
     if(fd.kind==='img'){
       h+=`<div class="f">${lb(fd)}${slot(fd.k,false,fd.label)}</div>`;
+    }else if(fd.kind==='iconlib'){
+      h+=`<div class="f">${lb(fd)}<div data-lib></div></div>`;
     }else if(fd.kind==='imgs'){
       h+=`<div class="f">${lb(fd)}<div class="rows">${fd.slots.map((k,i)=>slot(k,true,fd.label+(i+1))).join('')}</div></div>`;
     }else if(fd.kind==='choice'){
@@ -503,8 +574,9 @@ function buildForm(){
   $('form').querySelectorAll('[data-file]').forEach(fi=>fi.onchange=()=>{if(fi.files[0])takeFile(fi.files[0],fi.dataset.file);fi.value=''});
   $('form').querySelectorAll('[data-clr]').forEach(c=>c.onclick=()=>{const key=ik(st.type,c.dataset.clr);delete imgs[key];saveImg(key,null);say('');thumb();draw()});
   $('form').querySelectorAll('[data-c]').forEach(bt=>bt.onclick=()=>{v[bt.dataset.c]=bt.dataset.v;save();
-    $('form').querySelectorAll(`[data-c="${bt.dataset.c}"]`).forEach(x=>x.setAttribute('aria-pressed',x===bt));draw()});
+    $('form').querySelectorAll(`[data-c="${bt.dataset.c}"]`).forEach(x=>x.setAttribute('aria-pressed',x===bt));paintLib();draw()});
   for(const fd of t.fields)if(fd.kind==='pairs'||fd.kind==='list')rowsUI(fd,v);
+  paintLib();
   $('save').onclick=doSave;
   thumb();showNote();
 }
@@ -567,6 +639,7 @@ const hasFiles=e=>e.dataTransfer&&[...e.dataTransfer.types].includes('Files');
 document.addEventListener('dragover',e=>{if(hasFiles(e))e.preventDefault()});
 document.addEventListener('drop',e=>{if(!hasFiles(e))return;e.preventDefault();const fl=e.dataTransfer.files[0];
   // 画像の欄の上に落としたらその欄へ（アプリのアイコンなど）。ほかは主の画像へ
+  if(fl&&e.target.closest&&e.target.closest('[data-lib]')){takeIcon(fl);return}
   const box=e.target.closest&&e.target.closest('.img'),fi=box&&box.querySelector('[data-file]');if(fl)takeFile(fl,fi?fi.dataset.file:'img')});
 
 /* ---------- 描く ---------- */
@@ -606,7 +679,7 @@ async function doSave(){
 }
 
 buildSeg();buildForm();draw();
-loadImgs().then(()=>{thumb();draw()});
+Promise.all([loadImgs(),loadIcons()]).then(()=>{thumb();paintLib();draw()});
 (document.fonts&&document.fonts.ready||Promise.resolve()).then(draw);
 })();
 </script>
