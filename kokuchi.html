@@ -291,14 +291,14 @@ const TYPES={
         const NOTAIL='（(「『【〔〈《［｛[{“';
         const seg=t=>{try{if(window.Intl&&Intl.Segmenter)return [...new Intl.Segmenter('ja',{granularity:'word'}).segment(t)].map(x=>x.segment)}catch(e){}
           return t.match(/[A-Za-z0-9]+|\s+|./gu)||[]};
-        const wrap=sz=>{ctx.font=f(TW,sz);const out=[];
+        const wrap=sz=>{ctx.font=f(TW,sz);const out=[];let cut=false;
           for(const l of tsrc){
             let cur='';
             const push=()=>{if(cur.trim())out.push(cur.trim());cur=''};
             for(let tok of seg(l)){
               if(ctx.measureText(cur+tok).width<=tmw||!cur.trim()){
                 // 1語だけで幅を超えるときは字で割る
-                if(!cur.trim()&&ctx.measureText(tok).width>tmw){for(const ch of tok){if(cur&&ctx.measureText(cur+ch).width>tmw)push();cur+=ch}}
+                if(!cur.trim()&&ctx.measureText(tok).width>tmw){for(const ch of tok){if(cur&&ctx.measureText(cur+ch).width>tmw){push();cut=true}cur+=ch}}
                 else cur+=tok;
                 continue;
               }
@@ -311,28 +311,30 @@ const TYPES={
                   // ぶら下げた記号もいっしょに、記号でない字までさかのぼって送る
                   const cs=[...cur];let mv='';while(cs.length>1){const c=cs.pop();mv=c+mv;if(!NOHEAD.includes(c))break}
                   cur=cs.join('');push();cur=mv+tok;
-                  if(ctx.measureText(cur).width>tmw){const t2=cur;cur='';for(const ch of t2){if(cur&&ctx.measureText(cur+ch).width>tmw)push();cur+=ch}}
+                  if(ctx.measureText(cur).width>tmw){const t2=cur;cur='';for(const ch of t2){if(cur&&ctx.measureText(cur+ch).width>tmw){push();cut=true}cur+=ch}}
                   continue}
               }
               // 行末禁則：開き括弧は次の行へ送る
               let carry='';while(cur.length>1&&NOTAIL.includes(cur[cur.length-1])){carry=cur[cur.length-1]+carry;cur=cur.slice(0,-1)}
               push();cur=carry+tok;
-              if(ctx.measureText(cur).width>tmw){const t2=cur;cur='';for(const ch of t2){if(cur&&ctx.measureText(cur+ch).width>tmw)push();cur+=ch}}
+              if(ctx.measureText(cur).width>tmw){const t2=cur;cur='';for(const ch of t2){if(cur&&ctx.measureText(cur+ch).width>tmw){push();cut=true}cur+=ch}}
             }
             push();
           }
-          return out};
+          out.cut=cut;return out};
         // 入る中でいちばん大きく：120px から縮め、4行以内で、締切の線と注意の札のあいだ（上下に余白24）に収まる大きさにする（44pxまで）
         const top0=324,bot0=s.warn.trim()?662:834,room=bot0-top0-48;
-        const hOf=(p,n)=>p*.92+p*1.22*(n-1);
+        const hOf=(p,n)=>p*1.02+p*1.22*(n-1); // 字の下にはみ出す分（約0.1字）も数える
         const fits=(p,l)=>l.length<=4&&hOf(p,l.length)<=room;
+        // 単語を字で割らずに入る大きさを先に探し、44pxでも無理なときだけ割ってよいことにする
         let tp=120,tl=wrap(tp);
-        while(tp>44&&!fits(tp,tl)){tp-=2;tl=wrap(tp)}
-        // 自分で改行した1行が途中で割れるなら、割れない大きさ（56px以上なら）を選ぶ
-        if(tl.length>tsrc.length){let p2=tp,l2=tl;while(p2>56&&l2.length>tsrc.length){p2-=2;l2=wrap(p2)}
+        while(tp>44&&!(fits(tp,tl)&&!tl.cut)){tp-=2;tl=wrap(tp)}
+        if(!fits(tp,tl)||tl.cut){tp=120;tl=wrap(tp);while(tp>44&&!fits(tp,tl)){tp-=2;tl=wrap(tp)}}
+        // 自分で改行したとき（2行以上）、その行が途中で割れるなら、割れない大きさ（56px以上なら）を選ぶ。1行だけなら折り返して大きく出す
+        if(tsrc.length>1&&tl.length>tsrc.length){let p2=tp,l2=tl;while(p2>56&&l2.length>tsrc.length){p2-=2;l2=wrap(p2)}
           if(l2.length===tsrc.length&&fits(p2,l2)){tp=p2;tl=l2}}
         if(tl.length>4){warns.push('研修名が長くて入りきりません');tl=tl.slice(0,4);tl[3]=clipText(tl[3]+'…',tmw)}
-        const LH=tp*1.22,blockH=tp*.92+LH*(tl.length-1);
+        const LH=tp*1.22,blockH=hOf(tp,tl.length);
         const top=top0,bottom=bot0;
         const y0=top+(bottom-top-blockH)/2+tp*.92;
         // 中央と右は注意の札にそろえる（札がないときは右の列 1036〜1814 に）。どの行も 1036〜1814 からは出さない
@@ -622,7 +624,10 @@ function buildForm(){
   h+=`<p class="note" id="note" role="status"></p><button type="button" class="b main" id="save">${svgIcon('save')}画像を保存</button>`;
   $('form').innerHTML=h;
   $('form').querySelectorAll('[data-k]').forEach(el=>el.oninput=()=>{v[el.dataset.k]=el.value;save();if(msgOk)msg='';draw()});
-  $('form').querySelectorAll('[data-xk]').forEach(b=>b.onclick=()=>{const el=$('form').querySelector(`[data-k="${b.dataset.xk}"]`);el.value='';el.dispatchEvent(new Event('input'));el.focus()});
+  $('form').querySelectorAll('[data-xk]').forEach(b=>b.onclick=()=>{const el=$('form').querySelector(`[data-k="${b.dataset.xk}"]`);
+    // 選んで消す（⌘Z・iPhoneの取り消しで戻せる）。消せない環境だけ直接空にする
+    el.focus();el.select();let ok=false;try{ok=document.execCommand('delete')}catch(e){}
+    if(!ok||el.value){el.value='';el.dispatchEvent(new Event('input'))}});
   $('form').querySelectorAll('[data-file]').forEach(fi=>fi.onchange=()=>{if(fi.files[0])takeFile(fi.files[0],fi.dataset.file);fi.value=''});
   $('form').querySelectorAll('[data-clr]').forEach(c=>c.onclick=()=>{const key=ik(st.type,c.dataset.clr);delete imgs[key];saveImg(key,null);say('');thumb();draw()});
   $('form').querySelectorAll('[data-c]').forEach(bt=>bt.onclick=()=>{v[bt.dataset.c]=bt.dataset.v;save();
