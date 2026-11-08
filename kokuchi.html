@@ -22,7 +22,7 @@
   --o-warn-bg:#fde9e5;--o-warn-line:#f2b9ae;--o-warn-ink:#d8402e;
   --o-nw-bg1:#f3effd;--o-nw-bg2:#f6f1fb;--o-nw-bg3:#fbeef4;--o-nw-ring:rgba(190,170,225,.18);--o-nw-spark:rgba(185,165,225,.72);
   --o-nw-pill:rgba(255,255,255,.6);--o-nw-violet:#9146d8;--o-nw-ink:#2b2440;--o-nw-violet2:#8e3fd6;--o-nw-shadow:rgba(60,40,90,.22);
-  --o-rd-bg1:#ffffff;--o-rd-bg2:#fbfbfe;--o-rd-bg3:#f5f6fb;--o-rd-ink:#1d1d1f;
+  --o-rd-bg1:#ffffff;--o-rd-bg2:#fbfbfe;--o-rd-bg3:#f5f6fb;--o-rd-ink:#1d1d1f;--o-rd-link:#1d1d1f;
 }
 @media (prefers-color-scheme:dark){:root{
   --paper:#0f0d07;--surface:#211d14;--surface-2:#2b2619;--ink:#efe8da;--ink-mid:#a89e8b;--ink-soft:#9f988a;
@@ -53,7 +53,7 @@ h1{font-size:20px;font-weight:700;margin:4px 0 14px}
 .f{display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)}
 .f small{font-size:13px;font-weight:400;color:var(--ink-soft)}
 .f .lb{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-textarea,input[type=text]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
+textarea,input[type=text],input[type=url]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
   border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;min-height:44px;resize:vertical}
 textarea{min-height:120px;line-height:1.5}
 .img{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -63,6 +63,21 @@ button.b,label.b{position:relative;display:inline-flex;align-items:center;justif
 button.b svg,label.b svg{width:20px;height:20px;flex:none}
 button.main{background:var(--accent-2);color:var(--paper);width:100%}
 .img input{position:absolute;inset:0;opacity:0;width:100%;height:100%;font-size:16px;cursor:pointer}
+.opt{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;background:var(--surface-2);border-radius:12px;padding:4px}
+.opt button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:0;border-radius:9px;background:transparent;
+  color:var(--ink-mid);font:inherit;font-size:15px;font-weight:500;cursor:pointer}
+.opt button svg{width:20px;height:20px;flex:none}
+.opt button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-2)}
+.img .thumb.sq{width:50px}
+.rows{display:grid;gap:8px}
+.row{display:flex;gap:6px;align-items:center}
+.row input{flex:1;min-width:0}
+.row.pair{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:6px;align-items:center;padding:8px 4px 8px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.row.pair .two{display:grid;gap:6px}
+.rows:has(.pair){gap:10px}
+.row .x{width:44px;height:44px;min-height:44px;padding:0;flex:none;background:transparent;color:var(--ink-soft)}
+.add[hidden]{display:none}
+.add{justify-self:start;background:transparent;color:var(--accent-2);padding:10px 4px}
 .note{font-size:14px;color:var(--warn-ink);margin:0;line-height:1.5}
 .note.ok{color:var(--good-ink)}
 .note:empty{display:none}
@@ -109,6 +124,12 @@ const IC={
   photo:['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z','M7 9a2 2 0 1 0 4 0a2 2 0 1 0-4 0','M21 15l-3.1-3.1a2 2 0 0 0-2.8 0L6 21'],
   ipad:['M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z','M12 18h.01'],
   x:['M18 6L6 18','M6 6l12 12'],
+  warn:['M10.3 3.9a2 2 0 0 1 3.4 0l8.2 14.2a2 2 0 0 1-1.7 3H3.8a2 2 0 0 1-1.7-3z','M12 9.5v4.5','M12 17.6v.1'],
+  alignL:['M4 6h16','M4 12h10','M4 18h13'],
+  alignC:['M4 6h16','M7 12h10','M5.5 18h13'],
+  alignR:['M4 6h16','M10 12h10','M7 18h13'],
+  plus:['M12 5v14','M5 12h14'],
+  app:['M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4z'],
   save:['M12 3v12','M7 10l5 5 5-5','M5 21h14'],
 };
 const P2={};for(const k in IC)P2[k]=IC[k].map(d=>new Path2D(d));
@@ -151,6 +172,20 @@ function clipText(t,maxW){
   while(t.length>1&&ctx.measureText(t+'…').width>maxW)t=t.slice(0,-1);
   return t+'…';
 }
+/* 新しい研修の注意の札：右端 1814 にそろえ、研修の画面にかからない幅まで（count=true のときだけ入りきらない知らせを積む） */
+function warnBox(w,count){
+  const wt=(w||'').trim();if(!wt)return null;
+  const maxTW=1814-1040-130;
+  const sz=fitText(wt,700,36,maxTW,24,count?'注意':null);const t=clipText(wt,maxTW);const tw=ctx.measureText(t).width;
+  const pw=tw+130;return {x:1814-pw,y:662,w:pw,t,sz};
+}
+/* アプリのアイコン：正方形に切り抜き（真ん中を使う）、角を丸め、影を付ける */
+function appIcon(im,x,y,a){
+  const r=a*.24;
+  ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;rr(x,y,a,a,r);ctx.fillStyle=C('white');ctx.fill();ctx.restore();
+  const m=Math.min(im.width,im.height);
+  ctx.save();rr(x,y,a,a,r);ctx.clip();ctx.drawImage(im,(im.width-m)/2,(im.height-m)/2,m,m,x,y,a,a);ctx.restore();
+}
 function sparkle(cx,cy,r,color,lw){
   ctx.save();ctx.strokeStyle=color;ctx.lineWidth=lw;ctx.lineJoin='round';ctx.beginPath();
   ctx.moveTo(cx,cy-r);ctx.quadraticCurveTo(cx,cy,cx+r,cy);ctx.quadraticCurveTo(cx,cy,cx,cy+r);
@@ -167,10 +202,12 @@ const TYPES={
       {k:'t1',label:'見出し',def:'Learning Roadmap'},
       {k:'t2',label:'見出し2',hint:'赤',def:'Product Zone'},
       {k:'title',label:'研修名',hint:'空なら出しません',def:'サンプル研修\n基礎編',kind:'area',rows:3},
+      {k:'talign',label:'研修名の揃え',kind:'choice',def:'left',opts:[['left','左','alignL'],['center','中央','alignC'],['right','右','alignR']]},
       {k:'date',label:'締切',def:'11/30'},
+      {k:'apps',label:'アプリのアイコン',hint:'2つまで・空なら見本',kind:'imgs',slots:['app1','app2']},
       {k:'warn',label:'注意',hint:'空なら出しません',def:'契約用iPadじゃないとできません！'},
     ],
-    draw(s,img){
+    draw(s,img,gi){
       ctx.fillStyle=C('rm-bg');ctx.fillRect(0,0,W,H);
       ctx.fillStyle=C('rm-dot');
       for(let y=20;y<H;y+=40)for(let x=20;x<W;x+=40){ctx.beginPath();ctx.arc(x,y,2,0,7);ctx.fill()}
@@ -183,24 +220,33 @@ const TYPES={
       if(img){const r=fitImg(img,bx,by,bw,bh);r.x=bx;r.y=by;ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=24;ctx.shadowOffsetY=6;
         ctx.drawImage(img,r.x,r.y,r.w,r.h);ctx.restore();ctx.strokeStyle=C('frame');ctx.lineWidth=2;ctx.strokeRect(r.x,r.y,r.w,r.h)}
       else placeholder(bx,by,bw,bh,'研修の画面');
+      // アプリのアイコン：0〜1つは札の右に216角。2つのときは176角を2つ並べ、札を細くして高さの真ん中をそろえる
+      const apps=['app1','app2'].map(gi).filter(Boolean);
+      const two=apps.length===2,as=two?176:216,gap=20;
+      const ax=two?1814-as*2-gap:1596,ay=two?106+(218-as)/2:108;
+      const pw0=two?ax-36-1036:518;
       // 締切の札
       ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;
-      rr(1036,106,518,218,36);ctx.fillStyle=C('white');ctx.fill();ctx.restore();
+      rr(1036,106,pw0,218,36);ctx.fillStyle=C('white');ctx.fill();ctx.restore();
       icon('cal',1082,142,56,C('orange'),1.9);
-      ctx.fillStyle=C('rm-ink');ctx.textAlign='center';fitText(s.date,400,90,380,40,'締切');ctx.fillText(clipText(s.date,380),1300,243);
-      ctx.fillStyle=C('rule');rr(1076,290,438,4,2);ctx.fill();
-      // アプリのアイコン（輪は下ほど白くならないよう控えめに）
-      const ax=1596,ay=108,as=216;ctx.save();
-      const g=ctx.createLinearGradient(ax,ay,ax,ay+as);g.addColorStop(0,C('app-top'));g.addColorStop(1,C('app-bot'));
-      rr(ax,ay,as,as,52);ctx.fillStyle=g;ctx.fill();ctx.clip();
-      ctx.fillStyle=C('white');
-      [[100,.12],[80,.2],[60,.38],[40,1]].forEach(([r,a],i)=>{ctx.globalAlpha=a;ctx.beginPath();ctx.arc(ax+as/2,ay+as/2+10+i*6,r,0,7);ctx.fill()});
-      ctx.restore();
+      {const l=two?1150:1110,r=1036+pw0-(two?28:66),dw=r-l,dc=two?(l+r)/2:1300,mw=two?dw:380;
+        ctx.fillStyle=C('rm-ink');ctx.textAlign='center';fitText(s.date,400,90,mw,40,'締切');ctx.fillText(clipText(s.date,mw),dc,243);}
+      ctx.fillStyle=C('rule');rr(1076,290,pw0-80,4,2);ctx.fill();
+      if(!apps.length){
+        // 見本のアイコン（輪は下ほど白くならないよう控えめに）
+        ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;
+        const g=ctx.createLinearGradient(ax,ay,ax,ay+as);g.addColorStop(0,C('app-top'));g.addColorStop(1,C('app-bot'));
+        rr(ax,ay,as,as,as*.24);ctx.fillStyle=g;ctx.fill();ctx.restore();
+        ctx.save();rr(ax,ay,as,as,as*.24);ctx.clip();ctx.fillStyle=C('white');
+        [[100,.12],[80,.2],[60,.38],[40,1]].forEach(([r,a],i)=>{ctx.globalAlpha=a;ctx.beginPath();ctx.arc(ax+as/2,ay+as/2+10+i*6,r,0,7);ctx.fill()});
+        ctx.restore();
+      }else apps.forEach((im,i)=>appIcon(im,ax+i*(as+gap),ay,as));
       // 研修名（研修の画面の右・締切の札の下と注意の札の上のあいだの真ん中）
       // 折り返しは語のまとまりで。行頭に句読点・閉じ括弧を置かず、行末に開き括弧を残さない
       const tsrc=(s.title||'').split('\n').map(x=>x.trim()).filter(Boolean);
       if(tsrc.length){
         const tx=1036,tmw=1814-1036-40,TW=700;
+        const al=['left','center','right'].includes(s.talign)?s.talign:'left';
         const NOHEAD='、。，．,.）)」』】〕〉》］｝]}ー～〜！？!?‼⁉：:；;・…゛゜ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ々';
         const NOTAIL='（(「『【〔〈《［｛[{“';
         const seg=t=>{try{if(window.Intl&&Intl.Segmenter)return [...new Intl.Segmenter('ja',{granularity:'word'}).segment(t)].map(x=>x.segment)}catch(e){}
@@ -244,18 +290,21 @@ const TYPES={
         const LH=tp*1.22,blockH=tp*.92+LH*(tl.length-1);
         const top=324,bottom=s.warn.trim()?662:834;
         const y0=top+(bottom-top-blockH)/2+tp*.92;
+        // 中央と右は注意の札にそろえる（札がないときは右の列 1036〜1814 に）。どの行も 1036〜1814 からは出さない
+        // ※ warnBox は字の大きさを変えるので、先に測ってから研修名の字にする
+        const wb=warnBox(s.warn),cx=wb?wb.x+wb.w/2:(1036+1814)/2,rx=1814;
         ctx.font=f(TW,tp);ctx.fillStyle=C('rm-ink');ctx.textAlign='left';ctx.textBaseline='alphabetic';
-        tl.forEach((l,k)=>ctx.fillText(l,tx,y0+k*LH));
+        tl.forEach((l,k)=>{const w=ctx.measureText(l).width;
+          let x=al==='center'?cx-w/2:al==='right'?rx-w:tx;x=Math.max(1036,Math.min(1814-w,x));
+          ctx.fillText(l,x,y0+k*LH)});
       }
       // 注意の札（研修の画面にかからない幅まで）
-      const wt=s.warn.trim();
-      if(wt){
-        const maxTW=1814-1040-130;
-        fitText(wt,700,36,maxTW,24,'注意');const t=clipText(wt,maxTW);const tw=ctx.measureText(t).width;
-        const pw=tw+130,px=1814-pw,py=662;
+      const wb=warnBox(s.warn,true);
+      if(wb){
+        const {x:px,y:py,w:pw,t}=wb;
         rr(px,py,pw,80,40);ctx.fillStyle=C('warn-bg');ctx.fill();ctx.strokeStyle=C('warn-line');ctx.lineWidth=3;ctx.stroke();
-        icon('ipad',px+37,py+22,36,C('warn-ink'),2);
-        ctx.fillStyle=C('warn-ink');ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(t,px+85,py+42);
+        icon('warn',px+35,py+20,40,C('warn-ink'),2.3);
+        ctx.font=f(700,wb.sz);ctx.fillStyle=C('warn-ink');ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(t,px+85,py+42);
         ctx.textBaseline='alphabetic';
       }
       iconRow(953);
@@ -309,45 +358,52 @@ const TYPES={
       {k:'img',label:'研修の画面',kind:'img'},
       {k:'to',label:'お願いする相手',def:'Ken, Mai, Sota'},
       {k:'date',label:'締切',def:'11/30'},
-      {k:'links',label:'研修とリンク',hint:'1行目に題名、2行目にURL。空行で区切って4件まで',def:'iPhone 修理演習：カバー\nhttps://example.com/course/A-001\n\niPhone について知る：修理演習\nhttps://example.com/course/A-002',kind:'area',rows:6},
-      {k:'names',label:'終わっていない人',hint:'1行に1人',def:'Aoi Tanaka\nHaruto Sato\nYui Kobayashi\nRen Yamada\nMio Ito\nSora Watanabe',kind:'area',rows:8},
+      {k:'links',label:'研修とリンク',hint:'4件まで',kind:'pairs',max:4,def:'iPhone 修理演習：カバー\nhttps://example.com/course/A-001\n\niPhone について知る：修理演習\nhttps://example.com/course/A-002'},
+      {k:'names',label:'終わっていない人',kind:'list',def:'Aoi Tanaka\nHaruto Sato\nYui Kobayashi\nRen Yamada\nMio Ito\nSora Watanabe'},
     ],
     draw(s,img){
       const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,C('rd-bg1'));g.addColorStop(.55,C('rd-bg2'));g.addColorStop(1,C('rd-bg3'));
       ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-      iconRow(940,.4);
+      iconRow(1012,.4); // リンクと重ならないよう下の端に寄せる
       ctx.fillStyle=C('rd-ink');ctx.textAlign='center';ctx.textBaseline='alphabetic';
       const to=s.to.trim(),dt=s.date.trim();
       const h1=to?`${to}へサポートのお願い📚`:'サポートのお願い📚';
       const h2=`${dt?`期限${dt}が`:'期限が'}迫っているトレーニングが未完了のメンバーがいます`;
       fitText(h1,500,44,1760,24,'お願いする相手');ctx.fillText(clipText(h1,1760),W/2,110);
-      fitText(h2,500,44,1760,24);ctx.fillText(clipText(h2,1760),W/2,168);
+      // 2行目：締切の日付だけ赤くする
+      {const sz=fitText(h2,500,44,1760,24);
+        const parts=dt?[['期限',C('rd-ink')],[dt,C('rm-red')],['が迫っているトレーニングが未完了のメンバーがいます',C('rd-ink')]]:[[h2,C('rd-ink')]];
+        if(ctx.measureText(h2).width>1760){ctx.fillText(clipText(h2,1760),W/2,168)}
+        else{let x=W/2-ctx.measureText(h2).width/2;ctx.textAlign='left';
+          for(const [t,c] of parts){ctx.fillStyle=c;ctx.fillText(t,x,168);x+=ctx.measureText(t).width}
+          ctx.textAlign='center';ctx.fillStyle=C('rd-ink')}}
       // 研修の画面（枠の左上に寄せる）
       const bx=48,by=200,bw=1290,bh=560;
-      ctx.fillStyle=C('white');ctx.fillRect(bx,by,bw,bh);
-      if(img){const r=fitImg(img,bx,by,bw,bh);ctx.drawImage(img,bx,by,r.w,r.h)}
+      if(img){const r=fitImg(img,bx,by,bw,bh);
+        ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=24;ctx.shadowOffsetY=6;ctx.fillStyle=C('white');ctx.fillRect(bx,by,r.w,r.h);ctx.restore();
+        ctx.drawImage(img,bx,by,r.w,r.h);ctx.strokeStyle=C('frame');ctx.lineWidth=2;ctx.strokeRect(bx,by,r.w,r.h)}
       else placeholder(bx+30,by+30,bw-60,bh-60,'研修の画面');
-      // リンク（件数に合わせて行の高さを決める）
+      // リンク：1件を1行（題名のあとにURL）にして、横いっぱい（128〜1792）に並べる。件数に合わせて行の高さを決める
       let blocks=s.links.split(/\n\s*\n/).map(b=>b.split('\n').map(x=>x.trim()).filter(Boolean)).filter(b=>b.length);
       if(blocks.length>4){warns.push('研修とリンクは4件までです');blocks=blocks.slice(0,4)}
-      if(blocks.some(b=>b.length>2))warns.push('研修とリンクは1件2行までです（3行目からは出ません）');
-      const nl=blocks.reduce((a,b)=>a+Math.min(2,b.length),0);
-      if(nl){
-        const units=(nl-1)+(blocks.length-1)*.5;
-        const lh=units?Math.min(52,(1058-812)/units):52,fs=Math.min(30,Math.round(lh*.58));
-        ctx.textAlign='left';let y=812;
-        for(const b of blocks){
-          for(const l of b.slice(0,2)){
-            ctx.fillStyle=C('rd-ink');ctx.font=f(500,fs);const t=clipText(l,1260);ctx.fillText(t,128,y);
-            if(/^https?:/i.test(l)){const w=ctx.measureText(t).width;ctx.fillRect(128,y+fs*.2,w,Math.max(1.5,fs/12))}
-            y+=lh;
-          }
-          y+=lh*.5;
-        }
+      if(blocks.length){
+        const LX=128,LW=1792-128,y0=774,y1=950;
+        const lh=Math.min(56,(y1-y0)/blocks.length),fs=Math.min(32,Math.round(lh*.62));
+        ctx.font=f(500,fs);ctx.textAlign='left';
+        blocks.forEach((b,i)=>{
+          const isU=x=>/^https?:/i.test(x);
+          const ti=b.find(x=>!isU(x))||'',u=b.find(isU)||'';
+          const y=y0+lh*(i+.5)+fs*.35,gapW=fs*1.1;
+          // 題名は最大で半分まで。残りをURLに
+          let t=ti?clipText(ti,u?LW*.5:LW):'';const tw=t?ctx.measureText(t).width:0;
+          ctx.fillStyle=C('rd-ink');if(t)ctx.fillText(t,LX,y);
+          if(u){const ux=LX+(t?tw+gapW:0),uu=clipText(u,LX+LW-ux),uw=ctx.measureText(uu).width;
+            ctx.fillStyle=C('rd-link');ctx.fillText(uu,ux,y);ctx.fillRect(ux,y+fs*.2,uw,Math.max(1.5,fs/12))}
+        });
       }
       // 名前（1列→2列→3列の順で、入る大きさを探す）
       const names=s.names.split('\n').map(x=>x.trim()).filter(Boolean);
-      const top=240,bottom=880,areaW=500,LH=1.27;
+      const top=230,bottom=blocks.length?762:880,areaW=500,LH=1.27;
       const plan=[[1,56,34],[2,40,24],[3,30,18]];let use=null;
       for(const [cols,mx,mn] of plan){
         for(let sz=mx;sz>=mn;sz-=2){if(Math.ceil(names.length/cols)*sz*LH<=bottom-top){use={cols,sz};break}}
@@ -374,16 +430,18 @@ try{const o=JSON.parse(localStorage.getItem(KEY)||'null');
 }catch(e){}
 {const q=new URLSearchParams(location.search).get('type');if(q&&TYPES[q])st.type=q}
 for(const t in TYPES){if(!st.v[t]||typeof st.v[t]!=='object')st.v[t]={};
-  for(const fd of TYPES[t].fields)if(fd.kind!=='img'&&typeof st.v[t][fd.k]!=='string')st.v[t][fd.k]=fd.def}
-const imgs={}; // 型ごとの画像（保存は別キー）
+  for(const fd of TYPES[t].fields)if(fd.kind!=='img'&&fd.kind!=='imgs'&&typeof st.v[t][fd.k]!=='string')st.v[t][fd.k]=fd.def}
+const imgs={}; // 画像（保存は別キー）。名前は 型（主の画像）か 型.欄（アプリのアイコンなど）
+const ik=(t,k)=>k&&k!=='img'?t+'.'+k:t;
+const slotsOf=t=>TYPES[t].fields.flatMap(fd=>fd.kind==='img'?[fd.k]:fd.kind==='imgs'?fd.slots:[]);
 function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
-function saveImg(t,data){
-  try{if(data)localStorage.setItem(KEY+'.img.'+t,data);else localStorage.removeItem(KEY+'.img.'+t);return true}
-  catch(e){try{localStorage.removeItem(KEY+'.img.'+t)}catch(_){}return false}
+function saveImg(key,data){
+  try{if(data)localStorage.setItem(KEY+'.img.'+key,data);else localStorage.removeItem(KEY+'.img.'+key);return true}
+  catch(e){try{localStorage.removeItem(KEY+'.img.'+key)}catch(_){}return false}
 }
-function loadImgs(){return Promise.all(Object.keys(TYPES).map(t=>new Promise(r=>{
-  let d=null;try{d=localStorage.getItem(KEY+'.img.'+t)}catch(e){}
-  if(!d)return r();const im=new Image();im.onload=()=>{imgs[t]=im;r()};im.onerror=()=>r();im.src=d})))}
+function loadImgs(){return Promise.all(Object.keys(TYPES).flatMap(t=>slotsOf(t).map(k=>ik(t,k))).map(key=>new Promise(r=>{
+  let d=null;try{d=localStorage.getItem(KEY+'.img.'+key)}catch(e){}
+  if(!d)return r();const im=new Image();im.onload=()=>{imgs[key]=im;r()};im.onerror=()=>r();im.src=d})))}
 
 /* 保存ボタンの上に出すひとこと（一時の知らせ）と、入りきらない知らせ */
 let msg='',msgOk=false;
@@ -401,13 +459,21 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 function buildForm(){
   const t=TYPES[st.type],v=st.v[st.type];
   const lb=fd=>`<span class="lb">${fd.label}${fd.hint?`<small>${fd.hint}</small>`:''}</span>`;
+  const slot=(k,sq)=>`<div class="img"><div class="thumb${sq?' sq':''}" data-th="${k}"></div>
+        <label class="b">${svgIcon('photo')}選ぶ<input type="file" accept="image/*" data-file="${k}"></label>
+        <button type="button" class="b" data-clr="${k}">${svgIcon('x')}外す</button></div>`;
   let h='';
   for(const fd of t.fields){
     if(fd.kind==='img'){
-      h+=`<div class="f">${lb(fd)}<div class="img">
-        <div class="thumb" id="thumb"></div>
-        <label class="b">${svgIcon('photo')}選ぶ<input type="file" accept="image/*" id="file"></label>
-        <button type="button" class="b" id="clr">${svgIcon('x')}外す</button></div></div>`;
+      h+=`<div class="f">${lb(fd)}${slot(fd.k)}</div>`;
+    }else if(fd.kind==='imgs'){
+      h+=`<div class="f">${lb(fd)}<div class="rows">${fd.slots.map(k=>slot(k,true)).join('')}</div></div>`;
+    }else if(fd.kind==='choice'){
+      h+=`<div class="f">${lb(fd)}<div class="opt" role="group" aria-label="${fd.label}">${fd.opts.map(([val,name,ic])=>
+        `<button type="button" data-c="${fd.k}" data-v="${val}" aria-pressed="${(v[fd.k]||fd.def)===val}">${svgIcon(ic)}${name}</button>`).join('')}</div></div>`;
+    }else if(fd.kind==='pairs'||fd.kind==='list'){
+      h+=`<div class="f">${lb(fd)}<div class="rows" data-rows="${fd.k}"></div>
+        <button type="button" class="b add" data-add="${fd.k}">${svgIcon('plus')}追加</button></div>`;
     }else if(fd.kind==='area'){
       h+=`<label class="f">${lb(fd)}<textarea data-k="${fd.k}" rows="${fd.rows||4}">${esc(v[fd.k])}</textarea></label>`;
     }else{
@@ -417,17 +483,53 @@ function buildForm(){
   h+=`<p class="note" id="note" role="status"></p><button type="button" class="b main" id="save">${svgIcon('save')}画像を保存</button>`;
   $('form').innerHTML=h;
   $('form').querySelectorAll('[data-k]').forEach(el=>el.oninput=()=>{v[el.dataset.k]=el.value;save();if(msgOk)msg='';draw()});
-  const fi=$('file');if(fi)fi.onchange=()=>{if(fi.files[0])takeFile(fi.files[0]);fi.value=''};
-  const c=$('clr');if(c)c.onclick=()=>{delete imgs[st.type];saveImg(st.type,null);say('');thumb();draw()};
+  $('form').querySelectorAll('[data-file]').forEach(fi=>fi.onchange=()=>{if(fi.files[0])takeFile(fi.files[0],fi.dataset.file);fi.value=''});
+  $('form').querySelectorAll('[data-clr]').forEach(c=>c.onclick=()=>{const key=ik(st.type,c.dataset.clr);delete imgs[key];saveImg(key,null);say('');thumb();draw()});
+  $('form').querySelectorAll('[data-c]').forEach(bt=>bt.onclick=()=>{v[bt.dataset.c]=bt.dataset.v;save();
+    $('form').querySelectorAll(`[data-c="${bt.dataset.c}"]`).forEach(x=>x.setAttribute('aria-pressed',x===bt));draw()});
+  for(const fd of t.fields)if(fd.kind==='pairs'||fd.kind==='list')rowsUI(fd,v);
   $('save').onclick=doSave;
   thumb();showNote();
 }
-function thumb(){const th=$('thumb');if(th)th.style.backgroundImage=imgs[st.type]?`url(${imgs[st.type].src})`:'none'}
+/* 1件ずつの入力欄。保存は今までどおり1つの文字列（list＝1行に1人／pairs＝題名とURLの2行を空行で区切る） */
+const rowsMem={}; // 打ちかけの空の行も消さずに見せるため、画面の行は別に覚えておく
+function rowsUI(fd,v){
+  const box=document.querySelector(`[data-rows="${fd.k}"]`),add=document.querySelector(`[data-add="${fd.k}"]`);
+  const id=st.type+'.'+fd.k;
+  const isU=x=>/^https?:/i.test(x);
+  if(!rowsMem[id]){
+    if(fd.kind==='list')rowsMem[id]=v[fd.k].split('\n').map(x=>x.trim()).filter(Boolean);
+    else rowsMem[id]=v[fd.k].split(/\n\s*\n/).map(b=>b.split('\n').map(x=>x.trim()).filter(Boolean)).filter(b=>b.length)
+      .map(b=>({t:b.find(x=>!isU(x))||'',u:b.find(isU)||''}));
+    if(!rowsMem[id].length)rowsMem[id].push(fd.kind==='list'?'':{t:'',u:''});
+  }
+  const rows=rowsMem[id];
+  const store=()=>{
+    v[fd.k]=fd.kind==='list'?rows.map(x=>x.trim()).filter(Boolean).join('\n')
+      :rows.filter(r=>r.t.trim()||r.u.trim()).map(r=>[r.t.trim(),r.u.trim()].filter(Boolean).join('\n')).join('\n\n');
+    save();if(msgOk)msg='';draw()};
+  const xb=i=>`<button type="button" class="b x" data-del="${i}" aria-label="消す">${svgIcon('x')}</button>`;
+  const paint=()=>{
+    box.innerHTML=rows.map((r,i)=>fd.kind==='list'
+      ?`<div class="row"><input type="text" data-i="${i}" value="${esc(r)}" aria-label="${fd.label}${i+1}">${xb(i)}</div>`
+      :`<div class="row pair"><div class="two"><input type="text" data-i="${i}" data-p="t" value="${esc(r.t)}" placeholder="題名" aria-label="題名${i+1}">
+        <input type="url" inputmode="url" data-i="${i}" data-p="u" value="${esc(r.u)}" placeholder="URL" aria-label="URL${i+1}"></div>${xb(i)}</div>`).join('');
+    box.querySelectorAll('input').forEach(el=>el.oninput=()=>{const i=+el.dataset.i;
+      if(fd.kind==='list')rows[i]=el.value;else rows[i][el.dataset.p]=el.value;store()});
+    box.querySelectorAll('[data-del]').forEach(bt=>bt.onclick=()=>{rows.splice(+bt.dataset.del,1);
+      if(!rows.length)rows.push(fd.kind==='list'?'':{t:'',u:''});paint();store()});
+    add.hidden=!!fd.max&&rows.length>=fd.max;
+  };
+  add.onclick=()=>{if(fd.max&&rows.length>=fd.max)return;rows.push(fd.kind==='list'?'':{t:'',u:''});paint();
+    const ins=box.querySelectorAll('input');const last=fd.kind==='list'?ins[ins.length-1]:ins[ins.length-2];if(last)last.focus()};
+  paint();
+}
+function thumb(){document.querySelectorAll('[data-th]').forEach(th=>{const im=imgs[ik(st.type,th.dataset.th)];th.style.backgroundImage=im?`url(${im.src})`:'none'})}
 
-function takeFile(file){
+function takeFile(file,slot){
   if(!file)return;
   if(file.type&&!/^image\//.test(file.type)){say('画像のファイルを選んでください');return}
-  const t=st.type;const url=URL.createObjectURL(file);const im=new Image();
+  const t=ik(st.type,slot);const url=URL.createObjectURL(file);const im=new Image();
   im.onload=()=>{ // 長い辺 2400px までに縮めて覚える。透けている所は白にする
     const m=2400,s=Math.min(1,m/Math.max(im.width,im.height));
     const c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*s));c.height=Math.max(1,Math.round(im.height*s));
@@ -448,14 +550,16 @@ document.addEventListener('paste',e=>{
 });
 const hasFiles=e=>e.dataTransfer&&[...e.dataTransfer.types].includes('Files');
 document.addEventListener('dragover',e=>{if(hasFiles(e))e.preventDefault()});
-document.addEventListener('drop',e=>{if(!hasFiles(e))return;e.preventDefault();const fl=e.dataTransfer.files[0];if(fl)takeFile(fl)});
+document.addEventListener('drop',e=>{if(!hasFiles(e))return;e.preventDefault();const fl=e.dataTransfer.files[0];
+  // 画像の欄の上に落としたらその欄へ（アプリのアイコンなど）。ほかは主の画像へ
+  const box=e.target.closest&&e.target.closest('.img'),fi=box&&box.querySelector('[data-file]');if(fl)takeFile(fl,fi?fi.dataset.file:'img')});
 
 /* ---------- 描く ---------- */
 let blob=null,blobVer=-1,ver=0,timer=0;
 function draw(){
   warns=[];
   ctx.setTransform(SC,0,0,SC,0,0);ctx.clearRect(0,0,W,H);ctx.globalAlpha=1;
-  try{TYPES[st.type].draw(st.v[st.type],imgs[st.type]||null)}catch(e){warns.push('描けませんでした：'+e.message)}
+  try{TYPES[st.type].draw(st.v[st.type],imgs[st.type]||null,k=>imgs[ik(st.type,k)]||null)}catch(e){warns.push('描けませんでした：'+e.message)}
   showNote();
   ver++;blob=null;clearTimeout(timer);const my=ver;
   if(imgs[st.type])timer=setTimeout(()=>cv.toBlob(b=>{if(my===ver){blob=b;blobVer=my}},'image/png'),400);
