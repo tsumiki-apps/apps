@@ -166,6 +166,7 @@ const TYPES={
       {k:'img',label:'研修の画面',kind:'img'},
       {k:'t1',label:'見出し',def:'Learning Roadmap'},
       {k:'t2',label:'見出し2',hint:'赤',def:'Product Zone'},
+      {k:'title',label:'タイトル',hint:'研修の名前・長いと折り返します・空なら出しません',def:'サンプル研修\n基礎編',kind:'area',rows:3},
       {k:'date',label:'締切',def:'11/30'},
       {k:'warn',label:'注意',hint:'空なら出しません',def:'契約用iPadじゃないとできません！'},
     ],
@@ -194,6 +195,19 @@ const TYPES={
       ctx.fillStyle=C('white');
       [[100,.12],[80,.2],[60,.38],[40,1]].forEach(([r,a],i)=>{ctx.globalAlpha=a;ctx.beginPath();ctx.arc(ax+as/2,ay+as/2+10+i*6,r,0,7);ctx.fill()});
       ctx.restore();
+      // タイトル（研修の画面の右・締切の札と注意の札のあいだ）。長い行は折り返し、3行に入る大きさを探す
+      const tsrc=(s.title||'').split('\n').map(x=>x.trim()).filter(Boolean);
+      if(tsrc.length){
+        const tx=1040,tmw=1814-1040;
+        const wrap=sz=>{ctx.font=f(800,sz);const out=[];
+          for(const l of tsrc){let cur='';for(const ch of l){if(cur&&ctx.measureText(cur+ch).width>tmw){out.push(cur);cur=ch.trim()}else cur+=ch}if(cur)out.push(cur)}
+          return out};
+        let tp=64,tl=wrap(tp);
+        while(tp>40&&tl.length>3){tp-=2;tl=wrap(tp)}
+        if(tl.length>3){warns.push('タイトルが長くて入りきりません（3行まで）');tl=tl.slice(0,3);tl[2]=clipText(tl[2]+'…',tmw)}
+        ctx.font=f(800,tp);ctx.fillStyle=C('rm-ink');ctx.textAlign='left';ctx.textBaseline='alphabetic';
+        tl.forEach((l,k)=>ctx.fillText(l,tx,372+tp*.95+k*tp*1.25));
+      }
       // 注意の札（研修の画面にかからない幅まで）
       const wt=s.warn.trim();
       if(wt){
