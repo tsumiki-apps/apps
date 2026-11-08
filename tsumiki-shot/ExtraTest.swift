@@ -201,15 +201,25 @@ enum ExtraTest {
         let fresh = SystemKeys.anyEnabled                                  // 何も書かれていない＝Mac の既定＝有効
         SystemKeys.setEnabled(false)
         let off = !SystemKeys.anyEnabled && SystemKeys.activeCombos.isEmpty
-        let noWarn = !SystemKeys.activeCombos.contains(Shortcuts.actions[0].def)
+        let noWarn = !SystemKeys.clashes(Shortcuts.actions[0].def)
         SystemKeys.setEnabled(true)
-        let act = SystemKeys.activeCombos   // 既定の 範囲⇧⌘4・全画面⇧⌘3・録画⇧⌘5 が重なる
-        let warn = [0, 1, 5].allSatisfy { act.contains(Shortcuts.actions[$0].def) } && !act.contains(Shortcuts.actions[2].def)
+        let warn = [0, 1, 5].allSatisfy { SystemKeys.clashes(Shortcuts.actions[$0].def) } && !SystemKeys.clashes(Shortcuts.actions[2].def)
         let restored = SystemKeys.isEnabled("28") && SystemKeys.isEnabled("184")
+        // 元から止めていた ⌃⇧⌘3 は、止める→戻すのあとも止めたまま
+        var tb = CFPreferencesCopyValue("AppleSymbolicHotKeys" as CFString, SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as! [String: Any]
+        var e29 = tb["29"] as! [String: Any]; e29["enabled"] = false; tb["29"] = e29
+        // ⇧⌘4 をシステム設定で ⌥⌘4 に変えていたら、⇧⌘4 は重ならない
+        var e30 = tb["30"] as! [String: Any]; e30["value"] = ["parameters": [52, 21, 0x180000], "type": "standard"]; tb["30"] = e30
+        CFPreferencesSetValue("AppleSymbolicHotKeys" as CFString, tb as CFDictionary, SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        SystemKeys.setEnabled(false); SystemKeys.setEnabled(true)
+        let kept = !SystemKeys.isEnabled("29") && SystemKeys.isEnabled("31")
+        let moved = !SystemKeys.clashes(Shortcuts.actions[0].def)
+            && SystemKeys.clashes(KeyCombo(code: UInt32(kVK_ANSI_4), mods: UInt32(cmdKey | optionKey), char: "4"))
         CFPreferencesSetValue("AppleSymbolicHotKeys" as CFString, nil, SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         CFPreferencesSynchronize(SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         SystemKeys.domain = realDomain; SystemKeys.applyNow = true
         check("Mac 標準のキー：既定は有効・止める・重なりに⚠︎・戻す", fresh && off && noWarn && warn && restored)
+        check("Mac 標準のキー：元から止めていたものは戻さない・変えたキーを読む", kept && moved, "kept=\(kept) moved=\(moved)")
 
         // 保存先
         let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("tsumikishot-保存先テスト", isDirectory: true)
@@ -223,6 +233,10 @@ enum ExtraTest {
         check("保存先を変える・消えたら既定・既定に戻す", firstDir == SaveFolder.standard && chosen && gone && !SaveFolder.isCustom && saveDir == SaveFolder.standard)
         Shortcuts.defaults = keep
         ud.removePersistentDomain(forName: suite)
+        // 自己テストの置き場のファイルを残さない
+        for n in [suite, "tsumikishot.selftest.symbolichotkeys"] {
+            try? FileManager.default.removeItem(at: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences/\(n).plist"))
+        }
 
         // 9. アイコン
         let icon = NSBitmapImageRep(data: AppIcon.png(64))

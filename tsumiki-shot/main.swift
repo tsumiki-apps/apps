@@ -25,6 +25,9 @@ enum SaveFolder {
     }
     /// 画面に出す短い形（ホームは ~）
     static var display: String { (url.path as NSString).abbreviatingWithTildeInPath }
+    /// 選んだのに使えない（外付けを外した・消えた・書けない）
+    static var isMissing: Bool { isCustom && url == standard }
+    static var chosenDisplay: String { ((Shortcuts.defaults.string(forKey: "saveDir") ?? "") as NSString).abbreviatingWithTildeInPath }
 }
 var saveDir: URL { SaveFolder.url }
 
@@ -562,13 +565,17 @@ func output(_ img: CGImage, kind: String, _ done: @escaping (URL?) -> Void) {
         guard CGImageDestinationFinalize(dest) else { DispatchQueue.main.async { done(nil) }; return }
         DispatchQueue.main.async {
             // 名前決めと書き込みは main の1本だけ＝同時に撮っても同じ名前にならない
-            try? FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
-            var url = saveDir.appendingPathComponent("\(name).png")
-            var n = 2
-            while FileManager.default.fileExists(atPath: url.path) {
-                url = saveDir.appendingPathComponent("\(name) \(n).png"); n += 1
+            // 選んだ場所に書けなければ（アクセスの許可がない等）既定の場所に書く
+            func write(in dir: URL) -> URL? {
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                var url = dir.appendingPathComponent("\(name).png")
+                var n = 2
+                while FileManager.default.fileExists(atPath: url.path) {
+                    url = dir.appendingPathComponent("\(name) \(n).png"); n += 1
+                }
+                return (try? (data as Data).write(to: url, options: .withoutOverwriting)) != nil ? url : nil
             }
-            do { try (data as Data).write(to: url, options: .withoutOverwriting) } catch { done(nil); return }
+            guard let url = write(in: saveDir) ?? (saveDir == SaveFolder.standard ? nil : write(in: SaveFolder.standard)) else { done(nil); return }
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.setData(data as Data, forType: .png)
@@ -641,7 +648,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// つみきショットのキーと Mac 標準のスクショのキーが重なっていたら、最初の1回だけ「止めますか」と聞く（設定でいつでも戻せる）
     func askSystemKeys() {
         let mine = Shortcuts.actions.compactMap { Shortcuts.combo($0.id) }
-        let clash = SystemKeys.activeCombos.filter { mine.contains($0) }
+        let clash = mine.filter { SystemKeys.clashes($0) }
         guard !clash.isEmpty, !UserDefaults.standard.bool(forKey: "askedSystemKeys") else { return }
         UserDefaults.standard.set(true, forKey: "askedSystemKeys")
         let a = NSAlert()
@@ -650,8 +657,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         a.addButton(withTitle: "止める"); a.addButton(withTitle: "このまま")
         NSApp.activate(ignoringOtherApps: true)
         if a.runModal() == .alertFirstButtonReturn {
-            SystemKeys.setEnabled(false)
-            HotKeys.apply(); refreshMenuKeys()
+            SystemKeys.setEnabled(false) { [weak self] in HotKeys.apply(); self?.refreshMenuKeys() }
         }
     }
 

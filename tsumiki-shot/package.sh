@@ -12,6 +12,12 @@ D=build/dist && rm -rf "$D" && mkdir -p "$D"
 swiftc -O -target arm64-apple-macos15.0 -o "$D/arm64" $SRC
 swiftc -O -target x86_64-apple-macos15.0 -o "$D/x86_64" $SRC
 "$D/arm64" --selftest >/dev/null && "$D/arm64" --extratest "$D" >/dev/null
+# Intel 側も確かめる（Rosetta があるときだけ）
+if arch -x86_64 /usr/bin/true 2>/dev/null; then
+  # 結果は出すが止めない（Rosetta の上では文字の読み取りだけ ✗ になる＝本物の Intel 機とは違う）
+  NG=$( { arch -x86_64 "$D/x86_64" --selftest; arch -x86_64 "$D/x86_64" --extratest "$D"; } 2>&1 | grep "✗" || true)
+  if [ -z "$NG" ]; then echo "Intel 側の自己テスト OK"; else echo "Intel 側（Rosetta）で ✗："; echo "$NG"; fi
+else echo "Rosetta が無いので Intel 側の自己テストは飛ばしました"; fi
 APP="$D/TsumikiShot.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create -output "$APP/Contents/MacOS/TsumikiShot" "$D/arm64" "$D/x86_64"

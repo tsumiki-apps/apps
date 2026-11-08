@@ -147,7 +147,7 @@ enum HotKeys {
             let st = RegisterEventHotKey(c.code, c.mods, EventHotKeyID(signature: OSType(0x54534854), id: a.id),
                                          GetApplicationEventTarget(), 0, &ref)
             if st == noErr, let ref { refs.append(ref) } else { failed.insert(a.id) }
-            if SystemKeys.activeCombos.contains(c) { failed.insert(a.id) }      // Mac 標準が同じキーを持っている
+            if SystemKeys.clashes(c) { failed.insert(a.id) }      // Mac 標準が同じキーを持っている
         }
     }
 
@@ -339,8 +339,13 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         }
         login.state = loginState() ? .on : .off
         sysKeys.state = SystemKeys.anyEnabled ? .off : .on
-        folderLabel.stringValue = SaveFolder.display
-        folderLabel.toolTip = SaveFolder.url.path
+        if SaveFolder.isMissing {
+            folderLabel.stringValue = "⚠︎ " + SaveFolder.chosenDisplay
+            folderLabel.toolTip = "見つからない・書けないので、いまは \(SaveFolder.display) に保存しています"
+        } else {
+            folderLabel.stringValue = SaveFolder.display
+            folderLabel.toolTip = SaveFolder.url.path
+        }
         folderReset.isHidden = !SaveFolder.isCustom
     }
 
@@ -377,8 +382,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     }
 
     @objc func sysKeysChanged() {
-        SystemKeys.setEnabled(sysKeys.state == .off)
-        HotKeys.apply(); refresh(); onKeysChanged?()
+        sysKeys.isEnabled = false
+        SystemKeys.setEnabled(sysKeys.state == .off) { [weak self] in
+            HotKeys.apply(); self?.sysKeys.isEnabled = true; self?.refresh(); self?.onKeysChanged?()
+        }
     }
 
     @objc func loginChanged() { onLogin?(login.state == .on); refresh() }
@@ -419,25 +426,56 @@ enum SystemKeys {
         return (e["enabled"] as? Bool) ?? ((e["enabled"] as? Int).map { $0 != 0 } ?? true)
     }
 
-    /// いま Mac 標準が持っているキー（有効なものだけ）
-    static var activeCombos: [KeyCombo] { entries.filter { isEnabled($0.id) }.map(\.combo) }
-    static var anyEnabled: Bool { !activeCombos.isEmpty }
+    /// その番号のいまのキー（システム設定で変えていればそちらを読む。読めなければ既定）
+    static func combo(_ id: String) -> KeyCombo? {
+        guard let e = entries.first(where: { $0.id == id }) else { return nil }
+        guard let v = (table()[id] as? [String: Any])?["value"] as? [String: Any],
+              let p = v["parameters"] as? [Int], p.count == 3 else { return e.combo }
+        if p[1] == 65535 { return nil }                                      // キーなし
+        let f = p[2]
+        var m = 0
+        if f & 0x20000 != 0 { m |= shiftKey }
+        if f & 0x40000 != 0 { m |= controlKey }
+        if f & 0x80000 != 0 { m |= optionKey }
+        if f & 0x100000 != 0 { m |= cmdKey }
+        let ch = p[0] > 0 && p[0] < 65535 ? (UnicodeScalar(p[0]).map { String($0).uppercased() } ?? "?") : "?"
+        return KeyCombo(code: UInt32(p[1]), mods: UInt32(m), char: ch)
+    }
 
-    /// 止める（false）／戻す（true）
-    static func setEnabled(_ on: Bool) {
+    /// いま Mac 標準が持っているキー（有効なものだけ）
+    static var activeCombos: [KeyCombo] { entries.filter { isEnabled($0.id) }.compactMap { combo($0.id) } }
+    static var anyEnabled: Bool { !activeCombos.isEmpty }
+    /// 同じキーか（表示用の文字は見ず、キー番号と修飾だけで比べる）
+    static func clashes(_ c: KeyCombo) -> Bool { activeCombos.contains { $0.code == c.code && $0.mods == c.mods } }
+
+    /// 止める（false）／戻す（true）。止める前の状態を覚えておき、戻すときはそこへ戻す（元から止めていたものは止めたまま）
+    static func setEnabled(_ on: Bool, done: (() -> Void)? = nil) {
         var t = table()
+        let memo = "systemKeysBefore"
+        if !on, entries.contains(where: { isEnabled($0.id) }) {
+            Shortcuts.defaults.set(Dictionary(uniqueKeysWithValues: entries.map { ($0.id, isEnabled($0.id)) }), forKey: memo)
+        }
+        let before = Shortcuts.defaults.dictionary(forKey: memo) as? [String: Bool]
         for e in entries {
             var v = t[e.id] as? [String: Any] ?? ["value": ["parameters": e.params, "type": "standard"]]
-            v["enabled"] = on
+            v["enabled"] = on ? (before?[e.id] ?? true) : false
             t[e.id] = v
         }
+        if on { Shortcuts.defaults.removeObject(forKey: memo) }
         CFPreferencesSetValue("AppleSymbolicHotKeys" as CFString, t as CFDictionary, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-        guard applyNow else { return }
-        // ログインし直さなくても効くように、システム設定と同じ反映の命令を呼ぶ
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
-        p.arguments = ["-u"]
-        try? p.run(); p.waitUntilExit()
+        guard applyNow else { done?(); return }
+        // ログインし直さなくても効くように、システム設定と同じ反映の命令を呼ぶ（画面が固まらないよう裏で。無い OS では再ログインで効く）
+        DispatchQueue.global(qos: .userInitiated).async {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
+            p.arguments = ["-u"]
+            if (try? p.run()) != nil {
+                let deadline = Date().addingTimeInterval(5)
+                while p.isRunning && Date() < deadline { usleep(50_000) }
+                if p.isRunning { p.terminate() }
+            }
+            DispatchQueue.main.async { done?() }
+        }
     }
 }
