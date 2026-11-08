@@ -1922,8 +1922,9 @@ function uploadName(raw) {
   const s = String(raw || '').normalize('NFC').split(/[\\/]/).pop();
   const dot = s.lastIndexOf('.');
   const ext = dot > 0 ? s.slice(dot + 1).toLowerCase() : '';
-  const base = (dot > 0 ? s.slice(0, dot) : s)
-    .replace(/[^\p{L}\p{N}_-]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+  // 60字は「字」で数える（.slice だと 𠮷 などの字が半分に割れて名前に � が入る）。切った後の端の _ も落とす
+  const base = Array.from((dot > 0 ? s.slice(0, dot) : s)
+    .replace(/[^\p{L}\p{N}_-]+/gu, '_').replace(/^_+|_+$/g, '')).slice(0, 60).join('').replace(/_+$/, '');
   return { base, ext: /^[a-z0-9]{1,12}$/.test(ext) ? ext : '' };
 }
 

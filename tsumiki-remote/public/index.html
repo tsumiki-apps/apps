@@ -612,7 +612,7 @@
     #keys{column-gap:4px}
     #keys #kperm,#keys .ksnip{padding-left:7px;padding-right:7px}
   }
-  /* 添えた画像の札。以前は Mac 側の保存先パス（70文字ほど）を文字として入力欄に
+  /* 添えたファイルの札。以前は Mac 側の保存先パス（70文字ほど）を文字として入力欄に
      流し込んでいたが、1行の入力欄がそれだけで埋まり、本文を打ち直そうとタップすると
      カーソルがパスの中に落ちる → Backspace で末尾が欠け、送っても Claude 側では
      「そんなファイルはない」になる（欠けたことに気づけない）。札は文字ではないので
@@ -1115,7 +1115,7 @@
     #reload{font-size:17px}
     /* 棒と電池は見た目を大きくしない（ヘッダーが騒がしくなる）。当たり判定だけ広げる */
     #usage,#batt{min-width:44px;min-height:44px;justify-content:center}
-    /* 添えた画像の札。✕ は指1本ぶん確保する */
+    /* 添えたファイルの札。✕ は指1本ぶん確保する */
     .att img,.att .ph{width:44px;height:44px;font-size:17px}
     .att button{width:44px;height:44px;font-size:17px}
     #cmd{padding:12px 16px;line-height:24px;max-height:144px}
@@ -6295,6 +6295,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   function attKind(f) {
     var n = f.name || '', t = f.type || '';
     if (t === 'application/pdf' || /\.pdf$/i.test(n)) return 'pdf';
+    // SVG は画像でも見本を作らない（寸法を持たない SVG は 1×1 の黒い見本になる）
+    if (t === 'image/svg+xml' || /\.svg$/i.test(n)) return 'file';
     if (/^image\//.test(t) || /\.(jpe?g|png|gif|webp|heic|heif|avif)$/i.test(n)) return 'img';
     if (/\.(numbers|xlsx?|csv|tsv)$/i.test(n)) return 'sheet';
     return 'file';
@@ -6314,7 +6316,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         img.alt = a.name || '添えたファイル';
         box.appendChild(img);
       } else {
-        // PDF は見本の絵を作れない（この画面では開けない）。何を添えたかは
+        // 画像以外（PDF・表・そのほか）は見本の絵を作れない。何を添えたかは
         // 種類の絵で示す。置いている最中だけ「…」
         var ph = document.createElement('span');
         ph.className = 'ph';
@@ -6339,6 +6341,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var img = new Image();
     img.onerror = function () { cb(''); };
     img.onload = function () {
+      if (!img.width || !img.height) return cb('');   // 寸法が取れない＝見本を作らず種類の絵にする
       try {
         var s = Math.min(1, 120 / Math.max(img.width, img.height));
         var c = document.createElement('canvas');
@@ -6358,7 +6361,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     reader.onload = function () {
       var dataUrl = String(reader.result);
       var base64 = dataUrl.split(',')[1] || '';
-      // PDF はこの画面では絵にできないので見本を作らない（作ろうとすると
+      // 画像以外はこの画面では絵にできないので見本を作らない（作ろうとすると
       // 読み込み失敗の待ち時間だけ増える）
       if (a.kind !== 'img') renderAtts();
       else makeThumb(dataUrl, function (t) { a.thumb = t; renderAtts(); });
