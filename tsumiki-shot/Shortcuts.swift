@@ -147,6 +147,7 @@ enum HotKeys {
             let st = RegisterEventHotKey(c.code, c.mods, EventHotKeyID(signature: OSType(0x54534854), id: a.id),
                                          GetApplicationEventTarget(), 0, &ref)
             if st == noErr, let ref { refs.append(ref) } else { failed.insert(a.id) }
+            if SystemKeys.activeCombos.contains(c) { failed.insert(a.id) }      // Mac 標準が同じキーを持っている
         }
     }
 
@@ -226,6 +227,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     var loginState: () -> Bool = { false }
     var onLogin: ((Bool) -> Void)?
     private let login = NSSwitch()
+    private let sysKeys = NSSwitch()
     private let folderLabel = NSTextField(labelWithString: "")
     private let folderReset = NSButton()
 
@@ -285,6 +287,16 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         let spacer = NSView(); spacer.setContentHuggingPriority(.init(1), for: .horizontal)
         let loginRow = NSStackView(views: [loginIcon, loginLabel, spacer, login]); loginRow.spacing = 10
 
+        // Mac 標準のスクショのキーを止める
+        sysKeys.target = self; sysKeys.action = #selector(sysKeysChanged)
+        let sysLabel = NSTextField(labelWithString: "Mac 標準のスクショのキーを止める")
+        sysLabel.font = .systemFont(ofSize: 13)
+        sysLabel.toolTip = "⇧⌘3・⇧⌘4・⇧⌘5（とコピー用の ⌃⇧⌘3・⌃⇧⌘4）。オンにするとつみきショットで使える。オフに戻すと Mac 標準に戻る"
+        let sysIcon = NSImageView(image: NSImage(systemSymbolName: "command", accessibilityDescription: nil)!)
+        sysIcon.contentTintColor = accent
+        let sysSpacer = NSView(); sysSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        let sysRow = NSStackView(views: [sysIcon, sysLabel, sysSpacer, sysKeys]); sysRow.spacing = 10
+
         let resetAll = NSButton(title: "すべて既定に戻す", image: NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: nil)!,
                                 target: self, action: #selector(resetAllKeys))
         resetAll.imagePosition = .imageLeading; resetAll.bezelStyle = .rounded
@@ -304,7 +316,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
 
         let sep = NSBox(); sep.boxType = .separator
         let sep2 = NSBox(); sep2.boxType = .separator
-        let stack = NSStackView(views: [header("keyboard", "ショートカット"), grid, resetAll, sep,
+        let stack = NSStackView(views: [header("keyboard", "ショートカット"), grid, sysRow, resetAll, sep,
                                         header("folder", "保存先"), folderRow, sep2, header("gearshape", "起動"), loginRow])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 22, bottom: 20, right: 22)
@@ -312,6 +324,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         stack.setCustomSpacing(18, after: folderRow); stack.setCustomSpacing(18, after: sep2)
         sep2.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         folderRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
+        sysRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         sep.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         loginRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         stack.widthAnchor.constraint(greaterThanOrEqualTo: grid.widthAnchor, constant: 44).isActive = true   // 右端の「戻す」が切れないように
@@ -325,6 +338,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
             warns[a.id]?.isHidden = !HotKeys.failed.contains(a.id)
         }
         login.state = loginState() ? .on : .off
+        sysKeys.state = SystemKeys.anyEnabled ? .off : .on
         folderLabel.stringValue = SaveFolder.display
         folderLabel.toolTip = SaveFolder.url.path
         folderReset.isHidden = !SaveFolder.isCustom
@@ -362,6 +376,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         Shortcuts.resetAll(); HotKeys.apply(); refresh(); onKeysChanged?()
     }
 
+    @objc func sysKeysChanged() {
+        SystemKeys.setEnabled(sysKeys.state == .off)
+        HotKeys.apply(); refresh(); onKeysChanged?()
+    }
+
     @objc func loginChanged() { onLogin?(login.state == .on); refresh() }
 
     func show() {
@@ -372,4 +391,53 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ n: Notification) { fields.values.forEach { $0.stop() } }
+}
+
+// MARK: - Mac 標準のスクショのキー（⇧⌘3・⇧⌘4・⇧⌘5 など）
+// 同じキーを Mac 本体が持っていると、押しても Mac 標準のほうが動く。止める/戻すはシステム設定の
+// 「キーボード → キーボードショートカット → スクリーンショット」と同じ場所（com.apple.symbolichotkeys）を書き換える。
+
+enum SystemKeys {
+    /// 番号：キーの中身（文字・キー番号・修飾）。⇧⌘3／⌃⇧⌘3（コピー）／⇧⌘4／⌃⇧⌘4（コピー）／⇧⌘5（スクショと録画）
+    static let entries: [(id: String, combo: KeyCombo, params: [Int])] = [
+        ("28", KeyCombo(code: UInt32(kVK_ANSI_3), mods: UInt32(cmdKey | shiftKey), char: "3"), [51, 20, 1179648]),
+        ("29", KeyCombo(code: UInt32(kVK_ANSI_3), mods: UInt32(cmdKey | shiftKey | controlKey), char: "3"), [51, 20, 1441792]),
+        ("30", KeyCombo(code: UInt32(kVK_ANSI_4), mods: UInt32(cmdKey | shiftKey), char: "4"), [52, 21, 1179648]),
+        ("31", KeyCombo(code: UInt32(kVK_ANSI_4), mods: UInt32(cmdKey | shiftKey | controlKey), char: "4"), [52, 21, 1441792]),
+        ("184", KeyCombo(code: UInt32(kVK_ANSI_5), mods: UInt32(cmdKey | shiftKey), char: "5"), [53, 23, 1179648]),
+    ]
+    static var domain = "com.apple.symbolichotkeys" as CFString     // 自己テストでは別の名前に差し替える
+    static var applyNow = true                                      // 自己テストでは反映の命令を撃たない
+
+    private static func table() -> [String: Any] {
+        CFPreferencesCopyValue("AppleSymbolicHotKeys" as CFString, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? [String: Any] ?? [:]
+    }
+
+    /// その番号が有効か（書かれていなければ Mac の既定＝有効）
+    static func isEnabled(_ id: String) -> Bool {
+        guard let e = table()[id] as? [String: Any] else { return true }
+        return (e["enabled"] as? Bool) ?? ((e["enabled"] as? Int).map { $0 != 0 } ?? true)
+    }
+
+    /// いま Mac 標準が持っているキー（有効なものだけ）
+    static var activeCombos: [KeyCombo] { entries.filter { isEnabled($0.id) }.map(\.combo) }
+    static var anyEnabled: Bool { !activeCombos.isEmpty }
+
+    /// 止める（false）／戻す（true）
+    static func setEnabled(_ on: Bool) {
+        var t = table()
+        for e in entries {
+            var v = t[e.id] as? [String: Any] ?? ["value": ["parameters": e.params, "type": "standard"]]
+            v["enabled"] = on
+            t[e.id] = v
+        }
+        CFPreferencesSetValue("AppleSymbolicHotKeys" as CFString, t as CFDictionary, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        guard applyNow else { return }
+        // ログインし直さなくても効くように、システム設定と同じ反映の命令を呼ぶ
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
+        p.arguments = ["-u"]
+        try? p.run(); p.waitUntilExit()
+    }
 }

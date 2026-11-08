@@ -5,6 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 OUT="${1:-$HOME/Applications/TsumikiShot.app}"
 ID="${TSUMIKI_SIGN_ID:-03541F4F153A80FCF6ACD26D006B78CC93C69710}"
+# 証明書の無い Mac（別の Mac で組み立てるとき）は ad-hoc。その場合は組み直すたびに「画面収録」の許可を付け直す
+security find-identity -v -p codesigning | grep -q "$ID" || { echo "証明書が無いので ad-hoc で署名します"; ID="-"; }
 rm -rf build && mkdir -p build
 swiftc -O -target arm64-apple-macos15.0 -o build/TsumikiShot main.swift Stitcher.swift SelfTest.swift Probe.swift Render.swift Editor.swift Extras.swift ExtraTest.swift Record.swift Shortcuts.swift AutoScroll.swift Icon.swift
 build/TsumikiShot --selftest

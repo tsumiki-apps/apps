@@ -195,6 +195,22 @@ enum ExtraTest {
             SelfTest.save(rep.cgImage!, to: dir + "/設定.png")
             check("設定の窓を描ける", rep.pixelsWide > 200, "\(Int(v.bounds.width))×\(Int(v.bounds.height))")
         }
+        // Mac 標準のキー（本物は触らず、別の名前の置き場で）
+        let realDomain = SystemKeys.domain
+        SystemKeys.domain = "tsumikishot.selftest.symbolichotkeys" as CFString; SystemKeys.applyNow = false
+        let fresh = SystemKeys.anyEnabled                                  // 何も書かれていない＝Mac の既定＝有効
+        SystemKeys.setEnabled(false)
+        let off = !SystemKeys.anyEnabled && SystemKeys.activeCombos.isEmpty
+        let noWarn = !SystemKeys.activeCombos.contains(Shortcuts.actions[0].def)
+        SystemKeys.setEnabled(true)
+        let act = SystemKeys.activeCombos   // 既定の 範囲⇧⌘4・全画面⇧⌘3・録画⇧⌘5 が重なる
+        let warn = [0, 1, 5].allSatisfy { act.contains(Shortcuts.actions[$0].def) } && !act.contains(Shortcuts.actions[2].def)
+        let restored = SystemKeys.isEnabled("28") && SystemKeys.isEnabled("184")
+        CFPreferencesSetValue("AppleSymbolicHotKeys" as CFString, nil, SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize(SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        SystemKeys.domain = realDomain; SystemKeys.applyNow = true
+        check("Mac 標準のキー：既定は有効・止める・重なりに⚠︎・戻す", fresh && off && noWarn && warn && restored)
+
         // 保存先
         let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("tsumikishot-保存先テスト", isDirectory: true)
         try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)

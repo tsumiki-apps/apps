@@ -257,16 +257,15 @@ steps(["変えたい操作の欄を押す",
        "使いたいキーを押す（⌘ ⌃ ⌥ のどれかと一緒に。F キーは単独でも可）"])
 rows([("delete.left", "なしにする", "delete", "その操作のキーを外す"),
       ("escape", "やめる", "esc", "覚えるのをやめて元のまま"),
-      ("exclamationmark.triangle", "使用中", nil, "他のアプリが使っているキー。別のキーに"),
-      ("arrow.counterclockwise", "既定に戻す", nil, "1つずつ・すべてまとめても")])
+      ("exclamationmark.triangle", "使用中", nil, "他のアプリが使っているキー。別のキーに")])
 notes([("arrow.triangle.2.circlepath", "同じキーを2つに付けると、前のほうは「なし」になる"),
-       ("folder", "保存先も「変更…」で選べる（フォルダが消えたら既定に戻る）"),
-       ("power", "「ログイン時に起動」もここで")])
+       ("arrow.counterclockwise", "既定に戻す（1つずつ・すべて）。「ログイン時に起動」もここで")])
 
 heading("困ったとき", "questionmark.circle")
 rows([("rectangle.dashed.badge.record", "真っ黒・何も写らない", nil, "画面収録を許可して、アプリを開き直す"),
       ("accessibility", "自動で動かない", nil, "アクセシビリティを許可する"),
       ("exclamationmark.triangle", "キーが効かない", nil, "⚠︎ が付いていたら設定で別のキーに"),
+      ("macbook", "Mac 標準のスクショが出る", nil, "設定の「Mac 標準のスクショのキーを止める」をオン"),
       ("text.viewfinder", "「文字なし」と出る", nil, "範囲を広めに選び直す")])
 
 NSGraphicsContext.restoreGraphicsState()

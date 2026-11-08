@@ -635,6 +635,24 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             UserDefaults.standard.set(true, forKey: "askedPermission")
             askPermission()
         }
+        askSystemKeys()
+    }
+
+    /// つみきショットのキーと Mac 標準のスクショのキーが重なっていたら、最初の1回だけ「止めますか」と聞く（設定でいつでも戻せる）
+    func askSystemKeys() {
+        let mine = Shortcuts.actions.compactMap { Shortcuts.combo($0.id) }
+        let clash = SystemKeys.activeCombos.filter { mine.contains($0) }
+        guard !clash.isEmpty, !UserDefaults.standard.bool(forKey: "askedSystemKeys") else { return }
+        UserDefaults.standard.set(true, forKey: "askedSystemKeys")
+        let a = NSAlert()
+        a.messageText = "Mac 標準のスクショのキーを止めますか？"
+        a.informativeText = "\(clash.map(\.display).joined(separator: "・")) を Mac 標準が使っています。止めると、つみきショットで使えます。\n設定の「Mac 標準のスクショのキーを止める」でいつでも戻せます。"
+        a.addButton(withTitle: "止める"); a.addButton(withTitle: "このまま")
+        NSApp.activate(ignoringOtherApps: true)
+        if a.runModal() == .alertFirstButtonReturn {
+            SystemKeys.setEnabled(false)
+            HotKeys.apply(); refreshMenuKeys()
+        }
     }
 
     /// 録画中に終了したら、動画を閉じ終えてから終わる（途中で切ると再生できないファイルが残る）
