@@ -17,7 +17,7 @@
   /* 画像の中身の色（元の告知画像に合わせた色・画面の配色とは別・ダークでも変えない） */
   --o-blue:#6b8fe3;--o-orange:#e0a25a;--o-pink:#d97aa8;--o-green:#5aa57e;--o-violet:#9b7be3;
   --o-ph-fill:rgba(120,120,140,.08);--o-ph-line:rgba(120,120,140,.45);--o-ph-text:rgba(90,90,110,.7);
-  --o-rm-bg:#f4f4f7;--o-rm-dot:#d6d7de;--o-rm-ink:#111114;--o-rm-red:#e0362a;--o-shadow:rgba(0,0,0,.08);--o-frame:#d4d4da;
+  --o-rm-bg:#f4f4f7;--o-rm-dot:#d6d7de;--o-rm-ink:#111114;--o-rm-red:#e0362a;--o-shadow:rgba(0,0,0,.08);--o-img-shadow:rgba(0,0,0,.2);--o-frame:#d4d4da;
   --o-white:#ffffff;--o-rule:#e3e3e8;--o-app-top:#3fe8c7;--o-app-bot:#268cdc;
   --o-warn-bg:#fde9e5;--o-warn-line:#f2b9ae;--o-warn-ink:#d8402e;
   --o-nw-bg1:#f3effd;--o-nw-bg2:#f6f1fb;--o-nw-bg3:#fbeef4;--o-nw-ring:rgba(190,170,225,.18);--o-nw-spark:rgba(185,165,225,.72);
@@ -69,6 +69,9 @@ button.main{background:var(--accent-2);color:var(--paper);width:100%}
 .opt button svg{width:20px;height:20px;flex:none}
 .opt button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-2)}
 .img .thumb.sq{width:50px}
+.b:focus-visible,.opt button:focus-visible,textarea:focus-visible,input[type=text]:focus-visible,input[type=url]:focus-visible,.img label.b:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:2px}
+.row.pair.over{opacity:.55}
+.row.pair.over::after{content:'画像に出ません';grid-column:1/-1;font-size:12px;color:var(--ink-soft)}
 .rows{display:grid;gap:8px}
 .row{display:flex;gap:6px;align-items:center}
 .row input{flex:1;min-width:0}
@@ -182,7 +185,7 @@ function warnBox(w,count){
 /* アプリのアイコン：正方形に切り抜き（真ん中を使う）、角を丸め、影を付ける */
 function appIcon(im,x,y,a){
   const r=a*.24;
-  ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;rr(x,y,a,a,r);ctx.fillStyle=C('white');ctx.fill();ctx.restore();
+  ctx.save();ctx.shadowColor=C('img-shadow');ctx.shadowBlur=40;ctx.shadowOffsetY=12;rr(x,y,a,a,r);ctx.fillStyle=C('white');ctx.fill();ctx.restore();
   const m=Math.min(im.width,im.height);
   ctx.save();rr(x,y,a,a,r);ctx.clip();ctx.drawImage(im,(im.width-m)/2,(im.height-m)/2,m,m,x,y,a,a);ctx.restore();
 }
@@ -217,7 +220,7 @@ const TYPES={
       // 研修の画面（枠の上に寄せる）
       // 研修名との間を空けるため幅は870で固定（研修名を入れ消ししても画像の大きさが変わらない）。画像は枠の左上に寄せる
       const bx=122,by=352,bw=870,bh=482;
-      if(img){const r=fitImg(img,bx,by,bw,bh);r.x=bx;r.y=by;ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=24;ctx.shadowOffsetY=6;
+      if(img){const r=fitImg(img,bx,by,bw,bh);r.x=bx;r.y=by;ctx.save();ctx.shadowColor=C('img-shadow');ctx.shadowBlur=40;ctx.shadowOffsetY=12;
         ctx.drawImage(img,r.x,r.y,r.w,r.h);ctx.restore();ctx.strokeStyle=C('frame');ctx.lineWidth=2;ctx.strokeRect(r.x,r.y,r.w,r.h)}
       else placeholder(bx,by,bw,bh,'研修の画面');
       // アプリのアイコン：0〜1つは札の右に216角。2つのときは176角を2つ並べ、札を細くして高さの真ん中をそろえる
@@ -294,8 +297,10 @@ const TYPES={
         // ※ warnBox は字の大きさを変えるので、先に測ってから研修名の字にする
         const wb=warnBox(s.warn),cx=wb?wb.x+wb.w/2:(1036+1814)/2,rx=1814;
         ctx.font=f(TW,tp);ctx.fillStyle=C('rm-ink');ctx.textAlign='left';ctx.textBaseline='alphabetic';
+        const mw=Math.max(...tl.map(l=>ctx.measureText(l).width));
+        const ccx=(cx-mw/2>=1036&&cx+mw/2<=1814)?cx:(1036+1814)/2; // 注意が短くて札の真ん中に置けないときは列の真ん中
         tl.forEach((l,k)=>{const w=ctx.measureText(l).width;
-          let x=al==='center'?cx-w/2:al==='right'?rx-w:tx;x=Math.max(1036,Math.min(1814-w,x));
+          let x=al==='center'?ccx-w/2:al==='right'?rx-w:tx;x=Math.max(1036,Math.min(1814-w,x));
           ctx.fillText(l,x,y0+k*LH)});
       }
       // 注意の札（研修の画面にかからない幅まで）
@@ -380,24 +385,24 @@ const TYPES={
       // 研修の画面（枠の左上に寄せる）
       const bx=48,by=200,bw=1290,bh=560;
       if(img){const r=fitImg(img,bx,by,bw,bh);
-        ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=24;ctx.shadowOffsetY=6;ctx.fillStyle=C('white');ctx.fillRect(bx,by,r.w,r.h);ctx.restore();
+        ctx.save();ctx.shadowColor=C('img-shadow');ctx.shadowBlur=40;ctx.shadowOffsetY=12;ctx.fillStyle=C('white');ctx.fillRect(bx,by,r.w,r.h);ctx.restore();
         ctx.drawImage(img,bx,by,r.w,r.h);ctx.strokeStyle=C('frame');ctx.lineWidth=2;ctx.strokeRect(bx,by,r.w,r.h)}
       else placeholder(bx+30,by+30,bw-60,bh-60,'研修の画面');
       // リンク：1件を1行（題名のあとにURL）にして、横いっぱい（128〜1792）に並べる。件数に合わせて行の高さを決める
-      let blocks=s.links.split(/\n\s*\n/).map(b=>b.split('\n').map(x=>x.trim()).filter(Boolean)).filter(b=>b.length);
+      let blocks=parseLinks(s.links);
       if(blocks.length>4){warns.push('研修とリンクは4件までです');blocks=blocks.slice(0,4)}
       if(blocks.length){
         const LX=128,LW=1792-128,y0=774,y1=950;
         const lh=Math.min(56,(y1-y0)/blocks.length),fs=Math.min(32,Math.round(lh*.62));
         ctx.font=f(500,fs);ctx.textAlign='left';
         blocks.forEach((b,i)=>{
-          const isU=x=>/^https?:/i.test(x);
-          const ti=b.find(x=>!isU(x))||'',u=b.find(isU)||'';
+          const ti=b.t,u=b.u;
           const y=y0+lh*(i+.5)+fs*.35,gapW=fs*1.1;
           // 題名は最大で半分まで。残りをURLに
-          let t=ti?clipText(ti,u?LW*.5:LW):'';const tw=t?ctx.measureText(t).width:0;
+          let t=ti?clipText(ti,u?LW*.5:LW):'';if(t!==ti)warns.push(`研修とリンク${i+1}の題名が長くて切れています`);const tw=t?ctx.measureText(t).width:0;
           ctx.fillStyle=C('rd-ink');if(t)ctx.fillText(t,LX,y);
           if(u){const ux=LX+(t?tw+gapW:0),uu=clipText(u,LX+LW-ux),uw=ctx.measureText(uu).width;
+            if(uu!==u)warns.push(`研修とリンク${i+1}のURLが長くて切れています（題名を短くすると入ります）`);
             ctx.fillStyle=C('rd-link');ctx.fillText(uu,ux,y);ctx.fillRect(ux,y+fs*.2,uw,Math.max(1.5,fs/12))}
         });
       }
@@ -430,14 +435,26 @@ try{const o=JSON.parse(localStorage.getItem(KEY)||'null');
 }catch(e){}
 {const q=new URLSearchParams(location.search).get('type');if(q&&TYPES[q])st.type=q}
 for(const t in TYPES){if(!st.v[t]||typeof st.v[t]!=='object')st.v[t]={};
-  for(const fd of TYPES[t].fields)if(fd.kind!=='img'&&fd.kind!=='imgs'&&typeof st.v[t][fd.k]!=='string')st.v[t][fd.k]=fd.def}
+  for(const fd of TYPES[t].fields)if(fd.kind!=='img'&&fd.kind!=='imgs'&&(typeof st.v[t][fd.k]!=='string'||(fd.opts&&!fd.opts.some(o=>o[0]===st.v[t][fd.k]))))st.v[t][fd.k]=fd.def}
+/* 研修とリンクの文字列を「題名とURLの組」に分ける。昔の自由に書いた形も落とさない：
+   空行で区切る／URLが2つ目なら次の件／URLのあとに題名が来たら次の件／題名が2行なら空白でつなぐ */
+const isUrl=x=>/^https?:\/\//i.test(x);
+function parseLinks(str){
+  const out=[];let cur=null;
+  for(const raw of String(str).split('\n')){const x=raw.trim();
+    if(!x){cur=null;continue}
+    if(!cur||cur.u){cur={t:'',u:''};out.push(cur)}
+    if(isUrl(x))cur.u=x;else cur.t=cur.t?cur.t+' '+x:x;
+  }
+  return out;
+}
 const imgs={}; // 画像（保存は別キー）。名前は 型（主の画像）か 型.欄（アプリのアイコンなど）
 const ik=(t,k)=>k&&k!=='img'?t+'.'+k:t;
 const slotsOf=t=>TYPES[t].fields.flatMap(fd=>fd.kind==='img'?[fd.k]:fd.kind==='imgs'?fd.slots:[]);
-function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(st));return true}catch(e){say('入力を覚えておけません（容量がいっぱい）。画像を外すと空きます');return false}}
 function saveImg(key,data){
   try{if(data)localStorage.setItem(KEY+'.img.'+key,data);else localStorage.removeItem(KEY+'.img.'+key);return true}
-  catch(e){try{localStorage.removeItem(KEY+'.img.'+key)}catch(_){}return false}
+  catch(e){return false} // 失敗しても前に覚えた画像は消さない
 }
 function loadImgs(){return Promise.all(Object.keys(TYPES).flatMap(t=>slotsOf(t).map(k=>ik(t,k))).map(key=>new Promise(r=>{
   let d=null;try{d=localStorage.getItem(KEY+'.img.'+key)}catch(e){}
@@ -459,15 +476,15 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 function buildForm(){
   const t=TYPES[st.type],v=st.v[st.type];
   const lb=fd=>`<span class="lb">${fd.label}${fd.hint?`<small>${fd.hint}</small>`:''}</span>`;
-  const slot=(k,sq)=>`<div class="img"><div class="thumb${sq?' sq':''}" data-th="${k}"></div>
-        <label class="b">${svgIcon('photo')}選ぶ<input type="file" accept="image/*" data-file="${k}"></label>
-        <button type="button" class="b" data-clr="${k}">${svgIcon('x')}外す</button></div>`;
+  const slot=(k,sq,nm)=>`<div class="img"><div class="thumb${sq?' sq':''}" data-th="${k}"></div>
+        <label class="b">${svgIcon('photo')}選ぶ<input type="file" accept="image/*" data-file="${k}" aria-label="${nm}を選ぶ"></label>
+        <button type="button" class="b" data-clr="${k}" aria-label="${nm}を外す">${svgIcon('x')}外す</button></div>`;
   let h='';
   for(const fd of t.fields){
     if(fd.kind==='img'){
-      h+=`<div class="f">${lb(fd)}${slot(fd.k)}</div>`;
+      h+=`<div class="f">${lb(fd)}${slot(fd.k,false,fd.label)}</div>`;
     }else if(fd.kind==='imgs'){
-      h+=`<div class="f">${lb(fd)}<div class="rows">${fd.slots.map(k=>slot(k,true)).join('')}</div></div>`;
+      h+=`<div class="f">${lb(fd)}<div class="rows">${fd.slots.map((k,i)=>slot(k,true,fd.label+(i+1))).join('')}</div></div>`;
     }else if(fd.kind==='choice'){
       h+=`<div class="f">${lb(fd)}<div class="opt" role="group" aria-label="${fd.label}">${fd.opts.map(([val,name,ic])=>
         `<button type="button" data-c="${fd.k}" data-v="${val}" aria-pressed="${(v[fd.k]||fd.def)===val}">${svgIcon(ic)}${name}</button>`).join('')}</div></div>`;
@@ -496,11 +513,9 @@ const rowsMem={}; // 打ちかけの空の行も消さずに見せるため、�
 function rowsUI(fd,v){
   const box=document.querySelector(`[data-rows="${fd.k}"]`),add=document.querySelector(`[data-add="${fd.k}"]`);
   const id=st.type+'.'+fd.k;
-  const isU=x=>/^https?:/i.test(x);
   if(!rowsMem[id]){
     if(fd.kind==='list')rowsMem[id]=v[fd.k].split('\n').map(x=>x.trim()).filter(Boolean);
-    else rowsMem[id]=v[fd.k].split(/\n\s*\n/).map(b=>b.split('\n').map(x=>x.trim()).filter(Boolean)).filter(b=>b.length)
-      .map(b=>({t:b.find(x=>!isU(x))||'',u:b.find(isU)||''}));
+    else rowsMem[id]=parseLinks(v[fd.k]);
     if(!rowsMem[id].length)rowsMem[id].push(fd.kind==='list'?'':{t:'',u:''});
   }
   const rows=rowsMem[id];
@@ -508,11 +523,11 @@ function rowsUI(fd,v){
     v[fd.k]=fd.kind==='list'?rows.map(x=>x.trim()).filter(Boolean).join('\n')
       :rows.filter(r=>r.t.trim()||r.u.trim()).map(r=>[r.t.trim(),r.u.trim()].filter(Boolean).join('\n')).join('\n\n');
     save();if(msgOk)msg='';draw()};
-  const xb=i=>`<button type="button" class="b x" data-del="${i}" aria-label="消す">${svgIcon('x')}</button>`;
+  const xb=i=>`<button type="button" class="b x" data-del="${i}" aria-label="${fd.kind==='list'?fd.label:'研修'}${i+1}を消す">${svgIcon('x')}</button>`;
   const paint=()=>{
     box.innerHTML=rows.map((r,i)=>fd.kind==='list'
       ?`<div class="row"><input type="text" data-i="${i}" value="${esc(r)}" aria-label="${fd.label}${i+1}">${xb(i)}</div>`
-      :`<div class="row pair"><div class="two"><input type="text" data-i="${i}" data-p="t" value="${esc(r.t)}" placeholder="題名" aria-label="題名${i+1}">
+      :`<div class="row pair${fd.max&&i>=fd.max?' over':''}"><div class="two"><input type="text" data-i="${i}" data-p="t" value="${esc(r.t)}" placeholder="題名" aria-label="題名${i+1}">
         <input type="url" inputmode="url" data-i="${i}" data-p="u" value="${esc(r.u)}" placeholder="URL" aria-label="URL${i+1}"></div>${xb(i)}</div>`).join('');
     box.querySelectorAll('input').forEach(el=>el.oninput=()=>{const i=+el.dataset.i;
       if(fd.kind==='list')rows[i]=el.value;else rows[i][el.dataset.p]=el.value;store()});
@@ -538,7 +553,7 @@ function takeFile(file,slot){
     const data=c.toDataURL('image/jpeg',0.9);c.width=c.height=0;
     const im2=new Image();im2.onload=()=>{
       imgs[t]=im2;
-      if(saveImg(t,data))say('');else say('画像が大きくて覚えておけません。今は使えますが、開き直すと消えます');
+      if(saveImg(t,data))say('');else say('画像が大きくて覚えておけません。今は使えますが、開き直すと前の画像に戻ります');
       thumb();draw()};
     im2.src=data;
   };
