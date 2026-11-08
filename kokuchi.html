@@ -77,6 +77,8 @@ button.main{background:var(--accent-2);color:var(--paper);width:100%}
 .lib .ic{position:relative;width:56px;height:56px;border-radius:14px;border:1px solid var(--line-2);background:var(--surface-2) center/cover no-repeat;padding:0;cursor:pointer;flex:none}
 .lib .ic[aria-pressed=true]{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--accent-2)}
 .lib.full .ic[aria-pressed=false]:not(.del){opacity:.55}
+.lib .ic.sample{background:radial-gradient(circle at 50% 56%,var(--o-white) 0 18%,color-mix(in srgb,var(--o-white) 38%,transparent) 18% 28%,color-mix(in srgb,var(--o-white) 20%,transparent) 28% 37%,color-mix(in srgb,var(--o-white) 12%,transparent) 37% 46%,transparent 46%),linear-gradient(var(--o-app-top),var(--o-app-bot))}
+.lib .ic.keep{opacity:.35;cursor:default}
 .lib .ic b{position:absolute;right:-6px;top:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent-2);color:var(--surface);font-size:12px;display:flex;align-items:center;justify-content:center}
 .lib .ic i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);border-radius:13px;color:#fff}
 .lib .ic i svg,.lib .add svg{width:22px;height:22px}
@@ -243,7 +245,7 @@ const TYPES={
       else placeholder(bx,by,bw,bh,'研修の画面');
       // アプリのアイコン：0〜1つは札の右に216角。2つのときは176角を2つ並べ、札を細くして高さの真ん中をそろえる
       const off=s.appshow==='off';
-      const apps=off?[]:selIcons(s.apps).map(id=>icons[id]).filter(Boolean);
+      const apps=off?[]:selIcons(s.apps).map(id=>id===SAMPLE?SAMPLE:icons[id]).filter(Boolean);
       const two=apps.length===2,as=two?176:216,gap=20;
       const ax=two?1814-as*2-gap:1596,ay=two?106+(218-as)/2:108;
       const pw0=off?1814-1036:two?ax-36-1036:518; // 出さないときは札を右端まで伸ばす
@@ -255,15 +257,18 @@ const TYPES={
         ctx.fillStyle=C('rm-ink');ctx.textAlign='center';fitText(s.date,400,90,mw,40,'締切');ctx.fillText(clipText(s.date,mw),dc,243);}
       ctx.fillStyle=C('rule');rr(1076,290,pw0-80,4,2);ctx.fill();
       if(off){}
-      else if(!apps.length){
-        // 見本のアイコン（輪は下ほど白くならないよう控えめに）
-        ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;
-        const g=ctx.createLinearGradient(ax,ay,ax,ay+as);g.addColorStop(0,C('app-top'));g.addColorStop(1,C('app-bot'));
-        rr(ax,ay,as,as,as*.24);ctx.fillStyle=g;ctx.fill();ctx.restore();
-        ctx.save();rr(ax,ay,as,as,as*.24);ctx.clip();ctx.fillStyle=C('white');
-        [[100,.12],[80,.2],[60,.38],[40,1]].forEach(([r,a],i)=>{ctx.globalAlpha=a;ctx.beginPath();ctx.arc(ax+as/2,ay+as/2+10+i*6,r,0,7);ctx.fill()});
-        ctx.restore();
-      }else apps.forEach((im,i)=>appIcon(im,ax+i*(as+gap),ay,as));
+      else{
+        // 水色の見本のアイコン（輪は下ほど白くならないよう控えめに）。選べるアイコンの1つでもある
+        const sample=(ax,ay,as)=>{const k=as/216;
+          ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=30;ctx.shadowOffsetY=8;
+          const g=ctx.createLinearGradient(ax,ay,ax,ay+as);g.addColorStop(0,C('app-top'));g.addColorStop(1,C('app-bot'));
+          rr(ax,ay,as,as,as*.24);ctx.fillStyle=g;ctx.fill();ctx.restore();
+          ctx.save();rr(ax,ay,as,as,as*.24);ctx.clip();ctx.fillStyle=C('white');
+          [[100,.12],[80,.2],[60,.38],[40,1]].forEach(([r,a],i)=>{ctx.globalAlpha=a;ctx.beginPath();ctx.arc(ax+as/2,ay+as/2+(10+i*6)*k,r*k,0,7);ctx.fill()});
+          ctx.restore()};
+        if(!apps.length)sample(ax,ay,as);
+        else apps.forEach((im,i)=>im===SAMPLE?sample(ax+i*(as+gap),ay,as):appIcon(im,ax+i*(as+gap),ay,as));
+      }
       // 研修名（研修の画面の右・締切の札の下と注意の札の上のあいだの真ん中）
       // 折り返しは語のまとまりで。行頭に句読点・閉じ括弧を置かず、行末に開き括弧を残さない
       const tsrc=(s.title||'').split('\n').map(x=>x.trim()).filter(Boolean);
@@ -473,7 +478,8 @@ function parseLinks(str){
 const ICK=KEY+'.icons',icons={};let iconIds=[];
 const LEG={mapp1:KEY+'.img.roadmap.app1',mapp2:KEY+'.img.roadmap.app2'}; // 前の形の置き場
 const iconKey=id=>LEG[id]||KEY+'.icon.'+id;
-const selIcons=v=>String(v||'').split(',').filter(id=>id&&iconIds.includes(id)&&(!loaded||icons[id])).slice(0,2);let loaded=false;
+const SAMPLE='sample'; // 水色の見本のアイコン。いつも一覧の先頭にあり、消せない
+const selIcons=v=>String(v||'').split(',').filter(id=>id===SAMPLE||id&&iconIds.includes(id)&&(!loaded||icons[id])).filter((x,i,a)=>a.indexOf(x)===i).slice(0,2);let loaded=false;
 function saveIconIds(){try{localStorage.setItem(ICK,JSON.stringify(iconIds));return true}catch(e){return false}}
 function loadIcons(){
   try{const a=JSON.parse(localStorage.getItem(ICK)||'[]');iconIds=Array.isArray(a)?a.filter(x=>typeof x==='string'):[]}catch(e){iconIds=[]}
@@ -524,13 +530,15 @@ function paintLib(){
   const v=st.v.roadmap,cur=selIcons(v.apps);
   const off=v.appshow==='off';if(off){libEdit=false;armed=''}
   const f=box.closest('.f');if(f)f.hidden=off;
-  box.innerHTML=`<div class="lib${libEdit?' del':''}${!libEdit&&cur.length>=2?' full':''}">${iconIds.filter(id=>icons[id]).map((id,k)=>{const n=cur.indexOf(id),nm='アイコン'+(k+1);
+  box.innerHTML=`<div class="lib${libEdit?' del':''}${!libEdit&&cur.length>=2?' full':''}">${(()=>{const n=cur.indexOf(SAMPLE);
+      return `<button type="button" class="ic sample${libEdit?' keep':''}" data-ic="${SAMPLE}" aria-pressed="${n>=0}" aria-label="水色の見本${libEdit?'（消せません）':n>=0?'・'+(n+1)+'番目':''}">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}</button>`})()}${iconIds.filter(id=>icons[id]).map((id,k)=>{const n=cur.indexOf(id),nm='アイコン'+(k+1);
       return `<button type="button" class="ic${libEdit?' del':''}${armed===id?' armed':''}" data-ic="${id}" aria-pressed="${n>=0}" aria-label="${nm}${libEdit?(armed===id?'・もう一度押すと消えます':'を消す'):n>=0?'・'+(n+1)+'番目':''}" style="background-image:url(${icons[id].src})">${n>=0&&!libEdit?`<b>${n+1}</b>`:''}${libEdit?`<i>${svgIcon(armed===id?'trash':'x')}</i>`:''}</button>`}).join('')}
     <label class="ic add" aria-label="アイコンを入れる">${svgIcon('plus')}<input type="file" accept="image/*" data-iconfile></label></div>
     ${iconIds.length?`<button type="button" class="b add" data-libedit>${svgIcon(libEdit?'check':'trash')}${libEdit?'終わる':'消す'}</button>`:''}`;
   box.querySelector('[data-iconfile]').onchange=e=>{const f=e.target.files[0];if(f)takeIcon(f);e.target.value=''};
   const ed=box.querySelector('[data-libedit]');if(ed)ed.onclick=()=>{libEdit=!libEdit;armed='';say('');paintLib();const b=document.querySelector('[data-libedit]');if(b)b.focus({preventScroll:true})};
   box.querySelectorAll('[data-ic]').forEach(bt=>bt.onclick=()=>{const id=bt.dataset.ic;let c=selIcons(v.apps);
+    if(libEdit&&id===SAMPLE){say('見本は消せません');return}
     if(libEdit&&armed!==id){armed=id;say('もう一度押すと消えます');paintLib();const b=document.querySelector(`[data-ic="${id}"]`);if(b)b.focus({preventScroll:true});return}
     if(libEdit){armed='';iconIds=iconIds.filter(x=>x!==id);delete icons[id];saveIconIds();try{localStorage.removeItem(iconKey(id));localStorage.removeItem(KEY+'.icon.'+id);
         if(LEG[id]){let g=[];try{g=JSON.parse(localStorage.getItem(KEY+'.iconsGone')||'[]')}catch(_){}if(!Array.isArray(g))g=[];if(!g.includes(id))g.push(id);localStorage.setItem(KEY+'.iconsGone',JSON.stringify(g))}}catch(e){}
