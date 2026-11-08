@@ -291,10 +291,29 @@ const TYPES={
         const NOTAIL='（(「『【〔〈《［｛[{“';
         const seg0=t=>{try{if(window.Intl&&Intl.Segmenter)return [...new Intl.Segmenter('ja',{granularity:'word'}).segment(t)].map(x=>x.segment)}catch(e){}
           return t.match(/[A-Za-z0-9]+|\s+|./gu)||[]};
-        // 「学|ぼう」「覚え|よう」「新|機能」のように言葉の途中で行が替わらないよう、送り仮名と1字の漢字は前の語につなぐ
-        const KJ=/\p{Script=Han}/u,HIRA=/^\p{Script=Hiragana}+$/u,JOSHI=['から','まで','より','など','には','では','とは','への','での','にも','でも'];
-        const seg=t=>{const a=[];for(const w of seg0(t)){const pv=a[a.length-1];
-          if(pv&&KJ.test(pv)&&((HIRA.test(w)&&w.length>=2&&!JOSHI.includes(w))||(pv.length===1&&KJ.test(w[0]))))a[a.length-1]=pv+w;else a.push(w)}return a};
+        // 言葉の途中や助詞の前で行が替わらないよう、Segmenter の区切りをつなぎ直す
+        //  ・送り仮名や活用（学+ぼう・使い+こ+な+そう・使+っ+た）は前の語へ（8字まで）
+        //  ・1字の助詞（の・を…）は前の語へ（行頭に来ない）
+        //  ・1字の漢字は前が漢字なら前へ（効率+化）、でなければ次へ（新+機能）
+        //  ・カタカナの切れ端はつなぐ（トランス+フォー+メ+ー+ション）。4字以上どうしの境目（デジタル|トランス）だけは切ってよい
+        const KJ=/\p{Script=Han}/u,HIRA=/^\p{Script=Hiragana}+$/u,KATA=/^[\p{Script=Katakana}ー]+$/u,
+          JOSHI=['から','まで','より','など','には','では','とは','への','での','にも','でも','について','として','における','によって','による','ため','ために','こと','もの','ように','ような','だけ','ほど','くらい'],
+          P1=['の','を','に','は','が','で','と','へ','も','や','か'];
+        // Intl.Segmenter が無い（1字ずつに分かれる）ときはつながない
+        const seg=t=>{const s0=seg0(t),a=[],jn=[];if(!(window.Intl&&Intl.Segmenter))return s0;let kf=0;
+          for(let i=0;i<s0.length;i++){const w=s0[i],k=a.length-1,pv=a[k],pe=pv?pv[pv.length-1]:'';
+            if(pv&&KATA.test(w)&&KATA.test(pv)&&!(kf>=4&&w.length>=4)){a[k]=pv+w;kf=w.length;continue}
+            // 閉じ括弧・句読点は前の語にくっつける（「必|須）」のように1字だけ送られない）
+            if(pv&&[...w].every(c=>NOHEAD.includes(c))&&!/\s/.test(pe)){a[k]=pv+w;continue}
+            kf=KATA.test(w)?w.length:0;
+            if(pv&&P1.includes(w)&&!/\s/.test(pe)){a[k]=pv+w;jn[k]=1;continue}
+            if(pv&&HIRA.test(w)&&!JOSHI.includes(w)&&!P1.includes(w)&&KJ.test(pv)&&!P1.includes(pe)&&(pv+w).length<=8){a[k]=pv+w;jn[k]=1;continue}
+            if(w.length===1&&KJ.test(w)){
+              if(pv&&!jn[k]&&KJ.test(pe)){a[k]=pv+w;jn[k]=1;continue}
+              const nx=s0[i+1];if(nx&&KJ.test(nx[0])){a.push(w+nx);jn.push(1);i++;continue}
+              if(pv&&KJ.test(pv)&&!P1.includes(pe)&&pv.length<8){a[k]=pv+w;jn[k]=1;continue}}
+            a.push(w);jn.push(0)}
+          return a};
         const wrap=sz=>{ctx.font=f(TW,sz);const out=[];let cut=false;
           for(const l of tsrc){
             let cur='';
