@@ -1361,11 +1361,11 @@
     stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
     d="M5 12h13M13 7l5 5-5 5"/></svg><span class="sgt"></span></button>
   <div class="row">
-    <button id="pick" title="画像やPDFを送る">＋</button>
+    <button id="pick" title="ファイルを送る">＋</button>
     <textarea id="cmd" rows="1" placeholder="指示を入力…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="enter"></textarea>
     <button id="send" disabled>↑</button>
   </div>
-  <input id="file" type="file" accept="image/*,application/pdf,.pdf" multiple hidden>
+  <input id="file" type="file" multiple hidden>
   <div class="toast" id="toast"></div>
 </footer>
 
@@ -6289,6 +6289,17 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
 
   pickBtn.onclick = function () { fileInput.click(); };
 
+  // 何でも添えられる（2026-11-08 本人「Numbers を貼れるように・全てのファイルに対応」）。
+  // 絵にできるのは画像だけ。それ以外は種類の絵で示す（長押しでファイル名）
+  var ATT_ICON = { img: '🖼', pdf: '📄', sheet: '📊', file: '📎' };
+  function attKind(f) {
+    var n = f.name || '', t = f.type || '';
+    if (t === 'application/pdf' || /\.pdf$/i.test(n)) return 'pdf';
+    if (/^image\//.test(t) || /\.(jpe?g|png|gif|webp|heic|heif|avif)$/i.test(n)) return 'img';
+    if (/\.(numbers|xlsx?|csv|tsv)$/i.test(n)) return 'sheet';
+    return 'file';
+  }
+
   function renderAtts() {
     saveDraft();          // 札を足した・外した＝書きかけが変わった（札だけのときも裏で閉じられて消えないように）
     attsBox.innerHTML = '';
@@ -6307,7 +6318,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         // 種類の絵で示す。置いている最中だけ「…」
         var ph = document.createElement('span');
         ph.className = 'ph';
-        ph.textContent = a.path ? (a.kind === 'pdf' ? '📄' : '🖼') : '…';
+        ph.textContent = a.path ? (ATT_ICON[a.kind] || '🖼') : '…';
         box.appendChild(ph);
       }
       var x = document.createElement('button');
@@ -6349,10 +6360,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       var base64 = dataUrl.split(',')[1] || '';
       // PDF はこの画面では絵にできないので見本を作らない（作ろうとすると
       // 読み込み失敗の待ち時間だけ増える）
-      if (a.kind === 'pdf') renderAtts();
+      if (a.kind !== 'img') renderAtts();
       else makeThumb(dataUrl, function (t) { a.thumb = t; renderAtts(); });
 
-      api('/api/upload', { method: 'POST', body: JSON.stringify({ data: base64 }) })
+      api('/api/upload', { method: 'POST', body: JSON.stringify({ data: base64, name: a.name }) })
         .then(function (d) {
           // 置いている間に ✕ で取り消されていたら、そのまま捨てる
           if (!alive()) return done(false);
@@ -6391,8 +6402,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     }
 
     var queue = files.map(function (f) {
-      var pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
-      var a = { id: ++attSeq, path: '', thumb: '', kind: pdf ? 'pdf' : 'img',
+      var a = { id: ++attSeq, path: '', thumb: '', kind: attKind(f),
                 name: f.name || '' };
       atts.push(a);
       return { a: a, f: f };

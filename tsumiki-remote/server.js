@@ -1892,7 +1892,7 @@ function lastMeaningfulLine(text) {
   return '';
 }
 
-// ------------------------------------------ 添えるファイル（画像・PDF）の置き場
+// ------------------------------------------ 添えるファイル（画像・PDF・そのほか何でも）の置き場
 
 const UPLOAD_DIR = path.join(CONF_DIR, 'uploads');
 const KEEP_DAYS = 7;
@@ -1913,6 +1913,18 @@ function sniffUpload(b) {
     if (/^(heic|heix|hevc|mif1|msf1|avif)$/.test(brand)) return 'heic';
   }
   return null;
+}
+
+// 画面から届いた元のファイル名を、置き場の名前に使える形にする。
+// ⚠️ パスは入力欄に「パス 本文」の形で入り、［添付］の置き換えも \S+ で切る＝空白を残すと壊れる。
+//    空白・記号は _ に、/ や .. で外に出られないように文字・数字・-_ だけ残す（日本語は残す）
+function uploadName(raw) {
+  const s = String(raw || '').normalize('NFC').split(/[\\/]/).pop();
+  const dot = s.lastIndexOf('.');
+  const ext = dot > 0 ? s.slice(dot + 1).toLowerCase() : '';
+  const base = (dot > 0 ? s.slice(0, dot) : s)
+    .replace(/[^\p{L}\p{N}_-]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+  return { base, ext: /^[a-z0-9]{1,12}$/.test(ext) ? ext : '' };
 }
 
 // 置きっぱなしを溜めない。古いものは消す
@@ -3593,7 +3605,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 画像やPDFを Mac に置く。Claude Code はファイルそのものを受け取れないが、
+    // 添えたファイル（画像・PDF・Numbers など何でも）を Mac に置く。Claude Code はファイルそのものを受け取れないが、
     // 「ファイルの場所」を渡せば読める。置いた場所を返して、入力欄に差し込む。
     // ⚠️ 中身は base64（元の約1.34倍）で届く。読み取りの上限はそのぶん多く要る
     if (p === '/api/upload' && req.method === 'POST') {
@@ -3603,14 +3615,17 @@ const server = http.createServer(async (req, res) => {
       if (!buf.length) return json(res, 400, { error: 'empty' });
       if (buf.length > MAX_UPLOAD) return json(res, 413, { error: '20MBまでです' });
 
-      // 拡張子は中身（マジックバイト）で決める。名前は信用しない
-      const ext = sniffUpload(buf);
-      if (!ext) return json(res, 415, { error: '画像かPDFとして読めません' });
+      // 画像と PDF は中身（マジックバイト）で拡張子を決める（iPhone が名前と違う形式で渡すことがある）。
+      // それ以外（.numbers・.xlsx・.zip・.txt …）は何でも受け取り、名前の拡張子をそのまま使う
+      // （2026-11-08 本人「全てのファイルに対応させて」）。名前も残す＝Claude が何のファイルか分かる
+      const name = uploadName(body.name);
+      const ext = sniffUpload(buf) || name.ext || 'bin';
 
       fs.mkdirSync(UPLOAD_DIR, { recursive: true, mode: 0o700 });
       pruneUploads();
       const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDhhmmss
-      const file = path.join(UPLOAD_DIR, `${stamp}-${crypto.randomBytes(3).toString('hex')}.${ext}`);
+      const file = path.join(UPLOAD_DIR,
+        `${stamp}-${crypto.randomBytes(3).toString('hex')}${name.base ? '-' + name.base : ''}.${ext}`);
       fs.writeFileSync(file, buf, { mode: 0o600 });
       return json(res, 200, { path: file, bytes: buf.length });
     }
