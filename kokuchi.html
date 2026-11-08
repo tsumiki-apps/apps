@@ -289,8 +289,12 @@ const TYPES={
         const al=['left','center','right'].includes(s.talign)?s.talign:'left';
         const NOHEAD='、。，．,.）)」』】〕〉》］｝]}ー～〜！？!?‼⁉：:；;・…゛゜ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ々';
         const NOTAIL='（(「『【〔〈《［｛[{“';
-        const seg=t=>{try{if(window.Intl&&Intl.Segmenter)return [...new Intl.Segmenter('ja',{granularity:'word'}).segment(t)].map(x=>x.segment)}catch(e){}
+        const seg0=t=>{try{if(window.Intl&&Intl.Segmenter)return [...new Intl.Segmenter('ja',{granularity:'word'}).segment(t)].map(x=>x.segment)}catch(e){}
           return t.match(/[A-Za-z0-9]+|\s+|./gu)||[]};
+        // 「学|ぼう」「覚え|よう」「新|機能」のように言葉の途中で行が替わらないよう、送り仮名と1字の漢字は前の語につなぐ
+        const KJ=/\p{Script=Han}/u,HIRA=/^\p{Script=Hiragana}+$/u,JOSHI=['から','まで','より','など','には','では','とは','への','での','にも','でも'];
+        const seg=t=>{const a=[];for(const w of seg0(t)){const pv=a[a.length-1];
+          if(pv&&KJ.test(pv)&&((HIRA.test(w)&&w.length>=2&&!JOSHI.includes(w))||(pv.length===1&&KJ.test(w[0]))))a[a.length-1]=pv+w;else a.push(w)}return a};
         const wrap=sz=>{ctx.font=f(TW,sz);const out=[];let cut=false;
           for(const l of tsrc){
             let cur='';
@@ -322,14 +326,14 @@ const TYPES={
             push();
           }
           out.cut=cut;return out};
-        // 入る中でいちばん大きく：120px から縮め、4行以内で、締切の線と注意の札のあいだ（上下に余白24）に収まる大きさにする（44pxまで）
+        // 入る中でいちばん大きく：100px から縮め、4行以内で、締切の線と注意の札のあいだ（上下に余白24）に収まる大きさにする（44pxまで）
         const top0=324,bot0=s.warn.trim()?662:834,room=bot0-top0-48;
         const hOf=(p,n)=>p*1.02+p*1.22*(n-1); // 字の下にはみ出す分（約0.1字）も数える
         const fits=(p,l)=>l.length<=4&&hOf(p,l.length)<=room;
         // 単語を字で割らずに入る大きさを先に探し、44pxでも無理なときだけ割ってよいことにする
-        let tp=120,tl=wrap(tp);
+        let tp=100,tl=wrap(tp);
         while(tp>44&&!(fits(tp,tl)&&!tl.cut)){tp-=2;tl=wrap(tp)}
-        if(!fits(tp,tl)||tl.cut){tp=120;tl=wrap(tp);while(tp>44&&!fits(tp,tl)){tp-=2;tl=wrap(tp)}}
+        if(!fits(tp,tl)||tl.cut){tp=100;tl=wrap(tp);while(tp>44&&!fits(tp,tl)){tp-=2;tl=wrap(tp)}}
         // 自分で改行したとき（2行以上）、その行が途中で割れるなら、割れない大きさ（56px以上なら）を選ぶ。1行だけなら折り返して大きく出す
         if(tsrc.length>1&&tl.length>tsrc.length){let p2=tp,l2=tl;while(p2>56&&l2.length>tsrc.length){p2-=2;l2=wrap(p2)}
           if(l2.length===tsrc.length&&fits(p2,l2)){tp=p2;tl=l2}}
