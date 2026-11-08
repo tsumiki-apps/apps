@@ -178,9 +178,8 @@ const TYPES={
       ctx.fillStyle=C('rm-ink');const s1=fitText(s.t1,800,92,880,48,'見出し');ctx.fillText(clipText(s.t1,880),124,196);
       ctx.fillStyle=C('rm-red');fitText(s.t2,500,Math.min(92,s1+4),880,48,'見出し2');ctx.fillText(clipText(s.t2,880),124,292);
       // 研修の画面（枠の上に寄せる）
-      // 研修名があるときは、研修名との間を空けるため少し細くする。画像は枠の左上に寄せる
-      const hasTitle=!!(s.title||'').trim();
-      const bx=122,by=352,bw=hasTitle?870:902,bh=482;
+      // 研修名との間を空けるため幅は870で固定（研修名を入れ消ししても画像の大きさが変わらない）。画像は枠の左上に寄せる
+      const bx=122,by=352,bw=870,bh=482;
       if(img){const r=fitImg(img,bx,by,bw,bh);r.x=bx;r.y=by;ctx.save();ctx.shadowColor=C('shadow');ctx.shadowBlur=24;ctx.shadowOffsetY=6;
         ctx.drawImage(img,r.x,r.y,r.w,r.h);ctx.restore();ctx.strokeStyle=C('frame');ctx.lineWidth=2;ctx.strokeRect(r.x,r.y,r.w,r.h)}
       else placeholder(bx,by,bw,bh,'研修の画面');
@@ -202,8 +201,8 @@ const TYPES={
       const tsrc=(s.title||'').split('\n').map(x=>x.trim()).filter(Boolean);
       if(tsrc.length){
         const tx=1036,tmw=1814-1036-40,TW=700;
-        const NOHEAD='、。，．,.）)」』】〕〉》ー！？!?：:；;・…ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ々';
-        const NOTAIL='（(「『【〔〈《';
+        const NOHEAD='、。，．,.）)」』】〕〉》］｝]}ー～〜！？!?‼⁉：:；;・…゛゜ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ々';
+        const NOTAIL='（(「『【〔〈《［｛[{“';
         const seg=t=>{try{if(window.Intl&&Intl.Segmenter)return [...new Intl.Segmenter('ja',{granularity:'word'}).segment(t)].map(x=>x.segment)}catch(e){}
           return t.match(/[A-Za-z0-9]+|\s+|./gu)||[]};
         const wrap=sz=>{ctx.font=f(TW,sz);const out=[];
@@ -217,9 +216,18 @@ const TYPES={
                 else cur+=tok;
                 continue;
               }
-              // 行頭禁則：はみ出してもこの行に付ける（幅は40pxの余裕を取ってある）
-              while(tok&&NOHEAD.includes(tok[0])){cur+=tok[0];tok=tok.slice(1)}
-              if(!tok)continue;
+              // 行頭禁則：2字まで・右の余裕40pxに収まるならこの行にぶら下げる。
+              // 収まらなければ、この行の最後の1字を次の行へ送って一緒に始める（追い出し）
+              let hang='';while(hang.length<tok.length&&NOHEAD.includes(tok[hang.length]))hang+=tok[hang.length];
+              if(hang){
+                if(hang.length<=2&&ctx.measureText(cur+hang).width<=tmw+40){cur+=hang;tok=tok.slice(hang.length);if(!tok)continue}
+                else if(cur.length>1){
+                  // ぶら下げた記号もいっしょに、記号でない字までさかのぼって送る
+                  const cs=[...cur];let mv='';while(cs.length>1){const c=cs.pop();mv=c+mv;if(!NOHEAD.includes(c))break}
+                  cur=cs.join('');push();cur=mv+tok;
+                  if(ctx.measureText(cur).width>tmw){const t2=cur;cur='';for(const ch of t2){if(cur&&ctx.measureText(cur+ch).width>tmw)push();cur+=ch}}
+                  continue}
+              }
               // 行末禁則：開き括弧は次の行へ送る
               let carry='';while(cur.length>1&&NOTAIL.includes(cur[cur.length-1])){carry=cur[cur.length-1]+carry;cur=cur.slice(0,-1)}
               push();cur=carry+tok;
