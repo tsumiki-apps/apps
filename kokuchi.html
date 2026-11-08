@@ -53,7 +53,7 @@ h1{font-size:20px;font-weight:700;margin:4px 0 14px}
 .f{display:grid;gap:6px;font-size:14px;font-weight:500;color:var(--ink-mid)}
 .f small{font-size:13px;font-weight:400;color:var(--ink-soft)}
 .f .lb{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-textarea,input[type=text],input[type=url]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
+textarea,input[type=text],input[type=url],input[type=date]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
   border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;min-height:44px;resize:vertical}
 textarea{min-height:120px;line-height:1.5}
 /* 1つずつ中身を消す× */
@@ -61,7 +61,9 @@ textarea{min-height:120px;line-height:1.5}
 .inp input,.inp textarea{padding-right:48px}
 .inp .clr{position:absolute;right:0;top:0;width:44px;height:44px;border:0;border-radius:8px;background:transparent;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .inp .clr svg{width:18px;height:18px}
-.inp:has(:placeholder-shown) .clr{display:none}
+.inp:has(:placeholder-shown) .clr,.inp:has(input[type=date]:invalid) .clr{display:none}
+.inp input[type=date]{min-height:48px;-webkit-appearance:none;appearance:none;text-align:left}
+.inp input[type=date]::-webkit-date-and-time-value{text-align:left}
 .inp .clr:focus-visible{outline:2px solid var(--accent-2);outline-offset:-2px}
 .img{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .img .thumb{width:88px;height:50px;border-radius:6px;border:1px solid var(--line-2);background:var(--surface-2) center/contain no-repeat;flex:none}
@@ -95,7 +97,7 @@ button.main{background:var(--accent-2);color:var(--paper);width:100%}
 .lib .ic.add{display:flex;align-items:center;justify-content:center;border-style:dashed;color:var(--ink-soft);background:transparent;overflow:hidden}
 .lib .ic.add input{position:absolute;inset:0;opacity:0;font-size:16px;cursor:pointer}
 .lib .ic:focus-visible,.lib .ic.add:has(input:focus-visible){outline:2px solid var(--ink);outline-offset:6px}
-.b:focus-visible,.opt button:focus-visible,textarea:focus-visible,input[type=text]:focus-visible,input[type=url]:focus-visible,.img label.b:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:2px}
+.b:focus-visible,.opt button:focus-visible,textarea:focus-visible,input[type=text]:focus-visible,input[type=url]:focus-visible,input[type=date]:focus-visible,.img label.b:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:2px}
 .row.pair.over{opacity:.55}
 .row.pair.over::after{content:'画像に出ません';grid-column:1/-1;font-size:12px;color:var(--ink-soft)}
 .rows{display:grid;gap:8px}
@@ -236,6 +238,16 @@ function sparkle(cx,cy,r,color,lw){
 
 /* ---------- 型（ここに足せば型が増える） ----------
    fields の並び＝入力欄の並び。kind: 'img'（画像）/ 'area'（複数行）/ なし（1行） */
+/* 締切はカレンダーで選ぶ。中身は 2026-11-30 の形で持ち、画像には 11/30 と書く。
+   前に手で入れた文字（11/30 など）は、そのまま画像に出し、欄には読み取れればその日を入れて見せる（保存は選び直したときだけ） */
+const ISO=/^(\d{4})-(\d{2})-(\d{2})$/;
+const dateText=v=>{const m=ISO.exec(v||'');return m?`${+m[2]}/${+m[3]}`:(v||'')};
+const p2=n=>String(n).padStart(2,'0');
+const dateISO=v=>{if(ISO.test(v||''))return v;const m=/^\s*(\d{1,2})\s*[\/月]\s*(\d{1,2})/.exec(v||'');if(!m)return '';
+  const now=new Date(),mo=+m[1],d=+m[2];if(mo<1||mo>12||d<1||d>31)return '';
+  let y=now.getFullYear();if(new Date(y,mo-1,d)<new Date(now.getFullYear(),now.getMonth(),now.getDate()-60))y++;
+  return `${y}-${p2(mo)}-${p2(d)}`};
+const DEF_DATE=(()=>{const n=new Date(),e=new Date(n.getFullYear(),n.getMonth()+1,0);return `${e.getFullYear()}-${p2(e.getMonth()+1)}-${p2(e.getDate())}`})();
 const TYPES={
   roadmap:{
     name:'新しい研修',icon:'cap',
@@ -245,7 +257,7 @@ const TYPES={
       {k:'t2',label:'見出し2',hint:'赤',def:'Product Zone'},
       {k:'title',label:'研修名',hint:'空なら出しません',def:'サンプル研修\n基礎編',kind:'area',rows:3},
       {k:'talign',label:'研修名の揃え',kind:'choice',def:'left',opts:[['left','左','alignL'],['center','中央','alignC'],['right','右','alignR']]},
-      {k:'date',label:'締切',def:'11/30'},
+      {k:'date',label:'締切',kind:'date',def:DEF_DATE},
       {k:'appshow',label:'アプリのアイコン',kind:'choice',def:'on',opts:[['on','表示','eye'],['off','非表示','eyeOff']]},
       {k:'apps',label:'使うアイコン',hint:'2つまで・＋で足す',kind:'iconlib',def:''},
       {k:'warn',label:'注意',hint:'空なら出しません',def:'契約用iPadじゃないとできません！'},
@@ -274,7 +286,7 @@ const TYPES={
       rr(1036,106,pw0,218,36);ctx.fillStyle=C('white');ctx.fill();ctx.restore();
       icon('cal',1082,142,56,C('orange'),1.9);
       {const l=two?1150:1110,r=1036+pw0-(two?28:66),dw=r-l,dc=two?(l+r)/2:off?(1150+r)/2:1300,mw=two?dw:off?dw-60:380;
-        ctx.fillStyle=C('rm-ink');ctx.textAlign='center';fitText(s.date,400,90,mw,40,'締切');ctx.fillText(clipText(s.date,mw),dc,243);}
+        ctx.fillStyle=C('rm-ink');ctx.textAlign='center';const dtx=dateText(s.date);fitText(dtx,400,90,mw,40,'締切');ctx.fillText(clipText(dtx,mw),dc,243);}
       ctx.fillStyle=C('rule');rr(1076,290,pw0-80,4,2);ctx.fill();
       if(off){}
       else{
@@ -429,7 +441,7 @@ const TYPES={
     fields:[
       {k:'img',label:'研修の画面',kind:'img'},
       {k:'to',label:'お願いする相手',def:'Ken, Mai, Sota'},
-      {k:'date',label:'締切',def:'11/30'},
+      {k:'date',label:'締切',kind:'date',def:DEF_DATE},
       {k:'links',label:'研修とリンク',hint:'4件まで',kind:'pairs',max:4,def:'iPhone 修理演習：カバー\nhttps://example.com/course/A-001\n\niPhone について知る：修理演習\nhttps://example.com/course/A-002'},
       {k:'names',label:'終わっていない人',kind:'list',def:'Aoi Tanaka\nHaruto Sato\nYui Kobayashi\nRen Yamada\nMio Ito\nSora Watanabe'},
     ],
@@ -438,7 +450,7 @@ const TYPES={
       ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
       iconRow(1012,.4); // リンクと重ならないよう下の端に寄せる
       ctx.fillStyle=C('rd-ink');ctx.textAlign='center';ctx.textBaseline='alphabetic';
-      const to=s.to.trim(),dt=s.date.trim();
+      const to=s.to.trim(),dt=dateText(s.date).trim();
       const h1=to?`${to}へサポートのお願い📚`:'サポートのお願い📚';
       const h2=`${dt?`期限${dt}が`:'期限が'}迫っているトレーニングが未完了のメンバーがいます`;
       fitText(h1,500,44,1760,24,'お願いする相手');ctx.fillText(clipText(h1,1760),W/2,110);
@@ -638,6 +650,8 @@ function buildForm(){
     }else if(fd.kind==='pairs'||fd.kind==='list'){
       h+=`<div class="f">${lb(fd)}<div class="rows" data-rows="${fd.k}"></div>
         <button type="button" class="b add" data-add="${fd.k}">${svgIcon('plus')}追加</button></div>`;
+    }else if(fd.kind==='date'){
+      h+=`<div class="f"><label for="k-${fd.k}">${lb(fd)}</label><span class="inp"><input type="date" id="k-${fd.k}" data-k="${fd.k}" value="${esc(dateISO(v[fd.k]))}" required>${clr(fd)}</span></div>`;
     }else if(fd.kind==='area'){
       h+=`<div class="f"><label for="k-${fd.k}">${lb(fd)}</label><span class="inp"><textarea id="k-${fd.k}" data-k="${fd.k}" rows="${fd.rows||4}" placeholder=" ">${esc(v[fd.k])}</textarea>${clr(fd)}</span></div>`;
     }else{
@@ -649,7 +663,7 @@ function buildForm(){
   $('form').querySelectorAll('[data-k]').forEach(el=>el.oninput=()=>{v[el.dataset.k]=el.value;save();if(msgOk)msg='';draw()});
   $('form').querySelectorAll('[data-xk]').forEach(b=>b.onclick=()=>{const el=$('form').querySelector(`[data-k="${b.dataset.xk}"]`);
     // 選んで消す（⌘Z・iPhoneの取り消しで戻せる）。消せない環境だけ直接空にする
-    el.focus();el.select();let ok=false;try{ok=document.execCommand('delete')}catch(e){}
+    el.focus();let ok=false;if(el.type!=='date')try{el.select();ok=document.execCommand('delete')}catch(e){}
     if(!ok||el.value){el.value='';el.dispatchEvent(new Event('input'))}});
   $('form').querySelectorAll('[data-file]').forEach(fi=>fi.onchange=()=>{if(fi.files[0])takeFile(fi.files[0],fi.dataset.file);fi.value=''});
   $('form').querySelectorAll('[data-clr]').forEach(c=>c.onclick=()=>{const key=ik(st.type,c.dataset.clr);delete imgs[key];saveImg(key,null);say('');thumb();draw()});
