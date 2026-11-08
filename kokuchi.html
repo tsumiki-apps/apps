@@ -468,17 +468,21 @@ function parseLinks(str){
 /* アプリのアイコンの置き場：一度入れたら端末に覚えて、あとは押して選ぶだけ。
    一覧＝KEY.icons（idの並び）／中身＝KEY.icon.<id>。選んだものは st.v.roadmap.apps（id を , でつなぐ・順番どおり） */
 const ICK=KEY+'.icons',icons={};let iconIds=[];
+const LEG={mapp1:KEY+'.img.roadmap.app1',mapp2:KEY+'.img.roadmap.app2'}; // 前の形の置き場
+const iconKey=id=>LEG[id]||KEY+'.icon.'+id;
 const selIcons=v=>String(v||'').split(',').filter(id=>id&&iconIds.includes(id)).slice(0,2);
 function saveIconIds(){try{localStorage.setItem(ICK,JSON.stringify(iconIds));return true}catch(e){return false}}
 function loadIcons(){
   try{const a=JSON.parse(localStorage.getItem(ICK)||'[]');iconIds=Array.isArray(a)?a.filter(x=>typeof x==='string'):[]}catch(e){iconIds=[]}
-  // 前の形（型ごとの2枠 roadmap.app1/app2）から一度だけ置き場へ写す。写すだけで消さない
-  try{if(!localStorage.getItem(KEY+'.iconsMoved')){const picked=[];
-    for(const k of ['app1','app2']){const d=localStorage.getItem(KEY+'.img.roadmap.'+k);if(!d)continue;
-      const id='m'+k;if(!iconIds.includes(id)){localStorage.setItem(KEY+'.icon.'+id,d);iconIds.push(id)}picked.push(id)}
-    if(picked.length&&!selIcons(st.v.roadmap.apps).length)st.v.roadmap.apps=picked.join(',');
-    saveIconIds();localStorage.setItem(KEY+'.iconsMoved','1');save()}}catch(e){}
-  return Promise.all(iconIds.map(id=>new Promise(r=>{let d=null;try{d=localStorage.getItem(KEY+'.icon.'+id)}catch(e){}
+  // 前の形（新しい研修の2枠 roadmap.app1/app2）に入っているアイコンも一覧に出す。
+  // 写さずに元の場所をそのまま読む（写すと容量があふれて黙って失敗するため）。毎回見て、消したものだけ出さない
+  let gone=[];try{const g=JSON.parse(localStorage.getItem(KEY+'.iconsGone')||'[]');if(Array.isArray(g))gone=g}catch(e){}
+  const picked=[];
+  for(const id in LEG){if(gone.includes(id))continue;let d=null;try{d=localStorage.getItem(LEG[id])}catch(e){}
+    if(d&&!iconIds.includes(id))picked.push(id)}
+  iconIds.unshift(...picked);
+  if(picked.length){saveIconIds();if(!selIcons(st.v.roadmap.apps).length){st.v.roadmap.apps=picked.join(',');save()}}
+  return Promise.all(iconIds.map(id=>new Promise(r=>{let d=null;try{d=localStorage.getItem(iconKey(id))}catch(e){}
     if(!d)return r();const im=new Image();im.onload=()=>{icons[id]=im;r()};im.onerror=()=>r();im.src=d})))
 }
 function takeIcon(file){
@@ -510,7 +514,8 @@ function paintLib(){
   box.querySelector('[data-iconfile]').onchange=e=>{const f=e.target.files[0];if(f)takeIcon(f);e.target.value=''};
   const ed=box.querySelector('[data-libedit]');if(ed)ed.onclick=()=>{libEdit=!libEdit;paintLib()};
   box.querySelectorAll('[data-ic]').forEach(bt=>bt.onclick=()=>{const id=bt.dataset.ic;let c=selIcons(v.apps);
-    if(libEdit){iconIds=iconIds.filter(x=>x!==id);delete icons[id];saveIconIds();try{localStorage.removeItem(KEY+'.icon.'+id)}catch(e){}
+    if(libEdit){iconIds=iconIds.filter(x=>x!==id);delete icons[id];saveIconIds();try{localStorage.removeItem(iconKey(id));localStorage.removeItem(KEY+'.icon.'+id);
+        if(LEG[id]){let g=[];try{g=JSON.parse(localStorage.getItem(KEY+'.iconsGone')||'[]')}catch(_){}if(!Array.isArray(g))g=[];if(!g.includes(id))g.push(id);localStorage.setItem(KEY+'.iconsGone',JSON.stringify(g))}}catch(e){}
       c=c.filter(x=>x!==id);if(!iconIds.length)libEdit=false}
     else if(c.includes(id))c=c.filter(x=>x!==id);
     else if(c.length>=2){say('2つまでです。外してから選んでください');return}
