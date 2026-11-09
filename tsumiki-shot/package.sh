@@ -24,7 +24,8 @@ lipo -create -output "$APP/Contents/MacOS/TsumikiShot" "$D/arm64" "$D/x86_64"
 cp Info.plist "$APP/Contents/Info.plist"
 "$D/arm64" --icons "$D/AppIcon.iconset"
 iconutil -c icns "$D/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
-codesign --force --sign "$ID" --options runtime "$APP"
+# 公証に出すには時刻の印（--timestamp）が要る。ad-hoc には付けられない
+if [ "$ID" = "-" ]; then codesign --force --sign - --options runtime "$APP"; else codesign --force --sign "$ID" --options runtime --timestamp "$APP"; fi
 codesign --verify "$APP"
 rm -f "$OUT"; ditto -c -k --keepParent "$APP" "$OUT"
 echo "OK ${OUT} ($(lipo -archs "${APP}/Contents/MacOS/TsumikiShot"))"
