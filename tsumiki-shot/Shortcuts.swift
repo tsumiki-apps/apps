@@ -71,7 +71,11 @@ struct ShotAction {
 
 enum Shortcuts {
     /// 既定は Mac の標準（⇧⌘3 全画面・⇧⌘4 範囲・⇧⌘5 録画）に合わせ、残りを数字の並びに
+    #if APPSTORE
+    static let cmdShift = UInt32(cmdKey | shiftKey | optionKey)   // App Store 版は Mac 標準（⇧⌘3/4/5）と重ならない ⌥⇧⌘
+    #else
     static let cmdShift = UInt32(cmdKey | shiftKey)
+    #endif
     static let actions: [ShotAction] = [
         ShotAction(id: 1, name: "範囲", symbol: "rectangle.dashed", def: KeyCombo(code: UInt32(kVK_ANSI_4), mods: cmdShift, char: "4")),
         ShotAction(id: 2, name: "全画面", symbol: "macwindow", def: KeyCombo(code: UInt32(kVK_ANSI_3), mods: cmdShift, char: "3")),
@@ -296,6 +300,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         sysIcon.contentTintColor = accent
         let sysSpacer = NSView(); sysSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
         let sysRow = NSStackView(views: [sysIcon, sysLabel, sysSpacer, sysKeys]); sysRow.spacing = 10
+        #if APPSTORE
+        sysRow.isHidden = true      // App Store 版は Mac 標準のキーを書き換えない（既定のキーを ⌥⇧⌘ にして重ねない）
+        #endif
 
         let resetAll = NSButton(title: "すべて既定に戻す", image: NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: nil)!,
                                 target: self, action: #selector(resetAllKeys))
@@ -450,6 +457,9 @@ enum SystemKeys {
 
     /// 止める（false）／戻す（true）。止める前の状態を覚えておき、戻すときはそこへ戻す（元から止めていたものは止めたまま）
     static func setEnabled(_ on: Bool, done: (() -> Void)? = nil) {
+        #if APPSTORE
+        done?(); return
+        #endif
         var t = table()
         let memo = "systemKeysBefore"
         if !on, entries.contains(where: { isEnabled($0.id) }) {

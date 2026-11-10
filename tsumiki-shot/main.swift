@@ -9,11 +9,31 @@ import ServiceManagement
 let accent = NSColor(srgbRed: 0xd5 / 255.0, green: 0x9a / 255.0, blue: 0x4d / 255.0, alpha: 1)
 /// 保存先（設定で変えられる。選んだフォルダが無くなった・作れないときは既定に戻って保存する）
 enum SaveFolder {
-    static let standard = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Pictures/つみきショット", isDirectory: true)
+    /// 本当のホーム（App Store 版は箱の中のホームが返るので、利用者の情報から引く）
+    static let home: URL = {
+        if let pw = getpwuid(getuid()), let d = pw.pointee.pw_dir { return URL(fileURLWithPath: String(cString: d), isDirectory: true) }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }()
+    static let standard = home.appendingPathComponent("Pictures/つみきショット", isDirectory: true)
     static var isCustom: Bool { Shortcuts.defaults.string(forKey: "saveDir") != nil }
+    #if APPSTORE
+    /// App Store 版：選んだフォルダは「ブックマーク」で覚え、使う間だけ開ける（再起動しても書ける）
+    private static var opened: URL?
+    private static func openBookmark() {
+        guard opened == nil, let d = Shortcuts.defaults.data(forKey: "saveDirBookmark") else { return }
+        var stale = false
+        guard let u = try? URL(resolvingBookmarkData: d, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale) else { return }
+        if u.startAccessingSecurityScopedResource() { opened = u }
+        if stale, let nd = try? u.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+            Shortcuts.defaults.set(nd, forKey: "saveDirBookmark")
+        }
+    }
+    #endif
     static var url: URL {
         guard let p = Shortcuts.defaults.string(forKey: "saveDir") else { return standard }
+        #if APPSTORE
+        openBookmark()
+        #endif
         let u = URL(fileURLWithPath: p, isDirectory: true)
         var dir: ObjCBool = false
         if FileManager.default.fileExists(atPath: p, isDirectory: &dir), dir.boolValue, FileManager.default.isWritableFile(atPath: p) { return u }
@@ -21,6 +41,12 @@ enum SaveFolder {
     }
     /// nil＝既定に戻す
     static func set(_ u: URL?) {
+        #if APPSTORE
+        opened?.stopAccessingSecurityScopedResource(); opened = nil
+        if let u, let d = try? u.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+            Shortcuts.defaults.set(d, forKey: "saveDirBookmark")
+        } else { Shortcuts.defaults.removeObject(forKey: "saveDirBookmark") }
+        #endif
         if let u { Shortcuts.defaults.set(u.path, forKey: "saveDir") } else { Shortcuts.defaults.removeObject(forKey: "saveDir") }
     }
     /// 画面に出す短い形（ホームは ~）
@@ -647,6 +673,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// つみきショットのキーと Mac 標準のスクショのキーが重なっていたら、最初の1回だけ「止めますか」と聞く（設定でいつでも戻せる）
     func askSystemKeys() {
+        #if APPSTORE
+        return
+        #endif
         let mine = Shortcuts.actions.compactMap { Shortcuts.combo($0.id) }
         let clash = mine.filter { SystemKeys.clashes($0) }
         guard !clash.isEmpty, !UserDefaults.standard.bool(forKey: "askedSystemKeys") else { return }

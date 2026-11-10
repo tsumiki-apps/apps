@@ -72,6 +72,10 @@ final class AutoPilot {
 enum Wheel {
     /// アクセシビリティの許可（ask＝なければ許可の画面を出す）
     static func trusted(ask: Bool) -> Bool {
+        #if APPSTORE
+        if CGPreflightPostEventAccess() { return true }
+        return ask ? CGRequestPostEventAccess() : false
+        #endif
         let opt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: ask] as CFDictionary
         return AXIsProcessTrustedWithOptions(opt)
     }
