@@ -178,7 +178,9 @@ final class SelectView: NSView {
     override func keyDown(with e: NSEvent) {
         if e.keyCode == 53 { onDone?(nil) }                                     // Esc
         else if e.keyCode == 49, start == nil, let onSpace { onSpace() }        // スペース＝窓を選ぶ（Mac の ⇧⌘4 と同じ）
+        else if e.keyCode == 36 || e.keyCode == 76, start == nil, let onEnter { onEnter() }   // Enter＝ドラッグ前なら画面まるごと
     }
+    var onEnter: (() -> Void)?
 }
 
 final class RegionPicker {
@@ -187,6 +189,8 @@ final class RegionPicker {
     private let prevApp = NSWorkspace.shared.frontmostApplication
     /// 範囲選びの途中でスペース → これを呼んで幕を閉じる（nil なら何もしない）
     var onSpace: (() -> Void)?
+    /// ドラッグ前の Enter で、マウスのある画面をまるごと選ぶ（範囲・文字を読むだけ。スクロール・録画では使わない）
+    var enterTakesScreen = false
 
     func pick(_ done: @escaping (Region?) -> Void) {
         for screen in NSScreen.screens {
@@ -210,6 +214,17 @@ final class RegionPicker {
                     self.finished = true
                     self.close()
                     self.onSpace?()
+                }
+            }
+            if enterTakesScreen {
+                v.onEnter = { [weak self] in
+                    guard let self, !self.finished else { return }
+                    // キーを受けた画面ではなく、いまマウスのある画面
+                    let m = NSEvent.mouseLocation
+                    let target = NSScreen.screens.first { $0.frame.contains(m) } ?? screen
+                    self.finished = true
+                    self.close()
+                    done(Region(screen: target, rect: target.frame))
                 }
             }
             w.contentView = v
@@ -814,6 +829,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !busy else { return }
         if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p
+        p.enterTakesScreen = true
         p.pick { [weak self] region in
             self?.picker = nil
             guard let self, let region else { return }
@@ -881,6 +897,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !busy else { return }
         if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p
+        p.enterTakesScreen = true
         p.onSpace = { [weak self] in self?.picker = nil; self?.captureWindowMenu() }
         p.pick { [weak self] region in
             self?.picker = nil

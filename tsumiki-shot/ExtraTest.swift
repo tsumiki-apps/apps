@@ -207,6 +207,18 @@ enum ExtraTest {
                                          characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code) { wpv.keyDown(with: ev) }
         }
         check("ウィンドウ選び：Enter で撮る・Esc でやめる", keysHeard == ["enter", "enter", "cancel"], keysHeard.joined(separator: ","))
+        // 範囲選びは、ドラッグ前の Enter で画面まるごと（ドラッグ中は効かない）
+        let sv = SelectView(frame: NSRect(x: 0, y: 0, width: 10, height: 10), tracking: true)
+        var enters = 0
+        sv.onEnter = { enters += 1 }
+        func press(_ v: NSView, _ code: UInt16) {
+            if let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                         characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code) { v.keyDown(with: ev) }
+        }
+        press(sv, 36); press(sv, 76)
+        sv.start = NSPoint(x: 1, y: 1)
+        press(sv, 36)
+        check("範囲選び：ドラッグ前の Enter で画面まるごと・ドラッグ中は効かない", enters == 2, "\(enters)")
         let f = ShortcutField(id: 4)
         var heard: KeyCombo?? = .none
         f.onChange = { heard = .some($0) }
