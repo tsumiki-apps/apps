@@ -292,6 +292,9 @@ final class AutoStitcher {
         }
     }
 
+    /// 向きを先に決めておく（札で縦・横を選んだとき）。1コマ目より前に呼ぶ
+    func force(_ a: ScrollAxis) { if axis == nil { lock(a) } }
+
     /// 向きを決め、使わないほうを捨てる（画像を持ち続けない）
     private func lock(_ a: ScrollAxis) {
         axis = a

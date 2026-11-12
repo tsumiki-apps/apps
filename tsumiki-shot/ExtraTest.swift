@@ -151,6 +151,44 @@ enum ExtraTest {
             let ok = next == .finish && len == want && st.axis == (horizontal ? .horizontal : .vertical)
             return (ok, "\(len)px（正解 \(want)）・\(n)回・向きの試し直し \(turns)回")
         }
+        // 本物に近いページ：合図を受けても3コマかけて滑らかに動き、読み込んだ所の端に来ると1.5秒後に続きを読み込む
+        // （1コマ＝0.12秒。合図の間合いは AutoDriver が決める。前の作り＝1コマごとに送る、では 1100px・1.1秒で止まっていた）
+        func realRun() -> (Bool, String) {
+            let body = SelfTest.makeBody(height: 2400)
+            let mid = SelfTest.viewH - SelfTest.header - SelfTest.footer
+            let maxOff = body.height - mid
+            var loaded = min(maxOff, 500)          // いま読み込んである所まで
+            var reachedAt: Double? = nil
+            let st = AutoStitcher()
+            st.force(.vertical)                    // 札で「縦」を選んだ
+            let driver = AutoDriver(pilot: AutoPilot(viewLength: CGFloat(SelfTest.viewH)))
+            var off = 0, pending = 0, t = 0.0, n = 0, sent = 0
+            _ = st.add(SelfTest.frame(body: body, offset: off))
+            var next = driver.begin(now: t)
+            if case let .scroll(_, dy) = next { pending -= dy; sent += abs(dy) }
+            while n < 600 {
+                n += 1; t += 0.12
+                // ページの動き：残りの1/3ずつ（滑らか）
+                let mv = pending == 0 ? 0 : (abs(pending) <= 3 ? pending : pending / 3)
+                pending -= mv
+                off = min(loaded, max(0, off + mv))
+                if off >= loaded, loaded < maxOff { if reachedAt == nil { reachedAt = t } ; pending = 0 }
+                if let r0 = reachedAt, t - r0 >= 1.5 { loaded = min(maxOff, loaded + 500); reachedAt = nil }
+                let r = st.add(SelfTest.frame(body: body, offset: off))
+                if let a = st.axis { driver.pilot.axisDecided(a) }
+                guard let nx = driver.frame(r, now: t) else { continue }
+                next = nx
+                guard case let .scroll(_, dy) = next else { break }
+                pending -= dy; sent += abs(dy)
+            }
+            let out = st.compose()
+            let len = out?.height ?? 0
+            let want = SelfTest.header + body.height + SelfTest.footer
+            let speed = Int(Double(sent) / max(t, 0.01))
+            // 速さ：1秒に画面の高さの6割まで（前の作りは毎秒 1500点）
+            return (next == .finish && len == want && Double(sent) / t <= 0.6 * Double(SelfTest.viewH), "\(len)px（正解 \(want)）・\(String(format: "%.1f", t))秒・合図 \(speed)点/秒")
+        }
+        let rr = realRun(); check("自動スクロール：滑らかに動き・続きを読み込むページでも端まで", rr.0, rr.1)
         let r1 = autoRun(sign: 1, horizontal: false); check("自動スクロール：縦・ふつうの向きで端まで", r1.0, r1.1)
         let r2 = autoRun(sign: -1, horizontal: false); check("自動スクロール：縦・合図が逆向きでも端まで", r2.0, r2.1)
         let r3 = autoRun(sign: 1, horizontal: true); check("自動スクロール：横で端まで", r3.0, r3.1)

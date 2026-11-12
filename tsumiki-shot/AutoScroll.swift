@@ -16,7 +16,7 @@ final class AutoPilot {
     let base: Int                  // 1回に送る量（画面の点）
     private(set) var step: Int
     private var still = 0, lost = 0
-    static let stillToEnd = 4      // 継いだ後、これだけ続けて動かなければ端
+    static let stillToEnd = 5      // 継いだ後、これだけ合図を送っても動かなければ端（AutoDriver の間隔で約3秒＝続きの読み込みを待つ）
     static let stillToTurn = 2     // まだ一度も継いでいないとき、これだけ動かなければ別の向きを試す
 
     init(viewLength: CGFloat) {
@@ -66,6 +66,38 @@ final class AutoPilot {
         case .full:
             return .finish
         }
+    }
+}
+
+/// 合図を送る間合いを決める。撮るコマ（0.12秒ごと）のたびに送ると速すぎ、
+/// 「4コマ動かない＝端」だと続きを読み込むページで途中で止まる（ExtraTest の realRun で再現）。
+/// そこで、合図は gap 秒以上あけ、ページが動いている間は止まるのを待ってから次を送る。
+/// 端かどうかは「合図を送ったのに動かなかった回数」で数える（コマ数では数えない）。
+final class AutoDriver {
+    let pilot: AutoPilot
+    static let gap = 0.6           // 合図と合図の間（秒）＝速さ
+    static let settle = 1.5        // 動き続けていても、これだけ経てば次を送る
+    private var lastPost = 0.0
+    private var moved = false, lost = false
+
+    init(pilot: AutoPilot) { self.pilot = pilot }
+
+    func begin(now: Double) -> AutoPilot.Next { lastPost = now; moved = false; lost = false; return pilot.begin() }
+
+    /// 1コマ継ぐごとに呼ぶ。nil＝まだ待つ
+    func frame(_ r: StepResult, now: Double) -> AutoPilot.Next? {
+        switch r {
+        case .full: return .finish
+        case .added: moved = true
+        case .lost: lost = true
+        default: break
+        }
+        let dt = now - lastPost
+        if dt < Self.gap { return nil }
+        if case .added = r, dt < Self.settle { return nil }      // まだ動いている＝止まるのを待つ
+        let sum: StepResult = moved ? .added(1) : lost ? .lost : .still
+        moved = false; lost = false; lastPost = now
+        return pilot.next(after: sum)
     }
 }
 

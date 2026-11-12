@@ -209,16 +209,16 @@ notes([("rectangle.dashed", "撮っている範囲は赤い枠・経過時間つ
 
 newPage("スクロール", "arrow.down.to.line.compact")
 steps(["⇧⌘5 で範囲を選ぶ",
-       "手でゆっくりスクロール。または ▶︎ で自動",
-       "端まで来たら ✓（もう一度 ⇧⌘5 でも）"])
+       "札で向き（↓ 縦・→ 横）を選ぶ",
+       "▶︎ 自動 で端まで撮る（手でスクロールしても可）"])
 
 heading("札のボタン", "slider.horizontal.3")
-bar([("arrow.down", "向き", false), ("play.fill", "自動", false), ("pause.fill", "自動を止める", false),
-     ("xmark", "取消", false), ("checkmark", "完了", true)])
+bar([("arrow.down", "縦", false), ("arrow.right", "横", false), ("play.fill", "自動", true), ("pause.fill", "停止", false),
+     ("xmark", "取消", false), ("checkmark", "完了", false)])
 
 heading("自動スクロール", "play.circle")
 notes([("arrow.down", "少しずつ送って継ぐ。動かなければ向きを試し直す"),
-       ("flag.checkered", "端で止まったら自動で仕上げる"),
+       ("flag.checkered", "端で止まったら自動で仕上げる（続きの読み込みは約3秒待つ）"),
        ("hand.raised", "手でスクロール・クリック・キーを触ると手動に戻る"),
        ("accessibility", "初回だけアクセシビリティの許可が要る")])
 

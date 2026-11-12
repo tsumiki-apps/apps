@@ -298,9 +298,17 @@ final class ScrollSession: NSObject {
     private var timer: Timer?
     private var busy = false
     private var lostStreak = 0
-    private var pilot: AutoPilot?                   // 自動スクロール中だけ
+    private var driver: AutoDriver?                 // 自動スクロール中だけ
     private let watcher = HandWatcher()
     private var autoButton: NSButton!
+    /// 札の段階：①向きを選ぶ → ②撮影中（手でスクロールしても継ぐ・▶︎ 自動で撮る）→ ③自動で撮っている
+    enum Phase { case direction, ready, auto }
+    private(set) var phase: Phase = .direction
+    private var dirButtons: [NSButton] = []
+    private var doneButton: NSButton!
+    private var cancelButton: NSButton!
+    private var stack: NSStackView!
+    private var fx: NSVisualEffectView!
     private var ended = false                       // 完了・取消は一度きり
     private let queue = DispatchQueue(label: "stitch")   // つなぐ処理はこの列だけで（画面を固めない）
     var onFinish: ((CGImage?, Bool) -> Void)?       // (画像, 撮れなかった)
@@ -311,11 +319,17 @@ final class ScrollSession: NSObject {
         super.init()
     }
 
-    /// 操作札の中身（矢印・案内・高さ・取消・完了）。--render でも使う
+    /// 操作札の中身。--render でも使う
+    /// ①向き：［↓ 縦］［→ 横］［×］ → ②撮影中：［↓］高さ［▶︎ 自動］［×］［✓］ → ③自動：［↓］自動 高さ［⏸ 停止］［×］［✓］
     func makeBar() -> NSStackView {
-        let done = iconButton("checkmark", "完了（ショートカットをもう一度でも）", self, #selector(finish), prominent: true)
-        let cancel = iconButton("xmark", "取消", self, #selector(cancel))
-        autoButton = iconButton("play.fill", "自動スクロール（アクセシビリティの許可が要る）", self, #selector(toggleAuto))
+        let v = symbolButton("arrow.down", "縦", self, #selector(pickVertical))
+        let h = symbolButton("arrow.right", "横", self, #selector(pickHorizontal))
+        v.toolTip = "縦にスクロールするページ"; h.toolTip = "横にスクロールするページ"
+        dirButtons = [v, h]
+        doneButton = iconButton("checkmark", "完了（ショートカットをもう一度でも）", self, #selector(finish), prominent: true)
+        cancelButton = iconButton("xmark", "取消", self, #selector(cancel))
+        autoButton = symbolButton("play.fill", "自動", self, #selector(toggleAuto))
+        autoButton.bezelColor = accent; autoButton.contentTintColor = .white
         heightLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         heightLabel.alignment = .right
         // 札の幅は最初に決まる＝数字が増えても切れないよう「120,000 px」ぶんの幅を取っておく
@@ -326,10 +340,26 @@ final class ScrollSession: NSObject {
         icon.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "スクロール")
         icon.contentTintColor = accent
         icon.symbolConfiguration = .init(pointSize: 15, weight: .semibold)
-        let stack = NSStackView(views: [icon, hintLabel, heightLabel, autoButton, cancel, done])
+        let stack = NSStackView(views: [icon, hintLabel, v, h, heightLabel, autoButton, cancelButton, doneButton])
         stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 10)
+        self.stack = stack
+        setPhase(phase)
         return stack
+    }
+
+    /// 段階に合わせて札の部品を出し入れし、札の大きさを合わせる
+    func setPhase(_ p: Phase) {
+        phase = p
+        let choosing = p == .direction
+        dirButtons.forEach { $0.isHidden = !choosing }
+        arrowIcon.isHidden = choosing
+        heightLabel.isHidden = choosing
+        autoButton?.isHidden = choosing
+        doneButton?.isHidden = choosing
+        if choosing { hintLabel.stringValue = "向き"; hintLabel.textColor = .secondaryLabelColor }
+        else { showState(height: stitcher.length, lost: lostStreak >= 2 && driver == nil, auto: p == .auto) }
+        placePanel()
     }
 
     /// 見た目の確認用：高さと「ゆっくり」の状態を直接入れる
@@ -337,9 +367,9 @@ final class ScrollSession: NSObject {
         frameView.warn = lost || full
         hintLabel.stringValue = full ? "上限" : lost ? "ゆっくり" : auto ? "自動" : "スクロール"
         let sym = auto ? "pause.fill" : "play.fill"
-        autoButton?.image = NSImage(systemSymbolName: sym, accessibilityDescription: auto ? "自動を止める" : "自動スクロール")?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
-        autoButton?.toolTip = auto ? "自動を止める（手で触っても止まる）" : "自動スクロール（アクセシビリティの許可が要る）"
+        autoButton?.image = NSImage(systemSymbolName: sym, accessibilityDescription: auto ? "自動を止める" : "自動スクロール")
+        autoButton?.title = auto ? "停止" : "自動"
+        autoButton?.toolTip = auto ? "自動を止める（手で触っても止まる）" : "自動で端までスクロールして撮る（初回はアクセシビリティの許可）"
         hintLabel.textColor = lost || full ? .systemRed : .secondaryLabelColor
         heightLabel.stringValue = height > 0 ? "\(height.formatted()) px" : "—"
     }
@@ -355,15 +385,10 @@ final class ScrollSession: NSObject {
         frameWin.contentView = frameView
         frameWin.orderFrontRegardless()
 
-        // 操作札（範囲の下。入らなければ上）
+        // 操作札（範囲の下。入らなければ上）。まずは向きを選ぶ段階
         let stack = makeBar()
         let size = stack.fittingSize
-        let vf = region.screen.visibleFrame
-        var origin = NSPoint(x: region.rect.midX - size.width / 2, y: region.rect.minY - size.height - 14)
-        if origin.y < vf.minY + 4 { origin.y = region.rect.maxY + 14 }
-        if origin.y + size.height > vf.maxY { origin.y = region.rect.minY + 14 }   // どちらも入らなければ内側
-        origin.x = min(max(origin.x, vf.minX + 8), vf.maxX - size.width - 8)
-        panel = NSPanel(contentRect: NSRect(origin: origin, size: size),
+        panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                         styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         panel.isFloatingPanel = true
         panel.level = .statusBar
@@ -376,10 +401,38 @@ final class ScrollSession: NSObject {
         fx.wantsLayer = true; fx.layer?.cornerRadius = 12
         stack.frame = fx.bounds
         fx.addSubview(stack)
+        self.fx = fx
         panel.contentView = fx
+        placePanel()
         panel.orderFrontRegardless()
-        update(nil, height: 0)
+    }
 
+    /// 札を今の中身の大きさにして、範囲の下（入らなければ上・どちらも無理なら内側）に置く
+    private func placePanel() {
+        guard let panel, let stack, let fx else { return }
+        stack.layoutSubtreeIfNeeded()
+        let size = stack.fittingSize
+        let vf = region.screen.visibleFrame
+        var origin = NSPoint(x: region.rect.midX - size.width / 2, y: region.rect.minY - size.height - 14)
+        if origin.y < vf.minY + 4 { origin.y = region.rect.maxY + 14 }
+        if origin.y + size.height > vf.maxY { origin.y = region.rect.minY + 14 }   // どちらも入らなければ内側
+        origin.x = min(max(origin.x, vf.minX + 8), vf.maxX - size.width - 8)
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        fx.frame = NSRect(origin: .zero, size: size)
+        stack.frame = fx.bounds
+    }
+
+    @objc func pickVertical() { choose(.vertical) }
+    @objc func pickHorizontal() { choose(.horizontal) }
+
+    /// 向きを選んだら撮り始める（手でスクロールしても継ぐ。▶︎ 自動で端まで）
+    private func choose(_ a: ScrollAxis) {
+        guard phase == .direction, !ended else { return }
+        stitcher.force(a)
+        arrowIcon.image = NSImage(systemSymbolName: a == .horizontal ? "arrow.right" : "arrow.down",
+                                  accessibilityDescription: a == .horizontal ? "横スクロール" : "縦スクロール")
+        setPhase(.ready)
+        update(nil, height: 0)
         capturer.prepare { [weak self] err in
             guard let self else { return }
             if err != nil { self.end(nil, failed: true); return }
@@ -413,16 +466,17 @@ final class ScrollSession: NSObject {
 
     private func update(_ r: StepResult?, height: Int) {
         if case .lost = r { lostStreak += 1 } else if r != nil, r != .still { lostStreak = 0 }
+        guard phase != .direction else { return }
         if r == .full { showState(height: height, lost: false, full: true); return }
-        showState(height: height, lost: lostStreak >= 2 && pilot == nil, auto: pilot != nil)
+        showState(height: height, lost: lostStreak >= 2 && driver == nil, auto: driver != nil)
     }
 
     private var center: NSPoint { NSPoint(x: region.rect.midX, y: region.rect.midY) }
 
     /// 自動スクロールの入り切り
     @objc func toggleAuto() {
-        if pilot != nil { stopAuto(); return }
-        guard !ended else { return }
+        if driver != nil { stopAuto(); return }
+        guard !ended, phase != .direction else { return }
         guard Wheel.trusted(ask: true) else {
             Toast.show("アクセシビリティを許可してください", symbol: "hand.raised")
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
@@ -431,32 +485,35 @@ final class ScrollSession: NSObject {
         let horizontal = stitcher.axis == .horizontal
         let p = AutoPilot(viewLength: horizontal ? region.rect.width : region.rect.height)
         if let a = stitcher.axis { p.axisDecided(a) }
-        pilot = p
+        let d = AutoDriver(pilot: p)
+        driver = d
         Wheel.moveMouse(to: center)            // 範囲の上で回したことにする（指している所に届くアプリが多い）
         watcher.start { [weak self] in self?.stopAuto() }
-        update(nil, height: stitcher.length)
-        if case let .scroll(dx, dy) = p.begin() { Wheel.post(dx: dx, dy: dy, at: center) }
+        setPhase(.auto)
+        if case let .scroll(dx, dy) = d.begin(now: CACurrentMediaTime()) { Wheel.post(dx: dx, dy: dy, at: center) }
     }
 
     func stopAuto() {
-        guard pilot != nil else { return }
-        pilot = nil
+        guard driver != nil else { return }
+        driver = nil
         watcher.stop()
-        update(nil, height: stitcher.length)
+        setPhase(.ready)
     }
 
     /// 1コマ継ぐごとに、次の一送りを決めて送る
     private func drive(_ r: StepResult, axis: ScrollAxis?) {
-        guard let p = pilot, !ended else { return }
-        if let axis { p.axisDecided(axis) }
-        switch p.next(after: r) {
-        case let .scroll(dx, dy): Wheel.post(dx: dx, dy: dy, at: center)
-        case .finish: finish()                 // 端まで来た
+        guard let d = driver, !ended else { return }
+        if let axis { d.pilot.axisDecided(axis) }
+        switch d.frame(r, now: CACurrentMediaTime()) {
+        case nil: break                        // 間をあける・ページが止まるのを待つ
+        case let .scroll(dx, dy)?: Wheel.post(dx: dx, dy: dy, at: center)
+        case .finish?: finish()                // 端まで来た
         }
     }
 
     @objc func finish() {
         guard !ended else { return }
+        if phase == .direction { cancel(); return }      // まだ撮っていない＝やめる
         ended = true
         timer?.invalidate(); timer = nil
         // 撮りかけのコマを待ち、最後の1コマを足してから仕上げる
@@ -491,7 +548,7 @@ final class ScrollSession: NSObject {
     }
 
     private func stop() {
-        watcher.stop(); pilot = nil
+        watcher.stop(); driver = nil
         frameWin?.orderOut(nil); panel?.orderOut(nil)
     }
 }
