@@ -98,7 +98,7 @@ final class WindowPickView: NSView {
     var onEnter: (() -> Void)?
     // Esc＝やめる／Enter（テンキーの Enter も）＝いま囲んでいる窓を撮る
     override func keyDown(with e: NSEvent) {
-        if e.keyCode == 53 { onCancel?() } else if e.keyCode == 36 || e.keyCode == 76 { onEnter?() }
+        if e.keyCode == 53 { onCancel?() } else if (e.keyCode == 36 || e.keyCode == 76), !e.isARepeat { onEnter?() }   // 押しっぱなしの連打は無視
     }
 }
 

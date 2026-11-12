@@ -13,6 +13,7 @@ final class AutoPilot {
     static let dirs: [(Int, Int)] = [(0, -1), (0, 1), (-1, 0), (1, 0)]
     private(set) var dirIndex = 0
     private(set) var locked = false
+    private var allowed: [Int]?    // 向きが決まったら、試してよい向き
     let base: Int                  // 1回に送る量（画面の点）
     private(set) var step: Int
     private var still = 0, lost = 0
@@ -36,7 +37,8 @@ final class AutoPilot {
     func axisDecided(_ a: ScrollAxis) {
         guard !locked else { return }
         let want = a == .vertical ? [0, 1] : [2, 3]
-        if !want.contains(dirIndex) { dirIndex = want[0] }
+        if allowed == nil, !want.contains(dirIndex) { dirIndex = want[0] }
+        allowed = want
     }
 
     func next(after r: StepResult) -> Next {
@@ -54,6 +56,7 @@ final class AutoPilot {
                 still = 0
                 dirIndex += 1
                 if dirIndex >= AutoPilot.dirs.count { return .finish }   // どの向きにも動かない
+                if let w = allowed, !w.contains(dirIndex) { return .finish }   // 選んだ向き（上下／左右）の両方で動かない
             }
             return move(step)
         case .lost:

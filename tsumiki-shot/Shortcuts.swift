@@ -93,7 +93,12 @@ enum Shortcuts {
 
     /// いまのキー（nil＝なし）
     static func combo(_ id: UInt32) -> KeyCombo? {
-        guard let d = stored[String(id)] else { return actions.first { $0.id == id }?.def }
+        guard let d = stored[String(id)] else {
+            // 既定のキーが、別の項目に保存されたキーと同じなら「なし」（前の版の既定を保存している人と重ねない）
+            guard let def = actions.first(where: { $0.id == id })?.def else { return nil }
+            let taken = stored.contains { k, v in k != String(id) && (try? JSONDecoder().decode(KeyCombo.self, from: v)).map { $0.code == def.code && $0.mods == def.mods } == true }
+            return taken ? nil : def
+        }
         if d.isEmpty { return nil }
         return try? JSONDecoder().decode(KeyCombo.self, from: d)
     }

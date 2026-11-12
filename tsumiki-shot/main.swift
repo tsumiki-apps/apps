@@ -178,7 +178,7 @@ final class SelectView: NSView {
     override func keyDown(with e: NSEvent) {
         if e.keyCode == 53 { onDone?(nil) }                                     // Esc
         else if e.keyCode == 49, start == nil, let onSpace { onSpace() }        // スペース＝窓を選ぶ（Mac の ⇧⌘4 と同じ）
-        else if e.keyCode == 36 || e.keyCode == 76, start == nil, let onEnter { onEnter() }   // Enter＝ドラッグ前なら画面まるごと
+        else if e.keyCode == 36 || e.keyCode == 76, !e.isARepeat, start == nil, let onEnter { onEnter() }   // Enter＝ドラッグ前なら画面まるごと
     }
     var onEnter: (() -> Void)?
 }
