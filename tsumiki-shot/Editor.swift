@@ -300,12 +300,18 @@ final class EditorWindow: NSWindowController, NSWindowDelegate {
         window?.title = url.deletingPathExtension().lastPathComponent
         guard let img else { failAlert("画像を作れませんでした（大きすぎる可能性があります）"); return }
         let stem = url.deletingPathExtension().lastPathComponent
-        var out = url.deletingLastPathComponent().appendingPathComponent("\(stem) 編集.png")
-        var n = 2
-        while FileManager.default.fileExists(atPath: out.path) {
-            out = url.deletingLastPathComponent().appendingPathComponent("\(stem) 編集 \(n).png"); n += 1
+        // 元の画像の隣に保存。書けない場所（App Store 版で選んだ別のフォルダの画像など）なら保存先に
+        func write(in dir: URL) -> URL? {
+            var out = dir.appendingPathComponent("\(stem) 編集.png")
+            var n = 2
+            while FileManager.default.fileExists(atPath: out.path) {
+                out = dir.appendingPathComponent("\(stem) 編集 \(n).png"); n += 1
+            }
+            return (try? data.write(to: out, options: .withoutOverwriting)) != nil ? out : nil
         }
-        do { try data.write(to: out, options: .withoutOverwriting) } catch { failAlert(error.localizedDescription); return }
+        guard let out = write(in: url.deletingLastPathComponent()) ?? write(in: saveDir) else {
+            failAlert("保存できませんでした（保存先に書き込めません）"); return
+        }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(data, forType: .png)
         let cb = onSaved                      // 閉じると自分が外されるので、先に控える

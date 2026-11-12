@@ -170,6 +170,13 @@ enum ExtraTest {
         ud.removePersistentDomain(forName: suite)
         let keep = Shortcuts.defaults
         Shortcuts.defaults = ud
+        // 既定は CleanShot X と同じ並び（App Store 版は ⌥ が足される）
+        let want: [UInt32: Int] = [2: kVK_ANSI_3, 1: kVK_ANSI_4, 3: kVK_ANSI_5, 6: kVK_ANSI_6, 7: kVK_ANSI_7, 4: kVK_ANSI_8, 5: kVK_ANSI_2]
+        check("既定のキー＝CleanShot X の並び（3 全画面・4 範囲・5 スクロール・6 録画・7 注釈）",
+              want.allSatisfy { id, code in Shortcuts.combo(id).map { $0.code == UInt32(code) && $0.mods == Shortcuts.cmdShift } == true },
+              Shortcuts.actions.map { "\($0.name)=\(Shortcuts.combo($0.id)?.display ?? "なし")" }.joined(separator: " "))
+        let defs = Shortcuts.actions.map { "\($0.def.code)-\($0.def.mods)" }
+        check("既定のキーに重なりがない", Set(defs).count == defs.count)
         let s3 = Shortcuts.combo(3)
         let cleared = Shortcuts.set(1, s3)                       // 範囲に、スクロールと同じキー
         check("同じキーは片方だけ（もう片方はなしに）", cleared == [3] && Shortcuts.combo(3) == nil && Shortcuts.combo(1) == s3)
@@ -177,6 +184,20 @@ enum ExtraTest {
         check("なしにできる", Shortcuts.combo(2) == nil)
         Shortcuts.resetAll()
         check("既定に戻す", Shortcuts.actions.allSatisfy { Shortcuts.combo($0.id) == $0.def })
+        // 注釈（⇧⌘7）が開くのは、保存先でいちばん新しい画像（動画は飛ばす）
+        let td = FileManager.default.temporaryDirectory.appendingPathComponent("tsumikishot-annotate-\(getpid())")
+        try? FileManager.default.createDirectory(at: td, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        for (n, ago) in [("古い.png", 300.0), ("新しい.png", 100.0), ("録画.mp4", 10.0)] {
+            let u = td.appendingPathComponent(n)
+            fm.createFile(atPath: u.path, contents: Data([0]))
+            try? fm.setAttributes([.modificationDate: Date().addingTimeInterval(-ago)], ofItemAtPath: u.path)
+        }
+        let latest = App.latestImage(in: td)
+        check("注釈：いちばん新しい画像を選ぶ（動画は除く）", latest?.lastPathComponent == "新しい.png", latest?.lastPathComponent ?? "nil")
+        let empty = td.appendingPathComponent("空"); try? fm.createDirectory(at: empty, withIntermediateDirectories: true)
+        check("注釈：画像が無ければ nil（＝選ぶ画面へ）", App.latestImage(in: empty) == nil)
+        try? fm.removeItem(at: td)
         let f = ShortcutField(id: 4)
         var heard: KeyCombo?? = .none
         f.onChange = { heard = .some($0) }
@@ -204,7 +225,9 @@ enum ExtraTest {
         let off = !SystemKeys.anyEnabled && SystemKeys.activeCombos.isEmpty
         let noWarn = !SystemKeys.clashes(Shortcuts.actions[0].def)
         SystemKeys.setEnabled(true)
-        let warn = [0, 1, 5].allSatisfy { SystemKeys.clashes(Shortcuts.actions[$0].def) } && !SystemKeys.clashes(Shortcuts.actions[2].def)
+        // Mac 標準と重なるのは ⇧⌘4 範囲・⇧⌘3 全画面・⇧⌘5 スクロール。⇧⌘6 録画は重ならない
+        func def(_ id: UInt32) -> KeyCombo { Shortcuts.actions.first { $0.id == id }!.def }
+        let warn = [1, 2, 3].allSatisfy { SystemKeys.clashes(def(UInt32($0))) } && !SystemKeys.clashes(def(6))
         let restored = SystemKeys.isEnabled("28") && SystemKeys.isEnabled("184")
         // 元から止めていた ⌃⇧⌘3 は、止める→戻すのあとも止めたまま
         var tb = CFPreferencesCopyValue("AppleSymbolicHotKeys" as CFString, SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as! [String: Any]

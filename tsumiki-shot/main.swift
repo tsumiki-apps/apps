@@ -1,10 +1,11 @@
 // つみきショット：メニューバーに常駐するスクショアプリ（自分専用）。
-// ⇧⌘4 範囲 ／ ⇧⌘3 全画面 ／ ⇧⌘6 スクロール（もう一度押すと完了）／ ⇧⌘7 ウィンドウ ／ ⇧⌘2 文字を読む ／ ⇧⌘5 録画（もう一度で停止）
+// ⇧⌘4 範囲 ／ ⇧⌘3 全画面 ／ ⇧⌘5 スクロール（もう一度押すと完了）／ ⇧⌘6 録画（もう一度で停止）／ ⇧⌘7 注釈 ／ ⇧⌘8 ウィンドウ ／ ⇧⌘2 文字を読む
 // 撮ったものは ~/Pictures/つみきショット に PNG で保存し、クリップボードにも入れる。
 import AppKit
 import Carbon
 import ScreenCaptureKit
 import ServiceManagement
+import UniformTypeIdentifiers
 
 let accent = NSColor(srgbRed: 0xd5 / 255.0, green: 0x9a / 255.0, blue: 0x4d / 255.0, alpha: 1)
 /// 保存先（設定で変えられる。選んだフォルダが無くなった・作れないときは既定に戻って保存する）
@@ -626,7 +627,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let m = NSMenu()
         m.delegate = self
         let sels: [UInt32: Selector] = [1: #selector(captureArea), 2: #selector(captureScreen), 3: #selector(captureScroll),
-                                        4: #selector(captureWindowMenu), 5: #selector(captureText), 6: #selector(captureMovie)]
+                                        4: #selector(captureWindowMenu), 5: #selector(captureText), 6: #selector(captureMovie),
+                                        7: #selector(openAnnotate)]
         for a in Shortcuts.actions {
             let i = NSMenuItem(title: a.name, action: sels[a.id], keyEquivalent: "")
             i.tag = Int(a.id)                       // ショートカットの番号と同じ
@@ -650,7 +652,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         HotKeys.actions = [1: { [weak self] in self?.captureArea() }, 2: { [weak self] in self?.captureScreen() },
                            3: { [weak self] in self?.captureScroll() }, 4: { [weak self] in self?.captureWindowMenu() },
-                           5: { [weak self] in self?.captureText() }, 6: { [weak self] in self?.captureMovie() }]
+                           5: { [weak self] in self?.captureText() }, 6: { [weak self] in self?.captureMovie() },
+                           7: { [weak self] in self?.openAnnotate() }]
         HotKeys.apply()
         refreshMenuKeys()
         // 許可の案内は最初の1回だけ（以後は撮ろうとして失敗したときに出す）
@@ -757,7 +760,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var shooting = 0                        // 撮っている最中の数（範囲・全画面）
     var busy: Bool { picker != nil || winPicker != nil || session != nil || recorder != nil || shooting > 0 }
 
-    /// 範囲を選んで録画。もう一度 ⇧⌘5（か札の停止）で止める
+    /// 範囲を選んで録画。もう一度 ⇧⌘6（か札の停止）で止める
     @objc func captureMovie() {
         if let r = recorder { r.finish(); return }
         guard !busy else { return }
@@ -836,6 +839,35 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// 注釈：保存先でいちばん新しい画像（直前のスクショ）を編集画面で開く。1枚も無ければ画像を選ぶ
+    @objc func openAnnotate() {
+        guard !busy else { return }
+        if let url = Self.latestImage(in: saveDir) ?? Self.latestImage(in: SaveFolder.standard) { openImageInEditor(url); return }
+        let p = NSOpenPanel()
+        p.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
+        p.directoryURL = saveDir
+        p.message = "書き込む画像を選んでください"
+        NSApp.activate(ignoringOtherApps: true)
+        p.begin { [weak self] r in if r == .OK, let url = p.url { self?.openImageInEditor(url) } }
+    }
+
+    /// フォルダの中でいちばん新しい画像（動画は除く）
+    static func latestImage(in dir: URL) -> URL? {
+        let exts: Set<String> = ["png", "jpg", "jpeg", "heic", "tiff"]
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
+                                                                   options: [.skipsHiddenFiles])) ?? []
+        func date(_ u: URL) -> Date { (try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
+        return files.filter { exts.contains($0.pathExtension.lowercased()) }.max { date($0) < date($1) }
+    }
+
+    func openImageInEditor(_ url: URL) {
+        // 同じ画像をもう開いていれば、それを前に出す
+        if let e = editors.first(where: { $0.url == url }) { e.show(); return }
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { NSSound.beep(); return }
+        openEditor(img, url, scale: NSScreen.main?.backingScaleFactor ?? 2)
+    }
+
     func openEditor(_ img: CGImage, _ url: URL, scale: CGFloat) {
         let e = EditorWindow(image: img, url: url, unit: scale)
         // 閉じる処理の最中に自分が解放されないよう、外すのは次の周回で
@@ -877,7 +909,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func captureScroll() {
-        if let s = session { s.finish(); return }        // 2回目の ⇧⌘6 は完了
+        if let s = session { s.finish(); return }        // 2回目の ⇧⌘5 は完了
         guard !busy else { return }                      // 録画中・ウィンドウ選択中などは始めない
         if !CGPreflightScreenCaptureAccess() { failed(); return }
         let p = RegionPicker(); picker = p
