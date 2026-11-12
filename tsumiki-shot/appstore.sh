@@ -37,6 +37,7 @@ $P -c "Set :CFBundleIdentifier $BUNDLE_ID" -c "Set :CFBundleShortVersionString $
 "$D/arm64" --icons "$D/AppIcon.iconset"
 iconutil -c icns "$D/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+xattr -cr "$APP"  # 隔離などの属性が残ると App Store の処理で落ちる（91109）
 # 署名に使う権限＝AppStore.entitlements ＋ チームと App ID
 ENT="$D/signed.entitlements"; cp AppStore.entitlements "$ENT"
 $P -c "Add :com.apple.application-identifier string $TEAM.$BUNDLE_ID" -c "Add :com.apple.developer.team-identifier string $TEAM" "$ENT"
