@@ -95,7 +95,11 @@ final class WindowPickView: NSView {
     override func mouseMoved(with e: NSEvent) { onMove?(NSEvent.mouseLocation) }
     override func mouseDown(with e: NSEvent) { onClick?() }
     override func rightMouseDown(with e: NSEvent) { onCancel?() }
-    override func keyDown(with e: NSEvent) { if e.keyCode == 53 { onCancel?() } }
+    var onEnter: (() -> Void)?
+    // Esc＝やめる／Enter（テンキーの Enter も）＝いま囲んでいる窓を撮る
+    override func keyDown(with e: NSEvent) {
+        if e.keyCode == 53 { onCancel?() } else if e.keyCode == 36 || e.keyCode == 76 { onEnter?() }
+    }
 }
 
 final class WindowPicker {
@@ -116,6 +120,9 @@ final class WindowPicker {
             v.onMove = { [weak self] p in self?.hover(p) }
             v.onClick = { [weak self] in self?.end(done, self?.current?.id) }
             v.onCancel = { [weak self] in self?.end(done, nil) }
+            v.onEnter = { [weak self] in   // 囲んでいる窓が無いときは何もしない（やめるのは Esc）
+                if let id = self?.current?.id { self?.end(done, id) } else { NSSound.beep() }
+            }
             w.contentView = v
             w.setFrame(screen.frame, display: true)
             views.append((w, v))

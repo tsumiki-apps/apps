@@ -190,12 +190,12 @@ notes([("folder", "既定は ~/Pictures/つみきショット/（PNG・録画は
 // MARK: - 2 撮る
 
 newPage("撮る", "camera.viewfinder")
-rows([("rectangle.dashed", "範囲", "⇧⌘4", "ドラッグで選ぶ。スペースで窓に・esc で取消"),
+rows([("rectangle.dashed", "範囲", "⇧⌘4", "ドラッグで選ぶ。スペースで窓に→Enter で撮る"),
       ("macwindow", "全画面", "⇧⌘3", "マウスのある画面"),
       ("arrow.down.to.line.compact", "スクロール", "⇧⌘5", "長いページを1枚に（縦も横も）→ 3ページ"),
       ("record.circle", "録画", "⇧⌘6", "範囲を MP4 に。もう一度押すと停止"),
       ("pencil.tip", "注釈", "⇧⌘7", "直前のスクショを編集画面で開く"),
-      ("macwindow.on.rectangle", "ウィンドウ", "⇧⌘8", "窓を指すと色で囲む。押すとその窓だけ"),
+      ("macwindow.on.rectangle", "ウィンドウ", "⇧⌘8", "窓を指して Enter かクリックでその窓だけ"),
       ("text.viewfinder", "文字を読む", "⇧⌘2", "範囲の文字をコピー（日本語・英語）")])
 notes([("gearshape", "キーは「設定…」で好きなものに変えられる → 5ページ"),
        ("menubar.rectangle", "メニューバーの 積み木 からも同じ操作ができる")])

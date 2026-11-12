@@ -198,6 +198,15 @@ enum ExtraTest {
         let empty = td.appendingPathComponent("空"); try? fm.createDirectory(at: empty, withIntermediateDirectories: true)
         check("注釈：画像が無ければ nil（＝選ぶ画面へ）", App.latestImage(in: empty) == nil)
         try? fm.removeItem(at: td)
+        // ウィンドウ選びは Enter（とテンキーの Enter）で撮る・Esc でやめる
+        let wpv = WindowPickView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
+        var keysHeard: [String] = []
+        wpv.onEnter = { keysHeard.append("enter") }; wpv.onCancel = { keysHeard.append("cancel") }; wpv.onClick = { keysHeard.append("click") }
+        for code: UInt16 in [36, 76, 53] {
+            if let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                         characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code) { wpv.keyDown(with: ev) }
+        }
+        check("ウィンドウ選び：Enter で撮る・Esc でやめる", keysHeard == ["enter", "enter", "cancel"], keysHeard.joined(separator: ","))
         let f = ShortcutField(id: 4)
         var heard: KeyCombo?? = .none
         f.onChange = { heard = .some($0) }
