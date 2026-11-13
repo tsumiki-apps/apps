@@ -609,6 +609,8 @@ final class PreviewPanel: NSObject {
         var views: [NSView] = [movie ? iconButton("play.fill", "再生", self, #selector(openFile), prominent: true)
                                      : iconButton("pencil.tip", "編集（矢印・四角・文字・モザイク）", self, #selector(edit), prominent: true)]
         if !movie { views.append(iconButton("pin", "画面に浮かべる", self, #selector(pin))) }
+        // つみきトレイが入っているときだけ：ドラッグせずにトレイへ置く
+        if PreviewPanel.trayApp != nil { views.append(iconButton("tray.and.arrow.down", "トレイへ", self, #selector(toTray))) }
         views += [iconButton("folder", "Finder で表示", self, #selector(reveal)), iconButton("xmark", "閉じる", self, #selector(close))]
         let row = NSStackView(views: views); row.spacing = 8
         let size = NSSize(width: w + 20, height: h + 56)
@@ -646,6 +648,16 @@ final class PreviewPanel: NSObject {
     @objc func pin() { if let image { let s = scale; close(); onPin?(image, s) } }
     @objc func edit() { if let url, let image { let s = scale; close(); onEdit?(image, url, s) } }
     @objc func reveal() { if let url { NSWorkspace.shared.activateFileViewerSelecting([url]) }; close() }
+
+    static var trayApp: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.tsumiki.tray") }
+    /// 撮ったファイルをつみきトレイに渡す（トレイは場所の控えを持つだけ。ファイルは保存先に残る）
+    @objc func toTray() {
+        if let url, let app = PreviewPanel.trayApp {
+            let c = NSWorkspace.OpenConfiguration(); c.activates = false
+            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: c)
+        }
+        close()
+    }
     @objc func close() { hideTimer?.invalidate(); hideTimer = nil; panel?.orderOut(nil); panel = nil }
 }
 
