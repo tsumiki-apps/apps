@@ -26,3 +26,14 @@
 - `./notarize.sh <出力.zip>`：Apple シリコン・Intel 両対応で組み立て、公証して印を貼った zip（`._` を入れない）。前準備は notarize.sh の先頭（キーチェーンのプロファイル名は `tsumikishot` を共用）
 - `./package.sh <出力.zip>`：公証しない zip（初回は「このまま開く」が要る）
 - 配布ページ：https://tools.tsumiki-apps.com/tsumiki-tray.html（`~/tsumiki-tools/tsumiki-tray.html` と `tsumiki-tray.zip`）
+
+## App Store 版（appstore.sh）
+つみきショットと同じ形。`./appstore.sh 1.0 1`（`ASC_KEY_ID`・`ASC_ISSUER` を付けると altool で送る）。
+- 箱（サンドボックス）で動く。権限は `AppStore.entitlements` の3つ：app-sandbox・置かれたファイルを読むだけ（user-selected.read-only）・場所の控えを次の起動でも使う（bookmarks.app-scope）
+- 違い：`-D APPSTORE` では場所の控えを「安全な控え」（security-scoped・読むだけ）で作り、使う前に開く。元のファイルを書き換えられないのは直接配る版と同じ（取り出しはいつもコピー）
+- 機能の違いは無し（ドラッグの見張り・⇧⌘9・ログイン項目は箱の中で足りる。特別な許可は要らない）
+- 自己テストは箱の中で回す（.app に入れて開発用の証明書＋同じ権限で署名して動かす）。控えが起動し直した後も解けて読めること、控えなしでは箱の外を読めないことも確かめた
+- 中身は箱の中（`~/Library/Containers/com.tsumiki.tray`）に入る＝直接配る版とは別に持つ
+- 起動していないときに「このアプリで開く」で渡されたファイルも、棚ができてから置く（両方の版で直した）
+- 前準備：App ID `com.tsumiki.tray` とプロファイル「Tsumiki Tray App Store」（`AppStore.provisionprofile`・git に入らない）。証明書はショットと共通
+- 直接配る版（package.sh・notarize.sh の公証 zip）はそのまま。両方を同じ Mac に入れると ⇧⌘9 が重なる

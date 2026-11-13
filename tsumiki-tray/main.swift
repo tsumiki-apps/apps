@@ -93,11 +93,18 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hotkey = HotKey(code: UInt32(kVK_ANSI_9), mods: UInt32(cmdKey | shiftKey)) { [weak self] in self?.shelf.toggle() }
         setupMenu()
         shelf.restore()
+        // 起動していないときに渡されたファイルは、棚ができてから置く
+        let early = pending; pending = []
+        if !early.isEmpty { take(early) }
     }
 
     /// 「このアプリで開く」・つみきショットの「トレイへ」から来たファイル
     func application(_ app: NSApplication, open urls: [URL]) {
-        guard shelf != nil else { return }
+        guard shelf != nil else { pending += urls; return }
+        take(urls)
+    }
+    private var pending: [URL] = []
+    private func take(_ urls: [URL]) {
         let files = urls.filter(\.isFileURL)
         if !files.isEmpty, store.addFiles(files) != nil { shelf.announceAdded() }
     }
