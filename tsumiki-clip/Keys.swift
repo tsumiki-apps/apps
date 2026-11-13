@@ -62,8 +62,15 @@ enum Shortcuts {
     /// 既定は本家で使っていたのと同じ並び（⇧⌘V 開く・⇧⌘C 順番に貼る）
     static let actions: [ClipAction] = [
         ClipAction(id: 1, name: "開く", symbol: "rectangle.bottomhalf.inset.filled", def: KeyCombo(code: UInt32(kVK_ANSI_V), mods: cmdShift, char: "V")),
+    ] + stackAction
+    #if APPSTORE
+    /// App Store 版（箱の中）は ⌘V を横取りできない＝順番に貼るは出さない
+    static let stackAction: [ClipAction] = []
+    #else
+    static let stackAction: [ClipAction] = [
         ClipAction(id: 2, name: "順番に貼る", symbol: "list.number", def: KeyCombo(code: UInt32(kVK_ANSI_C), mods: cmdShift, char: "C")),
     ]
+    #endif
 
     static var defaults: UserDefaults = .standard
     private static let key = "hotkeys"

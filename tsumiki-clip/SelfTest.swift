@@ -220,7 +220,11 @@ enum SelfTest {
         check(ex, "置き場はバックアップに入れない")
 
         // キー
+        #if APPSTORE
+        check(Shortcuts.combo(1)?.display == "⇧⌘V" && Shortcuts.combo(2) == nil && Shortcuts.actions.count == 1, "既定のキー（⇧⌘V 開く・App Store 版は順番に貼るなし）")
+        #else
         check(Shortcuts.combo(1)?.display == "⇧⌘V" && Shortcuts.combo(2)?.display == "⇧⌘C", "既定のキー（⇧⌘V 開く・⇧⌘C 順番に貼る）")
+        #endif
         Shortcuts.set(2, Shortcuts.combo(1))
         check(Shortcuts.combo(1) == nil && Shortcuts.combo(2)?.display == "⇧⌘V", "同じキーを2つに付けると古いほうはなし")
         Shortcuts.resetAll()

@@ -99,8 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return it
         }
         _ = add("開く", "rectangle.bottomhalf.inset.filled", 1) { [weak self] in self?.strip.show() }
+        #if !APPSTORE
         let st = add(stack.on ? "順番に貼るをやめる" : "順番に貼る", "list.number", 2) { [weak self] in self?.toggleStack() }
         st.state = stack.on ? .on : .off
+        #endif
         let p = add(Prefs.paused ? "記録を再開" : "一時停止", Prefs.paused ? "play.circle" : "pause.circle", nil) {
             Prefs.paused.toggle(); self.refreshStatus()
         }

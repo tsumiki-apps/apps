@@ -97,7 +97,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSTableViewDat
 
         rows.append(header("hand.raised", "許可"))
         let axOpen = NSButton(title: "開く", target: self, action: #selector(openAX)); axOpen.bezelStyle = .rounded
+        #if APPSTORE
+        axOpen.toolTip = "直接貼るに要る"
+        #else
         axOpen.toolTip = "直接貼る・順番に貼るに要る"
+        #endif
         rows.append(rowView("accessibility", "アクセシビリティ", [axMark, axOpen]))
         let pbOpen = NSButton(title: "開く", target: self, action: #selector(openPB)); pbOpen.bezelStyle = .rounded
         pbOpen.toolTip = "コピーを読むのに要る（macOS 15.4 以降）"

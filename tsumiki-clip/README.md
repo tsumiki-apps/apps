@@ -47,3 +47,14 @@ build/TsumikiClip --shot <png>   # 架空の中身で帯を描く（明るい版
 - 順番に貼るの ⌘V は、つみきクリップ自身が手前のとき（帯の検索・設定）は進めない。待っている分は期間・件数の上限でも消さない
 - 帯は出すときにつみきクリップを手前にし、閉じる・貼るときに元のアプリへ戻す（手前にしないまま出すと、キーを1つ押した時点で受け手を外される）
 - ファイル：`main.swift`（メニュー・起動）・`Store.swift`（保存・設定・色・整える）・`Clipboard.swift`（見張り・貼る・順番に貼る）・`Strip.swift`（帯）・`Settings.swift`・`Keys.swift`（キー）・`Icon.swift`・`SelfTest.swift`
+
+## App Store 版（appstore.sh）
+つみきショットと同じ形。`./appstore.sh 1.0 1`（`ASC_KEY_ID`・`ASC_ISSUER` を付けると altool で送る）。
+- 箱（サンドボックス）で動く。権限は `AppStore.entitlements` の app-sandbox だけ（履歴は箱の中に置く）
+- 違い（`-D APPSTORE`）：
+  - **直接貼る**は、アクセシビリティの代わりに「入力を送る」許可（`CGRequestPostEventAccess`）で ⌘V を送る。システム設定ではアクセシビリティの一覧に出る（つみきショットの自動スクロールと同じ）
+  - **順番に貼るは出さない**（メニュー・キーの設定・既定のキー ⇧⌘C ごと）。押された ⌘V の前にクリップボードを替える横取り（イベントタップ）は箱の中では許されないため
+- 自己テストは箱の中で回す（.app に入れて開発用の証明書＋同じ権限で署名して動かす）。キーの既定は App Store 版の並びで確かめる
+- 履歴と設定は箱の中（`~/Library/Containers/com.tsumiki.clip`）に入る＝直接配る版とは別に持つ
+- 前準備：App ID `com.tsumiki.clip` とプロファイル「Tsumiki Clip App Store」（`AppStore.provisionprofile`・git に入らない）。証明書はショットと共通
+- 直接配る版（package.sh・notarize.sh の公証 zip）はそのまま（順番に貼るあり）。両方を同じ Mac に入れると ⇧⌘V が重なる

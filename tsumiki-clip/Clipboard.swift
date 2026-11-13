@@ -145,8 +145,14 @@ final class Paster {
     }
 
     static func trusted(prompt: Bool) -> Bool {
+        #if APPSTORE
+        // 箱の中：アクセシビリティではなく「入力を送る」許可だけで ⌘V を送れる（つみきショットの自動スクロールと同じ）
+        if CGPreflightPostEventAccess() { return true }
+        return prompt ? CGRequestPostEventAccess() : false
+        #else
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt] as CFDictionary
         return AXIsProcessTrustedWithOptions(opts)
+        #endif
     }
 
     static func postCommandV() {
