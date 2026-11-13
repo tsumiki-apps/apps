@@ -37,5 +37,11 @@
 - 自己テスト `TsumikiWake --selftest`：時間の計算・時刻まで・電池の判定・二重の検出・本体（使い捨ての設定で開始→画面を外す→延長→時間切れ→電池→記録）・本物の宣言が出て消えること・アイコン3通り
 - `--menu-icons <フォルダ>` でメニューのアイコン3通りを大きく書き出す（見た目の確認用）
 
-## App Store 版について（まだ作らない）
-つみきショットの `appstore.sh`・`AppStore.entitlements`・`-D APPSTORE` の形にそのまま乗れる見込み。眠らせない宣言・電池の読み取り・起動中のアプリの一覧・ショートカット（Carbon のホットキー）・ログイン項目（SMAppService）は、どれも箱の中（サンドボックス）で動く。変える所は「`-D APPSTORE` のときは既定のキーを Mac 標準と重ねない」程度。未検証。
+## App Store 版（appstore.sh）
+つみきショットと同じ形。`./appstore.sh 1.0 1`（`ASC_KEY_ID`・`ASC_ISSUER` を付けると altool で送る）。
+- 箱（サンドボックス）だけで動く。権限は `AppStore.entitlements` の app-sandbox だけ（眠らせない宣言・電池・アプリの一覧・ホットキー・ログイン項目はどれも箱の中で足りる）
+- 機能の違いは無し（既定のキー ⌃⌥⌘W は Mac 標準と重ならないので、ショットのように変えない）。`-D APPSTORE` は付けて組むが、今は分岐なし
+- 自己テストは箱の中で回す（単体のファイルでは箱が立たないので、.app に入れて開発用の証明書＋同じ権限で署名して動かす）
+- 設定と記録は箱の中（`~/Library/Containers/com.tsumiki.wake`）に入る＝直接配る版とは別に持つ
+- 前準備：App ID `com.tsumiki.wake` とプロファイル「Tsumiki Wake App Store」（`AppStore.provisionprofile`・git に入らない）。証明書はショットと共通
+- 直接配る版（package.sh・notarize.sh の公証 zip）はそのまま。両方を同じ Mac に入れると、ホットキーが重なって片方が「使えない」と出る
