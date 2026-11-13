@@ -62,12 +62,18 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         t.tolerance = 3
         RunLoop.main.add(t, forMode: .common)
         timer = t
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-
-        core.prime(Power.read())
-        if core.startAtLaunch { core.toggle() } else { refresh() }
+        // 起動時に電池が低ければ「起動時に開始」でも始めない
+        core.launch(power: Power.read())
+        refresh()
+        // 起動時の知らせは、通知の許可の返事が来てから出す（初回の確認中に捨てられないように）
         let others = Others.running()
-        if !others.isEmpty { say("二重", others.joined(separator: "・")) }
+        let hotFailed = core.hotkey && !hot.ok
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                if !others.isEmpty { self?.say("二重", others.joined(separator: "・")) }
+                if hotFailed { self?.say("\(HotKey.label) は使えません", "ほかのアプリが使っています") }
+            }
+        }
     }
 
     func applicationWillTerminate(_ n: Notification) { core.stop() }
@@ -281,6 +287,12 @@ let args = CommandLine.arguments
 if args.contains("--selftest") { exit(SelfTest.run() ? 0 : 1) }
 if let i = args.firstIndex(of: "--icons") { AppIcon.writeIconset(args[i + 1]); exit(0) }
 if let i = args.firstIndex(of: "--menu-icons") { SelfTest.writeMenuIcons(args[i + 1]); exit(0) }
+
+// 自分がもう動いていたら、2つ目は何もせずに終わる（記録の二重加算・アイコン2個を防ぐ）
+if let id = Bundle.main.bundleIdentifier,
+   NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0.processIdentifier != getpid() }) {
+    exit(0)
+}
 
 let app = NSApplication.shared
 let delegate = App()

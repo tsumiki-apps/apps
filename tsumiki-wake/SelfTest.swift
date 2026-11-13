@@ -110,13 +110,18 @@ enum SelfTest {
         check("低いまま手で始めたら続く", core.tick(now: t1.addingTimeInterval(630), power: Power(onBattery: true, percent: 9)) == nil && core.awake)
         core.stop(now: t1.addingTimeInterval(640))
 
-        // 起動時にもう低い：起動時の開始で、すぐ止まらない
+        // 起動時にもう低い：「起動時に開始」でも始めない。そのあと手で始めたら尊重する
         let d2s = suite + ".2"; let d2 = UserDefaults(suiteName: d2s)!
         defer { d2.removePersistentDomain(forName: d2s) }
         let core2 = Core(defaults: d2, name: "TsumikiWake selftest 2")
+        check("起動時に電池が低ければ始めない", !core2.launch(power: Power(onBattery: true, percent: 5), now: t1) && !core2.awake && Keeper.mine().isEmpty)
+        check("起動時に電池が十分なら始める", {
+            let ok = core2.launch(power: Power(onBattery: true, percent: 80), now: t1)
+            core2.stop(now: t1); return ok
+        }())
         core2.prime(Power(onBattery: true, percent: 5))
         core2.toggle(now: t1)
-        check("起動時に低くても、すぐには止めない", core2.tick(now: t1.addingTimeInterval(10), power: Power(onBattery: true, percent: 5)) == nil && core2.awake)
+        check("低いまま手で始めたら、すぐには止めない", core2.tick(now: t1.addingTimeInterval(10), power: Power(onBattery: true, percent: 5)) == nil && core2.awake)
         // 上限を後から上げた：その時点でもう低くても、すぐには止めない
         core2.batteryLimit = 30
         check("上限を変えても、すぐには止めない", core2.tick(now: t1.addingTimeInterval(20), power: Power(onBattery: true, percent: 5)) == nil && core2.awake)
@@ -134,6 +139,46 @@ enum SelfTest {
         check("切り替えで始めると既定の長さ", core.session?.end == t1.addingTimeInterval(3600) && core.session?.plan == 60)
         core.stop(now: t1)
         check("回数", core.stats.count == 7, "\(core.stats.count)回")
+
+        // 時間切れの数えかた（別の記録で）
+        let d3s = suite + ".3"; let d3 = UserDefaults(suiteName: d3s)!
+        defer { d3.removePersistentDomain(forName: d3s) }
+        let core3 = Core(defaults: d3, name: "TsumikiWake selftest 3")
+        let t3 = t0.addingTimeInterval(4e6)
+        core3.start(minutes: 15, now: t3)
+        let e3 = t3.addingTimeInterval(15 * 60)
+        _ = core3.tick(now: e3.addingTimeInterval(-20), power: ac)
+        let b3 = core3.stats.total
+        check("期限の後の見回りでは、期限までの分だけ数える", core3.tick(now: e3.addingTimeInterval(5), power: ac) == .timeUp && abs(core3.stats.total - b3 - 20) < 0.01, "\(core3.stats.total - b3)秒")
+        // 眠る→期限の後に復帰：眠る前までだけ数える
+        core3.start(minutes: 15, now: t3)
+        let b4 = core3.stats.total
+        _ = core3.tick(now: t3.addingTimeInterval(30), power: ac)
+        core3.willSleep(now: t3.addingTimeInterval(40))
+        let r3 = core3.didWake(now: t3.addingTimeInterval(3600), power: ac)
+        check("眠る→期限の後に復帰：眠る前までだけ数える", r3 == .timeUp && !core3.awake && abs(core3.stats.total - b4 - 40) < 0.01, "\(core3.stats.total - b4)秒")
+        check("最長は眠っていた時間を含まない（期限の後の復帰）", core3.stats.longest <= 900, "\(Int(core3.stats.longest))秒")
+        // 時計が戻った：戻った時刻から数え直す
+        core3.start(minutes: nil, now: t3)
+        _ = core3.tick(now: t3.addingTimeInterval(-3600), power: ac)
+        let b5 = core3.stats.total
+        _ = core3.tick(now: t3.addingTimeInterval(-3590), power: ac)
+        check("時計が戻っても数え続ける", abs(core3.stats.total - b5 - 10) < 0.01, "\(core3.stats.total - b5)秒")
+        core3.stop(now: t3.addingTimeInterval(-3590))
+        // 宣言が出せない：数えない・見回りで出し直す
+        core3.keeper.refuse = true
+        core3.start(minutes: nil, now: t3)
+        check("宣言が出せなければ「失敗」の表示", core3.failed && core3.look == .asleep && Keeper.mine().isEmpty)
+        let b6 = core3.stats.total
+        _ = core3.tick(now: t3.addingTimeInterval(10), power: ac)
+        check("宣言が出せない間は数えない", core3.stats.total == b6, "\(core3.stats.total - b6)秒")
+        core3.keeper.refuse = false
+        _ = core3.tick(now: t3.addingTimeInterval(20), power: ac)
+        check("見回りで宣言を出し直す", !core3.failed && Keeper.mine().contains(kIOPMAssertPreventUserIdleSystemSleep) && core3.stats.total == b6, "\(core3.stats.total - b6)秒")
+        _ = core3.tick(now: t3.addingTimeInterval(30), power: ac)
+        check("出し直した後は数える", abs(core3.stats.total - b6 - 10) < 0.01, "\(core3.stats.total - b6)秒")
+        core3.stop(now: t3.addingTimeInterval(30))
+        check("止めたら宣言が全部消える（出し直しの後）", Keeper.mine().isEmpty)
 
         // 6. アイコン
         let a = AppIcon.menuPixels(.asleep), b = AppIcon.menuPixels(.system), c = AppIcon.menuPixels(.display)

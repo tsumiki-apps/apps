@@ -50,6 +50,8 @@ final class Keeper {
     let name: String
     private var sysID: IOPMAssertionID = 0
     private var dispID: IOPMAssertionID = 0
+    /// 自己テスト用：宣言の作成に失敗したことにする
+    var refuse = false
     init(name: String) { self.name = name }
     var system: Bool { sysID != 0 }
     var display: Bool { dispID != 0 }
@@ -62,6 +64,7 @@ final class Keeper {
     private func flip(_ id: IOPMAssertionID, on: Bool, type: String) -> IOPMAssertionID {
         if !on { if id != 0 { IOPMAssertionRelease(id) }; return 0 }
         if id != 0 { return id }
+        if refuse { return 0 }
         var n: IOPMAssertionID = 0
         let r = IOPMAssertionCreateWithName(type as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), name as CFString, &n)
         return r == kIOReturnSuccess ? n : 0
@@ -120,8 +123,11 @@ final class Stats {
             counted += gap
             d.set(max(longest, counted), forKey: "statLongest")
         }
-        if gap > 0 { last = now }
+        // 時計が戻ったときも、その時刻から数え直す
+        if gap != 0 { last = now }
     }
+    /// 数えずに、起点だけ進める（宣言が出せていない間）
+    func skip(_ now: Date) { if last != nil { last = now } }
     /// 眠る直前：そこまでを数え、復帰後は復帰の時刻から数え直す
     func pause(_ now: Date) { tick(now); last = nil }
     func resume(_ now: Date) { if last == nil && counting { last = now } }
@@ -168,6 +174,14 @@ final class Core {
 
     /// 起動時に電源を1回読んでおく（起動時にもう低かったら、それは「なった瞬間」ではない）
     func prime(_ p: Power) { lastPower = p; wasLow = p.low(limit: batteryLimit) }
+
+    /// 起動時：「起動時に開始」でも、電池が低いときは始めない（自動の開始は復帰と同じ扱い）。始めたら true
+    @discardableResult
+    func launch(power: Power, now: Date = Date()) -> Bool {
+        prime(power)
+        guard startAtLaunch, !power.low(limit: batteryLimit) else { onChange?(); return false }
+        toggle(now: now); return true
+    }
 
     var awake: Bool { session != nil }
     /// 始めたのに宣言が出せなかった
@@ -228,7 +242,10 @@ final class Core {
             // 期限を過ぎた分は数えない
             stop(now: min(now, e), reason: .timeUp); return .timeUp
         }
-        stats.tick(now)
+        // 宣言が出せていなければ出し直す。出せない間は起きている時間に数えない
+        let had = keeper.system
+        if !had { apply() }
+        if had { stats.tick(now) } else { stats.skip(now) }
         // 低くなった瞬間だけ終える
         if low && !wasLow { stop(now: now, reason: .battery); return .battery }
         return nil
