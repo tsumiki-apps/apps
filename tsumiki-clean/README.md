@@ -46,7 +46,7 @@ Claude・tmux・つみきリモートなど、中で動いているものはそ�
 - 配る：`./notarize.sh <出力.zip>`（Developer ID で署名→公証→staple→spctl→ditto で `._` なし）。中身は `package.sh`（Apple シリコンと Intel の両方）
 - 配布ページ：`~/tsumiki-tools/tsumiki-clean.html`・`tsumiki-clean.zip`・`icon-tsumiki-clean.png`
 
-## App Store 版について（作っていない）
+## App Store 版について（試す前の見込み・下の「試し」で一部くつがえった）
 つみきショットの `appstore.sh`・`AppStore.entitlements`・`-D APPSTORE` の形には**そのままは乗らない見込み**。
 入力を捨てる口（`.defaultTap`）にはアクセシビリティの許可が要り、箱の中（サンドボックス）では取れないか、
 審査で外される恐れが高い（Apple の開発者フォーラムでも答えが割れている。のぞくだけの `.listenOnly`＋入力監視なら箱の中でも動く）。
