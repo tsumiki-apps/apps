@@ -16,5 +16,5 @@ TSUMIKI_SIGN_ID="$ID" ./package.sh "$PWD/$TMP"
 xcrun notarytool submit "$TMP" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple build/dist/TsumikiShot.app          # 公証の印をアプリに貼る（ネットが無くても開ける）
 spctl -a -vv -t exec build/dist/TsumikiShot.app          # 「accepted / Notarized Developer ID」なら OK
-rm -f "$OUT"; ditto -c -k --keepParent build/dist/TsumikiShot.app "$OUT"
+rm -f "$OUT"; ditto -c -k --norsrc --noextattr --noacl --keepParent build/dist/TsumikiShot.app "$OUT"
 echo "OK ${OUT}（公証済み）"
