@@ -217,14 +217,14 @@ bar([("arrow.down", "縦", false), ("arrow.right", "横", false), ("play.fill", 
      ("xmark", "取消", false), ("checkmark", "完了", false)])
 
 heading("自動スクロール", "play.circle")
-notes([("arrow.down", "少しずつ送って継ぐ。動かなければ向きを試し直す"),
+notes([("arrow.down", "少しずつ送って継ぐ。止まったら約5秒待って端"),
        ("flag.checkered", "端で止まったら自動で仕上げる（続きの読み込みは約3秒待つ）"),
        ("hand.raised", "手でスクロール・クリック・キーを触ると手動に戻る"),
        ("accessibility", "初回だけアクセシビリティの許可が要る")])
 
 heading("うまく継ぐコツ", "lightbulb")
-notes([("tortoise", "「ゆっくり」と出たら速すぎ。少し戻してゆっくり"),
-       ("arrow.left.and.right", "横スクロールも可。最初に動いた向きに決まる"),
+notes([("tortoise", "手で送って「ゆっくり」と出たら速すぎ。少し戻す"),
+       ("arrow.left.and.right", "横スクロールも可。札の → で選ぶ"),
        ("rectangle.topthird.inset.filled", "上下に固定された見出し・帯は自動で外す")])
 
 // MARK: - 4 撮ったあと

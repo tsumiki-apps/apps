@@ -153,7 +153,7 @@ enum ExtraTest {
         }
         // 本物に近いページ：合図を受けても3コマかけて滑らかに動き、読み込んだ所の端に来ると1.5秒後に続きを読み込む
         // （1コマ＝0.12秒。合図の間合いは AutoDriver が決める。前の作り＝1コマごとに送る、では 1100px・1.1秒で止まっていた）
-        func realRun() -> (Bool, String) {
+        func realRun(loadWait: Double = 1.5) -> (Bool, String) {
             let body = SelfTest.makeBody(height: 2400)
             let mid = SelfTest.viewH - SelfTest.header - SelfTest.footer
             let maxOff = body.height - mid
@@ -173,7 +173,7 @@ enum ExtraTest {
                 pending -= mv
                 off = min(loaded, max(0, off + mv))
                 if off >= loaded, loaded < maxOff { if reachedAt == nil { reachedAt = t } ; pending = 0 }
-                if let r0 = reachedAt, t - r0 >= 1.5 { loaded = min(maxOff, loaded + 500); reachedAt = nil }
+                if let r0 = reachedAt, t - r0 >= loadWait { loaded = min(maxOff, loaded + 500); reachedAt = nil }
                 let r = st.add(SelfTest.frame(body: body, offset: off))
                 if let a = st.axis { driver.pilot.axisDecided(a) }
                 guard let nx = driver.frame(r, now: t) else { continue }
@@ -189,6 +189,27 @@ enum ExtraTest {
             return (next == .finish && len == want && Double(sent) / t <= 0.6 * Double(SelfTest.viewH), "\(len)px（正解 \(want)）・\(String(format: "%.1f", t))秒・合図 \(speed)点/秒")
         }
         let rr = realRun(); check("自動スクロール：滑らかに動き・続きを読み込むページでも端まで", rr.0, rr.1)
+        let rr4 = realRun(loadWait: 4.0); check("自動スクロール：続きの読み込みに4秒かかっても端まで", rr4.0, rr4.1)
+        // 縦を選んだのに全く動かない範囲（合図が届かない・短いページ）でも、いつまでも送り続けずに終わる
+        do {
+            let d = AutoDriver(pilot: AutoPilot(viewLength: 600))
+            d.pilot.axisDecided(.vertical)
+            var t = 0.0, nx: AutoPilot.Next? = d.begin(now: 0), sideways = false
+            while t < 60, nx != .finish {
+                t += 0.12
+                d.pilot.axisDecided(.vertical)
+                if let n = d.frame(.still, now: t) { nx = n; if case let .scroll(dx, _) = n, dx != 0 { sideways = true } }
+            }
+            check("自動スクロール：縦で動かなければ終わる（横へは送らない）", nx == .finish && !sideways && t < 10, String(format: "%.1f秒", t))
+        }
+        // 1回の間合いの中で「継いだ→見失った」なら、最後の「見失った」で送りすぎと判断する
+        do {
+            let d = AutoDriver(pilot: AutoPilot(viewLength: 600))
+            _ = d.begin(now: 0)
+            _ = d.frame(.added(40), now: 0.2); _ = d.frame(.lost, now: 0.4)
+            let n = d.frame(.still, now: 0.7)
+            check("自動スクロール：継いだあと見失ったら戻して半分に", n == .scroll(dx: 0, dy: 90) && d.pilot.step == 90, "\(String(describing: n))")
+        }
         let r1 = autoRun(sign: 1, horizontal: false); check("自動スクロール：縦・ふつうの向きで端まで", r1.0, r1.1)
         let r2 = autoRun(sign: -1, horizontal: false); check("自動スクロール：縦・合図が逆向きでも端まで", r2.0, r2.1)
         let r3 = autoRun(sign: 1, horizontal: true); check("自動スクロール：横で端まで", r3.0, r3.1)
@@ -215,6 +236,10 @@ enum ExtraTest {
               Shortcuts.actions.map { "\($0.name)=\(Shortcuts.combo($0.id)?.display ?? "なし")" }.joined(separator: " "))
         let defs = Shortcuts.actions.map { "\($0.def.code)-\($0.def.mods)" }
         check("既定のキーに重なりがない", Set(defs).count == defs.count)
+        // 前の版の既定（スクロール＝⇧⌘6）を保存している人：新しい既定の録画（⇧⌘6）は「なし」にして重ねない
+        ud.set(["3": try! JSONEncoder().encode(KeyCombo(code: UInt32(kVK_ANSI_6), mods: Shortcuts.cmdShift, char: "6"))], forKey: "hotkeys")
+        check("前の版の保存キーと新しい既定を重ねない", Shortcuts.combo(6) == nil && Shortcuts.combo(3)?.code == UInt32(kVK_ANSI_6))
+        Shortcuts.resetAll()
         let s3 = Shortcuts.combo(3)
         let cleared = Shortcuts.set(1, s3)                       // 範囲に、スクロールと同じキー
         check("同じキーは片方だけ（もう片方はなしに）", cleared == [3] && Shortcuts.combo(3) == nil && Shortcuts.combo(1) == s3)
@@ -235,10 +260,33 @@ enum ExtraTest {
         check("注釈：いちばん新しい画像を選ぶ（動画は除く）", latest?.lastPathComponent == "新しい.png", latest?.lastPathComponent ?? "nil")
         let empty = td.appendingPathComponent("空"); try? fm.createDirectory(at: empty, withIntermediateDirectories: true)
         check("注釈：画像が無ければ nil（＝選ぶ画面へ）", App.latestImage(in: empty) == nil)
+        // 写真の向き（EXIF 6＝右に90°）は起こして読む・向きの無い画像はそのまま
+        do {
+            let c = CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            c.setFillColor(.white); c.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+            let im = c.makeImage()!
+            func make(_ o: Int?) -> CGImage? {
+                let data = NSMutableData()
+                guard let dst = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
+                CGImageDestinationAddImage(dst, im, o.map { [kCGImagePropertyOrientation: $0] as CFDictionary })
+                CGImageDestinationFinalize(dst)
+                return CGImageSourceCreateWithData(data, nil).flatMap { App.loadUpright($0) }
+            }
+            let rot = make(6), plain = make(nil)
+            check("注釈：写真の向きを起こして読む", rot?.width == 20 && rot?.height == 40 && plain?.width == 40 && plain?.height == 20,
+                  "\(rot?.width ?? 0)×\(rot?.height ?? 0)")
+        }
         try? fm.removeItem(at: td)
         // ウィンドウ選びは Enter（とテンキーの Enter）で撮る・Esc でやめる
         let wpv = WindowPickView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
         var keysHeard: [String] = []
+        if let rep = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                      characters: "", charactersIgnoringModifiers: "", isARepeat: true, keyCode: 36) {
+            let w2 = WindowPickView(frame: NSRect(x: 0, y: 0, width: 10, height: 10)); var n = 0
+            w2.onEnter = { n += 1 }; w2.keyDown(with: rep)
+            check("ウィンドウ選び：Enter の押しっぱなし（連打）は撮らない", n == 0)
+        }
         wpv.onEnter = { keysHeard.append("enter") }; wpv.onCancel = { keysHeard.append("cancel") }; wpv.onClick = { keysHeard.append("click") }
         for code: UInt16 in [36, 76, 53] {
             if let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,

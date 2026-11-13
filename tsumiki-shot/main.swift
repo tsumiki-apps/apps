@@ -433,10 +433,12 @@ final class ScrollSession: NSObject {
                                   accessibilityDescription: a == .horizontal ? "横スクロール" : "縦スクロール")
         setPhase(.ready)
         update(nil, height: 0)
+        doneButton?.isEnabled = false                    // 準備が済むまで完了は押せない（まだ1コマも無い）
         capturer.prepare { [weak self] err in
             guard let self else { return }
             if err != nil { self.end(nil, failed: true); return }
-            guard !self.ended else { return }            // 準備の間に完了・取消が押された
+            guard !self.ended else { return }            // 準備の間に取消が押された
+            self.doneButton?.isEnabled = true
             self.tick()
             self.timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in self?.tick() }
         }
@@ -469,6 +471,7 @@ final class ScrollSession: NSObject {
         guard phase != .direction else { return }
         if r == .full { showState(height: height, lost: false, full: true); return }
         showState(height: height, lost: lostStreak >= 2 && driver == nil, auto: driver != nil)
+        if let d = driver, d.pilot.waiting { hintLabel.stringValue = "待機" }   // 止まっている＝続きの読み込みを待っている
     }
 
     private var center: NSPoint { NSPoint(x: region.rect.midX, y: region.rect.midY) }
@@ -514,6 +517,7 @@ final class ScrollSession: NSObject {
     @objc func finish() {
         guard !ended else { return }
         if phase == .direction { cancel(); return }      // まだ撮っていない＝やめる
+        if doneButton?.isEnabled == false { return }     // 準備中（⇧⌘5 の2回目もここで待つ）
         ended = true
         timer?.invalidate(); timer = nil
         // 撮りかけのコマを待ち、最後の1コマを足してから仕上げる
@@ -914,7 +918,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// 注釈：保存先でいちばん新しい画像（直前のスクショ）を編集画面で開く。1枚も無ければ画像を選ぶ
     @objc func openAnnotate() {
-        guard !busy else { return }
+        guard !busy else { NSSound.beep(); return }      // 撮影・録画の最中（黙って何もしないと押せたか分からない）
         if let url = Self.latestImage(in: saveDir) ?? Self.latestImage(in: SaveFolder.standard) { openImageInEditor(url); return }
         let p = NSOpenPanel()
         p.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
@@ -933,11 +937,22 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return files.filter { exts.contains($0.pathExtension.lowercased()) }.max { date($0) < date($1) }
     }
 
+    /// 画像を読む。写真の向き（EXIF）が付いていれば正しい向きに起こす（スクショは向きなし＝そのまま・縮めない）
+    static func loadUpright(_ src: CGImageSource) -> CGImage? {
+        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
+        let orient = (props?[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        guard orient != 1 else { return CGImageSourceCreateImageAtIndex(src, 0, nil) }
+        let w = (props?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 0
+        let h = (props?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 0
+        let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                     kCGImageSourceThumbnailMaxPixelSize: max(w, h, 1)]
+        return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)
+    }
+
     func openImageInEditor(_ url: URL) {
         // 同じ画像をもう開いていれば、それを前に出す
         if let e = editors.first(where: { $0.url == url }) { e.show(); return }
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { NSSound.beep(); return }
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil), let img = Self.loadUpright(src) else { NSSound.beep(); return }
         openEditor(img, url, scale: NSScreen.main?.backingScaleFactor ?? 2)
     }
 

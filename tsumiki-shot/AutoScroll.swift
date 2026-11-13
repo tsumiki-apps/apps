@@ -17,8 +17,10 @@ final class AutoPilot {
     let base: Int                  // 1回に送る量（画面の点）
     private(set) var step: Int
     private var still = 0, lost = 0
-    static let stillToEnd = 5      // 継いだ後、これだけ合図を送っても動かなければ端（AutoDriver の間隔で約3秒＝続きの読み込みを待つ）
-    static let stillToTurn = 2     // まだ一度も継いでいないとき、これだけ動かなければ別の向きを試す
+    static let stillToEnd = 9      // 継いだ後、これだけ合図を送っても動かなければ端（AutoDriver の間隔で約5秒＝続きの読み込みを待つ。3秒では足りないページがある）
+    static let stillToTurn = 3     // まだ一度も継いでいないとき、これだけ動かなければ別の向きを試す（約1.8秒。早すぎると反応の遅いページで逆向きに決まる）
+    /// 継いだ後に止まっている＝続きの読み込みを待っているかも（札に「待機」を出す）
+    var waiting: Bool { locked && still >= 2 }
 
     init(viewLength: CGFloat) {
         base = max(20, Int(viewLength * 0.3))
@@ -81,25 +83,25 @@ final class AutoDriver {
     static let gap = 0.6           // 合図と合図の間（秒）＝速さ
     static let settle = 1.5        // 動き続けていても、これだけ経てば次を送る
     private var lastPost = 0.0
-    private var moved = false, lost = false
+    private var last: StepResult?     // 前の合図からいちばん最近の「継いだ／見失った」
 
     init(pilot: AutoPilot) { self.pilot = pilot }
 
-    func begin(now: Double) -> AutoPilot.Next { lastPost = now; moved = false; lost = false; return pilot.begin() }
+    func begin(now: Double) -> AutoPilot.Next { lastPost = now; last = nil; return pilot.begin() }
 
     /// 1コマ継ぐごとに呼ぶ。nil＝まだ待つ
     func frame(_ r: StepResult, now: Double) -> AutoPilot.Next? {
         switch r {
         case .full: return .finish
-        case .added: moved = true
-        case .lost: lost = true
+        case .added, .lost: last = r
         default: break
         }
         let dt = now - lastPost
         if dt < Self.gap { return nil }
         if case .added = r, dt < Self.settle { return nil }      // まだ動いている＝止まるのを待つ
-        let sum: StepResult = moved ? .added(1) : lost ? .lost : .still
-        moved = false; lost = false; lastPost = now
+        // 最後が「見失った」なら送りすぎ＝戻して半分に（途中で継げていても、最後の状態で決める）
+        let sum: StepResult = last ?? .still
+        last = nil; lastPost = now
         return pilot.next(after: sum)
     }
 }
