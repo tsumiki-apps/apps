@@ -43,8 +43,8 @@
 ## 組み立てと検査
 ```
 swift make_manual.swift 説明書.pdf   # 説明書（PDF・5ページ・SF Symbols。表紙のアイコンは ./build.sh の後に入る）
-./build.sh                       # 自己テスト（つなぎ19種（横7種を含む）＋横長ページのゆっくり送り・回す向き・画素まで照合／書き込み・文字読み・編集画面・自動スクロール（架空のページで端まで・逆向き・横・滑らかに動き続きを読み込むページ）・ショートカットの保存と重なり・設定の窓）→ ~/Applications/TsumikiShot.app
-open -W --stdout 結果.txt ~/Applications/TsumikiShot.app --args --probe 出力.png   # 本物の撮影を通した通しテスト（要・画面収録の許可）
+./build.sh                       # 自己テスト（つなぎ19種（横7種を含む）＋横長ページのゆっくり送り・回す向き・画素まで照合／書き込み・文字読み・編集画面・自動スクロール（架空のページで端まで・逆向き・横・滑らかに動き続きを読み込むページ）・ショートカットの保存と重なり・設定の窓）→ ~/Applications/つみき/TsumikiShot.app
+open -W --stdout 結果.txt ~/Applications/つみき/TsumikiShot.app --args --probe 出力.png   # 本物の撮影を通した通しテスト（要・画面収録の許可）
 ```
 - `-target arm64-apple-macos15.0` を外さない（外すと SDK の版が最低条件になり、この Mac で起動できない）
 - 署名は毎回同じ開発者証明書（変えると画面収録の許可が外れる）

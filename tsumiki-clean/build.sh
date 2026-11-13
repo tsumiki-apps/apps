@@ -1,9 +1,9 @@
 #!/bin/bash
-# つみきそうじを組み立てて ~/Applications/TsumikiClean.app に置く。
+# つみきそうじを組み立てて ~/Applications/つみき/TsumikiClean.app に置く。
 # 署名は毎回同じ開発者証明書（ad-hoc だと組み直すたびに「アクセシビリティ」の許可が外れる）。
 set -euo pipefail
 cd "$(dirname "$0")"
-OUT="${1:-$HOME/Applications/TsumikiClean.app}"
+OUT="${1:-$HOME/Applications/つみき/TsumikiClean.app}"
 ID="${TSUMIKI_SIGN_ID:-03541F4F153A80FCF6ACD26D006B78CC93C69710}"
 security find-identity -v -p codesigning | grep -q "$ID" || { echo "証明書が無いので ad-hoc で署名します"; ID="-"; }
 SRC="main.swift Core.swift Blocker.swift Curtain.swift Icon.swift SelfTest.swift"

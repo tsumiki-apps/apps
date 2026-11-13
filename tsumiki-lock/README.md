@@ -26,7 +26,7 @@ Mac の前：ふだんは Touch ID だけ。**常に待ち受けている＝指�
 ## 入っているもの
 | もの | 場所 |
 |---|---|
-| アプリ | `~/Applications/TsumikiLock.app`（`./build.sh` で組み直し） |
+| アプリ | `~/Applications/つみき/TsumikiLock.app`（`./build.sh` で組み直し） |
 | 常駐 | `~/Library/LaunchAgents/com.tsumiki.lock.plist`（KeepAlive・Aqua） |
 | 掛け外しの鍵 | `~/.tsumiki-remote/lock-key`（0600・server.js と共有） |
 | 幕の状態 | `~/.tsumiki-remote/lock-state.json`（落ちて起きたとき掛け直すため） |

@@ -1,9 +1,9 @@
 #!/bin/bash
-# つみきウェイクを組み立てて ~/Applications/TsumikiWake.app に置く。自己テストが通らなければ置かない。
+# つみきウェイクを組み立てて ~/Applications/つみき/TsumikiWake.app に置く。自己テストが通らなければ置かない。
 # 署名は毎回同じ開発者証明書（証明書の無い Mac では ad-hoc）。
 set -euo pipefail
 cd "$(dirname "$0")"
-OUT="${1:-$HOME/Applications/TsumikiWake.app}"
+OUT="${1:-$HOME/Applications/つみき/TsumikiWake.app}"
 ID="${TSUMIKI_SIGN_ID:-03541F4F153A80FCF6ACD26D006B78CC93C69710}"
 security find-identity -v -p codesigning | grep -q "$ID" || { echo "証明書が無いので ad-hoc で署名します"; ID="-"; }
 SRC="main.swift Engine.swift Icon.swift SelfTest.swift"

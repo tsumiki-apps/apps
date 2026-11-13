@@ -7,7 +7,7 @@ iPad mini（BetterDisplay の仮想ディスプレイ + Sidecar）の配置を�
 
 ## 使い方
 
-`~/Applications/ディスプレイ配置.app` をダブルクリック（Dock に入れておくと1クリック）。
+`~/Applications/つみき/ディスプレイ配置.app` をダブルクリック（Dock に入れておくと1クリック）。
 
 - 保存済みの配置が一覧で出る → 選んで「この配置に戻す」
 - **＋ いまの配置を新しく保存…** → 名前をつけて今の配置を保存（家、カフェ、会社 など）
@@ -54,7 +54,7 @@ iPad mini（BetterDisplay の仮想ディスプレイ + Sidecar）の配置を�
 | `dispreset_watch.py` | 常駐役。iPad が繋がったのを検知して自動復元する |
 | `ディスプレイ配置` | 常駐役を起動する薄いランチャースクリプト（`watch-on` が自動生成） |
 | `ディスプレイ配置.applescript` | アプリのUI（一覧・保存・削除のダイアログ） |
-| `build.sh` | `.applescript` から `~/Applications/ディスプレイ配置.app` を作り直す |
+| `build.sh` | `.applescript` から `~/Applications/つみき/ディスプレイ配置.app` を作り直す |
 | `ディスプレイ配置.icns` | アプリのアイコン |
 
 プリセットの保存先は `~/.config/dispreset/<名前>.json`。

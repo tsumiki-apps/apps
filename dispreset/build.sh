@@ -4,10 +4,10 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-APP="$HOME/Applications/ディスプレイ配置.app"
+APP="$HOME/Applications/つみき/ディスプレイ配置.app"
 
 rm -rf "$APP"
-mkdir -p "$HOME/Applications"
+mkdir -p "$HOME/Applications/つみき"
 osacompile -o "$APP" ディスプレイ配置.applescript
 
 # アイコンを差し替え（Dock で一目でわかるように）

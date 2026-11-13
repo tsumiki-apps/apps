@@ -1,9 +1,9 @@
 #!/bin/bash
-# つみきショットを組み立てて ~/Applications/TsumikiShot.app に置く。
+# つみきショットを組み立てて ~/Applications/つみき/TsumikiShot.app に置く。
 # 署名は毎回同じ開発者証明書（ad-hoc だと組み直すたびに「画面収録」の許可が外れる）。
 set -euo pipefail
 cd "$(dirname "$0")"
-OUT="${1:-$HOME/Applications/TsumikiShot.app}"
+OUT="${1:-$HOME/Applications/つみき/TsumikiShot.app}"
 ID="${TSUMIKI_SIGN_ID:-03541F4F153A80FCF6ACD26D006B78CC93C69710}"
 # 証明書の無い Mac（別の Mac で組み立てるとき）は ad-hoc。その場合は組み直すたびに「画面収録」の許可を付け直す
 security find-identity -v -p codesigning | grep -q "$ID" || { echo "証明書が無いので ad-hoc で署名します"; ID="-"; }

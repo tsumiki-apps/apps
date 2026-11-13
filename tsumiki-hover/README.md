@@ -38,7 +38,7 @@
 | `SelfTest.swift` | `--selftest`：困りやすい場面を含む35項目。許可不要 |
 | `LiveTest.swift` | `--livetest`：子プロセスで本物の窓（3枚の窓を持つアプリを含む）を出して前に出す。カーソルは動かさない。アクセシビリティの許可が要る |
 | `Icon.swift` | アイコン（積み木とカーソル）をコードで描く。`--icons <dir>`・`--menu-preview <png>` |
-| `build.sh` | 自己テスト（`HOVER_LIVE=1` で本物の窓の試験も）→ `~/Applications/TsumikiHover.app` |
+| `build.sh` | 自己テスト（`HOVER_LIVE=1` で本物の窓の試験も）→ `~/Applications/つみき/TsumikiHover.app` |
 | `package.sh` / `notarize.sh` | 両方の CPU 用 → Developer ID で署名・公証・staple・spctl → zip（つみきショットと同じ流れ・公証の保存名 `tsumikishot`） |
 
 `HOVER_LOG=1 build/TsumikiHover` で、止めた理由を1行ずつ出す（端末から動かすと端末の許可で動く）。

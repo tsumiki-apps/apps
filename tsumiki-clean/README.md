@@ -40,9 +40,9 @@ Claude・tmux・つみきリモートなど、中で動いているものはそ�
 | `Icon.swift` | アイコン（積み木ときらめき）をコードで描く。`--icons <フォルダ>` |
 | `SelfTest.swift` | `--selftest`（許可なし・build.sh が毎回通す）と `--e2e <結果.txt>`（許可したアプリの中で本物の口に無害な入力を流して数える・15秒で必ず終わる） |
 
-- 組み立て：`./build.sh` → 自己テスト → `~/Applications/TsumikiClean.app`（開発者証明書で署名＝組み直しても許可が外れない）
-- 本物の口の試験：`open -W -n ~/Applications/TsumikiClean.app --args --e2e /tmp/e2e.txt`
-- 短く本番を試す：`open -n ~/Applications/TsumikiClean.app --args --clean-for 8`（8秒で外れて終わる）
+- 組み立て：`./build.sh` → 自己テスト → `~/Applications/つみき/TsumikiClean.app`（開発者証明書で署名＝組み直しても許可が外れない）
+- 本物の口の試験：`open -W -n ~/Applications/つみき/TsumikiClean.app --args --e2e /tmp/e2e.txt`
+- 短く本番を試す：`open -n ~/Applications/つみき/TsumikiClean.app --args --clean-for 8`（8秒で外れて終わる）
 - 配る：`./notarize.sh <出力.zip>`（Developer ID で署名→公証→staple→spctl→ditto で `._` なし）。中身は `package.sh`（Apple シリコンと Intel の両方）
 - 配布ページ：`~/tsumiki-tools/tsumiki-clean.html`・`tsumiki-clean.zip`・`icon-tsumiki-clean.png`
 

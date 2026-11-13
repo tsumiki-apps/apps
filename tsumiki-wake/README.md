@@ -30,7 +30,7 @@
 
 ## 組み立て
 ```
-./build.sh                      # 自己テストが通ったら ~/Applications/TsumikiWake.app に置く
+./build.sh                      # 自己テストが通ったら ~/Applications/つみき/TsumikiWake.app に置く
 ./package.sh ~/Desktop/x.zip    # Apple シリコン・Intel 両対応の zip（公証なし）
 ./notarize.sh ~/Desktop/x.zip   # 公証済みの zip（Developer ID・notarytool の保存名 tsumikishot）
 ```

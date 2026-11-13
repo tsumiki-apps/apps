@@ -17,10 +17,10 @@ CONTENT = 0.80   # 外枠の長い辺が一辺の何割か
 
 H = pathlib.Path.home()
 APPS = {
-    "メモのチェックリスト": H / "Applications/メモのチェックリスト.app",
-    "リマインダー読み取り": H / "Applications/リマインダー読み取り.app",
-    "リマインダー追加": H / "Applications/リマインダー追加.app",
-    "通知まとめ消し": H / "Applications/通知まとめ消し.app",
+    "メモのチェックリスト": H / "Applications/つみき/メモのチェックリスト.app",
+    "リマインダー読み取り": H / "Applications/つみき/リマインダー読み取り.app",
+    "リマインダー追加": H / "Applications/つみき/リマインダー追加.app",
+    "通知まとめ消し": H / "Applications/つみき/通知まとめ消し.app",
     "タブグループ整理": pathlib.Path("/Applications/タブグループ整理.app"),
 }
 
