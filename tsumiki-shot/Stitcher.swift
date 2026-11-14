@@ -261,6 +261,14 @@ final class Stitcher {
         return .lost
     }
 
+    /// 撮影中の見本用：いちばん新しく継いだ帯と、最初のコマのフッターより上（帯をこの下に積めば、できあがりと同じ並び）
+    var lastStrip: CGImage? { strips.last }
+    var head: CGImage? {
+        guard let f = first else { return nil }
+        guard top >= 0 else { return f.image }
+        return copyRows(f.image, from: 0, count: f.height - max(bottom, 0))
+    }
+
     /// できあがりの1枚。ヘッダー＋最初の本体は最初のコマ、フッターは最後のコマから。
     func compose() -> CGImage? {
         guard let f = first, let l = last else { return nil }
@@ -373,6 +381,10 @@ final class AutoStitcher {
         axis = a
         if a == .vertical { h = Stitcher(maxPixels: 1) } else { v = Stitcher(maxPixels: 1) }
     }
+
+    /// 撮影中の見本用（継いでいる向きのつなぎ手。横は回したままの向き）
+    var lastStrip: CGImage? { leader == .horizontal ? h.lastStrip : v.lastStrip }
+    var head: CGImage? { leader == .horizontal ? h.head : v.head }
 
     func compose() -> CGImage? {
         if leader == .horizontal { return h.compose().flatMap { rotate90($0, clockwise: false) } }

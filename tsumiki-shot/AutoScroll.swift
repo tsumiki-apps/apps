@@ -134,26 +134,38 @@ final class AutoDriver {
     private var last: StepResult?     // 前の合図からいちばん最近の「継いだ／戻った／見失った」
     private var sawAdded = false      // 前の合図から1回でも継いだ
 
-    init(pilot: AutoPilot) { self.pilot = pilot }
+    let scale: Double              // 画素÷点（継いだ量は画素、送る量は点）
+    static let keepUp = 0.7        // 送った量のこれだけ動いていれば、止まるのを待たずに次を送る（途切れずに流れる）
+    private var sentLast = 0       // 前に送った量（点）
+    private var moved = 0.0        // 前の合図から継いだ量（点）
 
-    func begin(now: Double) -> AutoPilot.Next { lastPost = now; last = nil; sawAdded = false; return pilot.begin() }
+    init(pilot: AutoPilot, scale: Double = 1) { self.pilot = pilot; self.scale = max(1, scale) }
+
+    private func remember(_ n: AutoPilot.Next) -> AutoPilot.Next {
+        if case let .scroll(dx, dy) = n { sentLast = max(abs(dx), abs(dy)) }
+        moved = 0
+        return n
+    }
+
+    func begin(now: Double) -> AutoPilot.Next { lastPost = now; last = nil; sawAdded = false; return remember(pilot.begin()) }
 
     /// 1コマ継ぐごとに呼ぶ。nil＝まだ待つ
     func frame(_ r: StepResult, now: Double) -> AutoPilot.Next? {
         switch r {
         case .full: return .finish
-        case .added: last = r; sawAdded = true
+        case let .added(d): last = r; sawAdded = true; moved += Double(d) / scale
         case .lost, .back: last = r
         default: break
         }
         let dt = now - lastPost
         if dt < Self.gap { return nil }
-        if case .added = r, dt < Self.settle { return nil }      // まだ動いている＝止まるのを待つ
+        // まだ動いている＝止まるのを待つ。ただし送った分にほぼ追いついていれば待たない（止まっては動く、にしない）
+        if case .added = r, dt < Self.settle, moved < Self.keepUp * Double(sentLast) { return nil }
         // 最後が「見失った」なら送りすぎ＝戻して半分に（途中で継げていても、最後の状態で決める）
         let sum: StepResult = last ?? .still
         if sawAdded { pilot.markJoined() }
         last = nil; sawAdded = false; lastPost = now
-        return pilot.next(after: sum)
+        return remember(pilot.next(after: sum))
     }
 }
 
@@ -170,7 +182,8 @@ enum Wheel {
 
     /// 画面座標（左下原点の Cocoa）の点に、ホイールの合図を送る。dy<0 で下へのつもり。
     /// 実際の向きはナチュラルスクロールの設定やアプリで逆になりうるので、決め打ちせず AutoPilot が結果（戻った＝.back）を見て切り替える
-    static func post(dx: Int, dy: Int, at p: NSPoint) {
+    /// continuous＝トラックパッドのような細かい合図として送る（アプリが1回ずつ跳ねるように動かさない）
+    static func post(dx: Int, dy: Int, at p: NSPoint, continuous: Bool = false) {
         let primaryH = NSScreen.screens.first?.frame.height ?? 0
         let cg = CGPoint(x: p.x, y: primaryH - p.y)
         // 大きな量は小分けにする（一度に大きく送ると、アプリによっては無視・加速される）
@@ -181,6 +194,7 @@ enum Wheel {
             guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
                                   wheel1: Int32(sy), wheel2: Int32(sx), wheel3: 0) else { return }
             e.location = cg
+            if continuous { e.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1) }
             e.post(tap: .cghidEventTap)
         }
     }
@@ -190,6 +204,42 @@ enum Wheel {
         CGWarpMouseCursorPosition(CGPoint(x: p.x, y: primaryH - p.y))
         CGAssociateMouseAndMouseCursorPosition(1)
     }
+}
+
+/// 合図を一度に送らず、1/60秒ごとに少しずつ送って滑らかに流す（前は一度に送り、ページが跳んでから止まるのを待っていた）。
+/// 1回分は AutoDriver.gap 秒かけて送り切る＝次の合図と途切れずにつながる
+final class Glider {
+    static let hz = 60.0
+    private var timer: Timer?
+    private var left = (0.0, 0.0), per = (0.0, 0.0), carry = (0.0, 0.0)
+    private var at = NSPoint.zero
+    var gliding: Bool { timer != nil }
+
+    /// 新しく送る（送り残しは捨てる＝向きを変えたときに前の残りを送らない）
+    func start(dx: Int, dy: Int, over seconds: Double, at p: NSPoint) {
+        let n = Double(max(1, Int(seconds * Self.hz)))
+        left = (Double(dx), Double(dy)); per = (Double(dx) / n, Double(dy) / n); carry = (0, 0); at = p
+        if timer == nil {
+            let t = Timer(timeInterval: 1 / Self.hz, repeats: true) { [weak self] _ in self?.tick() }
+            RunLoop.main.add(t, forMode: .common)
+            timer = t
+        }
+    }
+
+    private func tick() {
+        func take(_ l: Double, _ p: Double) -> Double { abs(p) >= abs(l) ? l : p }
+        let tx = take(left.0, per.0), ty = take(left.1, per.1)
+        left = (left.0 - tx, left.1 - ty)
+        carry = (carry.0 + tx, carry.1 + ty)
+        let done = abs(left.0) < 0.001 && abs(left.1) < 0.001
+        let ix = Int(done ? carry.0.rounded() : carry.0.rounded(.towardZero))
+        let iy = Int(done ? carry.1.rounded() : carry.1.rounded(.towardZero))
+        carry = (carry.0 - Double(ix), carry.1 - Double(iy))
+        if ix != 0 || iy != 0 { Wheel.post(dx: ix, dy: iy, at: at, continuous: true) }
+        if done { stop() }
+    }
+
+    func stop() { timer?.invalidate(); timer = nil; left = (0, 0); carry = (0, 0) }
 }
 
 /// 自分以外が起こした入力（手のスクロール・クリック・キー）を見張る。自分が送った合図は数えない

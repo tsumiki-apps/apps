@@ -301,6 +301,8 @@ final class ScrollSession: NSObject {
     private var backward = false                    // 手で戻る向きに回している（札に「逆向き」）
     private var driver: AutoDriver?                 // 自動スクロール中だけ
     private let watcher = HandWatcher()
+    private let glider = Glider()                   // 自動の合図を少しずつ送る
+    private var live: LivePreview?                  // 撮影中の左下の見本
     private var autoButton: NSButton!
     /// 札の段階：①向きを選ぶ → ②撮影中（手でスクロールしても継ぐ・▶︎ 自動で撮る）→ ③自動で撮っている
     enum Phase { case direction, ready, auto }
@@ -440,6 +442,7 @@ final class ScrollSession: NSObject {
         setPhase(.ready)
         update(nil, height: 0)
         doneButton?.isEnabled = false                    // 準備が済むまで完了は押せない（まだ1コマも無い）
+        live = LivePreview(screen: region.screen, horizontal: a == .horizontal, scale: region.scale)
         capturer.prepare { [weak self] err in
             guard let self else { return }
             if err != nil { self.end(nil, failed: true); return }
@@ -467,8 +470,18 @@ final class ScrollSession: NSObject {
                 let r = self.stitcher.add(img)
                 let h = self.stitcher.length
                 let axis = self.stitcher.axis
+                // 左下の見本：継げたら（1コマ目はそのまま）縮めて積む。重い所はこの列で
+                var shown: CGImage?
+                if let lp = self.live {
+                    switch r {
+                    case .first: shown = lp.reset(img)
+                    case .added: if let st = self.stitcher.lastStrip { shown = lp.add(head: self.stitcher.head, strip: st) }
+                    default: break
+                    }
+                }
                 DispatchQueue.main.async {
                     self.busy = false
+                    if let shown, !self.ended { self.live?.show(shown) }
                     // 向きが決まったら矢印もそちらに（縦↓・横→）
                     if axis == .horizontal { self.arrowIcon.image = NSImage(systemSymbolName: "arrow.right", accessibilityDescription: "横スクロール") }
                     if case .added = r { self.joined = true }
@@ -505,19 +518,20 @@ final class ScrollSession: NSObject {
         let horizontal = stitcher.axis == .horizontal
         let p = AutoPilot(viewLength: horizontal ? region.rect.width : region.rect.height)
         if let a = stitcher.axis { p.axisDecided(a) }
-        let d = AutoDriver(pilot: p)
+        let d = AutoDriver(pilot: p, scale: Double(region.scale))
         driver = d
         mouseBefore = NSEvent.mouseLocation
         Wheel.moveMouse(to: center)            // 範囲の上で回したことにする（指している所に届くアプリが多い）
         watcher.start { [weak self] in self?.stopAuto() }
         setPhase(.auto)
-        if case let .scroll(dx, dy) = d.begin(now: CACurrentMediaTime()) { Wheel.post(dx: dx, dy: dy, at: center) }
+        if case let .scroll(dx, dy) = d.begin(now: CACurrentMediaTime()) { glider.start(dx: dx, dy: dy, over: AutoDriver.gap, at: center) }
     }
 
     func stopAuto() {
         guard driver != nil else { return }
         driver = nil
         backward = false
+        glider.stop()
         watcher.stop()
         setPhase(.ready)
     }
@@ -528,7 +542,7 @@ final class ScrollSession: NSObject {
         if let axis { d.pilot.axisDecided(axis) }
         switch d.frame(r, now: CACurrentMediaTime()) {
         case nil: break                        // 間をあける・ページが止まるのを待つ
-        case let .scroll(dx, dy)?: Wheel.post(dx: dx, dy: dy, at: center)
+        case let .scroll(dx, dy)?: glider.start(dx: dx, dy: dy, over: AutoDriver.gap, at: center)
         case .finish?:                         // 端まで来た（見失い続けた・どの向きにも動かない、も）
             // 1回も継げずに終わった＝見失いではなく「動かなかった」（finish が知らせる）
             if d.pilot.bounced, joined { note = "ページが戻り続けたので止めました" }
@@ -544,6 +558,7 @@ final class ScrollSession: NSObject {
         if doneButton?.isEnabled == false { return }     // 準備中（⇧⌘5 の2回目もここで待つ）
         ended = true
         timer?.invalidate(); timer = nil
+        glider.stop()
         if !joined, note == nil { note = "動かなかったので1画面だけ保存しました" }
         hintLabel.stringValue = "仕上げ中"; hintLabel.textColor = .secondaryLabelColor
         autoButton?.isEnabled = false; doneButton?.isEnabled = false
@@ -586,9 +601,108 @@ final class ScrollSession: NSObject {
 
     private func stop() {
         HotKeys.releaseEsc()
-        watcher.stop(); driver = nil
+        watcher.stop(); driver = nil; glider.stop()
         frameWin?.orderOut(nil); panel?.orderOut(nil)
+        live?.close(); live = nil
     }
+}
+
+// MARK: - 撮影中の左下の見本
+
+/// 撮影中、画面の左下に「ここまで継げた」を細く縮めて見せる（いちばん新しい所＝縦なら下端、横なら右端）。
+/// 自分の窓は撮るコマから外してあるので写り込まない。押せない（下の操作の邪魔をしない）
+final class LivePreview {
+    static let side: CGFloat = 150        // 細いほうの幅（点）
+    static let long: CGFloat = 240        // 長いほうの上限（点）
+    let screen: NSScreen
+    let horizontal: Bool
+    let scale: CGFloat
+    private var pieces: [CGImage] = []    // 縮めた帯（縦の向きで上から。横は回したままの向き）
+    private var headFixed = false
+    private var carry = 0.0               // 縮めたときの端数（積み重ねてずれないように）
+    private var panel: NSPanel?
+    private let imageView = NSImageView()
+    private var pw: Int { Int(Self.side * scale) }
+
+    init(screen: NSScreen, horizontal: Bool, scale: CGFloat) {
+        self.screen = screen; self.horizontal = horizontal; self.scale = max(1, scale)
+    }
+
+    // ここから下の3つ（reset・add・render）はつなぐ列で呼ぶ
+    private func shrink(_ img: CGImage) -> CGImage? {
+        let exact = Double(img.height) * Double(pw) / Double(img.width) + carry
+        let h = Int(exact.rounded(.down))
+        carry = exact - Double(h)
+        guard h >= 1, let ctx = CGContext(data: nil, width: pw, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return nil }
+        ctx.interpolationQuality = .medium
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: pw, height: h))
+        return ctx.makeImage()
+    }
+    /// 1コマ目
+    func reset(_ img: CGImage) -> CGImage? {
+        carry = 0; headFixed = false
+        let src = horizontal ? (rotate90(img, clockwise: true) ?? img) : img
+        pieces = shrink(src).map { [$0] } ?? []
+        return render()
+    }
+    /// 継げた帯。最初に継げたときに、1コマ目をフッターより上だけに置き換える
+    func add(head: CGImage?, strip: CGImage) -> CGImage? {
+        if !headFixed, let head { carry = 0; pieces = shrink(head).map { [$0] } ?? []; headFixed = true }
+        if let s = shrink(strip) { pieces.append(s) }
+        // 見えない上のほうは捨てる（長いページでも軽いまま）
+        let keep = Int(Self.long * scale) * 2
+        var total = 0, from = pieces.count
+        while from > 0, total < keep { from -= 1; total += pieces[from].height }
+        if from > 0 { pieces.removeFirst(from) }
+        return render()
+    }
+    /// 下端から長いほうの上限まで
+    private func render() -> CGImage? {
+        let total = pieces.reduce(0) { $0 + $1.height }
+        let H = min(total, Int(Self.long * scale))
+        guard H > 0, let ctx = CGContext(data: nil, width: pw, height: H, bitsPerComponent: 8, bytesPerRow: 0,
+                                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return nil }
+        var y = 0                                  // CGContext は下が原点＝下端（新しい帯）から上へ
+        for p in pieces.reversed() {
+            ctx.draw(p, in: CGRect(x: 0, y: y, width: p.width, height: p.height))
+            y += p.height
+            if y >= H { break }
+        }
+        guard let out = ctx.makeImage() else { return nil }
+        return horizontal ? rotate90(out, clockwise: false) : out
+    }
+
+    /// 画面に出す（メインで）
+    func show(_ img: CGImage) {
+        let size = NSSize(width: CGFloat(img.width) / scale, height: CGFloat(img.height) / scale)
+        let vf = screen.visibleFrame
+        let frame = NSRect(x: vf.minX + 20, y: vf.minY + 20, width: size.width, height: size.height)
+        if panel == nil {
+            let p = NSPanel(contentRect: frame, styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
+            p.isFloatingPanel = true
+            p.level = .statusBar
+            p.isOpaque = false
+            p.backgroundColor = .clear
+            p.hasShadow = true
+            p.ignoresMouseEvents = true
+            p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            imageView.imageScaling = .scaleAxesIndependently
+            imageView.wantsLayer = true
+            imageView.layer?.cornerRadius = 8
+            imageView.layer?.masksToBounds = true
+            imageView.layer?.borderWidth = 1
+            imageView.layer?.borderColor = NSColor.separatorColor.cgColor
+            p.contentView = imageView
+            panel = p
+            p.orderFrontRegardless()
+        }
+        panel?.setFrame(frame, display: false)
+        imageView.frame = NSRect(origin: .zero, size: size)
+        imageView.image = NSImage(cgImage: img, size: size)
+    }
+
+    func close() { panel?.orderOut(nil); panel = nil }
 }
 
 // MARK: - 撮った直後の小窓

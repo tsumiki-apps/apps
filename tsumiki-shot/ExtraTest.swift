@@ -211,6 +211,41 @@ enum ExtraTest {
             let n = d.frame(.still, now: 0.7)
             check("自動スクロール：継いだあと見失ったら戻して半分に", n == .scroll(dx: 0, dy: 90) && d.pilot.step == 90, "\(String(describing: n))")
         }
+        // 滑らか：送った分にほぼ追いついて流れているなら、止まるのを待たずに間合いで次を送る（止まっては動く、にしない）
+        do {
+            let d = AutoDriver(pilot: AutoPilot(viewLength: 600), scale: 2)
+            guard case let .scroll(_, dy0) = d.begin(now: 0) else { check("滑らか：最初の合図", false); return false }
+            var t = 0.0, sent: Double? = nil
+            while t < 1.4, sent == nil {        // 1/60秒ずつ流れる＝送った量（点）を画素で少しずつ継ぐ
+                t += 0.12
+                if let n = d.frame(.added(Int(Double(abs(dy0)) * 2 * 0.12 / AutoDriver.gap)), now: t) { if case .scroll = n { sent = t } }
+            }
+            check("滑らか：流れていれば止まるのを待たずに次を送る", sent != nil && sent! < AutoDriver.gap + 0.25, sent.map { String(format: "%.2f秒", $0) } ?? "送らない")
+            let d2 = AutoDriver(pilot: AutoPilot(viewLength: 600), scale: 2)
+            _ = d2.begin(now: 0)
+            var t2 = 0.0, sent2: Double? = nil
+            while t2 < 1.6, sent2 == nil {      // 送った分よりずっと少ししか動かない（まだ慣性で動いている）
+                t2 += 0.12
+                if let n = d2.frame(.added(4), now: t2) { if case .scroll = n { sent2 = t2 } }
+            }
+            check("滑らか：追いついていなければ今までどおり止まるのを待つ", sent2 == nil || sent2! >= AutoDriver.settle, sent2.map { String(format: "%.2f秒", $0) } ?? "待つ")
+        }
+        // 左下の見本：細く縮めて、新しい所（縦は下端・横は右端）を上限の長さまで見せる
+        do {
+            let body = SelfTest.makeBody(height: 3000)
+            let st = Stitcher()
+            let lp = LivePreview(screen: NSScreen.main ?? NSScreen.screens[0], horizontal: false, scale: 2)
+            var img = lp.reset(SelfTest.frame(body: body, offset: 0))
+            _ = st.add(SelfTest.frame(body: body, offset: 0))
+            var ok = img != nil && img!.width == 300
+            for k in 1...12 {
+                if case .added = st.add(SelfTest.frame(body: body, offset: k * 180)), let s = st.lastStrip { img = lp.add(head: st.head, strip: s) }
+            }
+            ok = ok && img != nil && img!.width == 300 && img!.height == 480
+            let lh = LivePreview(screen: NSScreen.main ?? NSScreen.screens[0], horizontal: true, scale: 1)
+            let ih = lh.reset(SelfTest.frame(body: body, offset: 0))
+            check("左下の見本：縦は幅150点・長い所は240点で切る／横は横長", ok && ih != nil && ih!.height == 150, "\(img?.width ?? 0)×\(img?.height ?? 0)・横 \(ih?.width ?? 0)×\(ih?.height ?? 0)")
+        }
         let r1 = autoRun(sign: 1, horizontal: false); check("自動スクロール：縦・ふつうの向きで端まで", r1.0, r1.1)
         let r2 = autoRun(sign: -1, horizontal: false); check("自動スクロール：縦・合図が逆向きでも端まで", r2.0, r2.1)
         let r3 = autoRun(sign: 1, horizontal: true); check("自動スクロール：横で端まで", r3.0, r3.1)
