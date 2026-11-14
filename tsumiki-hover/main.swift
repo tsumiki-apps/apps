@@ -1,5 +1,5 @@
 // つみきホバー：カーソルを乗せた窓が前に出て、そのまま操作の対象になる（メニューバーに常駐）。
-//   control を押しているあいだは止まる ／ ⌃⌥⌘H でオン・オフ ／ メニューから休む・待ち時間・除外
+//   control を押しているあいだは止まる ／ ⌃⌥⌘H でオン・オフ ／ メニューから休む・感度・除外
 //   `--selftest` 判断の自己テスト ／ `--livetest` 本物の窓で確かめる（アクセシビリティの許可が要る）
 //   `--icons <フォルダ>` アイコンの PNG ／ `--menu-preview <png>` メニューバーの絵の見本
 import AppKit
@@ -10,9 +10,19 @@ enum Prefs {
     static let d = UserDefaults.standard
     static let defaultExcluded = ["com.runningwithcrayons.Alfred", "com.wiheads.paste", "com.apple.Spotlight",
                                   "com.raycast.macos", "com.tsumiki.shot", "pl.maketheweb.cleanshotx"]
-    static var delayMs: Int {
-        get { d.object(forKey: "delayMs") as? Int ?? 50 }
-        set { d.set(newValue, forKey: "delayMs") }
+    /// 感度。delay＝動かしている途中でも出すまでの待ち／rest＝止めてから出すまでの待ち（nil＝止めても早めない）
+    static let levels: [(key: String, title: String, delay: TimeInterval, rest: TimeInterval?)] = [
+        ("max", "最速", 0, nil),
+        ("fast", "速い", 0.12, 0.03),
+        ("normal", "ふつう", 0.25, 0.08),
+        ("slow", "ゆっくり", 0.6, 0.25),
+    ]
+    static var sensitivity: String {
+        get { d.string(forKey: "sensitivity").flatMap { k in levels.contains { $0.key == k } ? k : nil } ?? "fast" }
+        set { d.set(newValue, forKey: "sensitivity") }
+    }
+    static var level: (key: String, title: String, delay: TimeInterval, rest: TimeInterval?) {
+        levels.first { $0.key == sensitivity } ?? levels[1]
     }
     static var enabled: Bool {
         get { d.object(forKey: "enabled") as? Bool ?? true }
@@ -66,7 +76,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { n in
             if let a = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication { Screen.bundleCache[a.processIdentifier] = nil }
         }
-        let t = Timer(timeInterval: 0.025, repeats: true) { [weak self] _ in self?.tick() }
+        let t = Timer(timeInterval: 0.01, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common); timer = t
         // 許可は外から付く・外れるので、2秒ごとに見直す
         let t2 = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.recheck() }
@@ -82,7 +92,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var running: Bool { Prefs.enabled && pauseEnd == nil && trusted }
 
     func applyPrefs() {
-        brain.delay = Double(Prefs.delayMs) / 1000
+        brain.delay = Prefs.level.delay
+        brain.restDelay = Prefs.level.rest
         brain.excluded = Set(Prefs.excluded)
         if !Prefs.enabled { brain.pausedUntil = .infinity }
         else if let e = pauseEnd { brain.pausedUntil = uptime + e.timeIntervalSinceNow }
@@ -104,6 +115,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let (why, w) = brain.step(snap)
         if log && why != .waiting { FileHandle.standardError.write("\(why.rawValue)\n".data(using: .utf8)!) }
         if why == .raise, let w { Raiser.raise(w, at: snap.mouse, before: snap.windows) }
+        if why == .desktop, let w { Raiser.raiseDesktop(finder: w.pid, before: snap.windows) }
     }
 
     // MARK: - 操作
@@ -113,7 +125,10 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc func pause(_ s: NSMenuItem) { Prefs.enabled = true; pauseEnd = Date().addingTimeInterval(TimeInterval(s.tag * 60)); applyPrefs() }
     @objc func resume() { pauseEnd = nil; Prefs.enabled = true; applyPrefs() }
-    @objc func setDelay(_ s: NSMenuItem) { Prefs.delayMs = s.tag; applyPrefs() }
+    @objc func setSensitivity(_ s: NSMenuItem) {
+        guard let k = s.representedObject as? String else { return }
+        Prefs.sensitivity = k; applyPrefs()
+    }
     @objc func toggleFrontApp() {
         guard let b = menuFrontApp?.bundleIdentifier else { return }
         var list = Prefs.excluded
@@ -175,10 +190,10 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let p = item("休む", nil, symbol: "moon"); p.submenu = pm; menu.addItem(p)
 
         let dm = NSMenu(); dm.autoenablesItems = false
-        for (t, ms) in [("すぐ", 0), ("50ms", 50), ("150ms", 150), ("300ms", 300), ("600ms", 600)] {
-            let i = item(t, #selector(setDelay(_:)), on: Prefs.delayMs == ms); i.tag = ms; dm.addItem(i)
+        for l in Prefs.levels {
+            let i = item(l.title, #selector(setSensitivity(_:)), on: Prefs.sensitivity == l.key); i.representedObject = l.key; dm.addItem(i)
         }
-        let d = item("待ち時間", nil, symbol: "timer"); d.submenu = dm; menu.addItem(d)
+        let d = item("感度", nil, symbol: "hare"); d.submenu = dm; menu.addItem(d)
 
         menu.addItem(.separator())
         if let a = menuFrontApp, let b = a.bundleIdentifier, a.processIdentifier != getpid() {

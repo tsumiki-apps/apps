@@ -9,7 +9,7 @@ enum SelfTest {
 
         // 架空の画面：前に Safari の窓（pid 10）、後ろに メモ の窓（pid 20）。カーソルはメモだけが見える所
         let bundles: [pid_t: String] = [10: "com.apple.Safari", 20: "com.apple.Notes", 30: "com.runningwithcrayons.Alfred",
-                                        40: "com.wiheads.paste", 50: "com.tsumiki.shot", 60: "com.apple.dock", 99: "com.tsumiki.hover"]
+                                        40: "com.wiheads.paste", 50: "com.tsumiki.shot", 60: "com.apple.dock", 90: "com.apple.finder", 99: "com.tsumiki.hover"]
         let safari = Win(id: 1, pid: 10, layer: 0, bounds: CGRect(x: 0, y: 0, width: 800, height: 600), alpha: 1)
         let notes = Win(id: 2, pid: 20, layer: 0, bounds: CGRect(x: 400, y: 100, width: 800, height: 600), alpha: 1)
         let menuBar = Win(id: 3, pid: 70, layer: Level.menuBar, bounds: CGRect(x: 0, y: 0, width: 1440, height: 24), alpha: 1)
@@ -47,6 +47,22 @@ enum SelfTest {
         _ = b.step(snap(0, windows: three)); _ = b.step(snap(0.03, windows: three, mouse: CGPoint(x: 1300, y: 400)))
         check(b.step(snap(0.06, windows: three)).0 == .waiting, "別の窓を通ったら待ち直す（通った窓も出す候補）")
         check(b.step(snap(0.12, windows: three)).0 == .raise, "待ち直したあと出す")
+
+        // 感度：止めたらすぐ出す（速い＝動かしている途中は120ms・止めたら30ms）
+        b = fresh(0.12); b.restDelay = 0.03
+        _ = b.step(snap(0, mouse: CGPoint(x: 990, y: 400)))
+        check(b.step(snap(0.01)).0 == .waiting, "感度：入って止めた直後はまだ")
+        check(b.step(snap(0.04)).0 == .raise, "感度：止めて30msで出す（120ms 待たない）")
+        b = fresh(0.12); b.restDelay = 0.03
+        var x: CGFloat = 900
+        var moving: Why = .waiting
+        for t in stride(from: 0.0, through: 0.1, by: 0.01) { x += 3; moving = b.step(snap(t, mouse: CGPoint(x: x, y: 400))).0 }
+        check(moving == .waiting, "感度：動かしているあいだは 120ms までは出さない（通り抜けで出さない）")
+        x += 3; check(b.step(snap(0.13, mouse: CGPoint(x: x, y: 400))).0 == .raise, "感度：動かし続けても 120ms で出す")
+        b = fresh(0.6); b.restDelay = 0.25
+        _ = b.step(snap(0, mouse: CGPoint(x: 990, y: 400))); _ = b.step(snap(0.01))
+        check(b.step(snap(0.2)).0 == .waiting, "感度：ゆっくりは止めても 250ms まで待つ")
+        check(b.step(snap(0.27)).0 == .raise, "感度：ゆっくりは止めて 250ms で出す")
 
         // 止める場面
         b = fresh(0)
@@ -98,7 +114,19 @@ enum SelfTest {
         check(b.step(snap(1e9)).0 == .paused, "オフはずっと止まる")
         // 窓がない（デスクトップ）
         b = fresh(0)
-        check(b.step(snap(0, mouse: CGPoint(x: 1400, y: 850))).0 == .noWindow, "デスクトップの上では何もしない")
+        check(b.step(snap(0, mouse: CGPoint(x: 1400, y: 850))).0 == .noWindow, "Finder が分からないときはデスクトップの上で何もしない")
+        // デスクトップ（窓と窓のあいだ）＝Finder を前に
+        let desk = CGPoint(x: 1400, y: 850)
+        func dsnap(_ t: TimeInterval, front: pid_t = 10) -> Snapshot { var x = snap(t, front: front, mouse: desk); x.finderPid = 90; return x }
+        b = fresh(0.05)
+        check(b.step(dsnap(0)).0 == .waiting, "デスクトップ：乗せた直後は待つ")
+        let dr = b.step(dsnap(0.05))
+        check(dr.0 == .desktop && dr.1?.pid == 90, "デスクトップ：待ち時間のあと Finder を前に")
+        check(b.step(dsnap(0.3, front: 90)).0 == .alreadyFront, "デスクトップ：Finder が前ならそのまま")
+        b = fresh(0); b.excluded.insert("com.apple.finder")
+        check(b.step(dsnap(0)).0 == .noWindow, "デスクトップ：Finder を除外していたら何もしない")
+        b = fresh(0.12); b.restDelay = 0.03
+        _ = b.step(dsnap(0)); check(b.step(dsnap(0.04)).0 == .desktop, "デスクトップ：止めたら感度どおりすぐ")
 
         // アイコン
         check(AppIcon.png(64).count > 500, "アプリのアイコンが描ける")

@@ -24,6 +24,7 @@ struct Snapshot {
     var buttonsDown: Bool
     var topEdge: Bool                  // カーソルが画面の上の縁（隠れたメニューバーが出てくる所）
     var now: TimeInterval
+    var finderPid: pid_t? = nil        // デスクトップに乗せたときに前に出すアプリ（Finder）
 }
 
 enum Why: String {
@@ -35,6 +36,7 @@ enum Why: String {
     case spaceChanged = "デスクトップを切り替えた直後"
     case topEdge = "画面の上の縁"
     case noWindow = "窓がない"
+    case desktop = "デスクトップ（Finder）を前に"
     case overlay = "浮いている窓の上"
     case stayApp = "除外アプリが前にいる"
     case ownApp = "自分の窓"
@@ -50,7 +52,10 @@ enum Level {
 }
 
 final class Brain {
+    /// 動かしている途中でも、この時間その窓に乗っていたら出す（通り抜けで出さないための待ち）
     var delay: TimeInterval = 0.05
+    /// カーソルを止めてからこの時間で出す（nil＝止めても早めない）。置いたらすぐ切り替えるための近道
+    var restDelay: TimeInterval?
     var excluded: Set<String> = []
     var pausedUntil: TimeInterval = 0          // .infinity＝ずっと休む
     let selfPid: pid_t
@@ -61,6 +66,8 @@ final class Brain {
     private var since: TimeInterval = 0
     private var raisedId: CGWindowID?
     private var raisedAt: TimeInterval = -1000
+    private var lastMouse: CGPoint?
+    private var stillSince: TimeInterval = 0
 
     init(selfPid: pid_t) { self.selfPid = selfPid }
 
@@ -74,6 +81,9 @@ final class Brain {
     /// 1回分の判断。.raise のときだけ窓を返す
     func step(_ s: Snapshot) -> (Why, Win?) {
         func stop(_ w: Why) -> (Why, Win?) { candidate = nil; cooling = false; return (w, nil) }
+        // カーソルが止まっているか（前の回から 1pt 未満しか動いていない）
+        if let m = lastMouse, hypot(m.x - s.mouse.x, m.y - s.mouse.y) < 1 {} else { stillSince = s.now }
+        lastMouse = s.mouse
         if s.now < pausedUntil { return stop(.paused) }
         if s.controlDown { return stop(.controlKey) }
         if s.buttonsDown { return stop(.mouseDown) }
@@ -91,20 +101,33 @@ final class Brain {
             w.layer > 0 && w.layer != Level.menuBar && w.layer != Level.statusItem && w.alpha > 0
                 && (s.bundleOf(w.pid).map { excluded.contains($0) } ?? false)
         }) { return stop(.stayApp) }
-        guard let top = s.windows.first(where: { $0.alpha > 0 && $0.bounds.contains(s.mouse) }) else { return stop(.noWindow) }
+        guard let top = s.windows.first(where: { $0.alpha > 0 && $0.bounds.contains(s.mouse) }) else {
+            // 窓と窓のあいだ（デスクトップ）＝Finder を前に出す。Finder の窓は前に出さない（Raiser が戻す）
+            guard let f = s.finderPid, f != selfPid, !(s.bundleOf(f).map { excluded.contains($0) } ?? false) else { return stop(.noWindow) }
+            if s.frontPid == f { return stop(.alreadyFront) }
+            return decide(Win(id: kCGNullWindowID, pid: f, layer: 0, bounds: .zero, alpha: 1), s, why: .desktop)
+        }
         // 普通の窓（高さ0）以外＝Dock・メニューバー・浮いたパネル・つみきショットの範囲選び・つみきロックの幕
         if top.layer != 0 { return stop(.overlay) }
         if top.pid == selfPid { return stop(.ownApp) }
         if let b = s.bundleOf(top.pid), excluded.contains(b) { return stop(.excluded) }
         let firstNormal = s.windows.first(where: { $0.layer == 0 && $0.alpha > 0 })
         if firstNormal?.id == top.id && top.pid == s.frontPid { return stop(.alreadyFront) }
+        return decide(top, s, why: .raise)
+    }
+
+    /// 待ち時間・出したばかりを見て、出すかどうかを決める（窓でもデスクトップでも同じ）
+    private func decide(_ top: Win, _ s: Snapshot, why: Why) -> (Why, Win?) {
         // 出したばかりの窓が前に来ないとき（出せないアプリ）に、出し続けない
         if raisedId == top.id && s.now - raisedAt < 1.0 { cooling = true; return (.cooling, nil) }
         cooling = false
         if candidate != top.id { candidate = top.id; since = s.now }
-        if s.now - since + 0.0001 < delay { return (.waiting, nil) }
+        let onLongEnough = s.now - since + 0.0001 >= delay
+        // 止めた近道：その窓に入ってから、かつ止めてから restDelay たったら出す
+        let restedLongEnough = restDelay.map { s.now - max(since, stillSince) + 0.0001 >= $0 } ?? false
+        if !onLongEnough && !restedLongEnough { return (.waiting, nil) }
         candidate = nil; raisedId = top.id; raisedAt = s.now
-        return (.raise, top)
+        return (why, top)
     }
 }
 
@@ -149,7 +172,8 @@ enum Screen {
                  bundleOf: bundle,
                  controlDown: NSEvent.modifierFlags.contains(.control),
                  buttonsDown: NSEvent.pressedMouseButtons != 0,
-                 topEdge: atTopEdge(), now: now)
+                 topEdge: atTopEdge(), now: now,
+                 finderPid: NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier)
     }
 }
 
@@ -190,11 +214,25 @@ enum Raiser {
     @discardableResult
     static func raise(_ w: Win, at point: CGPoint?, before: [Win]? = nil) -> Bool {
         guard let ax = axWindow(for: w, at: point) else { return false }
+        return bringFront(pid: w.pid, keep: w.id, ax: ax, before: before)
+    }
+
+    /// デスクトップ＝Finder を最前面に。Finder の窓は前に出さない（間にあったほかのアプリの窓を戻す）
+    @discardableResult
+    static func raiseDesktop(finder pid: pid_t, before: [Win]? = nil) -> Bool {
+        bringFront(pid: pid, keep: kCGNullWindowID, ax: nil, before: before)
+    }
+
+    /// アプリを最前面にして、keep 以外の同じアプリの窓より手前にいたほかのアプリの窓を元の並びに戻す
+    private static func bringFront(pid: pid_t, keep: CGWindowID, ax: AXUIElement?, before: [Win]?) -> Bool {
+        let w = Win(id: keep, pid: pid, layer: 0, bounds: .zero, alpha: 1)
         let app = AXUIElementCreateApplication(w.pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
         let order = (before ?? Screen.windows()).filter { $0.layer == 0 && $0.alpha > 0 }
-        AXUIElementSetAttributeValue(ax, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
+        if let ax {
+            AXUIElementSetAttributeValue(ax, kAXMainAttribute as CFString, kCFBooleanTrue)
+            AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
+        }
         guard AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue) == .success else { return false }
         // 同じアプリのほかの窓（何枚あっても）より手前にいたほかのアプリの窓を、元の並びのまま上に積み直す。
         // 最前面への切り替えは少し遅れて効くので、抜かれたのを見てから（最大0.4秒）奥から順に AXRaise する
@@ -221,7 +259,7 @@ enum Raiser {
                 for o in passed.reversed() where at(o.id) != nil {
                     if let e = axWindow(for: o, at: nil) { AXUIElementPerformAction(e, kAXRaiseAction as CFString) }
                 }
-                AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
+                if let ax { AXUIElementPerformAction(ax, kAXRaiseAction as CFString) }
             } else if Date().timeIntervalSince(start) < 0.4 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { restoreWhenPassed() }
             }
