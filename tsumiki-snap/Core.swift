@@ -4,24 +4,42 @@ import ApplicationServices
 import Carbon.HIToolbox
 enum Side: UInt32 {
     case left = 1, top = 2, right = 3
+    case maximize = 4, center = 5, topLeft = 6, topRight = 7, bottomLeft = 8, bottomRight = 9
 
     var title: String {
         switch self {
         case .left: return "左に寄せる"
         case .top: return "上に寄せる"
         case .right: return "右に寄せる"
+        case .maximize: return "最大化"
+        case .center: return "中央"
+        case .topLeft: return "左上"
+        case .topRight: return "右上"
+        case .bottomLeft: return "左下"
+        case .bottomRight: return "右下"
         }
     }
-    // Cocoa 座標（左下が原点）の visibleFrame から、寄せたあとの枠を出す
-    func target(in vf: NSRect) -> NSRect {
+    /// 右（または下）の端に合わせる寄せ先か（大きさを削られたとき、その端にそろえ直す）
+    var anchorsRight: Bool { self == .right || self == .topRight || self == .bottomRight }
+    var anchorsLeft: Bool { self == .left || self == .topLeft || self == .bottomLeft }
+    var anchorsBottom: Bool { self == .bottomLeft || self == .bottomRight }
+
+    // Cocoa 座標（左下が原点）の visibleFrame から、寄せたあとの枠を出す。
+    // size は「いまのウインドウの大きさ」で、中央だけが使う（大きさは変えず、入りきらないときだけ画面いっぱいに縮める）
+    func target(in vf: NSRect, size: CGSize = .zero) -> NSRect {
+        let hw = floor(vf.width / 2), hh = floor(vf.height / 2)
         switch self {
-        case .left: return NSRect(x: vf.minX, y: vf.minY, width: floor(vf.width / 2), height: vf.height)
-        case .right:
-            let w = floor(vf.width / 2)
-            return NSRect(x: vf.maxX - w, y: vf.minY, width: w, height: vf.height)
-        case .top:
-            let h = floor(vf.height / 2)
-            return NSRect(x: vf.minX, y: vf.maxY - h, width: vf.width, height: h)
+        case .left: return NSRect(x: vf.minX, y: vf.minY, width: hw, height: vf.height)
+        case .right: return NSRect(x: vf.maxX - hw, y: vf.minY, width: hw, height: vf.height)
+        case .top: return NSRect(x: vf.minX, y: vf.maxY - hh, width: vf.width, height: hh)
+        case .maximize: return vf
+        case .center:
+            let w = min(size.width, vf.width), h = min(size.height, vf.height)
+            return NSRect(x: vf.minX + floor((vf.width - w) / 2), y: vf.minY + floor((vf.height - h) / 2), width: w, height: h)
+        case .topLeft: return NSRect(x: vf.minX, y: vf.maxY - hh, width: hw, height: hh)
+        case .topRight: return NSRect(x: vf.maxX - hw, y: vf.maxY - hh, width: hw, height: hh)
+        case .bottomLeft: return NSRect(x: vf.minX, y: vf.minY, width: hw, height: hh)
+        case .bottomRight: return NSRect(x: vf.maxX - hw, y: vf.minY, width: hw, height: hh)
         }
     }
 }
@@ -79,7 +97,7 @@ enum Snapper {
         }
 
         let vf = screen.visibleFrame
-        let r = side.target(in: vf)
+        let r = side.target(in: vf, size: before?.size ?? .zero)
         var sz = CGSize(width: r.width.rounded(), height: r.height.rounded())
         var origin = CGPoint(x: r.minX.rounded(), y: (H - r.maxY).rounded())
 
@@ -92,8 +110,13 @@ enum Snapper {
         if let got = size(win), abs(got.width - sz.width) > 1 || abs(got.height - sz.height) > 1 {
             let top = H - vf.maxY, bottom = H - vf.minY
             var x = origin.x, y = origin.y
-            if side == .right { x = (vf.maxX - got.width).rounded() }
-            if side == .left { x = vf.minX }
+            if side.anchorsRight { x = (vf.maxX - got.width).rounded() }
+            if side.anchorsLeft { x = vf.minX }
+            if side.anchorsBottom { y = (bottom - got.height).rounded() }
+            if side == .center {
+                x = (vf.minX + (vf.width - got.width) / 2).rounded(.down)
+                y = (top + (vf.height - got.height) / 2).rounded(.down)
+            }
             // 画面からはみ出さないように（入りきらないときは左上をそろえる）
             x = max(vf.minX, min(x, vf.maxX - got.width))
             y = max(top, min(y, bottom - got.height))

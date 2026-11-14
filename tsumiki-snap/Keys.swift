@@ -68,28 +68,47 @@ struct KeyCombo: Codable, Equatable {
 }
 
 extension Side {
+    /// 既定のキー。左・上・右は ⌘⌥＋矢印。ほかは Magnet に寄せて ⌃⌥（最大化＝↩・中央＝C・四隅＝U I J K）
     var def: KeyCombo {
         let m = UInt32(cmdKey | optionKey)
+        let m2 = UInt32(controlKey | optionKey)
         switch self {
         case .left: return KeyCombo(code: UInt32(kVK_LeftArrow), mods: m, char: "←")
         case .top: return KeyCombo(code: UInt32(kVK_UpArrow), mods: m, char: "↑")
         case .right: return KeyCombo(code: UInt32(kVK_RightArrow), mods: m, char: "→")
+        case .maximize: return KeyCombo(code: UInt32(kVK_Return), mods: m2, char: "↩")
+        case .center: return KeyCombo(code: UInt32(kVK_ANSI_C), mods: m2, char: "C")
+        case .topLeft: return KeyCombo(code: UInt32(kVK_ANSI_U), mods: m2, char: "U")
+        case .topRight: return KeyCombo(code: UInt32(kVK_ANSI_I), mods: m2, char: "I")
+        case .bottomLeft: return KeyCombo(code: UInt32(kVK_ANSI_J), mods: m2, char: "J")
+        case .bottomRight: return KeyCombo(code: UInt32(kVK_ANSI_K), mods: m2, char: "K")
         }
     }
     var name: String {
-        switch self { case .left: return "左"; case .top: return "上"; case .right: return "右" }
+        switch self {
+        case .left: return "左"
+        case .top: return "上"
+        case .right: return "右"
+        default: return title
+        }
     }
     var symbol: String {
         switch self {
         case .left: return "rectangle.lefthalf.filled"
         case .top: return "rectangle.tophalf.filled"
         case .right: return "rectangle.righthalf.filled"
+        case .maximize: return "rectangle.fill"
+        case .center: return "rectangle.center.inset.filled"
+        case .topLeft: return "rectangle.inset.topleft.filled"
+        case .topRight: return "rectangle.inset.topright.filled"
+        case .bottomLeft: return "rectangle.inset.bottomleft.filled"
+        case .bottomRight: return "rectangle.inset.bottomright.filled"
         }
     }
 }
 
 enum Shortcuts {
-    static let sides: [Side] = [.left, .top, .right]
+    static let sides: [Side] = [.left, .top, .right, .maximize, .center, .topLeft, .topRight, .bottomLeft, .bottomRight]
     static var defaults: UserDefaults = .standard
     private static let key = "hotkeys"
 
