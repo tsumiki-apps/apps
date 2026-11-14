@@ -115,7 +115,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let (why, w) = brain.step(snap)
         if log && why != .waiting { FileHandle.standardError.write("\(why.rawValue)\n".data(using: .utf8)!) }
         if why == .raise, let w { Raiser.raise(w, at: snap.mouse, before: snap.windows) }
-        if why == .desktop, let w { Raiser.raiseDesktop(finder: w.pid, before: snap.windows) }
+        if why == .desktop, let w { Raiser.raiseDesktop(finder: w.pid, at: snap.mouse, before: snap.windows) }
     }
 
     // MARK: - 操作

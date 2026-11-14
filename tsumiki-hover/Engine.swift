@@ -25,6 +25,8 @@ struct Snapshot {
     var topEdge: Bool                  // カーソルが画面の上の縁（隠れたメニューバーが出てくる所）
     var now: TimeInterval
     var finderPid: pid_t? = nil        // デスクトップに乗せたときに前に出すアプリ（Finder）
+    /// Finder の中でデスクトップが操作の対象か（Finder の窓が選ばれていない）。要るときだけ読む（nil＝分からない＝そうだとみなす）
+    var desktopFocused: (() -> Bool)? = nil
 }
 
 enum Why: String {
@@ -68,6 +70,8 @@ final class Brain {
     private var raisedAt: TimeInterval = -1000
     private var lastMouse: CGPoint?
     private var stillSince: TimeInterval = 0
+    /// デスクトップに入ってから、もう済ませたか（窓の上に戻るまで繰り返さない＝クリックを何度も送らない）
+    private var desktopDone = false
 
     init(selfPid: pid_t) { self.selfPid = selfPid }
 
@@ -104,9 +108,14 @@ final class Brain {
         guard let top = s.windows.first(where: { $0.alpha > 0 && $0.bounds.contains(s.mouse) }) else {
             // 窓と窓のあいだ（デスクトップ）＝Finder を前に出す。Finder の窓は前に出さない（Raiser が戻す）
             guard let f = s.finderPid, f != selfPid, !(s.bundleOf(f).map { excluded.contains($0) } ?? false) else { return stop(.noWindow) }
-            if s.frontPid == f { return stop(.alreadyFront) }
-            return decide(Win(id: kCGNullWindowID, pid: f, layer: 0, bounds: .zero, alpha: 1), s, why: .desktop)
+            if desktopDone { return stop(.alreadyFront) }
+            // Finder が前でも、Finder の窓が選ばれたままならデスクトップに移す
+            if s.frontPid == f && (s.desktopFocused?() ?? true) { desktopDone = true; return stop(.alreadyFront) }
+            let r = decide(Win(id: kCGNullWindowID, pid: f, layer: 0, bounds: .zero, alpha: 1), s, why: .desktop)
+            if r.0 == .desktop { desktopDone = true }
+            return r
         }
+        desktopDone = false
         // 普通の窓（高さ0）以外＝Dock・メニューバー・浮いたパネル・つみきショットの範囲選び・つみきロックの幕
         if top.layer != 0 { return stop(.overlay) }
         if top.pid == selfPid { return stop(.ownApp) }
@@ -173,7 +182,20 @@ enum Screen {
                  controlDown: NSEvent.modifierFlags.contains(.control),
                  buttonsDown: NSEvent.pressedMouseButtons != 0,
                  topEdge: atTopEdge(), now: now,
-                 finderPid: NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier)
+                 finderPid: finderPid(),
+                 desktopFocused: { finderPid().map { desktopFocused(finder: $0) } ?? true })
+    }
+
+    static func finderPid() -> pid_t? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
+    }
+
+    /// Finder の中でデスクトップが操作の対象か＝選ばれている Finder の窓が無い
+    static func desktopFocused(finder pid: pid_t) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.15)
+        var v: CFTypeRef?
+        return AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &v) != .success || v == nil
     }
 }
 
@@ -217,10 +239,34 @@ enum Raiser {
         return bringFront(pid: w.pid, keep: w.id, ax: ax, before: before)
     }
 
-    /// デスクトップ＝Finder を最前面に。Finder の窓は前に出さない（間にあったほかのアプリの窓を戻す）
+    /// デスクトップ＝Finder を最前面にし、操作の対象をデスクトップにする。Finder の窓は前に出さない（間にあったほかのアプリの窓を戻す）
+    /// デスクトップを選ぶ公開の仕組みは無い（AXFocused・AXMain は効かない）ので、何もない所なら、そこを1回クリックしたのと同じにする
     @discardableResult
-    static func raiseDesktop(finder pid: pid_t, before: [Win]? = nil) -> Bool {
-        bringFront(pid: pid, keep: kCGNullWindowID, ax: nil, before: before)
+    static func raiseDesktop(finder pid: pid_t, at point: CGPoint, before: [Win]? = nil) -> Bool {
+        if !Screen.desktopFocused(finder: pid) && canClickDesktop(finder: pid, at: point) {
+            for t in [CGEventType.leftMouseDown, .leftMouseUp] {
+                guard let e = CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: point, mouseButton: .left) else { continue }
+                e.flags = []; e.setIntegerValueField(.mouseEventClickState, value: 1)
+                e.post(tap: .cghidEventTap)
+            }
+        }
+        return bringFront(pid: pid, keep: kCGNullWindowID, ax: nil, before: before)
+    }
+
+    /// クリックしてよい所か：Finder のデスクトップの地（アイコンの上ではない）で、
+    /// 「壁紙をクリックしてデスクトップを表示」とステージマネージャが切ってある（窓が全部どくのを防ぐ）
+    static func canClickDesktop(finder pid: pid_t, at p: CGPoint) -> Bool {
+        let wm = UserDefaults(suiteName: "com.apple.WindowManager")
+        if wm?.bool(forKey: "GloballyEnabled") == true { return false }
+        if wm?.object(forKey: "EnableStandardClickToShowDesktop") as? Bool ?? true { return false }
+        let sys = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(sys, 0.15)
+        var el: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(p.y), &el) == .success, let e = el else { return false }
+        var owner: pid_t = 0
+        guard AXUIElementGetPid(e, &owner) == .success, owner == pid else { return false }
+        let role = attr(e, kAXRoleAttribute) as? String
+        return role == kAXGroupRole || role == kAXScrollAreaRole
     }
 
     /// アプリを最前面にして、keep 以外の同じアプリの窓より手前にいたほかのアプリの窓を元の並びに戻す

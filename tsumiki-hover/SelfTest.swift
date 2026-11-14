@@ -127,6 +127,22 @@ enum SelfTest {
         check(b.step(dsnap(0)).0 == .noWindow, "デスクトップ：Finder を除外していたら何もしない")
         b = fresh(0.12); b.restDelay = 0.03
         _ = b.step(dsnap(0)); check(b.step(dsnap(0.04)).0 == .desktop, "デスクトップ：止めたら感度どおりすぐ")
+        // Finder の窓を開いたあとにデスクトップへ＝Finder は前だが窓が選ばれている → デスクトップに移す
+        func fsnap(_ t: TimeInterval, mouse: CGPoint = desk, focused: Bool, calls: UnsafeMutablePointer<Int>? = nil) -> Snapshot {
+            var x = snap(t, front: 90, mouse: mouse); x.finderPid = 90
+            x.desktopFocused = { calls?.pointee += 1; return focused }; return x
+        }
+        b = fresh(0)
+        check(b.step(fsnap(0, focused: false)).0 == .desktop, "デスクトップ：Finder が前でも窓が選ばれていればデスクトップに移す")
+        check(b.step(fsnap(0.01, mouse: CGPoint(x: 1410, y: 850), focused: false)).0 == .alreadyFront, "デスクトップ：移したら、窓に戻るまで繰り返さない（クリックを何度も送らない）")
+        _ = b.step(fsnap(1, mouse: p, focused: false))   // いったん窓の上へ
+        check(b.step(fsnap(2, focused: false)).0 == .desktop, "デスクトップ：窓の上から戻ったら、また移す")
+        b = fresh(0)
+        let calls = UnsafeMutablePointer<Int>.allocate(capacity: 1); calls.pointee = 0
+        check(b.step(fsnap(0, focused: true, calls: calls)).0 == .alreadyFront, "デスクトップ：もうデスクトップが選ばれていればそのまま")
+        _ = b.step(fsnap(0.01, mouse: CGPoint(x: 1420, y: 850), focused: true, calls: calls))
+        check(calls.pointee == 1, "デスクトップ：選ばれているかを読むのは入ったときの1回だけ")
+        calls.deallocate()
 
         // アイコン
         check(AppIcon.png(64).count > 500, "アプリのアイコンが描ける")
