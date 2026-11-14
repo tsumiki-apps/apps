@@ -224,6 +224,7 @@ notes([("arrow.down", "少しずつ送って継ぐ。止まったら約5秒待�
 
 heading("うまく継ぐコツ", "lightbulb")
 notes([("tortoise", "手で送って「ゆっくり」と出たら速すぎ。少し戻す"),
+       ("arrow.uturn.up", "「逆向き」と出たら回す向きが逆。反対に回す"),
        ("arrow.left.and.right", "横スクロールも可。札の → で選ぶ"),
        ("rectangle.topthird.inset.filled", "上下に固定された見出し・帯は自動で外す")])
 
