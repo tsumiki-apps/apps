@@ -48,7 +48,7 @@
 
 ## 組み立てと検査
 ```
-swift make_manual.swift 説明書.pdf   # 説明書（PDF・5ページ・SF Symbols。表紙のアイコンは ./build.sh の後に入る）
+swift make_manual.swift 説明書.pdf   # 説明書（PDF・6ページ・SF Symbols。表紙のアイコンは ./build.sh の後に入る）
 ./build.sh                       # 自己テスト（つなぎ25種（横7種を含む。固定サイドバー・透けるヘッダー・表・動く帯・表＋動く帯・先頭の白い余白も）＋横長ページのゆっくり送り・回す向き・画素まで照合／書き込み・文字読み・編集画面・自動スクロール（架空のページで端まで・逆向き・途中から逆向き・横・滑らかに動き続きを読み込むページ）・ショートカットの保存と重なり・設定の窓）→ ~/Applications/つみき/TsumikiShot.app
 open -W --stdout 結果.txt ~/Applications/つみき/TsumikiShot.app --args --probe 出力.png   # 本物の撮影を通した通しテスト（要・画面収録の許可）
 ```
