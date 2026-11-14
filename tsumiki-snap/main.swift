@@ -1,4 +1,4 @@
-// まどわけ — ⌘⌥← / ⌘⌥↑ / ⌘⌥→（設定で変えられる）で、いま前に出ているウインドウを左・上・右の半分に寄せる。
+// つみきスナップ — ⌘⌥← / ⌘⌥↑ / ⌘⌥→（設定で変えられる）で、いま前に出ているウインドウを左・上・右の半分に寄せる。
 // メニューバーに常駐するだけのアプリ（Dock には出ない）。
 import AppKit
 import ServiceManagement
@@ -8,7 +8,7 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var item: NSStatusItem!
     private var settings: SettingsWindow?
-    private let pauseItem = NSMenuItem(title: "キーを止める", action: #selector(togglePause), keyEquivalent: "")
+    private let pauseItem = NSMenuItem(title: "一時停止", action: #selector(togglePause), keyEquivalent: "")
     private let busyItem = NSMenuItem()
     private let trustItem = NSMenuItem()
     private let loginItem = NSMenuItem(title: "ログイン時に開く", action: #selector(toggleLogin), keyEquivalent: "")
@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "まどわけを終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "つみきスナップを終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
         item.menu = menu
 
@@ -66,11 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         HotKeys.apply()
         updateIcon(force: true)
 
-        // 起動時は OS の案内だけ（これで設定の一覧に「まどわけ」が載る）。重なるキーの知らせは、案内と重ならないときだけ
+        checkOldApp()
+        // 起動時は OS の案内だけ（これで設定の一覧に「TsumikiSnap」が載る）。重なるキーの知らせは、案内と重ならないときだけ
         if !Snapper.trusted { Snapper.askForTrust() }
         else if !HotKeys.failed.isEmpty {
             let names = Shortcuts.sides.filter { HotKeys.failed.contains($0) }.map { $0.title }.joined(separator: "・")
-            alert("ほかのアプリが同じショートカットを使っています", "使えないもの：\(names)\n設定でキーを変えるか、そのアプリを終了してから、まどわけを開き直してください。")
+            alert("ほかのアプリが同じショートカットを使っています", "使えないもの：\(names)\n設定でキーを変えるか、そのアプリを終了してから、つみきスナップを開き直してください。")
         }
     }
 
@@ -104,8 +105,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// 終了するとき、止めた Mac 標準のキーを戻す（消されても止まったまま残らないように。次に起動したらまた止める）
+    func applicationWillTerminate(_ n: Notification) { SystemKeys.releaseAll() }
+
+    /// 前の名前「まどわけ」が動いていると、同じキーを取り合う。見つけたら終了するか聞く
+    private func checkOldApp() {
+        let old = NSRunningApplication.runningApplications(withBundleIdentifier: "com.tsumiki-apps.madowake")
+        guard !old.isEmpty else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.messageText = "前の名前の「まどわけ」が動いています"
+        a.informativeText = "同じキーを取り合うので、まどわけを終了します。まどわけはゴミ箱に入れてかまいません（ログイン時に開く設定も、システム設定の「ログイン項目」から外してください）。"
+        a.addButton(withTitle: "まどわけを終了")
+        a.addButton(withTitle: "あとで")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        old.forEach { $0.terminate() }
+        // 終わるのを待ってから、キーを取り直す
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { HotKeys.apply() }
+    }
+
     @objc private func togglePause() {
         Shortcuts.paused.toggle()
+        SystemKeys.sync { [weak self] in HotKeys.apply(); self?.settings?.refresh() }
         HotKeys.apply()
         updateIcon(force: true)
         settings?.refresh()
@@ -140,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
             }
         } catch {
-            alert("ログイン時に開く設定を変えられませんでした", "まどわけを「アプリケーション」フォルダに入れてから、もう一度試してください。")
+            alert("ログイン時に開く設定を変えられませんでした", "つみきスナップを「アプリケーション」フォルダに入れてから、もう一度試してください。")
         }
     }
 
@@ -159,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
         a.messageText = "ウインドウを動かす許可が必要です"
-        a.informativeText = "システム設定の「アクセシビリティ」で「まどわけ」をオンにしてください。オンにしたら、すぐ使えます。\n\nすでにオンなのに動かないときは、一覧の「まどわけ」を選んで「−」で消し、もう一度オンにしてください。"
+        a.informativeText = "システム設定の「アクセシビリティ」で「TsumikiSnap」をオンにしてください。オンにしたら、すぐ使えます。\n\nすでにオンなのに動かないときは、一覧の「TsumikiSnap」を選んで「−」で消し、もう一度オンにしてください。"
         a.addButton(withTitle: "設定を開く")
         a.addButton(withTitle: "あとで")
         if a.runModal() == .alertFirstButtonReturn { openTrustSettings() }
@@ -172,11 +193,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         shownTrusted = ok
         shownPaused = Shortcuts.paused
         b.appearsDisabled = Shortcuts.paused     // 止めているあいだは薄く
-        b.toolTip = Shortcuts.paused ? "まどわけ（キーを止めています）" : "まどわけ"
-        let img = NSImage(systemSymbolName: ok ? "rectangle.split.2x1" : "exclamationmark.triangle",
-                          accessibilityDescription: ok ? "まどわけ" : "まどわけ（許可が必要）")
-        img?.isTemplate = true
-        b.image = img
+        b.toolTip = Shortcuts.paused ? "つみきスナップ（一時停止中）" : "つみきスナップ"
+        b.image = AppIcon.menuImage(trusted: ok)
     }
 
     private func alert(_ title: String, _ body: String) {
@@ -189,6 +207,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 }
 
 let app = NSApplication.shared
+if let i = CommandLine.arguments.firstIndex(of: "--icons"), i + 1 < CommandLine.arguments.count {
+    AppIcon.writeIconset(CommandLine.arguments[i + 1]); exit(0)
+}
+if let i = CommandLine.arguments.firstIndex(of: "--icon-preview"), i + 1 < CommandLine.arguments.count {
+    AppIcon.preview(CommandLine.arguments[i + 1]); exit(0)
+}
 if CommandLine.arguments.contains("--selftest") {
     app.setActivationPolicy(.accessory)
     exit(SelfTest.run() ? 0 : 1)

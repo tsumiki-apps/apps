@@ -119,7 +119,7 @@ enum Shortcuts {
     static func reset(_ side: Side) { set(side, side.def) }
     static func resetAll() { defaults.removeObject(forKey: key) }
 
-    /// 「キーを止める」（ほかのアプリで同じキーを使いたいとき）。開き直しても続く
+    /// 「一時停止」（ほかのアプリで同じキーを使いたいとき）。開き直しても続く
     static var paused: Bool {
         get { defaults.bool(forKey: "paused") }
         set { defaults.set(newValue, forKey: "paused") }
@@ -175,7 +175,7 @@ enum HotKeys {
 // MARK: - Mac 標準のキー
 // 同じキーを Mac 本体が持っていると、押しても Mac 標準のほうが動く。止める/戻すはシステム設定の
 // 「キーボード → キーボードショートカット」と同じ場所（com.apple.symbolichotkeys）を書き換える。
-// 止めるのは「まどわけのキーと重なっているもの」だけ。戻すときは、まどわけが止めたものだけ戻す。
+// 止めるのは「つみきスナップのキーと重なっているもの」だけ。戻すときは、つみきスナップが止めたものだけ戻す。
 
 enum SystemKeys {
     /// 書かれていないときの既定（矢印を使うもの）。番号：名前・キー（文字・キー番号・修飾）
@@ -197,7 +197,7 @@ enum SystemKeys {
     ]
     static var domain = "com.apple.symbolichotkeys" as CFString     // 自己テストでは別の名前に差し替える
     static var applyNow = true                                      // 自己テストでは反映の命令を撃たない
-    private static let memoKey = "systemKeysStopped"                // まどわけが止めた番号
+    private static let memoKey = "systemKeysStopped"                // つみきスナップが止めた番号
 
     static func table() -> [String: Any] {
         CFPreferencesCopyValue("AppleSymbolicHotKeys" as CFString, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? [String: Any] ?? [:]
@@ -237,7 +237,7 @@ enum SystemKeys {
     }
     static func clashes(_ c: KeyCombo) -> Bool { !clashing(c).isEmpty }
 
-    /// まどわけのキーと重なっている Mac 標準のキー（側ごと）
+    /// つみきスナップのキーと重なっている Mac 標準のキー（側ごと）
     static func clashesNow() -> [(Side, [String])] {
         Shortcuts.sides.compactMap { s in
             guard let c = Shortcuts.combo(s) else { return nil }
@@ -255,12 +255,26 @@ enum SystemKeys {
     }
 
     /// 設定に合わせる：止めたいなら重なるものを止め、もう重ならない（または止めたくない）ものは戻す
-    static func sync(done: (() -> Void)? = nil) {
+    /// 終了するとき：止めたものを全部戻す（記録は消えるが、次に起動したとき sync がまた止める）。反映を待ってから返す
+    static func releaseAll() {
+        guard !stopped.isEmpty else { return }
+        releasing = true
+        let sem = DispatchSemaphore(value: 0)
+        sync(waitOnCaller: true) { sem.signal() }
+        _ = sem.wait(timeout: .now() + 6)
+        releasing = false
+    }
+    private static var releasing = false
+    /// 最後の反映の命令が失敗した（ログインし直すまで効かない）
+    private(set) static var applyFailed = false
+
+    static func sync(waitOnCaller: Bool = false, done: (() -> Void)? = nil) {
         var t = table()
         var memo = stopped
-        let mine = Shortcuts.sides.compactMap { Shortcuts.combo($0) }
+        // 一時停止中・終了するときは、まどわけのキーは無い扱い＝止めたものは全部戻す
+        let mine = (Shortcuts.paused || releasing) ? [] : Shortcuts.sides.compactMap { Shortcuts.combo($0) }
         var changed = false
-        // 戻す：止めたくない、またはまどわけのキーと重ならなくなったもの
+        // 戻す：止めたくない、またはつみきスナップのキーと重ならなくなったもの
         for id in memo {
             let c = combo(id, t)
             if !wantStop || !mine.contains(where: { c?.same($0) == true }) {
@@ -268,7 +282,7 @@ enum SystemKeys {
             }
         }
         // 止める
-        if wantStop {
+        if wantStop && !releasing {
             for c in mine {
                 for id in Set(t.keys).union(known.keys) where isEnabled(id, t) && combo(id, t)?.same(c) == true {
                     write(&t, id, enabled: false); if !memo.contains(id) { memo.append(id) }; changed = true
@@ -285,12 +299,14 @@ enum SystemKeys {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
             p.arguments = ["-u"]
+            var ok = false
             if (try? p.run()) != nil {
                 let deadline = Date().addingTimeInterval(5)
                 while p.isRunning && Date() < deadline { usleep(50_000) }
-                if p.isRunning { p.terminate() }
+                if p.isRunning { p.terminate() } else { ok = p.terminationStatus == 0 }
             }
-            DispatchQueue.main.async { done?() }
+            if waitOnCaller { applyFailed = !ok; done?(); return }     // 終了中：メインに戻さない（メインは待っている）
+            DispatchQueue.main.async { applyFailed = !ok; done?() }
         }
     }
 
@@ -428,7 +444,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         for r in 0..<grid.numberOfRows { grid.row(at: r).yPlacement = .center }
 
         pause.target = self; pause.action = #selector(pauseChanged)
-        let pauseRow = row("pause.circle", "キーを止める", pause, tip: "オンのあいだは、ほかのアプリで同じキーが使える")
+        let pauseRow = row("pause.circle", "一時停止", pause, tip: "オンのあいだは、つみきスナップのキーが効かない。ほかのアプリや Mac 標準で同じキーが使える")
 
         sysKeys.target = self; sysKeys.action = #selector(sysKeysChanged)
         let sysRow = row("command", "重なる Mac 標準のキーを止める", sysKeys,
@@ -467,7 +483,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         sysKeys.state = SystemKeys.wantStop ? .on : .off
         let stoppedNames = Array(Set(SystemKeys.stopped.map { SystemKeys.name($0) })).sorted()
         let clashNames = Array(Set(clashes.flatMap { $0.1 }.map { SystemKeys.name($0) })).sorted()
-        if !stoppedNames.isEmpty { sysNote.stringValue = "止めているもの：" + stoppedNames.joined(separator: "・") }
+        if SystemKeys.applyFailed { sysNote.stringValue = "反映できませんでした。ログインし直すと効きます" }
+        else if Shortcuts.paused && SystemKeys.wantStop { sysNote.stringValue = "一時停止中は Mac 標準に戻しています" }
+        else if !stoppedNames.isEmpty { sysNote.stringValue = "止めているもの：" + stoppedNames.joined(separator: "・") }
         else if !clashNames.isEmpty { sysNote.stringValue = "重なっているもの：" + clashNames.joined(separator: "・") }
         else { sysNote.stringValue = "いまは重なっていません" }
     }
@@ -498,6 +516,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
 
     @objc func pauseChanged() {
         Shortcuts.paused = pause.state == .on
+        SystemKeys.sync { [weak self] in HotKeys.apply(); self?.refresh(); self?.onKeysChanged?() }
         HotKeys.apply(); refresh(); onKeysChanged?()
     }
 

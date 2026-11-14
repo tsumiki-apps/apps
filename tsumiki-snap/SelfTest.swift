@@ -19,13 +19,13 @@ enum SelfTest {
     }
 
     static func run() -> Bool {
-        let suite = "madowake.selftest"
+        let suite = "tsumikisnap.selftest"
         let ud = UserDefaults(suiteName: suite)!
         ud.removePersistentDomain(forName: suite)
         Shortcuts.defaults = ud
-        SystemKeys.domain = "madowake.selftest.symbolichotkeys" as CFString
+        SystemKeys.domain = "tsumikisnap.selftest.symbolichotkeys" as CFString
         SystemKeys.applyNow = false
-        HotKeys.signature = OSType(0x6D647374)   // 'mdst'（本物のまどわけと分ける）
+        HotKeys.signature = OSType(0x6D647374)   // 'mdst'（本物のつみきスナップと分ける）
         func fake(_ t: [String: Any]?) {
             CFPreferencesSetValue("AppleSymbolicHotKeys" as CFString, t as CFDictionary?, SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
             CFPreferencesSynchronize(SystemKeys.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
@@ -35,6 +35,7 @@ enum SelfTest {
             fake(nil)
             ud.removePersistentDomain(forName: suite)
             HotKeys.suspend()
+            removeFiles([suite, SystemKeys.domain as String])
         }
         let ctrl = UInt32(controlKey)
         let ctrlLeft = KeyCombo(code: UInt32(kVK_LeftArrow), mods: ctrl, char: "←")
@@ -78,7 +79,7 @@ enum SelfTest {
         check("キーを変えると前に止めたものは戻る", on("79"))
         check("元から止めていたものは記録しない", !on("81") && SystemKeys.stopped.isEmpty, "stopped=\(SystemKeys.stopped)")
 
-        // 6. スイッチをオフ：まどわけが止めたものだけ戻す
+        // 6. スイッチをオフ：つみきスナップが止めたものだけ戻す
         Shortcuts.set(.left, ctrlLeft)
         SystemKeys.sync()
         check("また ⌃← にすると 79 が止まる", !on("79") && SystemKeys.stopped == ["79"])
@@ -87,7 +88,22 @@ enum SelfTest {
         check("オフで 79 は戻り、81 は止めたまま", on("79") && !on("81") && SystemKeys.stopped.isEmpty)
         check("オフのあとは重なりが見える", SystemKeys.clashesNow().first?.0 == .left)
 
-        // 7. キーを止める（一時停止）
+        // 6b. 一時停止のあいだは Mac 標準に戻し、外すとまた止める
+        SystemKeys.wantStop = true
+        SystemKeys.sync()
+        Shortcuts.paused = true; SystemKeys.sync()
+        check("一時停止のあいだは Mac 標準に戻す", on("79") && SystemKeys.stopped.isEmpty)
+        Shortcuts.paused = false; SystemKeys.sync()
+        check("一時停止を外すとまた止める", !on("79") && SystemKeys.stopped == ["79"])
+
+        // 6c. 終了するときは全部戻す（スイッチはオンのまま＝次に起動したらまた止める）
+        SystemKeys.releaseAll()
+        check("終了するとき止めたものを戻す", on("79") && !on("81") && SystemKeys.stopped.isEmpty && SystemKeys.wantStop)
+        SystemKeys.sync()
+        check("次に起動したらまた止める", !on("79") && SystemKeys.stopped == ["79"])
+        SystemKeys.wantStop = false; SystemKeys.sync()
+
+        // 7. 一時停止
         Shortcuts.resetAll()
         let f12 = KeyCombo(code: UInt32(kVK_F12), mods: UInt32(cmdKey | optionKey | controlKey), char: "F12")
         Shortcuts.set(.left, f12)          // 押しても害のないキーで試す
@@ -96,7 +112,7 @@ enum SelfTest {
         check("止めていないときは登録される", HotKeys.registered == 1 && HotKeys.failed.isEmpty, "registered=\(HotKeys.registered)")
         Shortcuts.paused = true
         HotKeys.apply()
-        check("「キーを止める」で全部外れる", HotKeys.registered == 0)
+        check("一時停止で全部外れる", HotKeys.registered == 0)
 
         // 8. 本当にキーで呼ばれるか（⌃⌥⌘F12 を送る）。送る許可がない環境では「未確認」と出す
         var got: [Side] = []
@@ -125,11 +141,11 @@ enum SelfTest {
 
     /// `--settings-png <出力>`：設定の窓を画像にする（架空の置き場で。左を ⌃← にして重なりを見せる）
     static func settingsPNG(_ out: String) {
-        let suite = "madowake.shot"
+        let suite = "tsumikisnap.shot"
         let ud = UserDefaults(suiteName: suite)!
         ud.removePersistentDomain(forName: suite)
         Shortcuts.defaults = ud
-        SystemKeys.domain = "madowake.shot.symbolichotkeys" as CFString
+        SystemKeys.domain = "tsumikisnap.shot.symbolichotkeys" as CFString
         SystemKeys.applyNow = false
         HotKeys.signature = OSType(0x6D647374)
         Shortcuts.set(.left, KeyCombo(code: UInt32(kVK_LeftArrow), mods: UInt32(controlKey), char: "←"))
@@ -143,5 +159,12 @@ enum SelfTest {
         try? rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: out))
         ud.removePersistentDomain(forName: suite)
         HotKeys.suspend()
+        removeFiles([suite, SystemKeys.domain as String])
+    }
+
+    /// 試しの置き場のファイルを残さない
+    static func removeFiles(_ names: [String]) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")
+        for n in names { try? FileManager.default.removeItem(at: dir.appendingPathComponent(n + ".plist")) }
     }
 }

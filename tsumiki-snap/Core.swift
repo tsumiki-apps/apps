@@ -1,4 +1,4 @@
-// まどわけの中身：寄せる先の計算・ウインドウを動かす（キーは Keys.swift・画面は main.swift）
+// つみきスナップの中身：寄せる先の計算・ウインドウを動かす（キーは Keys.swift・画面は main.swift）
 import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
@@ -43,7 +43,7 @@ enum Snapper {
         return snap(side, pid: pid)
     }
 
-    /// 自分（まどわけ）以外で最後に手前にいたアプリ。案内を閉じたあとも、元のアプリを動かせるように
+    /// 自分（つみきスナップ）以外で最後に手前にいたアプリ。案内を閉じたあとも、元のアプリを動かせるように
     static var lastOtherPID: pid_t?
     private static var targetPID: pid_t? {
         let me = ProcessInfo.processInfo.processIdentifier
