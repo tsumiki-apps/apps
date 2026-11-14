@@ -135,6 +135,23 @@ func bar(_ items: [(String, String, Bool)]) {
     y += 84
 }
 
+/// 道具の並び（2列のカード：アイコン・名前・キー・ひとこと）
+func grid(_ items: [(sym: String, name: String, key: String, note: String)]) {
+    let rowH: CGFloat = 50, colW = (W - 2 * M) / 2
+    let n = (items.count + 1) / 2
+    round(NSRect(x: M, y: y, width: W - 2 * M, height: rowH * CGFloat(n)), 14, fill: card, stroke: line)
+    line.setFill(); NSRect(x: M + colW, y: y + 8, width: 1, height: rowH * CGFloat(n) - 16).fill()
+    for (i, it) in items.enumerated() {
+        let col = CGFloat(i % 2), top = y + rowH * CGFloat(i / 2), x = M + colW * col
+        if i / 2 > 0 { line.setFill(); NSRect(x: x + 56, y: top, width: colW - 64, height: 1).fill() }
+        tile(it.sym, x + 12, top + 8)
+        _ = text(it.name, x + 56, top + 8, 12.5, ink, weight: "Bold")
+        _ = text(it.note, x + 56, top + 27, 10, inkMid, width: colW - 56 - 44)
+        keycap(it.key, right: x + colW - 12, top + 13)
+    }
+    y += rowH * CGFloat(n) + 16
+}
+
 /// 番号つきの手順
 func steps(_ items: [String]) {
     for (i, s) in items.enumerated() {
@@ -242,13 +259,29 @@ notes([("arrow.up.and.down.and.arrow.left.and.right", "画面に浮かべる。�
        ("xmark.circle", "ダブルクリックか esc で閉じる"),
        ("doc.on.clipboard", "右クリックでコピー")])
 
-heading("編集", "pencil.tip")
-rows([("arrow.up.right", "矢印", nil, "ドラッグで引く"),
-      ("rectangle", "四角", nil, "囲んで目立たせる"),
-      ("textformat", "文字", nil, "押した所に書く"),
-      ("square.grid.3x3.fill", "モザイク", nil, "見せたくない所を隠す"),
-      ("arrow.uturn.backward", "戻す", "⌘Z", "ひとつ前に"),
+heading("仕上げ（編集画面の下の段）", "square.and.arrow.down")
+rows([("photo.artframe", "背景", nil, "余白・地の色・角丸・影を付ける"),
+      ("hand.draw", "ドラッグ", nil, "つまんで他のアプリへそのまま渡す"),
+      ("doc.on.doc", "コピー", "⌘C", "仕上がりをクリップボードへ（ピンで浮かべることも）"),
       ("square.and.arrow.down", "保存", "⌘S", "元は残して「〜 編集.png」を横に作る")])
+
+// MARK: - 4b 編集
+
+newPage("編集", "pencil.tip")
+heading("道具（キー1つで持ち替え）", "pencil.and.ruler")
+grid([("cursorarrow", "選ぶ", "V", "動かす・消す"), ("arrow.up.right", "矢印", "A", "指す"),
+      ("line.diagonal", "線", "L", "まっすぐ引く"), ("rectangle", "四角", "R", "囲む"),
+      ("rectangle.fill", "塗り", "F", "塗りつぶす"), ("circle", "丸", "O", "丸で囲む"),
+      ("scribble", "ペン", "P", "手書き"), ("highlighter", "蛍光ペン", "H", "透けて目立つ"),
+      ("textformat", "文字", "T", "押した所に書く"), ("1.circle", "番号", "N", "押すたび 1, 2, 3…"),
+      ("square.grid.3x3.fill", "モザイク", "M", "隠す（粗いマス目）"), ("drop", "ぼかし", "B", "隠す（なめらか）"),
+      ("light.max", "スポット", "S", "周りを暗くする"), ("crop", "切り抜き", "C", "範囲を選んで return")])
+heading("操作", "hand.tap")
+notes([("paintpalette", "色は7色・太さは3段（1・2・3 キー）。選んだ書き込みにも効く"),
+       ("shift", "shift を押しながら：まっすぐ（45°ごと）・正方形・正円"),
+       ("cursorarrow.motionlines", "選ぶ：押して選ぶ・ドラッグで動かす・矢印キーで少しずつ・delete で消す"),
+       ("character.cursor.ibeam", "文字はダブルクリックで直す。return で確定・esc でやめる"),
+       ("arrow.uturn.backward", "戻す ⌘Z・やり直す ⇧⌘Z（切り抜きも戻せる）")])
 
 // MARK: - 5 設定・困ったとき
 

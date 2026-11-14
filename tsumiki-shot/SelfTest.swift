@@ -310,6 +310,19 @@ enum SelfTest {
         let dirOK = px.count == 8 && px[0] > 200 && px[2] < 50 && px[6] > 200
         print("\(dirOK ? "✓" : "✗") 回す向き：右回りで左端（赤）が上・右端（青）が下")
         allOK = allOK && dirOK
+        // 書き込みの当たり判定・動かす（画面なしで確かめられる所だけ。描いた画素は --extratest）
+        let ln = Mark(.line(CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0)))
+        let bx = Mark(.box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let geoOK = Annotate.hits(ln, CGPoint(x: 50, y: 3), unit: 1, slop: 2, strict: true)
+            && !Annotate.hits(ln, CGPoint(x: 50, y: 10), unit: 1, slop: 2, strict: true)
+            && Annotate.hits(bx, CGPoint(x: 1, y: 50), unit: 1, slop: 2, strict: true)
+            && !Annotate.hits(bx, CGPoint(x: 50, y: 50), unit: 1, slop: 2, strict: true)
+            && Annotate.hits(bx, CGPoint(x: 50, y: 50), unit: 1, slop: 2, strict: false)
+            && Annotate.moved(ln, 5, 7).shape == .line(CGPoint(x: 5, y: 7), CGPoint(x: 105, y: 7))
+            && Annotate.bounds(Mark(.number(CGPoint(x: 50, y: 50), 1)), unit: 2) == CGRect(x: 24, y: 24, width: 52, height: 52)
+            && abs(Annotate.segDist(CGPoint(x: 120, y: 0), CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0)) - 20) < 0.001
+        print("\(geoOK ? "✓" : "✗") 書き込み：線・四角の当たり判定（縁と中）・動かす・番号の大きさ")
+        allOK = allOK && geoOK
         return allOK
     }
 

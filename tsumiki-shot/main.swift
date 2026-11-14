@@ -755,7 +755,7 @@ final class PreviewPanel: NSObject {
         // ボタンはアイコンだけ（説明は指を乗せると出る）。主ボタン（編集・再生）だけ色つき
         let movie = url.pathExtension == "mp4"
         var views: [NSView] = [movie ? iconButton("play.fill", "再生", self, #selector(openFile), prominent: true)
-                                     : iconButton("pencil.tip", "編集（矢印・四角・文字・モザイク）", self, #selector(edit), prominent: true)]
+                                     : iconButton("pencil.tip", "編集（矢印・四角・文字・ペン・番号・モザイク・切り抜き・背景など）", self, #selector(edit), prominent: true)]
         if !movie { views.append(iconButton("pin", "画面に浮かべる", self, #selector(pin))) }
         // つみきトレイが入っているときだけ：ドラッグせずにトレイへ置く
         if PreviewPanel.trayApp != nil { views.append(iconButton("tray.and.arrow.down", "トレイへ", self, #selector(toTray))) }
@@ -948,7 +948,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let main = NSMenu()
         let top = NSMenuItem(); main.addItem(top)
         let m = NSMenu(title: "編集"); top.submenu = m
-        for (t, sel, k) in [("取り消す", Selector(("undo:")), "z"), ("カット", #selector(NSText.cut(_:)), "x"),
+        for (t, sel, k) in [("取り消す", Selector(("undo:")), "z"), ("やり直す", Selector(("redo:")), "Z"), ("カット", #selector(NSText.cut(_:)), "x"),
                             ("コピー", #selector(NSText.copy(_:)), "c"), ("ペースト", #selector(NSText.paste(_:)), "v"),
                             ("すべてを選択", #selector(NSText.selectAll(_:)), "a")] {
             m.addItem(NSMenuItem(title: t, action: sel, keyEquivalent: k))
@@ -1127,6 +1127,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 閉じる処理の最中に自分が解放されないよう、外すのは次の周回で
         e.onClose = { [weak self, weak e] in DispatchQueue.main.async { self?.editors.removeAll { $0 === e } } }
         e.onSaved = { [weak self] img, url in NSSound(named: "Tink")?.play(); self?.preview.show(image: img, url: url, scale: scale) }
+        e.onPin = { [weak self] img in self?.pinImage(img, scale: scale) }
         editors.append(e)
         e.show()
     }

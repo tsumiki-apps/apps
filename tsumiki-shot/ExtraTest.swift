@@ -19,8 +19,8 @@ enum ExtraTest {
         let W = base.width
         let unit: CGFloat = 2
         let mos = CGRect(x: 20, y: 30, width: 240, height: 112)
-        let marks: [Mark] = [.mosaic(mos), .arrow(CGPoint(x: 300, y: 300), CGPoint(x: 420, y: 220)),
-                             .box(CGRect(x: 40, y: 400, width: 200, height: 120)), .text(CGPoint(x: 60, y: 540), "ここ")]
+        let marks: [Mark] = [Mark(.mosaic(mos)), Mark(.arrow(CGPoint(x: 300, y: 300), CGPoint(x: 420, y: 220))),
+                             Mark(.box(CGRect(x: 40, y: 400, width: 200, height: 120))), Mark(.text(CGPoint(x: 60, y: 540), "ここ"))]
         guard let flat = Annotate.flatten(base, marks, unit: unit) else { check("焼き込み", false); return false }
         SelfTest.save(flat, to: dir + "/焼き込み.png")
         let a = SelfTest.pixels(base), b = SelfTest.pixels(flat)
@@ -42,6 +42,8 @@ enum ExtraTest {
         for y in 540..<580 { for x in 60..<140 where isRed(px(b, x, y)) { redInText += 1 } }
         check("文字が描かれる", redInText > 80, "赤い画素 \(redInText)")
         check("書き込みの外は元のまま", px(a, W - 5, 590) == px(b, W - 5, 590) && px(a, 5, 5) == px(b, 5, 5))
+
+        drawingTests(base, unit: unit, dir: dir, check)
 
         // 2. 文字の読み取り
         let lines = ["つみきショットで文字を読む", "Scroll capture 2026"]
@@ -67,8 +69,11 @@ enum ExtraTest {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         let shot = base.cropping(to: CGRect(x: 0, y: 0, width: W, height: 600))!
         let e = EditorWindow(image: shot, url: URL(fileURLWithPath: "/tmp/スクショ 見本.png"), unit: 1)
-        e.canvas.marks = marks
-        e.tools.selectedSegment = 1
+        e.canvas.marks = marks + [Mark(.number(CGPoint(x: 400, y: 60), 1)), Mark(.number(CGPoint(x: 400, y: 110), 2)),
+                                  Mark(.marker([CGPoint(x: 20, y: 248), CGPoint(x: 230, y: 248)]), color: 2),
+                                  Mark(.oval(CGRect(x: 290, y: 400, width: 150, height: 70)), color: 4),
+                                  Mark(.pen([CGPoint(x: 300, y: 500), CGPoint(x: 330, y: 530), CGPoint(x: 360, y: 505), CGPoint(x: 400, y: 540)]), color: 3)]
+        e.choose(.arrow)
         if let v = e.window?.contentView {
             e.window?.appearance = NSAppearance(named: .darkAqua)
             v.wantsLayer = true
@@ -80,6 +85,35 @@ enum ExtraTest {
             v.cacheDisplay(in: v.bounds, to: rep)
             SelfTest.save(rep.cgImage!, to: dir + "/編集画面.png")
             check("編集画面を描ける", rep.pixelsWide > 0)
+            // 背景（余白・角丸・影）とスポットを付けた見本
+            var bg = Backdrop(); bg.on = true; bg.fill = 1; bg.pad = 40
+            e.canvas.backdrop = bg
+            e.canvas.marks = [Mark(.spot(CGRect(x: 20, y: 150, width: 300, height: 120))), Mark(.number(CGPoint(x: 330, y: 160), 1)),
+                              Mark(.arrow(CGPoint(x: 420, y: 330), CGPoint(x: 330, y: 230)))]
+            e.choose(.spot)
+            v.layoutSubtreeIfNeeded()
+            let rep2 = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
+            v.cacheDisplay(in: v.bounds, to: rep2)
+            SelfTest.save(rep2.cgImage!, to: dir + "/編集画面_背景.png")
+            check("編集画面：背景を付けても窓の幅からはみ出さない", e.canvas.frame.width <= v.bounds.width + 1, "")
+
+            // キー：⌘Z＝戻す・⇧⌘Z＝やり直す（窓に届いたキーで確かめる）
+            func key(_ ch: String, _ mods: NSEvent.ModifierFlags) -> Bool {
+                guard let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0,
+                                                windowNumber: e.window?.windowNumber ?? 0, context: nil, characters: ch,
+                                                charactersIgnoringModifiers: ch, isARepeat: false, keyCode: 6) else { return false }
+                return e.window?.performKeyEquivalent(with: ev) ?? false
+            }
+            let n0 = e.canvas.marks.count
+            e.canvas.add(Mark(.box(CGRect(x: 10, y: 10, width: 50, height: 50))))
+            e.canvas.add(Mark(.box(CGRect(x: 80, y: 10, width: 50, height: 50))))
+            _ = key("z", .command)
+            check("キー：⌘Z で1つ戻す", e.canvas.marks.count == n0 + 1, "\(e.canvas.marks.count - n0)")
+            _ = key("Z", [.command, .shift])
+            check("キー：⇧⌘Z でやり直す（戻すにならない）", e.canvas.marks.count == n0 + 2, "\(e.canvas.marks.count - n0)")
+            _ = key("z", .command); _ = key("z", .command)
+            _ = key("z", [.command, .shift])
+            check("キー：⇧⌘Z（小文字で届いても）やり直す", e.canvas.marks.count == n0 + 1, "\(e.canvas.marks.count - n0)")
         }
 
         // 4. 録画の書き出し（作りものの30コマ/秒×1.5秒 → MP4）
@@ -495,5 +529,136 @@ enum ExtraTest {
         let ws = onScreenWindows()
         print("・画面に出ている窓：\(ws.count)個")
         return ok
+    }
+}
+
+// MARK: - 編集の道具（描いた画素と、選ぶ・切り抜き・戻すの動き）
+extension ExtraTest {
+    static func drawingTests(_ base: CGImage, unit: CGFloat, dir: String, _ check: (String, Bool, String) -> Void) {
+        let W = base.width
+        let a = SelfTest.pixels(base)
+        func px(_ p: [UInt8], _ w: Int, _ x: Int, _ y: Int) -> (Int, Int, Int, Int) {
+            let i = (y * w + x) * 4; return (Int(p[i]), Int(p[i + 1]), Int(p[i + 2]), Int(p[i + 3]))
+        }
+        func near(_ c: (Int, Int, Int, Int), _ hex: UInt32, _ tol: Int = 40) -> Bool {
+            abs(c.0 - Int(hex >> 16 & 255)) <= tol && abs(c.1 - Int(hex >> 8 & 255)) <= tol && abs(c.2 - Int(hex & 255)) <= tol
+        }
+        let marks: [Mark] = [
+            Mark(.line(CGPoint(x: 40, y: 40), CGPoint(x: 240, y: 40)), color: 4),
+            Mark(.oval(CGRect(x: 280, y: 40, width: 180, height: 100)), color: 3),
+            Mark(.fill(CGRect(x: 40, y: 150, width: 100, height: 50)), color: 5),
+            Mark(.pen([CGPoint(x: 300, y: 200), CGPoint(x: 340, y: 240), CGPoint(x: 380, y: 200), CGPoint(x: 420, y: 240)]), color: 0, size: 2),
+            Mark(.marker([CGPoint(x: 40, y: 300), CGPoint(x: 260, y: 300)]), color: 2),
+            Mark(.number(CGPoint(x: 420, y: 300), 7), color: 0),
+            Mark(.blur(CGRect(x: 40, y: 380, width: 200, height: 100))),
+        ]
+        guard let img = Annotate.render(base, marks, unit: unit) else { check("新しい道具の焼き込み", false, ""); return }
+        SelfTest.save(img, to: dir + "/新しい道具.png")
+        let b = SelfTest.pixels(img)
+        check("線（青）", near(px(b, W, 140, 40), 0x0A84FF, 60), "\(px(b, W, 140, 40))")
+        check("丸：縁は緑・中は元のまま", near(px(b, W, 280, 90), 0x34C759, 60) && px(a, W, 370, 90) == px(b, W, 370, 90), "")
+        check("塗り（墨）", near(px(b, W, 90, 175), 0x1D1A15, 30), "\(px(b, W, 90, 175))")
+        check("ペン（太い・なめらか）", px(b, W, 335, 225).0 > 200 && px(b, W, 335, 225).1 < 110, "\(px(b, W, 335, 225))")
+        let o = px(a, W, 150, 300), h = px(b, W, 150, 300)
+        check("蛍光ペン：透けて黄みが乗る（青が減り赤は残る）", h.2 < o.2 - 40 && h.0 > o.0 - 40 && h.2 > 20, "元 \(o) → \(h)")
+        let numEdge = px(b, W, 420 - 22, 300)
+        check("番号：赤い丸", numEdge.0 > 200 && numEdge.1 < 110, "\(numEdge)")
+        func roughness(_ p: [UInt8], _ r: CGRect) -> Int {
+            var s = 0
+            for y in Int(r.minY)..<Int(r.maxY) { for x in Int(r.minX)..<(Int(r.maxX) - 1) {
+                let c = px(p, W, x, y), d = px(p, W, x + 1, y); s += abs(c.0 - d.0) + abs(c.1 - d.1) + abs(c.2 - d.2) } }
+            return s
+        }
+        let br = CGRect(x: 44, y: 384, width: 192, height: 92)
+        let r0 = roughness(a, br), r1 = roughness(b, br)
+        check("ぼかし：細かい模様が消える", r0 > 0 && r1 * 5 < r0, "となりとの差 \(r0) → \(r1)")
+        let sp = Annotate.render(base, [Mark(.spot(CGRect(x: 300, y: 380, width: 160, height: 100)))], unit: unit).map { SelfTest.pixels($0) } ?? a
+        let out = px(sp, W, 470, 500), outA = px(a, W, 470, 500), inS = px(sp, W, 380, 430)
+        check("スポット：外は暗く・中は元のまま", out.0 < outA.0 * 6 / 10 + 4 && inS == px(a, W, 380, 430), "外 \(outA) → \(out)")
+        check("書き込みの無い所は元のまま", px(a, W, W - 5, 590) == px(b, W, W - 5, 590), "")
+
+        // 背景（余白・角丸・影）
+        var bg = Backdrop(); bg.on = true; bg.pad = 48; bg.fill = 0; bg.round = true; bg.shadow = true
+        let pad = Int(48 * unit)
+        if let r = Annotate.render(base, [], bg: bg, unit: unit) {
+            SelfTest.save(r, to: dir + "/背景.png")
+            let p = SelfTest.pixels(r)
+            check("背景：余白のぶん大きくなる", r.width == W + 2 * pad && r.height == base.height + 2 * pad, "\(r.width)×\(r.height)")
+            check("背景：角は地の色（紙）", near(px(p, r.width, 2, 2), 0xF5F4F0, 12), "\(px(p, r.width, 2, 2))")
+            check("背景：画像の真ん中は元のまま", px(p, r.width, pad + W / 2, pad + 300) == px(a, W, W / 2, 300), "")
+            let shadowY = pad + base.height + 10
+            var flat = bg; flat.shadow = false
+            let q = Annotate.render(base, [], bg: flat, unit: unit).map { SelfTest.pixels($0) } ?? p
+            let sh = px(p, r.width, pad + W / 2, shadowY), noSh = px(q, r.width, pad + W / 2, shadowY)
+            check("背景：下に影が落ちる", sh.0 + 8 < noSh.0, "影あり \(sh)・なし \(noSh)")
+        } else { check("背景", false, "作れない") }
+        var clear = bg; clear.fill = backdropFills.count - 1; clear.shadow = false
+        if let r = Annotate.render(base, [], bg: clear, unit: unit) {
+            let p = SelfTest.pixels(r)
+            check("背景：透明＋角丸（画像の角が透ける）", px(p, r.width, 2, 2).3 == 0 && px(p, r.width, pad + 1, pad + 1).3 < 40
+                  && px(p, r.width, pad + 40, pad + 40).3 == 255, "角 \(px(p, r.width, pad + 1, pad + 1).3)")
+        }
+        check("背景なしは前と同じ焼き込み", Annotate.flatten(base, marks, unit: unit).map { SelfTest.pixels($0) == b } ?? false, "")
+
+        // 選ぶ・動かす・複製・消す・色を変える・戻す・やり直す
+        let cv = CanvasView(base: base, unit: unit, width: 600)
+        let arrow = Mark(.arrow(CGPoint(x: 100, y: 100), CGPoint(x: 300, y: 100)))
+        let box = Mark(.box(CGRect(x: 50, y: 50, width: 400, height: 300)), color: 4)
+        cv.add(box); cv.add(arrow)
+        check("選ぶ：線の上を押すと矢印", cv.hitIndex(CGPoint(x: 200, y: 101)) == 1, "")
+        check("選ぶ：四角の縁を押すと四角", cv.hitIndex(CGPoint(x: 50, y: 200)) == 0, "")
+        check("選ぶ：四角の中（他に無い所）でも四角", cv.hitIndex(CGPoint(x: 200, y: 250)) == 0, "")
+        check("選ぶ：何も無い所は無し", cv.hitIndex(CGPoint(x: 470, y: 560)) == nil, "")
+        check("矢印キー：何も選んでいなければ動かさない（スクロールに回す）", !cv.nudge(10, 0) && cv.marks[1] == arrow, "")
+        cv.tool = .arrow
+        cv.selected = 1
+        cv.setStyle(color: 2)
+        check("描いた直後に色を押しても、描いたものは変わらない", cv.marks[1] == arrow && cv.color == 2, "")
+        cv.tool = .select
+        cv.nudge(10, 0)
+        check("動かす（矢印キー）", cv.marks[1].shape == .arrow(CGPoint(x: 110, y: 100), CGPoint(x: 310, y: 100)), "")
+        cv.setStyle(color: 3, size: 2)
+        check("選んでいる書き込みの色・太さを変える", cv.marks[1].color == 3 && cv.marks[1].size == 2, "")
+        cv.duplicateSelected()
+        check("複製（少しずらして上に）", cv.marks.count == 3 && cv.selected == 2, "")
+        cv.deleteSelected()
+        check("消す", cv.marks.count == 2 && cv.selected == nil, "")
+        cv.undo()
+        check("戻す：消したのが戻る", cv.marks.count == 3, "")
+        cv.undo(); cv.undo()
+        check("戻す：色・太さが戻る（位置はそのまま）", cv.marks.count == 2 && cv.marks[1] == Mark(.arrow(CGPoint(x: 110, y: 100), CGPoint(x: 310, y: 100))), "\(cv.marks.count)件")
+        cv.undo()
+        check("戻す：動かす前に戻る", cv.marks.count == 2 && cv.marks[1] == arrow, "")
+        cv.redo()
+        check("やり直す", cv.marks[1].shape == .arrow(CGPoint(x: 110, y: 100), CGPoint(x: 310, y: 100)), "")
+        cv.add(Mark(.number(CGPoint(x: 500, y: 500), 1))); cv.add(Mark(.number(CGPoint(x: 520, y: 500), 2)))
+        check("番号は続きから（3）", cv.nextNumber == 3, "")
+        cv.locked = true
+        let lockedMarks = cv.marks
+        cv.undo(); cv.selected = 0; cv.setStyle(color: 5); cv.nudge(5, 5)
+        check("保存中は書き込みが変わらない", cv.marks == lockedMarks, "")
+        cv.locked = false; cv.selected = nil
+
+        // モザイク・ぼかしの入れ物は大きさで上限（大きな範囲をドラッグしても溜まらない）
+        let hc = HideCache()
+        for i in 0..<40 { _ = hc.get("k\(i)") { Annotate.bitmap(2000, 2000, nil)?.makeImage() } }
+        check("隠しの入れ物は 256MB まで", hc.byteCount <= HideCache.limit && hc.byteCount > 0, "\(hc.byteCount >> 20)MB")
+
+        // 切り抜き：画像が小さくなり、書き込みも一緒に動く → 戻すで元の大きさ
+        let before = cv.marks
+        cv.setCrop(CGRect(x: 60, y: 80, width: 400, height: 300))
+        cv.applyCrop()
+        check("切り抜き：大きさ", cv.base.width == 400 && cv.base.height == 300, "\(cv.base.width)×\(cv.base.height)")
+        check("切り抜き：書き込みも一緒に動く", cv.marks[0].shape == .box(CGRect(x: -10, y: -30, width: 400, height: 300)), "")
+        let cropOut = Annotate.render(cv.base, [], unit: unit).map { SelfTest.pixels($0) } ?? []
+        check("切り抜き：中身は元の同じ所", cropOut.count == 400 * 300 * 4 && px(cropOut, 400, 10, 10) == px(a, W, 70, 90), "")
+        cv.undo()
+        check("切り抜きを戻す", cv.base.width == W && cv.marks == before, "")
+        cv.redo()
+        check("切り抜きをやり直す", cv.base.width == 400, "")
+
+        // ペンの1回押し（点）・Shift でまっすぐ
+        let dotImg = Annotate.render(base, [Mark(.pen([CGPoint(x: 450, y: 560), CGPoint(x: 450.1, y: 560)]), size: 2)], unit: unit)
+        check("ペンの1回押しは点", dotImg.map { px(SelfTest.pixels($0), W, 450, 560).0 > 200 } ?? false, "")
     }
 }
