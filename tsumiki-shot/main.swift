@@ -298,6 +298,7 @@ final class ScrollSession: NSObject {
     private var timer: Timer?
     private var busy = false
     private var lostStreak = 0
+    private var backward = false                    // 手で戻る向きに回している（札に「逆向き」）
     private var driver: AutoDriver?                 // 自動スクロール中だけ
     private let watcher = HandWatcher()
     private var autoButton: NSButton!
@@ -363,19 +364,19 @@ final class ScrollSession: NSObject {
         autoButton?.isHidden = choosing
         doneButton?.isHidden = choosing
         if choosing { hintLabel.stringValue = "向き"; hintLabel.textColor = .secondaryLabelColor }
-        else { showState(height: stitcher.length, lost: lostStreak >= 2 && driver == nil, auto: p == .auto) }
+        else { showState(height: stitcher.length, lost: lostStreak >= 2 && driver == nil, back: backward && driver == nil, auto: p == .auto) }
         placePanel()
     }
 
     /// 見た目の確認用：高さと「ゆっくり」の状態を直接入れる
-    func showState(height: Int, lost: Bool, full: Bool = false, auto: Bool = false) {
-        frameView.warn = lost || full
-        hintLabel.stringValue = full ? "上限" : lost ? "ゆっくり" : auto ? "自動" : "スクロール"
+    func showState(height: Int, lost: Bool, back: Bool = false, full: Bool = false, auto: Bool = false) {
+        frameView.warn = lost || full || back
+        hintLabel.stringValue = full ? "上限" : back ? "逆向き" : lost ? "ゆっくり" : auto ? "自動" : "スクロール"
         let sym = auto ? "pause.fill" : "play.fill"
         autoButton?.image = NSImage(systemSymbolName: sym, accessibilityDescription: auto ? "自動を止める" : "自動スクロール")
         autoButton?.title = auto ? "停止" : "自動"
         autoButton?.toolTip = auto ? "自動を止める（手で触っても止まる）" : "自動で端までスクロールして撮る（初回はアクセシビリティの許可）"
-        hintLabel.textColor = lost || full ? .systemRed : .secondaryLabelColor
+        hintLabel.textColor = lost || full || back ? .systemRed : .secondaryLabelColor
         heightLabel.stringValue = height > 0 ? "\(height.formatted()) px" : "—"
     }
 
@@ -481,9 +482,12 @@ final class ScrollSession: NSObject {
 
     private func update(_ r: StepResult?, height: Int) {
         if case .lost = r { lostStreak += 1 } else if r != nil, r != .still { lostStreak = 0 }
+        // 戻る向き（ナチュラルスクロールで逆に回した、など）。進めば消える。止まっている間は出したまま
+        // 自動の切り替えで出た「戻る」は本人の手ではないので出さない
+        if case .back = r, driver == nil { backward = true } else if case .added = r { backward = false }
         guard phase != .direction else { return }
         if r == .full { showState(height: height, lost: false, full: true); return }
-        showState(height: height, lost: lostStreak >= 2 && driver == nil, auto: driver != nil)
+        showState(height: height, lost: lostStreak >= 2 && driver == nil, back: backward && driver == nil, auto: driver != nil)
         if let d = driver, d.pilot.waiting { hintLabel.stringValue = "待機" }   // 止まっている＝続きの読み込みを待っている
     }
 
@@ -513,6 +517,7 @@ final class ScrollSession: NSObject {
     func stopAuto() {
         guard driver != nil else { return }
         driver = nil
+        backward = false
         watcher.stop()
         setPhase(.ready)
     }
@@ -525,7 +530,9 @@ final class ScrollSession: NSObject {
         case nil: break                        // 間をあける・ページが止まるのを待つ
         case let .scroll(dx, dy)?: Wheel.post(dx: dx, dy: dy, at: center)
         case .finish?:                         // 端まで来た（見失い続けた・どの向きにも動かない、も）
-            if lostStreak > 0 { note = "継ぎ目を見失ったので止めました" }
+            // 1回も継げずに終わった＝見失いではなく「動かなかった」（finish が知らせる）
+            if d.pilot.bounced, joined { note = "ページが戻り続けたので止めました" }
+            else if lostStreak > 0, joined { note = "継ぎ目を見失ったので止めました" }
             if let m = mouseBefore { Wheel.moveMouse(to: m) }
             finish()
         }

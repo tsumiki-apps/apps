@@ -188,7 +188,7 @@ enum SelfTest {
 
     static func symbol(_ r: StepResult, scale: Int) -> String {
         switch r { case .first: return "始"; case .added(let n): return "+\(n / scale)"
-        case .still: return "止"; case .lost: return "×"; case .full: return "満" }
+        case .still: return "止"; case .lost: return "×"; case .back: return "戻"; case .full: return "満" }
     }
 
     static func run(outDir: String?) -> Bool {
@@ -197,7 +197,7 @@ enum SelfTest {
             Case(name: "ふつう（固定ヘッダー・フッターあり）", offsets: [0, 37, 120, 121, 260, 410, 410, 655, 900, 1180, 1500, 1820],
                  expect: "始 +37 +83 +1 +139 +150 止 +245 +245 +280 +320 +320"),
             Case(name: "途中で戻る・止まる", offsets: [0, 200, 120, 80, 200, 330, 330, 330, 520, 700],
-                 expect: "始 +200 × × 止 +130 止 止 +190 +180"),
+                 expect: "始 +200 戻 戻 止 +130 止 止 +190 +180"),
             Case(name: "速すぎて途切れる", offsets: [0, 150, 300, 1200, 1350], expect: "始 +150 +150 × ×"),
             Case(name: "固定帯なし", offsets: [0, 90, 250, 251, 500, 760, 1010], expect: "始 +90 +160 +1 +249 +260 +250",
                  header: 0, footer: 0),
@@ -226,7 +226,7 @@ enum SelfTest {
             Case(name: "横：左右に固定サイドバー", offsets: [0, 37, 120, 121, 260, 410, 410, 655, 900, 1180, 1500, 1820],
                  expect: "始 +37 +83 +1 +139 +150 止 +245 +245 +280 +320 +320", horizontal: true),
             Case(name: "横：途中で戻る・止まる", offsets: [0, 200, 120, 80, 200, 330, 330, 330, 520, 700],
-                 expect: "始 +200 × × 止 +130 止 止 +190 +180", horizontal: true),
+                 expect: "始 +200 戻 戻 止 +130 止 止 +190 +180", horizontal: true),
             Case(name: "横：サイドバーなし", offsets: [0, 90, 250, 251, 500, 760, 1010], expect: "始 +90 +160 +1 +249 +260 +250",
                  header: 0, footer: 0, horizontal: true),
             Case(name: "横：Retina（2倍）", offsets: [0, 45, 200, 420, 700], expect: "始 +45 +155 +220 +280", scale: 2, horizontal: true),

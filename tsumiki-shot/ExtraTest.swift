@@ -120,13 +120,13 @@ enum ExtraTest {
         }
 
         // 7. 自動スクロール：本物のつなぎ手に、送った量だけ動く架空のページを見せて、端まで行って止まるか
-        func autoRun(sign: Int, horizontal: Bool) -> (Bool, String) {
+        func autoRun(sign: Int, horizontal: Bool, start: Int = 0) -> (Bool, String) {
             let body = SelfTest.makeBody(height: 2400)
             let mid = SelfTest.viewH - SelfTest.header - SelfTest.footer
             let maxOff = body.height - mid
             let st = AutoStitcher()
             let pilot = AutoPilot(viewLength: CGFloat(horizontal ? SelfTest.viewH : SelfTest.viewH))
-            var off = 0, n = 0, turns = 0
+            var off = start, n = 0, turns = 0
             func shot() -> CGImage {
                 let f = SelfTest.frame(body: body, offset: off)
                 return horizontal ? rotate90(f, clockwise: false)! : f
@@ -147,25 +147,25 @@ enum ExtraTest {
             }
             guard let out = st.compose() else { return (false, "合成できない") }
             let len = horizontal ? out.width : out.height
-            let want = SelfTest.header + body.height + SelfTest.footer
+            let want = SelfTest.header + body.height - start + SelfTest.footer     // 途中から始めたら、そこから下
             let ok = next == .finish && len == want && st.axis == (horizontal ? .horizontal : .vertical)
             return (ok, "\(len)px（正解 \(want)）・\(n)回・向きの試し直し \(turns)回")
         }
         // 本物に近いページ：合図を受けても3コマかけて滑らかに動き、読み込んだ所の端に来ると1.5秒後に続きを読み込む
         // （1コマ＝0.12秒。合図の間合いは AutoDriver が決める。前の作り＝1コマごとに送る、では 1100px・1.1秒で止まっていた）
-        func realRun(loadWait: Double = 1.5) -> (Bool, String) {
+        func realRun(loadWait: Double = 1.5, start: Int = 0, sign: Int = 1) -> (Bool, String) {
             let body = SelfTest.makeBody(height: 2400)
             let mid = SelfTest.viewH - SelfTest.header - SelfTest.footer
             let maxOff = body.height - mid
-            var loaded = min(maxOff, 500)          // いま読み込んである所まで
+            var loaded = min(maxOff, start + 500)  // いま読み込んである所まで
             var reachedAt: Double? = nil
             let st = AutoStitcher()
             st.force(.vertical)                    // 札で「縦」を選んだ
             let driver = AutoDriver(pilot: AutoPilot(viewLength: CGFloat(SelfTest.viewH)))
-            var off = 0, pending = 0, t = 0.0, n = 0, sent = 0
+            var off = start, pending = 0, t = 0.0, n = 0, sent = 0
             _ = st.add(SelfTest.frame(body: body, offset: off))
             var next = driver.begin(now: t)
-            if case let .scroll(_, dy) = next { pending -= dy; sent += abs(dy) }
+            if case let .scroll(_, dy) = next { pending -= sign * dy; sent += abs(dy) }
             while n < 600 {
                 n += 1; t += 0.12
                 // ページの動き：残りの1/3ずつ（滑らか）
@@ -179,16 +179,17 @@ enum ExtraTest {
                 guard let nx = driver.frame(r, now: t) else { continue }
                 next = nx
                 guard case let .scroll(_, dy) = next else { break }
-                pending -= dy; sent += abs(dy)
+                pending -= sign * dy; sent += abs(dy)
             }
             let out = st.compose()
             let len = out?.height ?? 0
-            let want = SelfTest.header + body.height + SelfTest.footer
+            let want = SelfTest.header + body.height - start + SelfTest.footer
             let speed = Int(Double(sent) / max(t, 0.01))
             // 速さ：1秒に画面の高さの6割まで（前の作りは毎秒 1500点）
             return (next == .finish && len == want && Double(sent) / t <= 0.6 * Double(SelfTest.viewH), "\(len)px（正解 \(want)）・\(String(format: "%.1f", t))秒・合図 \(speed)点/秒")
         }
         let rr = realRun(); check("自動スクロール：滑らかに動き・続きを読み込むページでも端まで", rr.0, rr.1)
+        let rr5 = realRun(start: 700, sign: -1); check("自動スクロール：滑らかに動くページの途中から・合図が逆向き（ナチュラル）でも端まで", rr5.0, rr5.1)
         let rr4 = realRun(loadWait: 4.0); check("自動スクロール：続きの読み込みに4秒かかっても端まで", rr4.0, rr4.1)
         // 縦を選んだのに全く動かない範囲（合図が届かない・短いページ）でも、いつまでも送り続けずに終わる
         do {
@@ -213,6 +214,78 @@ enum ExtraTest {
         let r1 = autoRun(sign: 1, horizontal: false); check("自動スクロール：縦・ふつうの向きで端まで", r1.0, r1.1)
         let r2 = autoRun(sign: -1, horizontal: false); check("自動スクロール：縦・合図が逆向きでも端まで", r2.0, r2.1)
         let r3 = autoRun(sign: 1, horizontal: true); check("自動スクロール：横で端まで", r3.0, r3.1)
+        // ページの途中から自動を始める（逆向きだと端で「動かない」にならず、戻る＝前は「見失った」で1画面だけになっていた）
+        let r5 = autoRun(sign: -1, horizontal: false, start: 700); check("自動スクロール：途中から・合図が逆向き（ナチュラル）でも端まで", r5.0, r5.1)
+        let r6 = autoRun(sign: 1, horizontal: false, start: 700); check("自動スクロール：途中から・ふつうの向きで端まで", r6.0, r6.1)
+        let r7 = autoRun(sign: -1, horizontal: true, start: 700); check("自動スクロール：途中から・横で合図が逆向きでも端まで", r7.0, r7.1)
+        // 戻った（.back）ら、まだ継いでいなければすぐ同じ軸の逆向きへ。継いだ後の戻りでは切り替えない
+        do {
+            let p = AutoPilot(viewLength: 600); p.axisDecided(.vertical)
+            _ = p.begin()
+            let n1 = p.next(after: .back(180))
+            let n2 = p.next(after: .back(60))           // 出発点へ戻る途中＝もう切り替えない
+            check("自動スクロール：戻ったら逆向きに切り替え（戻る途中では切り替えない）", n1 == .scroll(dx: 0, dy: 180) && n2 == .scroll(dx: 0, dy: 180) && p.dirIndex == 1 && p.turns == 1, "\(n1) \(n2)")
+            let q = AutoPilot(viewLength: 600); q.axisDecided(.vertical)
+            _ = q.begin(); _ = q.next(after: .added(180))
+            let m = q.next(after: .back(30))
+            check("自動スクロール：継いだ後の戻りでは向きを変えない", q.dirIndex == 0 && m == .scroll(dx: 0, dy: -180), "\(m)")
+            // 戻ったとも言えず「見失った」が続く（逆向きに動いた先が模様の少ない所など）→ 2回で逆向きへ
+            let l = AutoPilot(viewLength: 600); l.axisDecided(.vertical)
+            _ = l.begin(); _ = l.next(after: .lost)
+            let ln = l.next(after: .lost)
+            check("自動スクロール：継ぐ前に見失いが2回続いたら逆向きへ（戻して半分にしない）", l.dirIndex == 1 && ln == .scroll(dx: 0, dy: 180), "\(ln)")
+            // 「戻った」の誤検知で逆にしても、逆で継げなければ1回だけ元の向きに戻す（その後は終える）
+            let g = AutoPilot(viewLength: 600); g.axisDecided(.vertical)
+            _ = g.begin()
+            _ = g.next(after: .back(40))                // 誤検知で逆へ（grace＝1）
+            var k = 0, nx = AutoPilot.Next.scroll(dx: 0, dy: 0)
+            while g.dirIndex == 1, k < 20 { nx = g.next(after: .back(100)); k += 1 }
+            let backToA = g.dirIndex == 0 && nx == .scroll(dx: 0, dy: -180)
+            var e = 0, end = AutoPilot.Next.scroll(dx: 0, dy: 0)
+            while end != .finish, e < 30 { end = g.next(after: .still); e += 1 }
+            check("自動スクロール：誤って逆にしても元の向きに戻し、それでも動かなければ終える", backToA && k == 4 && end == .finish && e <= 10, "戻すまで\(k)回・終えるまで\(e)回")
+            // いちばん下から始めた（下は動かない→上へ）。上で「戻った」が出ても、試し済みの下には戻らず終える
+            let d = AutoPilot(viewLength: 600); d.axisDecided(.vertical)
+            _ = d.begin()
+            for _ in 0..<3 { _ = d.next(after: .still) }
+            let up = d.dirIndex
+            var f = 0, fe = AutoPilot.Next.scroll(dx: 0, dy: 0)
+            while fe != .finish, f < 30 { fe = d.next(after: .back(150)); f += 1 }
+            check("自動スクロール：下端から始めて上が戻るだけなら終える（行ったり来たりしない）", up == 1 && fe == .finish && d.dirIndex == 1 && f <= 4, "\(f)回")
+        }
+        // 重さ：前にも後ろにも合わないコマ（速すぎ）は、逆向きも探す分だけ重い。Retina の大きな範囲（約2.7倍）で1コマの時間を測る
+        do {
+            let body = SelfTest.makeBody(height: 6000)
+            func big(_ off: Int) -> CGImage {
+                let f = SelfTest.frame(body: body, offset: off)
+                let W = f.width * 8 / 3, H = f.height * 8 / 3
+                let c = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                c.interpolationQuality = .high
+                c.draw(f, in: CGRect(x: 0, y: 0, width: W, height: H))
+                return c.makeImage()!
+            }
+            let st = Stitcher()
+            _ = st.add(big(0)); _ = st.add(big(100))       // 固定帯を決める
+            let frames = [big(1500), big(2600), big(3700)]   // どれも前と重ならない＝見失う
+            let t0 = CACurrentMediaTime()
+            var rs: [StepResult] = []
+            for f in frames { rs.append(st.add(f)) }
+            let ms = (CACurrentMediaTime() - t0) / Double(frames.count) * 1000
+            check("重さ：見失うコマ（逆向きも探す）1枚 \(frames[0].width)×\(frames[0].height)", rs.allSatisfy { $0 == .lost } && ms < 400, String(format: "%.0f ms", ms))
+            let ok = big(200)
+            let t1 = CACurrentMediaTime(); let ra = st.add(ok); _ = ra
+            check("重さ：継げるコマ 1枚（比べる目安）", true, String(format: "%.0f ms", (CACurrentMediaTime() - t1) * 1000))
+        }
+        // 手で逆に回したときは「戻」と出す（前は「×」＝札が「ゆっくり」になり、逆向きだと分からなかった）
+        do {
+            let body = SelfTest.makeBody(height: 2400)
+            let st = Stitcher()
+            _ = st.add(SelfTest.frame(body: body, offset: 600))
+            let r = st.add(SelfTest.frame(body: body, offset: 450))
+            let r2 = st.add(SelfTest.frame(body: body, offset: 800))
+            check("手動：上へ戻すと「戻」・進み直せば続きから継ぐ", { if case .back(150) = r { return true }; return false }() && r2 == .added(200), "\(r) \(r2)")
+        }
         // 送りすぎ（×）のあとは戻して半分に
         let pl = AutoPilot(viewLength: 600)
         _ = pl.begin(); _ = pl.next(after: .added(180))

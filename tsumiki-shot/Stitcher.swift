@@ -72,6 +72,7 @@ enum StepResult: Equatable {
     case first
     case added(Int)      // 継ぎ足した行数
     case still           // 動いていない（一部だけ変わった＝ホバーなども含む）
+    case back(Int)       // 戻る向きに動いた（上へ戻した・合図の正負が逆＝ナチュラルスクロール）。継がない
     case lost            // 重なりが見つからない・疑わしい（速すぎ・中身が変わった）
     case full            // 上限に達した
 }
@@ -234,13 +235,13 @@ final class Stitcher {
             let ct = min(t, h / 3), cb = min(b, h / 3)
             if let dd = findShift(cur, prev, top: ct, bottom: cb) { t0 = ct; b0 = cb; d = dd }
             else if ct + cb > 0, let dd = findShift(cur, prev, top: 0, bottom: 0) { t0 = 0; b0 = 0; d = dd }
-            else { return local ? .still : .lost }
+            else { return local ? .still : backOrLost(cur, prev, ct, cb) }
         } else {
             b0 = bottom
             // 上の固定帯は比べる範囲を狭めるだけ（継ぐ帯は下から取る）。合わなければ上も含めて探し直す
             if let dd = findShift(cur, prev, top: top, bottom: b0) { t0 = top; d = dd }
             else if top > 0, let dd = findShift(cur, prev, top: 0, bottom: b0) { t0 = 0; d = dd }
-            else { return local ? .still : .lost }
+            else { return local ? .still : backOrLost(cur, prev, top, b0) }
         }
         if ((top < 0 ? h : height) + d) * cur.width > maxPixels { isFull = true; return .full }
         guard let strip = copyRows(cur.image, from: h - b0 - d, count: d) else { return .lost }
@@ -249,6 +250,15 @@ final class Stitcher {
         bodyHeight += d
         last = cur
         return .added(d)
+    }
+
+    /// 進む向きで合わなかったとき、戻る向き（中身が下へずれた）で合うかを見る。
+    /// 前後を入れ替えて探せば「戻った量」になる。比べる相手（最後に採ったコマ）は変えないので、
+    /// 戻ってから進み直せば続きから継げる
+    private func backOrLost(_ cur: Frame, _ prev: Frame, _ t0: Int, _ b0: Int) -> StepResult {
+        if let dd = findShift(prev, cur, top: t0, bottom: b0) { return .back(dd) }
+        if t0 + b0 > 0, let dd = findShift(prev, cur, top: 0, bottom: 0) { return .back(dd) }
+        return .lost
     }
 
     /// できあがりの1枚。ヘッダー＋最初の本体は最初のコマ、フッターは最後のコマから。
@@ -348,6 +358,9 @@ final class AutoStitcher {
             if case .added = mine { return mine }
             if case .full = mine { return mine }
             if mine == .still || other == .still { return .still }
+            // 決まる前に片方だけ「戻った」＝その軸で逆向きに動いた（もう片方の「見失った」に埋もれさせない）
+            if case .back = mine { return mine }
+            if case .back = other { return other }
             return mine
         }
     }
