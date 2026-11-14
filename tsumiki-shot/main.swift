@@ -310,6 +310,11 @@ final class ScrollSession: NSObject {
     private var stack: NSStackView!
     private var fx: NSVisualEffectView!
     private var ended = false                       // 完了・取消は一度きり
+    private var joined = false                      // 1回でも継げた（動いた）
+    private var missed = 0                          // 撮れなかったコマが続いた数
+    private var mouseBefore: NSPoint?               // 自動の前のカーソル（自動で端まで行ったら戻す）
+    /// 仕上がったときの知らせ（上限・見失い・動かない）。nil＝ふつうに端まで
+    private(set) var note: String?
     private let queue = DispatchQueue(label: "stitch")   // つなぐ処理はこの列だけで（画面を固めない）
     var onFinish: ((CGImage?, Bool) -> Void)?       // (画像, 撮れなかった)
 
@@ -449,7 +454,14 @@ final class ScrollSession: NSObject {
         busy = true
         capturer.shot { [weak self] img in
             guard let self else { return }
-            guard let img, !self.ended else { self.busy = false; return }
+            guard !self.ended else { self.busy = false; return }
+            guard let img else {
+                // 許可を外した・画面を抜いた・スリープ明けなど。約3秒撮れなければ、撮れた所までで仕上げる
+                self.busy = false; self.missed += 1
+                if self.missed >= 25 { self.note = "撮れなくなったので止めました"; self.finish() }
+                return
+            }
+            self.missed = 0
             self.queue.async {
                 let r = self.stitcher.add(img)
                 let h = self.stitcher.length
@@ -458,8 +470,9 @@ final class ScrollSession: NSObject {
                     self.busy = false
                     // 向きが決まったら矢印もそちらに（縦↓・横→）
                     if axis == .horizontal { self.arrowIcon.image = NSImage(systemSymbolName: "arrow.right", accessibilityDescription: "横スクロール") }
+                    if case .added = r { self.joined = true }
                     self.update(r, height: h)
-                    if r == .full { self.finish(); return }      // 上限に達したらそこで仕上げる
+                    if r == .full { self.note = "長さの上限で止めました"; self.finish(); return }      // 上限に達したらそこで仕上げる
                     self.drive(r, axis: axis)
                 }
             }
@@ -490,6 +503,7 @@ final class ScrollSession: NSObject {
         if let a = stitcher.axis { p.axisDecided(a) }
         let d = AutoDriver(pilot: p)
         driver = d
+        mouseBefore = NSEvent.mouseLocation
         Wheel.moveMouse(to: center)            // 範囲の上で回したことにする（指している所に届くアプリが多い）
         watcher.start { [weak self] in self?.stopAuto() }
         setPhase(.auto)
@@ -510,7 +524,10 @@ final class ScrollSession: NSObject {
         switch d.frame(r, now: CACurrentMediaTime()) {
         case nil: break                        // 間をあける・ページが止まるのを待つ
         case let .scroll(dx, dy)?: Wheel.post(dx: dx, dy: dy, at: center)
-        case .finish?: finish()                // 端まで来た
+        case .finish?:                         // 端まで来た（見失い続けた・どの向きにも動かない、も）
+            if lostStreak > 0 { note = "継ぎ目を見失ったので止めました" }
+            if let m = mouseBefore { Wheel.moveMouse(to: m) }
+            finish()
         }
     }
 
@@ -520,6 +537,9 @@ final class ScrollSession: NSObject {
         if doneButton?.isEnabled == false { return }     // 準備中（⇧⌘5 の2回目もここで待つ）
         ended = true
         timer?.invalidate(); timer = nil
+        if !joined, note == nil { note = "動かなかったので1画面だけ保存しました" }
+        hintLabel.stringValue = "仕上げ中"; hintLabel.textColor = .secondaryLabelColor
+        autoButton?.isEnabled = false; doneButton?.isEnabled = false
         // 撮りかけのコマを待ち、最後の1コマを足してから仕上げる
         func last() {
             if busy { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { last() }; return }
@@ -551,7 +571,14 @@ final class ScrollSession: NSObject {
         onFinish?(img, failed)
     }
 
+    /// Esc：自動中は自動だけ止める。それ以外は取り消す
+    func escape() {
+        guard !ended else { return }
+        if driver != nil { stopAuto() } else { cancel() }
+    }
+
     private func stop() {
+        HotKeys.releaseEsc()
         watcher.stop(); driver = nil
         frameWin?.orderOut(nil); panel?.orderOut(nil)
     }
@@ -669,14 +696,16 @@ func stamp() -> String {
 }
 
 /// PNG にして保存し、クリップボードにも入れる。重いので裏の列で行い、終わったら main で done
-func output(_ img: CGImage, kind: String, _ done: @escaping (URL?) -> Void) {
+func output(_ img: CGImage, kind: String, scale: CGFloat = 1, _ done: @escaping (URL?) -> Void) {
     let name = "\(kind) \(stamp())"
     DispatchQueue.global(qos: .userInitiated).async {
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else {
             DispatchQueue.main.async { done(nil) }; return
         }
-        CGImageDestinationAddImage(dest, img, nil)
+        // 画面の倍率を解像度として書く（Retina の 2倍の絵が、他のアプリで2倍の大きさに見えないように。Mac 標準のスクショと同じ 144dpi）
+        let dpi = 72 * max(1, scale)
+        CGImageDestinationAddImage(dest, img, [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { DispatchQueue.main.async { done(nil) }; return }
         DispatchQueue.main.async {
             // 名前決めと書き込みは main の1本だけ＝同時に撮っても同じ名前にならない
@@ -690,10 +719,14 @@ func output(_ img: CGImage, kind: String, _ done: @escaping (URL?) -> Void) {
                 }
                 return (try? (data as Data).write(to: url, options: .withoutOverwriting)) != nil ? url : nil
             }
-            guard let url = write(in: saveDir) ?? (saveDir == SaveFolder.standard ? nil : write(in: SaveFolder.standard)) else { done(nil); return }
+            // 保存できなくても、撮った絵はクリップボードに残す（長いスクロールを撮り直さずに済むように）
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.setData(data as Data, forType: .png)
+            guard let url = write(in: saveDir) ?? (saveDir == SaveFolder.standard ? nil : write(in: SaveFolder.standard)) else {
+                Toast.show("保存できませんでした（クリップボードには入っています）", symbol: "exclamationmark.triangle")
+                done(nil); return
+            }
             done(url)
         }
     }
@@ -1021,15 +1054,21 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             s.onFinish = { [weak self, weak s] img, failed in
                 guard let self else { return }
                 if self.session === s { self.session = nil }   // 別の新しいセッションは消さない
-                if let img { self.deliver(img, kind: "スクロール", scale: region.scale) } else if failed { self.failed() }
+                        if let img {
+                    let n = s?.note                              // 上限・見失い・動かない＝黙って出さない
+                    self.deliver(img, kind: "スクロール", scale: region.scale) {
+                        if let n { Toast.show(n, symbol: "exclamationmark.circle") }
+                    }
+                } else if failed { self.failed() }
             }
             self.session = s
             s.start()
+            HotKeys.grabEsc { [weak s] in s?.escape() }
         }
     }
 
     func deliver(_ img: CGImage, kind: String, scale: CGFloat, then: (() -> Void)? = nil) {
-        output(img, kind: kind) { [weak self] url in
+        output(img, kind: kind, scale: scale) { [weak self] url in
             then?()
             guard let self else { return }
             guard let url else { self.failed(); return }

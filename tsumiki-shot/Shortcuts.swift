@@ -161,6 +161,21 @@ enum HotKeys {
         }
     }
 
+    /// スクロール撮影の間だけ Esc を取る（札は前面にならないので、キーの監視では受けられない）
+    static let escID: UInt32 = 900
+    private static var escRef: EventHotKeyRef?
+    static func grabEsc(_ f: @escaping () -> Void) {
+        releaseEsc()
+        actions[escID] = f
+        var ref: EventHotKeyRef?
+        if RegisterEventHotKey(UInt32(kVK_Escape), 0, EventHotKeyID(signature: OSType(0x54534854), id: escID),
+                               GetApplicationEventTarget(), 0, &ref) == noErr { escRef = ref }
+    }
+    static func releaseEsc() {
+        if let escRef { UnregisterEventHotKey(escRef) }
+        escRef = nil; actions[escID] = nil
+    }
+
     /// いったん全部外す（キーを覚えさせている間は、押しても撮影が始まらないように）
     static func suspend() {
         refs.forEach { UnregisterEventHotKey($0) }

@@ -8,7 +8,7 @@ import CoreText
 enum SelfTest {
     static let W = 480, viewH = 600, header = 56, footer = 40
 
-    enum Look { case light, dark, sparse, periodic }
+    enum Look { case light, dark, sparse, periodic, blankTop, table }
 
     /// 本体（ヘッダー・フッターの間に流れる中身）を描く。決定論＝毎回同じ絵。
     static func makeBody(height: Int, look: Look = .light) -> CGImage {
@@ -28,13 +28,18 @@ enum SelfTest {
             ctx.textPosition = CGPoint(x: x, y: height - y - 16)
             CTLineDraw(CTLineCreateWithAttributedString(attr), ctx)
         }
-        var y = 12, i = 0
+        var y = look == .blankTop ? 420 : 12, i = 0     // blankTop＝ページの先頭が白い余白
         let words = ["見積", "納品", "請求", "在庫", "予約", "会計", "日報", "手配"]
         while y < height - 30 {
             i += 1
             switch look {
             case .periodic:                       // 同じ行が52画素ごとに繰り返す
                 text("同じ行 ■■■ 1234", x: 18, y: y); y += 52; continue
+            case .table:                          // 表：33画素ごとに同じ形の行（罫線・数字だけ違う）
+                ctx.setFillColor(CGColor(gray: 0.7, alpha: 1)); ctx.fill(CGRect(x: 0, y: height - y - 21, width: W, height: 1))
+                for col in 0..<4 { ctx.fill(CGRect(x: col * 120, y: height - y - 20, width: 1, height: 33))
+                    text("\((i * 7919 + col * 104729) % 90000 + 10000)", x: 14 + col * 120, y: y) }
+                y += 33; continue
             case .sparse:                         // ほとんど空白
                 text("\(i). \(words[i % words.count]) \(i * 7919 % 10007)", x: 18 + (i % 5) * 9, y: y); y += 230; continue
             default: break
@@ -52,7 +57,12 @@ enum SelfTest {
         return ctx.makeImage()!
     }
 
-    struct Noise { var scrollbar = false; var hover = false; var scrollbarLeft = false }
+    struct Noise {
+        var scrollbar = false; var hover = false; var scrollbarLeft = false
+        var sidebar = false          // 縦の固定サイドバー（左60画素・項目つき）
+        var glass = false            // 透けるヘッダー（下の本文が透けて見える＝スクロールで中身が変わる）
+        var band = -1                // 画面の同じ位置で毎コマ中身が変わる帯（動画・広告）。値＝コマ番号
+    }
 
     /// 本体の offset 行目から見た1コマ（ヘッダー・フッター・飾りつき）
     static func frame(body: CGImage, offset: Int, header hdr: Int = header, footer ftr: Int = footer,
@@ -79,7 +89,24 @@ enum SelfTest {
             ctx.setFillColor(CGColor(gray: 0.2, alpha: 0.9))
             ctx.fill(CGRect(x: 3, y: ftr + mid - thumb - pos, width: 12, height: thumb))
         }
-        if hdr > 0 {
+        if noise.band >= 0 {
+            var r = UInt64(noise.band + 1) &* 0x9E3779B97F4A7C15
+            for k in 0..<24 {
+                r = r &* 6364136223846793005 &+ 1442695040888963407
+                ctx.setFillColor(CGColor(gray: CGFloat(r >> 56) / 255, alpha: 1))
+                ctx.fill(CGRect(x: W / 2 + k * 8, y: ftr + 200, width: 8, height: 120))
+            }
+        }
+        if noise.sidebar {
+            ctx.setFillColor(CGColor(gray: 0.93, alpha: 1)); ctx.fill(CGRect(x: 0, y: ftr, width: 60, height: mid))
+            ctx.setFillColor(CGColor(gray: 0.3, alpha: 1))
+            for k in 0..<(mid / 34) { ctx.fill(CGRect(x: 8, y: ftr + mid - 24 - k * 34, width: 20 + (k * 13) % 30, height: 10)) }
+        }
+        if hdr > 0 && noise.glass {
+            ctx.draw(body.cropping(to: CGRect(x: 0, y: max(0, offset - hdr), width: W, height: hdr))!, in: CGRect(x: 0, y: viewH - hdr, width: W, height: hdr))
+            ctx.setFillColor(CGColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 0.4))
+            ctx.fill(CGRect(x: 0, y: viewH - hdr, width: W, height: hdr))
+        } else if hdr > 0 {
             ctx.setFillColor(CGColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 1))
             ctx.fill(CGRect(x: 0, y: viewH - hdr, width: W, height: hdr))
             ctx.setFillColor(CGColor(red: 0.84, green: 0.6, blue: 0.3, alpha: 1))
@@ -124,6 +151,7 @@ enum SelfTest {
         var ignoreRight = 0          // 画素比較で右端を見ない幅（スクロールバーの写り込み）
         var ignoreLeft = 0           // 同じく左端（横の下端スクロールバー）
         var horizontal = false       // 横スクロール：コマを左に90°回して流す（ヘッダー→左のサイドバー）
+        var sizeOnly = false         // 画素は比べず、できあがりの大きさ（＝継いだ量）だけ正解と比べる（飾りが本文に重なる型）
     }
 
     static func slowWide() -> Bool {
@@ -184,6 +212,17 @@ enum SelfTest {
             Case(name: "同じ行の繰り返し（決められない＝継がない）", offsets: [0, 20, 45, 70], expect: "始 × × ×", look: .periodic),
             Case(name: "ほとんど空白（ゆっくりなら継げる）", offsets: [0, 60, 150, 240, 330, 420], expect: "始 +60 +90 +90 +90 +90", look: .sparse),
             Case(name: "上限で止まる", offsets: [0, 200, 400, 600], expect: "始 +200 満 満", maxPixels: 480 * 900),
+            Case(name: "縦の固定サイドバー（その列を外して比べる）", offsets: [0, 70, 200, 390, 600, 820], expect: "始 +70 +130 +190 +210 +220",
+                 noiseAt: { _ in Noise(sidebar: true) }, ignoreLeft: 60),
+            Case(name: "透けるヘッダー（下の本文が透ける・ゆっくりなら継げる）", offsets: [0, 70, 200, 330, 460, 590, 720], expect: "始 +70 +130 +130 +130 +130 +130",
+                 noiseAt: { _ in Noise(glass: true) }, sizeOnly: true),
+            Case(name: "表（数字だけ違う行）", offsets: [0, 70, 200, 390, 600, 820], expect: "始 +70 +130 +190 +210 +220", look: .table),
+            Case(name: "動く帯（動画・広告）で継ぎ間違えない", offsets: [0, 70, 200, 390, 600, 820], expect: "BAND",
+                 noiseAt: { i in Noise(band: i) }, sizeOnly: true),
+            Case(name: "表＋動く帯（別の周期のずれで継がない）", offsets: [0, 100, 230, 400, 640], expect: "BAND",
+                 look: .table, noiseAt: { i in Noise(band: i) }, sizeOnly: true),
+            Case(name: "先頭が白い余白（固定ヘッダーと取り違えない）", offsets: [0, 300, 700, 1100, 1500, 1800], expect: "始 +300 +400 +400 +400 +300",
+                 header: 0, footer: 0, look: .blankTop),
             Case(name: "横：左右に固定サイドバー", offsets: [0, 37, 120, 121, 260, 410, 410, 655, 900, 1180, 1500, 1820],
                  expect: "始 +37 +83 +1 +139 +150 止 +245 +245 +280 +320 +320", horizontal: true),
             Case(name: "横：途中で戻る・止まる", offsets: [0, 200, 120, 80, 200, 330, 330, 330, 520, 700],
@@ -212,7 +251,8 @@ enum SelfTest {
                 if case .added = r { reached = o }
             }
             let steps = results.map { symbol($0, scale: c.scale) }.joined(separator: " ")
-            let seqOK = steps == c.expect
+            // BAND＝継げなくてもよい（×は安全側）。継いだときは正しい量であること（大きさの比較で見る）
+            let seqOK = c.expect == "BAND" ? !results.contains(.full) : steps == c.expect
             guard let out = st.compose() else { print("✗ \(c.name)：合成できない"); allOK = false; continue }
             // 正解＝本体の 0〜(reached+mid) 行を、ヘッダー（最初のコマ）とフッター（最後に継いだコマ）で挟む
             let mid = viewH - c.header - c.footer
@@ -238,7 +278,7 @@ enum SelfTest {
             let axisOK = st.axis == nil || st.axis == wantAxis
             var pixOK = out.height == expect.height && out.width == expect.width
             var diffRows = 0
-            if pixOK {
+            if pixOK && !c.sizeOnly {
                 // 横は縦の向きに戻して比べる（見ない端を縦と同じに扱える）
                 let a = pixels(c.horizontal ? rotate90(out, clockwise: true)! : out), b = pixels(expectV)
                 let rowBytes = expectV.width * 4

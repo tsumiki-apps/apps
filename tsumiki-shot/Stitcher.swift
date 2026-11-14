@@ -76,11 +76,20 @@ enum StepResult: Equatable {
     case full            // 上限に達した
 }
 
+/// 8bit で描ける色空間。元が RGB ならそのまま（Display P3 の色を変えない）。
+/// HDR の拡張色空間（16bit の浮動小数）は 8bit の器が作れないので、同じ色域の通常版に直す
+func eightBitSpace(_ img: CGImage) -> CGColorSpace {
+    guard let s = img.colorSpace, s.model == .rgb else { return CGColorSpace(name: CGColorSpace.sRGB)! }
+    if !CGColorSpaceUsesExtendedRange(s) && img.bitsPerComponent <= 8 { return s }
+    let n = (s.name as String?) ?? ""
+    return CGColorSpace(name: n.contains("P3") ? CGColorSpace.displayP3 : CGColorSpace.sRGB)!
+}
+
 /// 画素を自分のバッファに写す（切り出しは元のコマ全体を抱えたままになるため）
 func copyRows(_ img: CGImage, from y: Int, count: Int) -> CGImage? {
     guard count > 0, let part = img.cropping(to: CGRect(x: 0, y: y, width: img.width, height: count)),
           let ctx = CGContext(data: nil, width: img.width, height: count, bitsPerComponent: 8, bytesPerRow: 0,
-                              space: img.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                              space: eightBitSpace(img),
                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
     ctx.draw(part, in: CGRect(x: 0, y: 0, width: img.width, height: count))
     return ctx.makeImage()
@@ -106,6 +115,10 @@ final class Stitcher {
     }
 
     /// 本体 [t0, h-b0) の中で、今のコマが前のコマから何行ずれたか。疑わしければ nil
+    /// 比べ方は「崩れに強く」してある：
+    ///  ・ページが動いたのに同じ位置で変わらない区画（縦の固定サイドバー）は外す
+    ///  ・行の指紋から行の平均を引いて比べる（背景の縦グラデで明るさがずれても合う）
+    ///  （平均を引くと、透けるヘッダーや動く帯がある表で「別の周期のずれ」を選ばず、継がない側に倒れる）
     private func findShift(_ cur: Frame, _ prev: Frame, top t0: Int, bottom b0: Int) -> Int? {
         let h = cur.height
         let mid = h - t0 - b0
@@ -113,22 +126,26 @@ final class Stitcher {
         let minOverlap = max(16, mid / 6)
         let maxD = mid - minOverlap
         guard maxD >= 1 else { return nil }
+        let mask = movingCells(cur, prev, t0, b0)
         let step = mid > 400 ? 3 : 1
         var errs = [Float](repeating: .greatestFiniteMagnitude, count: maxD + 1)
         var best = Float.greatestFiniteMagnitude, bestD = -1
+        var buf = [Float](); buf.reserveCapacity(mid)
         for d in 1...maxD {
-            var s: Float = 0, n = 0
+            var s: Float = 0
+            buf.removeAll(keepingCapacity: true)
             var y = t0
             while y < h - b0 - d {
                 if prev.rowVar[y + d] > 0.5 || cur.rowVar[y] > 0.5 {     // 模様のある行だけ
-                    s += cur.rowDiff(y, prev, y + d); n += 1
-                    if n > 24 && s / Float(n) > best * 4 + 8 { break }   // 見込みなし
+                    let e = Self.diff(cur.rows[y], prev.rows[y + d], mask)
+                    s += e; buf.append(e)
+                    if buf.count > 24 && s / Float(buf.count) > best * 4 + 8 { break }   // 見込みなし
                 }
                 y += step
             }
             let need = max(6, (h - b0 - d - t0) / step / 20)          // 合わせた行が少なすぎるずれは採らない
-            guard n >= need else { continue }
-            errs[d] = s / Float(n)
+            guard buf.count >= need else { continue }
+            errs[d] = s / Float(buf.count)
             if errs[d] < best { best = errs[d]; bestD = d }
         }
         guard bestD > 0, best <= tolerance * 1.5 else { return nil }
@@ -140,13 +157,54 @@ final class Stitcher {
         // 1行刻みで詰め直す
         var fine = bestD, fineErr = Float.greatestFiniteMagnitude
         for d in max(1, bestD - step)...min(maxD, bestD + step) {
-            var s: Float = 0, n = 0
+            buf.removeAll(keepingCapacity: true)
             for y in t0..<(h - b0 - d) where prev.rowVar[y + d] > 0.5 || cur.rowVar[y] > 0.5 {
-                s += cur.rowDiff(y, prev, y + d); n += 1
+                buf.append(Self.diff(cur.rows[y], prev.rows[y + d], mask))
             }
-            if n > 0, s / Float(n) < fineErr { fineErr = s / Float(n); fine = d }
+            if !buf.isEmpty { let e = buf.reduce(0, +) / Float(buf.count); if e < fineErr { fineErr = e; fine = d } }
         }
         return fine
+    }
+
+    /// ページが動いた（本体の大半の区画が変わった）のに、同じ位置で変わらない区画＝固定の列。比べる区画から外す
+    private func movingCells(_ cur: Frame, _ prev: Frame, _ t0: Int, _ b0: Int) -> [Int] {
+        let n = Frame.cells
+        var sum = [Float](repeating: 0, count: n), cnt: Float = 0
+        for y in Swift.stride(from: t0, to: cur.height - b0, by: 2) {
+            let a = cur.rows[y], b = prev.rows[y]
+            for c in 0..<n { sum[c] += abs(a[c] - b[c]) }
+            cnt += 1
+        }
+        guard cnt > 0 else { return Array(0..<n) }
+        let fixed = (0..<n).map { sum[$0] / cnt <= 0.4 }
+        // 固定の列の隣も外す（固定の帯の端が区画の途中にかかると、その区画は半分だけ動く）
+        let moving = (0..<n).filter { c in !fixed[c] && !(c > 0 && fixed[c - 1]) && !(c < n - 1 && fixed[c + 1]) }
+        // 動いた区画が少なすぎる（ほぼ無地のページなど）ときは全部で比べる
+        guard moving.count >= max(4, n / 4) else { return Array(0..<n) }
+        return moving.count == n ? moving : withBlank(moving, cur, t0, b0)
+    }
+
+    /// 動いた区画に、本体の中でずっと無地の区画（余白）も足す（余白どうしは合うので害がなく、外すと指紋が細る）
+    private func withBlank(_ moving: [Int], _ cur: Frame, _ t0: Int, _ b0: Int) -> [Int] {
+        let n = Frame.cells
+        var lo = [Float](repeating: .greatestFiniteMagnitude, count: n), hi = [Float](repeating: -1, count: n)
+        for y in Swift.stride(from: t0, to: cur.height - b0, by: 2) {
+            let a = cur.rows[y]
+            for c in 0..<n { lo[c] = min(lo[c], a[c]); hi[c] = max(hi[c], a[c]) }
+        }
+        let set = Set(moving)
+        return (0..<n).filter { set.contains($0) || hi[$0] - lo[$0] < 1 }
+    }
+
+    /// 2行の違い（選んだ区画だけ・それぞれの平均を引いてから）
+    @inline(__always) static func diff(_ a: [Float], _ b: [Float], _ m: [Int]) -> Float {
+        var ma: Float = 0, mb: Float = 0
+        let k = Float(m.count)
+        for i in m { ma += a[i]; mb += b[i] }
+        ma /= k; mb /= k
+        var s: Float = 0
+        for i in m { s += abs((a[i] - ma) - (b[i] - mb)) }
+        return s / k
     }
 
     @discardableResult
@@ -178,9 +236,11 @@ final class Stitcher {
             else if ct + cb > 0, let dd = findShift(cur, prev, top: 0, bottom: 0) { t0 = 0; b0 = 0; d = dd }
             else { return local ? .still : .lost }
         } else {
-            t0 = top; b0 = bottom
-            guard let dd = findShift(cur, prev, top: t0, bottom: b0) else { return local ? .still : .lost }
-            d = dd
+            b0 = bottom
+            // 上の固定帯は比べる範囲を狭めるだけ（継ぐ帯は下から取る）。合わなければ上も含めて探し直す
+            if let dd = findShift(cur, prev, top: top, bottom: b0) { t0 = top; d = dd }
+            else if top > 0, let dd = findShift(cur, prev, top: 0, bottom: b0) { t0 = 0; d = dd }
+            else { return local ? .still : .lost }
         }
         if ((top < 0 ? h : height) + d) * cur.width > maxPixels { isFull = true; return .full }
         guard let strip = copyRows(cur.image, from: h - b0 - d, count: d) else { return .lost }
@@ -221,7 +281,7 @@ import Accelerate
 func rotate90(_ img: CGImage, clockwise: Bool) -> CGImage? {
     let w = img.width, h = img.height
     // 元の色空間のまま回す（Display P3 の色が縦と横で変わらないように）
-    let space = img.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+    let space = eightBitSpace(img)
     var src = [UInt8](repeating: 0, count: w * h * 4)
     guard let sctx = CGContext(data: &src, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                space: space,

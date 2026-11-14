@@ -289,7 +289,8 @@ final class EditorWindow: NSWindowController, NSWindowDelegate {
             let data = NSMutableData()
             var ok = false
             if let img, let d = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) {
-                CGImageDestinationAddImage(d, img, nil); ok = CGImageDestinationFinalize(d)
+                let dpi = 72 * max(1, unit)   // 撮った画面の倍率＝解像度（元の撮影と同じ）
+                CGImageDestinationAddImage(d, img, [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi] as CFDictionary); ok = CGImageDestinationFinalize(d)
             }
             DispatchQueue.main.async { self.finishSave(ok ? img : nil, data as Data) }
         }
