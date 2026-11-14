@@ -39,7 +39,19 @@ enum SelfTest {
         b = fresh(0)
         _ = b.step(snap(0)); check(b.step(snap(0.1)).0 == .cooling, "出したのに前に来ないとき、1秒は出し直さない")
         check(b.waitingForCandidate, "出せなかったあいだも見張り続ける（カーソルが止まっていても）")
+        check(!b.needsStep(now: 0.5), "W3：出し直しを待っているあいだは読み直さない（10msごとの重い読みをしない）")
+        check(b.needsStep(now: 1.05), "W3：間隔が明けたら読み直す")
         check(b.step(snap(1.2)).0 == .raise, "1秒たったら出し直す")
+        // W3：出し直しても前に来ないなら間隔を倍々に（2秒・4秒・8秒上限）。前に来たら元に戻る
+        check(b.step(snap(2.5)).0 == .cooling, "W3：2回目の出し直しのあとは 2秒は出さない")
+        check(b.step(snap(3.3)).0 == .raise, "W3：2秒たったら3回目")
+        check(b.step(snap(6.0)).0 == .cooling && b.step(snap(7.4)).0 == .raise, "W3：その次は4秒")
+        var t = 7.4; var spans: [Double] = []
+        for _ in 0..<3 { let tt = t; while b.step(snap(t)).0 != .raise { t += 0.5 }; spans.append(t - tt) }
+        check((spans.last ?? 0) > 7.9 && (spans.last ?? 99) < 8.6, "W3：間隔は 8秒で頭打ち")
+        check(b.step(snap(t + 0.1, windows: [menuBar, notes, safari], front: 20)).0 == .alreadyFront, "W3：前に来たら")
+        check(b.step(snap(t + 0.2, windows: [menuBar, safari, notes], front: 10, mouse: CGPoint(x: 1001, y: 400))).0 == .raise, "W3：成功のあとは間隔が 1秒に戻る（すぐまた出せる）")
+        check(b.step(snap(t + 1.3, mouse: CGPoint(x: 1002, y: 400))).0 == .raise, "W3：戻ったあとの待ちは 1秒")
         // 窓を移るたびに待ち直す
         b = fresh()
         let third = Win(id: 12, pid: 80, layer: 0, bounds: CGRect(x: 1250, y: 100, width: 150, height: 600), alpha: 1)
@@ -69,7 +81,14 @@ enum SelfTest {
         check(b.step(snap(0, control: true)).0 == .controlKey, "control を押しているあいだは止まる")
         check(b.step(snap(0, buttons: true)).0 == .mouseDown, "ドラッグ中（ボタンを押している）は止まる")
         let menu = Win(id: 4, pid: 10, layer: Level.popUpMenu, bounds: CGRect(x: 100, y: 30, width: 200, height: 300), alpha: 1)
-        check(b.step(snap(0, windows: [menu, menuBar, safari, notes])).0 == .menuOpen, "メニューを開いているあいだは止まる（カーソルがメニューの外でも）")
+        check(b.step(snap(0, windows: [menu, menuBar, safari, notes])).0 == .menuOpen, "メニューを開いているあいだは止まる（前のアプリのメニューなら、カーソルがメニューの外でも）")
+        // W5：遠くに出しっぱなしの101の窓（別のアプリ）では止まらない／近い・カーソルを含むなら止まる
+        let farMenu = Win(id: 40, pid: 20, layer: Level.popUpMenu, bounds: CGRect(x: 0, y: 700, width: 200, height: 150), alpha: 1)
+        check(fresh(0).step(snap(0, windows: [farMenu, menuBar, safari, notes])).0 == .raise, "W5：遠くにある別のアプリの101の窓では止まらない")
+        let nearMenu = Win(id: 41, pid: 20, layer: Level.popUpMenu, bounds: CGRect(x: 900, y: 250, width: 100, height: 100), alpha: 1)
+        check(b.step(snap(0, windows: [nearMenu, menuBar, safari, notes])).0 == .menuOpen, "W5：カーソルの近くの101の窓は「メニュー中」")
+        let underMenu = Win(id: 42, pid: 20, layer: Level.popUpMenu, bounds: CGRect(x: 950, y: 350, width: 100, height: 100), alpha: 1)
+        check(b.step(snap(0, windows: [underMenu, menuBar, safari, notes])).0 == .menuOpen, "W5：カーソルを含む101の窓は「メニュー中」")
         check(b.step(snap(0, mouse: CGPoint(x: 500, y: 10))).0 == .overlay, "メニューバーの上では何もしない")
         check(b.step(snap(0, edge: true)).0 == .topEdge, "画面の上の縁（隠れたメニューバーが出る所）では何もしない")
         let dock = Win(id: 5, pid: 60, layer: 20, bounds: CGRect(x: 300, y: 820, width: 900, height: 80), alpha: 1)
@@ -144,9 +163,58 @@ enum SelfTest {
         check(calls.pointee == 1, "デスクトップ：選ばれているかを読むのは入ったときの1回だけ")
         calls.deallocate()
 
+        // W4：カーソルが止まったままの見直し
+        b = fresh(0)
+        _ = b.step(snap(0, control: true))
+        let rc = b.recheck(snap(0.3))
+        check(rc?.0 == .raise, "W4：止めていた理由（control）が消えたら、止まったままでも判断し直す")
+        b = fresh(0)
+        _ = b.step(snap(0, windows: [menu, menuBar, safari, notes]))
+        check(b.recheck(snap(0.3, windows: [menuBar, safari, notes], front: 20)) == nil, "W4：止めているあいだにユーザーが別のアプリを前にしたら、勝手に戻さない")
+        b = fresh(0)
+        _ = b.step(snap(0, windows: [menu, menuBar, safari, notes]))
+        check(b.recheck(snap(0.3)) != nil, "W4：メニューが閉じ、前の窓がそのままなら判断し直す")
+        b = fresh(0)
+        _ = b.step(snap(0, windows: [menuBar, notes, safari], front: 20))   // メモが前（もう前にいる）
+        check(b.recheck(snap(0.3, windows: [menuBar, notes, safari], front: 20)) == nil, "W4：何も変わらなければ何もしない")
+        check(b.recheck(snap(0.6, windows: [menuBar, notes, safari], front: 10)) == nil, "W4：Cmd+Tab などで自分で前を変えただけなら（前の窓は残っている）何もしない")
+        b = fresh(0)
+        _ = b.step(snap(0, windows: [menuBar, safari, notes], front: 10, mouse: CGPoint(x: 100, y: 100)))   // Safari が前＆カーソルも Safari
+        let closedRc = b.recheck(snap(0.3, windows: [menuBar, notes], front: 20, mouse: CGPoint(x: 1000, y: 400)))
+        check(closedRc == nil || closedRc?.0 == .alreadyFront, "W4：前の窓が閉じても、いまの前の窓の上ならそのまま")
+        b = fresh(0)
+        _ = b.step(snap(0, windows: [menuBar, safari, notes], front: 10, mouse: CGPoint(x: 100, y: 100)))
+        let third2 = Win(id: 13, pid: 80, layer: 0, bounds: CGRect(x: 900, y: 300, width: 200, height: 200), alpha: 1)
+        let closedRc2 = b.recheck(snap(0.3, windows: [menuBar, third2, notes], front: 20, mouse: CGPoint(x: 100, y: 100)))
+        check(closedRc2 != nil, "W4：前の窓が閉じたら（カーソル下の窓が前でなくなったとき）判断し直す")
+
+        // W2：出せなかった窓の連続失敗を数える（同じ窓で3回）／成功で戻る
+        b = fresh(0)
+        b.reportRaise(id: 2, ok: false); b.reportRaise(id: 2, ok: false)
+        check(!b.needsAttention, "W2：2回の失敗ではまだ知らせない")
+        b.reportRaise(id: 2, ok: false)
+        check(b.needsAttention, "W2：同じ窓で3回続けて失敗したら知らせる")
+        b.reportRaise(id: 2, ok: true)
+        check(!b.needsAttention, "W2：成功したら戻る")
+        b.reportRaise(id: 2, ok: false); b.reportRaise(id: 5, ok: false); b.reportRaise(id: 2, ok: false); b.reportRaise(id: 5, ok: false)
+        check(!b.needsAttention, "W2：別々の窓の失敗は合算しない")
+
+        // N5：別のアプリに切り替わったら、デスクトップの「済んだ」を下ろす
+        b = fresh(0)
+        check(b.step(dsnap(0, front: 10)).0 == .desktop, "N5：デスクトップを済ませる")
+        check(b.step(dsnap(0.1, front: 90)).0 == .alreadyFront, "N5：Finder が前になっても済みのまま")
+        check(b.step(dsnap(0.2, front: 20)).0 == .desktop, "N5：別のアプリに切り替わったら、デスクトップをまた出す")
+
+        // W1：クリックしなかった理由を言葉にできる（Brain は理由をログに出す）
+        var notes1: [String] = []
+        b = fresh(0); b.onNote = { notes1.append($0) }
+        _ = b.step(dsnap(0, front: 10))
+        check(!notes1.isEmpty, "W1：デスクトップを済ませたときに理由をログへ出す")
+
         // アイコン
         check(AppIcon.png(64).count > 500, "アプリのアイコンが描ける")
         check(AppIcon.menuImage(active: true).isTemplate, "メニューバーの絵はテンプレート")
+        check(AppIcon.menuImage(active: true, warn: true).isTemplate, "W2：知らせの点つきの絵もテンプレート")
         print(ng == 0 ? "OK" : "NG \(ng)")
         return ng == 0 ? 0 : 1
     }

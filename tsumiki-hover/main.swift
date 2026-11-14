@@ -57,6 +57,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var pauseEnd: Date?            // 時間を決めて休んでいるときの終わり
     var hotKey: HotKey?
     var menuFrontApp: NSRunningApplication?
+    var lastRecheck: TimeInterval = 0
+    var wasAttention = false
     var log = ProcessInfo.processInfo.environment["HOVER_LOG"] != nil
 
     var uptime: TimeInterval { ProcessInfo.processInfo.systemUptime }
@@ -66,6 +68,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
         status.menu = menu
         trusted = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        brain.onNote = { [weak self] m in self?.note(m) }
         applyPrefs()
         HotKey.action = { [weak self] in self?.toggle() }
         hotKey = HotKey()
@@ -101,21 +104,47 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateIcon()
     }
 
-    func updateIcon() { status.button?.image = AppIcon.menuImage(active: running) }
+    func updateIcon() {
+        let warn = running && brain.needsAttention
+        status.button?.image = AppIcon.menuImage(active: running, warn: warn)
+        status.button?.toolTip = warn ? "前に出せない窓があります。許可の取り残しかもしれません（システム設定のアクセシビリティで付け直す）" : nil
+    }
+
+    func note(_ m: String) { if log { FileHandle.standardError.write("\(m)\n".data(using: .utf8)!) } }
 
     func tick() {
         guard trusted, running else { return }
         // control・ボタンを押しているあいだは窓の一覧を読まない（軽く）
         if NSEvent.modifierFlags.contains(.control) || NSEvent.pressedMouseButtons != 0 { lastMouse = CGPoint(x: -1, y: -1); return }
         let m = Screen.mouse()
-        // カーソルが止まっていて、待っている窓も無ければ何もしない（窓の一覧を読まない＝軽い）
-        if m == lastMouse && !brain.waitingForCandidate { return }
-        lastMouse = m
-        let snap = Screen.snapshot(now: uptime)
-        let (why, w) = brain.step(snap)
+        let now = uptime
+        let snap: Snapshot
+        let why: Why, w: Win?
+        if m == lastMouse {
+            if brain.waitingForCandidate {
+                // 出し直しを待っているあいだ（間隔が明けるまで）は窓の一覧を読まない
+                guard brain.needsStep(now: now) else { return }
+                snap = Screen.snapshot(now: now)
+                (why, w) = brain.step(snap)
+            } else {
+                // カーソルが止まったまま：数百msごとに軽く見直す（止めていた理由が消えた・前の窓が閉じたときだけ判断し直す）
+                guard now - lastRecheck >= 0.3 else { return }
+                lastRecheck = now
+                snap = Screen.snapshot(now: now)
+                guard let r = brain.recheck(snap) else { return }
+                (why, w) = r
+            }
+        } else {
+            lastMouse = m
+            snap = Screen.snapshot(now: now)
+            (why, w) = brain.step(snap)
+        }
         if log && why != .waiting { FileHandle.standardError.write("\(why.rawValue)\n".data(using: .utf8)!) }
-        if why == .raise, let w { Raiser.raise(w, at: snap.mouse, before: snap.windows) }
-        if why == .desktop, let w { Raiser.raiseDesktop(finder: w.pid, at: snap.mouse, before: snap.windows) }
+        var ok = true
+        if why == .raise, let w { ok = Raiser.raise(w, at: snap.mouse, before: snap.windows); brain.reportRaise(id: w.id, ok: ok) }
+        if why == .desktop, let w { ok = Raiser.raiseDesktop(finder: w.pid, at: snap.mouse, before: snap.windows); brain.reportRaise(id: w.id, ok: ok) }
+        if let n = Raiser.lastNote { note(n); Raiser.lastNote = nil }
+        if brain.needsAttention != wasAttention { wasAttention = brain.needsAttention; updateIcon() }
     }
 
     // MARK: - 操作
@@ -178,6 +207,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if NSRunningApplication.runningApplications(withBundleIdentifier: "com.sbmpost.AutoRaise").count > 0 {
             let w = item("AutoRaise と二重", nil, symbol: "exclamationmark.triangle"); w.isEnabled = false
             menu.addItem(w)
+        }
+        if trusted && brain.needsAttention {
+            menu.addItem(item("前に出せない窓がある（許可を付け直す）", #selector(openAccessibility), symbol: "exclamationmark.triangle"))
         }
         if menu.items.count > 0 { menu.addItem(.separator()) }
 

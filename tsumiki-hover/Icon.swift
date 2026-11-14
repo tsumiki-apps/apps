@@ -53,7 +53,7 @@ enum AppIcon {
     }
 
     /// メニューバー用（18pt・テンプレート）。動いているとき＝塗った積み木、止まっているとき＝線だけの積み木
-    static func menuImage(active: Bool) -> NSImage {
+    static func menuImage(active: Bool, warn: Bool = false) -> NSImage {
         let img = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
             guard let c = NSGraphicsContext.current?.cgContext else { return false }
             c.scaleBy(x: 0.18, y: 0.18)
@@ -71,6 +71,11 @@ enum AppIcon {
             let p = pointer(60, 50, 1.2)
             c.setBlendMode(.clear); c.setLineWidth(14); c.addLines(between: p); c.closePath(); c.drawPath(using: .fillStroke)
             c.setBlendMode(.normal); c.setLineWidth(6); c.addLines(between: p); c.closePath(); c.drawPath(using: active ? .fillStroke : .stroke)
+            if warn {             // 右上に点（まわりを抜いてから塗る）＝前に出せない窓がある
+                let dot = CGRect(x: 72, y: 2, width: 26, height: 26)
+                c.setBlendMode(.clear); c.fillEllipse(in: dot.insetBy(dx: -8, dy: -8))
+                c.setBlendMode(.normal); c.fillEllipse(in: dot)
+            }
             return true
         }
         img.isTemplate = true

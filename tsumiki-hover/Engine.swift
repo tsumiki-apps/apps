@@ -72,6 +72,20 @@ final class Brain {
     private var stillSince: TimeInterval = 0
     /// デスクトップに入ってから、もう済ませたか（窓の上に戻るまで繰り返さない＝クリックを何度も送らない）
     private var desktopDone = false
+    private var lastFrontPid: pid_t?
+    /// 出したのに前に来ない窓を、続けて何回出し直したか（間隔を倍々に延ばす。成功＝前に来たら 0）
+    private var retryStreak = 0
+    /// 出し直しを待つ間隔：1・2・4・8秒（上限）
+    private var coolSpan: TimeInterval { min(8, pow(2, Double(min(retryStreak, 3)))) }
+    /// 出すのに失敗（AX が通らない）を続けた回数（窓ごと）。3回で「許可の取り残し」の疑いとして知らせる
+    private var axFails: [CGWindowID: Int] = [:]
+    var needsAttention: Bool { axFails.values.contains { $0 >= 3 } }
+    /// 判断の理由をログに出す先（HOVER_LOG のとき）
+    var onNote: ((String) -> Void)?
+    // 止まったままのカーソルで判断し直すための覚え
+    private var baseline: (pid: pid_t, win: CGWindowID?)?
+    private var held = false
+    private static let transient: Set<Why> = [.menuOpen, .mouseDown, .controlKey, .topEdge, .stayApp]
 
     init(selfPid: pid_t) { self.selfPid = selfPid }
 
@@ -79,11 +93,50 @@ final class Brain {
         spaceChangedAt = now; mouseAtSpaceChange = mouse; candidate = nil
     }
 
+    /// 見張りが要るか（待っている窓がある、または出し直しの間隔が明けた）。出し直しを待っているあいだは重い読み直しをしない
+    func needsStep(now: TimeInterval) -> Bool {
+        if candidate != nil { return true }
+        return cooling && now >= raisedAt + coolSpan
+    }
     var waitingForCandidate: Bool { candidate != nil || cooling }
     private var cooling = false
 
+    /// 窓を出した結果を受ける（AX が通ったか）。窓ごとに連続の失敗を数える
+    func reportRaise(id: CGWindowID, ok: Bool) {
+        if ok { axFails[id] = nil; return }
+        if axFails.count > 50 { axFails.removeAll() }
+        axFails[id, default: 0] += 1
+    }
+
+    private static func front(_ s: Snapshot) -> (pid: pid_t, win: CGWindowID?) {
+        (s.frontPid, s.windows.first(where: { $0.layer == 0 && $0.alpha > 0 })?.id)
+    }
+
+    /// カーソルが止まったままのときの見直し（軽く数百msごとに呼ぶ）。次の2つのときだけ判断し直す：
+    ///   ①止めていた理由（メニュー・ボタン・除外アプリなど）が消え、そのあいだに前の窓が変わっていない
+    ///   ②前にいた窓が閉じた（消えた）
+    /// ユーザー自身が別の窓・アプリを前にした場合（前の窓がまだある）は、勝手に戻さない
+    func recheck(_ s: Snapshot) -> (Why, Win?)? {
+        guard let base = baseline else { baseline = Brain.front(s); return nil }
+        let cur = Brain.front(s)
+        let closed = base.win != nil && !s.windows.contains { $0.id == base.win }
+        let changed = cur.pid != base.pid || cur.win != base.win
+        if closed { return step(s) }
+        if changed { held = false; baseline = cur; return nil }
+        if held { return step(s) }
+        return nil
+    }
+
     /// 1回分の判断。.raise のときだけ窓を返す
     func step(_ s: Snapshot) -> (Why, Win?) {
+        let r = judge(s)
+        if r.0 == .alreadyFront { raisedId = nil; retryStreak = 0 }
+        held = Brain.transient.contains(r.0)
+        baseline = Brain.front(s)
+        return r
+    }
+
+    private func judge(_ s: Snapshot) -> (Why, Win?) {
         func stop(_ w: Why) -> (Why, Win?) { candidate = nil; cooling = false; return (w, nil) }
         // カーソルが止まっているか（前の回から 1pt 未満しか動いていない）
         if let m = lastMouse, hypot(m.x - s.mouse.x, m.y - s.mouse.y) < 1 {} else { stillSince = s.now }
@@ -91,7 +144,10 @@ final class Brain {
         if s.now < pausedUntil { return stop(.paused) }
         if s.controlDown { return stop(.controlKey) }
         if s.buttonsDown { return stop(.mouseDown) }
-        if s.windows.contains(where: { $0.layer == Level.popUpMenu && $0.alpha > 0 }) { return stop(.menuOpen) }
+        // メニュー（101）：前のアプリのものか、カーソルの近く（120pt 以内）のときだけ。
+        // 遠くにある101の窓（出しっぱなしの常駐アプリ）で、ずっと止まらないようにする
+        if s.windows.contains(where: { $0.layer == Level.popUpMenu && $0.alpha > 0
+            && ($0.pid == s.frontPid || $0.bounds.insetBy(dx: -120, dy: -120).contains(s.mouse)) }) { return stop(.menuOpen) }
         if let m = mouseAtSpaceChange {
             // 切り替えた直後の 0.4 秒と、そのあとカーソルを動かすまでは何もしない
             if s.now - spaceChangedAt < 0.4 || hypot(m.x - s.mouse.x, m.y - s.mouse.y) < 2 { return stop(.spaceChanged) }
@@ -100,6 +156,9 @@ final class Brain {
         if s.topEdge { return stop(.topEdge) }
         // 除外アプリ（Alfred・Paste など）が前にいる、または浮いた窓を出しているあいだは、操作を奪わない
         let front = s.bundleOf(s.frontPid)
+        // 別のアプリに切り替わったら、デスクトップの「済んだ」を下ろす（Finder に変わったときは下ろさない）
+        if let lp = lastFrontPid, lp != s.frontPid, s.frontPid != s.finderPid { desktopDone = false }
+        lastFrontPid = s.frontPid
         if let f = front, excluded.contains(f) { return stop(.stayApp) }
         if s.windows.contains(where: { w in
             w.layer > 0 && w.layer != Level.menuBar && w.layer != Level.statusItem && w.alpha > 0
@@ -110,9 +169,11 @@ final class Brain {
             guard let f = s.finderPid, f != selfPid, !(s.bundleOf(f).map { excluded.contains($0) } ?? false) else { return stop(.noWindow) }
             if desktopDone { return stop(.alreadyFront) }
             // Finder が前でも、Finder の窓が選ばれたままならデスクトップに移す
-            if s.frontPid == f && (s.desktopFocused?() ?? true) { desktopDone = true; return stop(.alreadyFront) }
+            if s.frontPid == f && (s.desktopFocused?() ?? true) {
+                desktopDone = true; onNote?("デスクトップ：Finder が前でデスクトップが選ばれているので済み"); return stop(.alreadyFront)
+            }
             let r = decide(Win(id: kCGNullWindowID, pid: f, layer: 0, bounds: .zero, alpha: 1), s, why: .desktop)
-            if r.0 == .desktop { desktopDone = true }
+            if r.0 == .desktop { desktopDone = true; onNote?("デスクトップ：Finder を前に出した（以後、窓の上に戻るか別のアプリに切り替わるまで繰り返さない）") }
             return r
         }
         desktopDone = false
@@ -128,14 +189,17 @@ final class Brain {
     /// 待ち時間・出したばかりを見て、出すかどうかを決める（窓でもデスクトップでも同じ）
     private func decide(_ top: Win, _ s: Snapshot, why: Why) -> (Why, Win?) {
         // 出したばかりの窓が前に来ないとき（出せないアプリ）に、出し続けない
-        if raisedId == top.id && s.now - raisedAt < 1.0 { cooling = true; return (.cooling, nil) }
+        if raisedId == top.id && s.now - raisedAt < coolSpan { cooling = true; return (.cooling, nil) }
         cooling = false
         if candidate != top.id { candidate = top.id; since = s.now }
         let onLongEnough = s.now - since + 0.0001 >= delay
         // 止めた近道：その窓に入ってから、かつ止めてから restDelay たったら出す
         let restedLongEnough = restDelay.map { s.now - max(since, stillSince) + 0.0001 >= $0 } ?? false
         if !onLongEnough && !restedLongEnough { return (.waiting, nil) }
-        candidate = nil; raisedId = top.id; raisedAt = s.now
+        candidate = nil
+        // 前に出した同じ窓をまた出す＝前の回は効かなかった → 次の間隔を倍に
+        if raisedId == top.id { retryStreak += 1 } else { retryStreak = 0 }
+        raisedId = top.id; raisedAt = s.now
         return (why, top)
     }
 }
@@ -225,9 +289,17 @@ enum Raiser {
         AXUIElementSetMessagingTimeout(sys, 0.15)
         var el: AXUIElement?
         guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(p.y), &el) == .success, let e = el else { return nil }
-        if let win = attr(e, kAXWindowAttribute) { return (win as! AXUIElement) }
-        return (attr(e, kAXRoleAttribute) as? String) == kAXWindowRole ? e : nil
+        let found: AXUIElement?
+        if let win = attr(e, kAXWindowAttribute) { found = (win as! AXUIElement) }
+        else { found = (attr(e, kAXRoleAttribute) as? String) == kAXWindowRole ? e : nil }
+        // 持ち主が違う窓（別のアプリの窓が間に入っていた）は使わない
+        guard let f = found else { return nil }
+        var owner: pid_t = 0
+        return AXUIElementGetPid(f, &owner) == .success && owner == w.pid ? f : nil
     }
+
+    /// 直近の失敗・見送りの理由（HOVER_LOG で出す）
+    static var lastNote: String?
 
     /// その窓だけを前に出し、操作の対象にする。
     /// アプリを最前面にすると（公開の仕組みでは）そのアプリの窓が全部前に出るので、
@@ -235,7 +307,8 @@ enum Raiser {
     static var generation = 0
     @discardableResult
     static func raise(_ w: Win, at point: CGPoint?, before: [Win]? = nil) -> Bool {
-        guard let ax = axWindow(for: w, at: point) else { return false }
+        lastNote = nil
+        guard let ax = axWindow(for: w, at: point) else { lastNote = "出せなかった：アクセシビリティの窓が見つからない（pid \(w.pid)）"; return false }
         return bringFront(pid: w.pid, keep: w.id, ax: ax, before: before)
     }
 
@@ -243,11 +316,16 @@ enum Raiser {
     /// デスクトップを選ぶ公開の仕組みは無い（AXFocused・AXMain は効かない）ので、何もない所なら、そこを1回クリックしたのと同じにする
     @discardableResult
     static func raiseDesktop(finder pid: pid_t, at point: CGPoint, before: [Win]? = nil) -> Bool {
-        if !Screen.desktopFocused(finder: pid) && canClickDesktop(finder: pid, at: point) {
-            for t in [CGEventType.leftMouseDown, .leftMouseUp] {
+        lastNote = nil
+        if !Screen.desktopFocused(finder: pid) {
+            if let why = clickBlockReason(finder: pid, at: point) {
+                lastNote = "デスクトップをクリックしなかった：\(why)"
+            } else {
+                for t in [CGEventType.leftMouseDown, .leftMouseUp] {
                 guard let e = CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: point, mouseButton: .left) else { continue }
                 e.flags = []; e.setIntegerValueField(.mouseEventClickState, value: 1)
                 e.post(tap: .cghidEventTap)
+                }
             }
         }
         return bringFront(pid: pid, keep: kCGNullWindowID, ax: nil, before: before)
@@ -255,18 +333,23 @@ enum Raiser {
 
     /// クリックしてよい所か：Finder のデスクトップの地（アイコンの上ではない）で、
     /// 「壁紙をクリックしてデスクトップを表示」とステージマネージャが切ってある（窓が全部どくのを防ぐ）
-    static func canClickDesktop(finder pid: pid_t, at p: CGPoint) -> Bool {
+    static func canClickDesktop(finder pid: pid_t, at p: CGPoint) -> Bool { clickBlockReason(finder: pid, at: p) == nil }
+
+    /// クリックできない理由（できるなら nil）
+    static func clickBlockReason(finder pid: pid_t, at p: CGPoint) -> String? {
         let wm = UserDefaults(suiteName: "com.apple.WindowManager")
-        if wm?.bool(forKey: "GloballyEnabled") == true { return false }
-        if wm?.object(forKey: "EnableStandardClickToShowDesktop") as? Bool ?? true { return false }
+        if wm?.bool(forKey: "GloballyEnabled") == true { return "ステージマネージャが入っている" }
+        if wm?.object(forKey: "EnableStandardClickToShowDesktop") as? Bool ?? true {
+            return "「壁紙をクリックしてデスクトップを表示」が有効（全窓が隠れるため）。システム設定＞デスクトップとDock＞壁紙をクリックしてデスクトップを表示 を「ステージマネージャ使用時のみ」に"
+        }
         let sys = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(sys, 0.15)
         var el: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(p.y), &el) == .success, let e = el else { return false }
+        guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(p.y), &el) == .success, let e = el else { return "カーソルの下の要素を読めない" }
         var owner: pid_t = 0
-        guard AXUIElementGetPid(e, &owner) == .success, owner == pid else { return false }
+        guard AXUIElementGetPid(e, &owner) == .success, owner == pid else { return "カーソルの下が Finder のものではない" }
         let role = attr(e, kAXRoleAttribute) as? String
-        return role == kAXGroupRole || role == kAXScrollAreaRole
+        return role == kAXGroupRole || role == kAXScrollAreaRole ? nil : "アイコンなど、デスクトップの地ではない（\(role ?? "不明")）"
     }
 
     /// アプリを最前面にして、keep 以外の同じアプリの窓より手前にいたほかのアプリの窓を元の並びに戻す
@@ -279,9 +362,13 @@ enum Raiser {
             AXUIElementSetAttributeValue(ax, kAXMainAttribute as CFString, kCFBooleanTrue)
             AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
         }
-        guard AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue) == .success else { return false }
+        let fr = AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        guard fr == .success else {
+            lastNote = "出せなかった：アプリを最前面にできない（pid \(pid)・AX エラー \(fr.rawValue)）" + (fr == .apiDisabled ? "。許可の取り残しの疑い＝システム設定＞プライバシーとセキュリティ＞アクセシビリティで一度外して付け直す" : "")
+            return false
+        }
         // 同じアプリのほかの窓（何枚あっても）より手前にいたほかのアプリの窓を、元の並びのまま上に積み直す。
-        // 最前面への切り替えは少し遅れて効くので、抜かれたのを見てから（最大0.4秒）奥から順に AXRaise する
+        // 最前面への切り替えは少し遅れて効くので、抜かれたのを見てから（最大1秒）奥から順に AXRaise する
         guard let lastSibling = order.lastIndex(where: { $0.pid == w.pid && $0.id != w.id }) else { return true }
         let prefix = order[...lastSibling].filter { $0.id != w.id }
         let siblings = prefix.filter { $0.pid == w.pid }
@@ -306,7 +393,7 @@ enum Raiser {
                     if let e = axWindow(for: o, at: nil) { AXUIElementPerformAction(e, kAXRaiseAction as CFString) }
                 }
                 if let ax { AXUIElementPerformAction(ax, kAXRaiseAction as CFString) }
-            } else if Date().timeIntervalSince(start) < 0.4 {
+            } else if Date().timeIntervalSince(start) < 1.0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { restoreWhenPassed() }
             }
         }
