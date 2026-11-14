@@ -1,4 +1,4 @@
-// まどわけ — ⌘⌥← / ⌘⌥↑ / ⌘⌥→ で、いま前に出ているウインドウを左・上・右の半分に寄せる。
+// まどわけ — ⌘⌥← / ⌘⌥↑ / ⌘⌥→（設定で変えられる）で、いま前に出ているウインドウを左・上・右の半分に寄せる。
 // メニューバーに常駐するだけのアプリ（Dock には出ない）。
 import AppKit
 import ServiceManagement
@@ -7,7 +7,9 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var item: NSStatusItem!
-    private let keys = HotKeys()
+    private var settings: SettingsWindow?
+    private let pauseItem = NSMenuItem(title: "キーを止める", action: #selector(togglePause), keyEquivalent: "")
+    private let busyItem = NSMenuItem()
     private let trustItem = NSMenuItem()
     private let loginItem = NSMenuItem(title: "ログイン時に開く", action: #selector(toggleLogin), keyEquivalent: "")
     private let launchedAt = Date()
@@ -30,21 +32,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         menu.autoenablesItems = false
-        for side in [Side.left, .top, .right] {
-            let mi = NSMenuItem(title: side.title, action: #selector(snapFromMenu(_:)), keyEquivalent: side.keyEquivalent)
-            mi.keyEquivalentModifierMask = [.command, .option]
+        for side in Shortcuts.sides {
+            let mi = NSMenuItem(title: side.title, action: #selector(snapFromMenu(_:)), keyEquivalent: "")
             mi.tag = Int(side.rawValue)
             mi.target = self
             menu.addItem(mi)
         }
         menu.addItem(.separator())
-        keys.register()
-        if !keys.failed.isEmpty {
-            let names = keys.failed.map { $0.title }.joined(separator: "・")
-            let mi = NSMenuItem(title: "ほかのアプリと重なって使えない：\(names)", action: nil, keyEquivalent: "")
-            mi.isEnabled = false
-            menu.addItem(mi)
-        }
+        pauseItem.target = self
+        menu.addItem(pauseItem)
+        busyItem.isEnabled = false
+        menu.addItem(busyItem)
+        let set = NSMenuItem(title: "設定…", action: #selector(openSettings), keyEquivalent: ",")
+        set.target = self
+        menu.addItem(set)
+        menu.addItem(.separator())
         trustItem.target = self
         trustItem.action = #selector(openTrustSettings)
         menu.addItem(trustItem)
@@ -55,16 +57,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quit)
         item.menu = menu
 
-        keys.onPress = { side in
+        HotKeys.onPress = { side in
             if Snapper.snap(side) { return }
             if Snapper.trusted { NSSound.beep() } else { self.explainTrust() }
         }
+        // 前に止めた Mac 標準のキーを、いまの設定に合わせ直してから登録する
+        SystemKeys.sync { HotKeys.apply(); self.updateIcon(force: true) }
+        HotKeys.apply()
+        updateIcon(force: true)
 
         // 起動時は OS の案内だけ（これで設定の一覧に「まどわけ」が載る）。重なるキーの知らせは、案内と重ならないときだけ
         if !Snapper.trusted { Snapper.askForTrust() }
-        else if !keys.failed.isEmpty {
-            let names = keys.failed.map { $0.title }.joined(separator: "・")
-            alert("ほかのアプリが同じショートカットを使っています", "使えないもの：\(names)\nそのアプリを終了してから、まどわけを開き直してください。")
+        else if !HotKeys.failed.isEmpty {
+            let names = Shortcuts.sides.filter { HotKeys.failed.contains($0) }.map { $0.title }.joined(separator: "・")
+            alert("ほかのアプリが同じショートカットを使っています", "使えないもの：\(names)\n設定でキーを変えるか、そのアプリを終了してから、まどわけを開き直してください。")
         }
     }
 
@@ -79,7 +85,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         for mi in menu.items where mi.action == #selector(snapFromMenu(_:)) {
             mi.isEnabled = ok
+            // いまのキーを横に出す（止めているときは出さない）
+            if !Shortcuts.paused, let side = Side(rawValue: UInt32(mi.tag)), let c = Shortcuts.combo(side) {
+                (mi.keyEquivalent, mi.keyEquivalentModifierMask) = c.menuKey
+            } else { mi.keyEquivalent = ""; mi.keyEquivalentModifierMask = [] }
         }
+        pauseItem.state = Shortcuts.paused ? .on : .off
+        let busy = Shortcuts.sides.filter { HotKeys.failed.contains($0) }.map { $0.title }
+        busyItem.title = "ほかのアプリと重なって使えない：" + busy.joined(separator: "・")
+        busyItem.isHidden = busy.isEmpty
     }
 
     @objc private func snapFromMenu(_ sender: NSMenuItem) {
@@ -88,6 +102,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             if !Snapper.snap(side) { NSSound.beep() }
         }
+    }
+
+    @objc private func togglePause() {
+        Shortcuts.paused.toggle()
+        HotKeys.apply()
+        updateIcon(force: true)
+        settings?.refresh()
+    }
+
+    @objc private func openSettings() {
+        if settings == nil {
+            let w = SettingsWindow()
+            w.onKeysChanged = { [weak self] in self?.updateIcon(force: true) }
+            w.confirm = { title, body in
+                NSApp.activate(ignoringOtherApps: true)
+                let a = NSAlert()
+                a.messageText = title
+                a.informativeText = body
+                a.addButton(withTitle: "止める")
+                a.addButton(withTitle: "そのまま")
+                return a.runModal() == .alertFirstButtonReturn
+            }
+            settings = w
+        }
+        settings?.show()
     }
 
     @objc private func toggleLogin() {
@@ -126,10 +165,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if a.runModal() == .alertFirstButtonReturn { openTrustSettings() }
     }
 
-    private func updateIcon() {
+    private var shownPaused: Bool?
+    private func updateIcon(force: Bool = false) {
         let ok = Snapper.trusted
-        guard ok != shownTrusted, let b = item.button else { return }
+        guard force || ok != shownTrusted || Shortcuts.paused != shownPaused, let b = item.button else { return }
         shownTrusted = ok
+        shownPaused = Shortcuts.paused
+        b.appearsDisabled = Shortcuts.paused     // 止めているあいだは薄く
+        b.toolTip = Shortcuts.paused ? "まどわけ（キーを止めています）" : "まどわけ"
         let img = NSImage(systemSymbolName: ok ? "rectangle.split.2x1" : "exclamationmark.triangle",
                           accessibilityDescription: ok ? "まどわけ" : "まどわけ（許可が必要）")
         img?.isTemplate = true
@@ -146,6 +189,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 }
 
 let app = NSApplication.shared
+if CommandLine.arguments.contains("--selftest") {
+    app.setActivationPolicy(.accessory)
+    exit(SelfTest.run() ? 0 : 1)
+}
+if let i = CommandLine.arguments.firstIndex(of: "--settings-png"), i + 1 < CommandLine.arguments.count {
+    app.setActivationPolicy(.accessory)
+    SelfTest.settingsPNG(CommandLine.arguments[i + 1])
+    exit(0)
+}
 let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)

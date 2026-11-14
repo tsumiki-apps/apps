@@ -6,7 +6,7 @@ OUT=build; APP="$OUT/まどわけ.app"
 rm -rf "$OUT"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 for a in arm64 x86_64; do
-  swiftc -O -target $a-apple-macos13 Core.swift main.swift -o "$OUT/madowake-$a"
+  swiftc -O -target $a-apple-macos13 Core.swift Keys.swift SelfTest.swift main.swift -o "$OUT/madowake-$a"
 done
 lipo -create "$OUT"/madowake-arm64 "$OUT"/madowake-x86_64 -output "$APP/Contents/MacOS/madowake"
 rm "$OUT"/madowake-*

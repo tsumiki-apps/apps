@@ -1,4 +1,4 @@
-// まどわけの中身：寄せる先の計算・ウインドウを動かす・ショートカットの登録（画面は main.swift）
+// まどわけの中身：寄せる先の計算・ウインドウを動かす（キーは Keys.swift・画面は main.swift）
 import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
@@ -12,23 +12,6 @@ enum Side: UInt32 {
         case .right: return "右に寄せる"
         }
     }
-    var keyCode: UInt32 {
-        switch self {
-        case .left: return UInt32(kVK_LeftArrow)
-        case .top: return UInt32(kVK_UpArrow)
-        case .right: return UInt32(kVK_RightArrow)
-        }
-    }
-    var keyEquivalent: String {
-        let c: Int
-        switch self {
-        case .left: c = NSLeftArrowFunctionKey
-        case .top: c = NSUpArrowFunctionKey
-        case .right: c = NSRightArrowFunctionKey
-        }
-        return String(Character(UnicodeScalar(c)!))
-    }
-
     // Cocoa 座標（左下が原点）の visibleFrame から、寄せたあとの枠を出す
     func target(in vf: NSRect) -> NSRect {
         switch self {
@@ -184,34 +167,3 @@ enum Snapper {
         return AXValueGetValue(ref as! AXValue, .cgSize, &s) ? s : nil
     }
 }
-
-// MARK: - ショートカット（Carbon の全体ホットキー。これ自体に許可は要らない）
-
-final class HotKeys {
-    private var refs: [EventHotKeyRef] = []
-    private(set) var failed: [Side] = []
-    var onPress: ((Side) -> Void)?
-
-    func register() {
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let me = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, ctx in
-            var id = EventHotKeyID()
-            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
-                              nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
-            if let ctx, let side = Side(rawValue: id.id) {
-                Unmanaged<HotKeys>.fromOpaque(ctx).takeUnretainedValue().onPress?(side)
-            }
-            return noErr
-        }, 1, &spec, me, nil)
-
-        for side in [Side.left, .top, .right] {
-            var ref: EventHotKeyRef?
-            let id = EventHotKeyID(signature: OSType(0x6D646B77), id: side.rawValue) // 'mdkw'
-            let st = RegisterEventHotKey(side.keyCode, UInt32(cmdKey | optionKey), id,
-                                         GetApplicationEventTarget(), 0, &ref)
-            if st == noErr, let ref { refs.append(ref) } else { failed.append(side) }
-        }
-    }
-}
-
