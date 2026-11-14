@@ -1,5 +1,5 @@
 // `--selftest`：判断（Brain）に架空の画面の様子を流して確かめる。許可は要らない・画面には触らない。
-// 困りやすい場面（メニュー・ドラッグ・Alfred/Paste・つみきショットの範囲選び・デスクトップの切り替え）を1つずつ
+// 困りやすい場面（メニュー・ドラッグ・Alfred/Paste・つみきショットの範囲選び・デスクトップの切り替え・Mission Control）を1つずつ
 import AppKit
 
 enum SelfTest {
@@ -131,37 +131,97 @@ enum SelfTest {
         check(b.step(snap(101)).0 == .raise, "休みが明けたら戻る")
         b.pausedUntil = .infinity
         check(b.step(snap(1e9)).0 == .paused, "オフはずっと止まる")
-        // 窓がない（デスクトップ）
-        b = fresh(0)
-        check(b.step(snap(0, mouse: CGPoint(x: 1400, y: 850))).0 == .noWindow, "Finder が分からないときはデスクトップの上で何もしない")
-        // デスクトップ（窓と窓のあいだ）＝Finder を前に
+        // 窓がない（デスクトップ）＝何もしない（Finder を前に出さない。Finder の窓が別のデスクトップにあると、そこへ切り替わるため）
         let desk = CGPoint(x: 1400, y: 850)
-        func dsnap(_ t: TimeInterval, front: pid_t = 10) -> Snapshot { var x = snap(t, front: front, mouse: desk); x.finderPid = 90; return x }
-        b = fresh(0.05)
-        check(b.step(dsnap(0)).0 == .waiting, "デスクトップ：乗せた直後は待つ")
-        let dr = b.step(dsnap(0.05))
-        check(dr.0 == .desktop && dr.1?.pid == 90, "デスクトップ：待ち時間のあと Finder を前に")
-        check(b.step(dsnap(0.3, front: 90)).0 == .alreadyFront, "デスクトップ：Finder が前ならそのまま")
-        b = fresh(0); b.excluded.insert("com.apple.finder")
-        check(b.step(dsnap(0)).0 == .noWindow, "デスクトップ：Finder を除外していたら何もしない")
-        b = fresh(0.12); b.restDelay = 0.03
-        _ = b.step(dsnap(0)); check(b.step(dsnap(0.04)).0 == .desktop, "デスクトップ：止めたら感度どおりすぐ")
-        // Finder の窓を開いたあとにデスクトップへ＝Finder は前だが窓が選ばれている → デスクトップに移す
-        func fsnap(_ t: TimeInterval, mouse: CGPoint = desk, focused: Bool, calls: UnsafeMutablePointer<Int>? = nil) -> Snapshot {
-            var x = snap(t, front: 90, mouse: mouse); x.finderPid = 90
-            x.desktopFocused = { calls?.pointee += 1; return focused }; return x
+        b = fresh(0)
+        var deskWhys: [Why] = []
+        for i in 0..<5 { let r = b.step(snap(Double(i) * 0.3, front: 10, mouse: CGPoint(x: desk.x + Double(i), y: desk.y))); deskWhys.append(r.0); if r.1 != nil { deskWhys.append(.raise) } }
+        check(deskWhys.allSatisfy { $0 == .noWindow }, "S1：デスクトップの上では何も前に出さない（Finder も）（\(deskWhys.map(\.rawValue))）")
+        b = fresh(0)
+        check(b.step(snap(0, front: 90, mouse: desk)).0 == .noWindow, "S1：Finder が前でも、デスクトップの上では何もしない（クリックも送らない）")
+        // デスクトップから窓へ戻れば、ふだんどおり出す
+        check(b.step(snap(0.3, front: 90)).0 == .raise, "S1：デスクトップから窓の上へ戻ったら、その窓を出す")
+
+        // Mission Control・Launchpad・App Exposé（Dock が画面を覆う窓を出している）＝何もしない
+        let dockStrip = Win(id: 60, pid: 60, layer: 20, bounds: CGRect(x: 200, y: 830, width: 1000, height: 70), alpha: 1)
+        let mcOverlay = Win(id: 61, pid: 60, layer: 20, bounds: CGRect(x: 0, y: 0, width: 1440, height: 900), alpha: 1)
+        func msnap(_ t: TimeInterval, _ wins: [Win], mouse: CGPoint? = nil) -> Snapshot { var x = snap(t, windows: wins, mouse: mouse); x.dockPid = 60; return x }
+        b = fresh(0)
+        check(b.step(msnap(0, [mcOverlay, menuBar, safari, notes])).0 == .missionControl, "S2：Mission Control の最中は何もしない")
+        check(b.step(msnap(0.1, [mcOverlay, menuBar, safari, notes], mouse: CGPoint(x: 1100, y: 500))).0 == .missionControl, "S2：Mission Control の中でカーソルを動かしても何もしない")
+        // 下の窓が先に並んでいても（並びの順に頼らない）
+        b = fresh(0)
+        check(b.step(msnap(0, [menuBar, safari, notes, mcOverlay])).0 == .missionControl, "S2：Dock の大きな窓が一覧のどこにあっても止まる")
+        // 閉じたら、カーソルを動かすまで待つ（閉じた瞬間の位置の窓を勝手に出さない）
+        b = fresh(0)
+        _ = b.step(msnap(0, [mcOverlay, menuBar, safari, notes]))
+        check(b.step(msnap(0.5, [menuBar, safari, notes])).0 == .spaceChanged, "S2：Mission Control を閉じた直後、カーソルが同じ所なら何もしない")
+        check(b.step(msnap(0.6, [menuBar, safari, notes], mouse: CGPoint(x: 1010, y: 410))).0 == .raise, "S2：閉じたあとカーソルを動かしたら、ふだんどおり")
+        // 止まったままの見直し：Mission Control の最中は止め続け、閉じても動かすまでは出さない
+        b = fresh(0)
+        _ = b.step(msnap(0, [mcOverlay, menuBar, safari, notes]))
+        check(b.recheck(msnap(0.3, [mcOverlay, menuBar, safari, notes]))?.0 == .missionControl, "S2：止まったままの見直しでも、最中は何もしない")
+        check(b.recheck(msnap(0.6, [menuBar, safari, notes]))?.0 == .spaceChanged, "S2：止まったままの見直しで閉じたのに気づいても、出さない")
+        // いつもの Dock（細長い帯）は Mission Control と見なさない
+        b = fresh(0)
+        check(b.step(msnap(0, [dockStrip, menuBar, safari, notes])).0 == .raise, "S2：いつもの Dock の帯があっても、窓の上ならふだんどおり")
+        let sideDock = Win(id: 62, pid: 60, layer: 20, bounds: CGRect(x: 0, y: 100, width: 80, height: 700), alpha: 1)
+        check(Brain.missionControlShown(msnap(0, [sideDock, safari])) == false, "S2：横に置いた Dock（縦長の帯）も Mission Control と見なさない")
+        check(Brain.missionControlShown(snap(0, windows: [mcOverlay, safari])) == false, "S2：Dock が分からないときは止めない（ほかのアプリの大きな窓で止まらない）")
+
+        // S4：画面を覆う浮いた窓（通知センター）が素通しなら、下の窓を見る
+        let ncOverlay = Win(id: 70, pid: 77, layer: 23, bounds: CGRect(x: 0, y: 0, width: 1440, height: 900), alpha: 1)
+        func nsnap(_ t: TimeInterval, owner: pid_t?, mouse: CGPoint? = nil, calls: UnsafeMutablePointer<Int>? = nil) -> Snapshot {
+            var x = snap(t, windows: [ncOverlay, menuBar, safari, notes], mouse: mouse); x.axOwnerAt = { _ in calls?.pointee += 1; return owner }; return x
         }
         b = fresh(0)
-        check(b.step(fsnap(0, focused: false)).0 == .desktop, "デスクトップ：Finder が前でも窓が選ばれていればデスクトップに移す")
-        check(b.step(fsnap(0.01, mouse: CGPoint(x: 1410, y: 850), focused: false)).0 == .alreadyFront, "デスクトップ：移したら、窓に戻るまで繰り返さない（クリックを何度も送らない）")
-        _ = b.step(fsnap(1, mouse: p, focused: false))   // いったん窓の上へ
-        check(b.step(fsnap(2, focused: false)).0 == .desktop, "デスクトップ：窓の上から戻ったら、また移す")
+        let nr = b.step(nsnap(0, owner: 20))
+        check(nr.0 == .raise && nr.1?.id == 2, "S4：通知センターの全画面の窓が素通しなら、その下のメモを出す（\(nr.0.rawValue)）")
         b = fresh(0)
-        let calls = UnsafeMutablePointer<Int>.allocate(capacity: 1); calls.pointee = 0
-        check(b.step(fsnap(0, focused: true, calls: calls)).0 == .alreadyFront, "デスクトップ：もうデスクトップが選ばれていればそのまま")
-        _ = b.step(fsnap(0.01, mouse: CGPoint(x: 1420, y: 850), focused: true, calls: calls))
-        check(calls.pointee == 1, "デスクトップ：選ばれているかを読むのは入ったときの1回だけ")
-        calls.deallocate()
+        check(b.step(nsnap(0, owner: 77)).0 == .overlay, "S4：通知そのものの上（持ち主が通知センター）なら何もしない")
+        b = fresh(0)
+        check(b.step(nsnap(0, owner: nil)).0 == .overlay, "S4：当たり判定が読めなければ、手前の窓を信じて何もしない")
+        b = fresh(0)
+        let ncCalls = UnsafeMutablePointer<Int>.allocate(capacity: 1); ncCalls.pointee = 0
+        var sm = snap(0); sm.axOwnerAt = { _ in ncCalls.pointee += 1; return 20 }
+        _ = b.step(sm)
+        check(ncCalls.pointee == 0, "S4：大きな浮いた窓が無ければ、当たり判定は読まない（軽く）")
+        _ = b.step(nsnap(0.1, owner: 20, calls: ncCalls))
+        check(ncCalls.pointee == 1, "S4：当たり判定を読むのは1回の判断で1回だけ")
+        ncCalls.deallocate()
+        let shotOverlay = Win(id: 71, pid: 50, layer: 1000, bounds: CGRect(x: 0, y: 0, width: 1440, height: 900), alpha: 1)
+        var ss = snap(0, windows: [shotOverlay, menuBar, safari, notes]); ss.axOwnerAt = { _ in 50 }
+        b = fresh(0)
+        let sr = b.step(ss).0
+        check(sr == .stayApp || sr == .overlay, "S4：つみきショットの範囲選び（マウスを受けている）では何もしない")
+
+        let lockOverlay = Win(id: 72, pid: 81, layer: 2000, bounds: CGRect(x: 0, y: 0, width: 1440, height: 900), alpha: 1)
+        var ls = snap(0, windows: [lockOverlay, menuBar, safari, notes]); ls.axOwnerAt = { _ in 81 }
+        b = fresh(0)
+        check(b.step(ls).0 == .overlay, "S4：除外していない幕（つみきロックなど）がマウスを受けているなら、下の窓を出さない")
+        // S5：見送り（デスクトップを切り替えないため）は許可の失敗と数えず、出し直しは 8 秒あける
+        b = fresh(0)
+        _ = b.step(snap(0)); b.reportRaise(id: 2, ok: true, skipped: true)
+        check(!b.needsAttention, "S5：見送りは許可の失敗と数えない")
+        check(b.step(snap(5)).0 == .cooling, "S5：見送った窓は 5 秒たっても出し直さない")
+        check(b.step(snap(8.1)).0 == .raise, "S5：8 秒たったら出し直す")
+        for _ in 0..<3 { b.reportRaise(id: 2, ok: true, skipped: true) }
+        check(!b.needsAttention, "S5：見送りが続いても点は付けない")
+
+        // S3：前に出す直前の確かめ（アプリのメインの窓が別のデスクトップにあるなら最前面にしない）
+        let target = AXUIElementCreateApplication(101), other = AXUIElementCreateApplication(102)
+        check(Raiser.mainIsOK(nil, target, onThisSpace: { _ in false }), "S3：メインの窓が無いなら、最前面にしてよい")
+        check(Raiser.mainIsOK(target, target, onThisSpace: { _ in false }), "S3：乗せた窓がメインになったら、最前面にしてよい")
+        check(!Raiser.mainIsOK(other, target, onThisSpace: { _ in false }), "S3：メインの窓が別のデスクトップにあるなら、最前面にしない（デスクトップを切り替えない）")
+        check(Raiser.mainIsOK(other, target, onThisSpace: { _ in true }), "S3：メインの窓がいまのデスクトップにあるなら、最前面にしてよい")
+        let cr = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        check(Raiser.onlyHere(frame: cr, among: [(cr, true)]), "S3：同じ枠の窓がいまのデスクトップの1枚だけなら、ここの窓とみなす")
+        check(!Raiser.onlyHere(frame: cr, among: [(cr, true), (cr, false)]), "S3：別のデスクトップにも同じ枠の窓（最大化した窓など）があれば、見分けられないので最前面にしない")
+        check(!Raiser.onlyHere(frame: cr, among: [(cr, false)]), "S3：その枠の窓が別のデスクトップにしかなければ、最前面にしない")
+        check(Raiser.mainIsOK("文字" as CFString, target, onThisSpace: { _ in false }), "S3：窓でない値が返っても落ちない")
+        let t0 = Date()
+        _ = Raiser.mainSettles(app: AXUIElementCreateApplication(103), to: target, timeout: 0.05, onThisSpace: { _ in false })
+        check(Date().timeIntervalSince(t0) < 0.2, "S3：メインの窓を待つのは長くても0.1秒ほど（止まったままにならない）")
 
         // W4：カーソルが止まったままの見直し
         b = fresh(0)
@@ -198,18 +258,6 @@ enum SelfTest {
         check(!b.needsAttention, "W2：成功したら戻る")
         b.reportRaise(id: 2, ok: false); b.reportRaise(id: 5, ok: false); b.reportRaise(id: 2, ok: false); b.reportRaise(id: 5, ok: false)
         check(!b.needsAttention, "W2：別々の窓の失敗は合算しない")
-
-        // N5：別のアプリに切り替わったら、デスクトップの「済んだ」を下ろす
-        b = fresh(0)
-        check(b.step(dsnap(0, front: 10)).0 == .desktop, "N5：デスクトップを済ませる")
-        check(b.step(dsnap(0.1, front: 90)).0 == .alreadyFront, "N5：Finder が前になっても済みのまま")
-        check(b.step(dsnap(0.2, front: 20)).0 == .desktop, "N5：別のアプリに切り替わったら、デスクトップをまた出す")
-
-        // W1：クリックしなかった理由を言葉にできる（Brain は理由をログに出す）
-        var notes1: [String] = []
-        b = fresh(0); b.onNote = { notes1.append($0) }
-        _ = b.step(dsnap(0, front: 10))
-        check(!notes1.isEmpty, "W1：デスクトップを済ませたときに理由をログへ出す")
 
         // アイコン
         check(AppIcon.png(64).count > 500, "アプリのアイコンが描ける")

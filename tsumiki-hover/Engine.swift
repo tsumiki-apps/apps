@@ -24,9 +24,10 @@ struct Snapshot {
     var buttonsDown: Bool
     var topEdge: Bool                  // カーソルが画面の上の縁（隠れたメニューバーが出てくる所）
     var now: TimeInterval
-    var finderPid: pid_t? = nil        // デスクトップに乗せたときに前に出すアプリ（Finder）
-    /// Finder の中でデスクトップが操作の対象か（Finder の窓が選ばれていない）。要るときだけ読む（nil＝分からない＝そうだとみなす）
-    var desktopFocused: (() -> Bool)? = nil
+    /// Dock（Mission Control・Launchpad・App Exposé を描くアプリ）
+    var dockPid: pid_t? = nil
+    /// カーソルの下で実際にマウスを受けるアプリ（アクセシビリティの当たり判定）。要るときだけ読む
+    var axOwnerAt: ((CGPoint) -> pid_t?)? = nil
 }
 
 enum Why: String {
@@ -37,8 +38,8 @@ enum Why: String {
     case menuOpen = "メニューが開いている"
     case spaceChanged = "デスクトップを切り替えた直後"
     case topEdge = "画面の上の縁"
-    case noWindow = "窓がない"
-    case desktop = "デスクトップ（Finder）を前に"
+    case noWindow = "窓がない（デスクトップ）"
+    case missionControl = "Mission Control・Launchpad の最中"
     case overlay = "浮いている窓の上"
     case stayApp = "除外アプリが前にいる"
     case ownApp = "自分の窓"
@@ -70,9 +71,8 @@ final class Brain {
     private var raisedAt: TimeInterval = -1000
     private var lastMouse: CGPoint?
     private var stillSince: TimeInterval = 0
-    /// デスクトップに入ってから、もう済ませたか（窓の上に戻るまで繰り返さない＝クリックを何度も送らない）
-    private var desktopDone = false
-    private var lastFrontPid: pid_t?
+    /// Mission Control などの最中だったか（閉じたら、カーソルを動かすまで待つ）
+    private var inMissionControl = false
     /// 出したのに前に来ない窓を、続けて何回出し直したか（間隔を倍々に延ばす。成功＝前に来たら 0）
     private var retryStreak = 0
     /// 出し直しを待つ間隔：1・2・4・8秒（上限）
@@ -85,7 +85,7 @@ final class Brain {
     // 止まったままのカーソルで判断し直すための覚え
     private var baseline: (pid: pid_t, win: CGWindowID?)?
     private var held = false
-    private static let transient: Set<Why> = [.menuOpen, .mouseDown, .controlKey, .topEdge, .stayApp]
+    private static let transient: Set<Why> = [.menuOpen, .mouseDown, .controlKey, .topEdge, .stayApp, .missionControl]
 
     init(selfPid: pid_t) { self.selfPid = selfPid }
 
@@ -102,7 +102,9 @@ final class Brain {
     private var cooling = false
 
     /// 窓を出した結果を受ける（AX が通ったか）。窓ごとに連続の失敗を数える
-    func reportRaise(id: CGWindowID, ok: Bool) {
+    func reportRaise(id: CGWindowID, ok: Bool, skipped: Bool = false) {
+        // デスクトップを切り替えないために見送った＝許可の失敗ではない。出し直しは最初から長い間隔（8秒）で
+        if skipped { axFails[id] = nil; if raisedId == id { retryStreak = max(retryStreak, 3) }; return }
         if ok { axFails[id] = nil; return }
         if axFails.count > 50 { axFails.removeAll() }
         axFails[id, default: 0] += 1
@@ -148,6 +150,11 @@ final class Brain {
         // 遠くにある101の窓（出しっぱなしの常駐アプリ）で、ずっと止まらないようにする
         if s.windows.contains(where: { $0.layer == Level.popUpMenu && $0.alpha > 0
             && ($0.pid == s.frontPid || $0.bounds.insetBy(dx: -120, dy: -120).contains(s.mouse)) }) { return stop(.menuOpen) }
+        // Mission Control・Launchpad・App Exposé＝Dock が画面を覆う大きな窓を出している。
+        // この最中に前に出すと、Mission Control を抜けて別のデスクトップへ移ることがあるので、何もしない。
+        // 閉じたあとは、デスクトップを切り替えた直後と同じく、カーソルを動かすまで待つ
+        if Brain.missionControlShown(s) { inMissionControl = true; return stop(.missionControl) }
+        if inMissionControl { inMissionControl = false; spaceChanged(now: s.now - 0.4, mouse: s.mouse) }
         if let m = mouseAtSpaceChange {
             // 切り替えた直後の 0.4 秒と、そのあとカーソルを動かすまでは何もしない
             if s.now - spaceChangedAt < 0.4 || hypot(m.x - s.mouse.x, m.y - s.mouse.y) < 2 { return stop(.spaceChanged) }
@@ -156,27 +163,14 @@ final class Brain {
         if s.topEdge { return stop(.topEdge) }
         // 除外アプリ（Alfred・Paste など）が前にいる、または浮いた窓を出しているあいだは、操作を奪わない
         let front = s.bundleOf(s.frontPid)
-        // 別のアプリに切り替わったら、デスクトップの「済んだ」を下ろす（Finder に変わったときは下ろさない）
-        if let lp = lastFrontPid, lp != s.frontPid, s.frontPid != s.finderPid { desktopDone = false }
-        lastFrontPid = s.frontPid
         if let f = front, excluded.contains(f) { return stop(.stayApp) }
         if s.windows.contains(where: { w in
             w.layer > 0 && w.layer != Level.menuBar && w.layer != Level.statusItem && w.alpha > 0
                 && (s.bundleOf(w.pid).map { excluded.contains($0) } ?? false)
         }) { return stop(.stayApp) }
-        guard let top = s.windows.first(where: { $0.alpha > 0 && $0.bounds.contains(s.mouse) }) else {
-            // 窓と窓のあいだ（デスクトップ）＝Finder を前に出す。Finder の窓は前に出さない（Raiser が戻す）
-            guard let f = s.finderPid, f != selfPid, !(s.bundleOf(f).map { excluded.contains($0) } ?? false) else { return stop(.noWindow) }
-            if desktopDone { return stop(.alreadyFront) }
-            // Finder が前でも、Finder の窓が選ばれたままならデスクトップに移す
-            if s.frontPid == f && (s.desktopFocused?() ?? true) {
-                desktopDone = true; onNote?("デスクトップ：Finder が前でデスクトップが選ばれているので済み"); return stop(.alreadyFront)
-            }
-            let r = decide(Win(id: kCGNullWindowID, pid: f, layer: 0, bounds: .zero, alpha: 1), s, why: .desktop)
-            if r.0 == .desktop { desktopDone = true; onNote?("デスクトップ：Finder を前に出した（以後、窓の上に戻るか別のアプリに切り替わるまで繰り返さない）") }
-            return r
-        }
-        desktopDone = false
+        // 窓と窓のあいだ（デスクトップ）では何もしない。
+        // Finder を前に出すと、Finder の窓が別のデスクトップにあるとき、そこへ切り替わってしまう（「アプリケーションの切り替えで…スペースに移動」が入っていると）
+        guard let top = Brain.topWindow(s) else { return stop(.noWindow) }
         // 普通の窓（高さ0）以外＝Dock・メニューバー・浮いたパネル・つみきショットの範囲選び・つみきロックの幕
         if top.layer != 0 { return stop(.overlay) }
         if top.pid == selfPid { return stop(.ownApp) }
@@ -186,7 +180,28 @@ final class Brain {
         return decide(top, s, why: .raise)
     }
 
-    /// 待ち時間・出したばかりを見て、出すかどうかを決める（窓でもデスクトップでも同じ）
+    /// カーソルの下のいちばん手前の窓。画面を覆う大きな浮いた窓（通知センターなど）は、
+    /// その場所でマウスを受けていなければ（当たり判定の持ち主が別のアプリ）素通しとみなして、下の窓を見る
+    static func topWindow(_ s: Snapshot) -> Win? {
+        var owner: pid_t?? = nil   // 読むのは1回だけ
+        for w in s.windows where w.alpha > 0 && w.bounds.contains(s.mouse) {
+            if w.layer > 0 && w.layer != Level.menuBar && w.layer != Level.statusItem && min(w.bounds.width, w.bounds.height) >= 300 {
+                if owner == nil { owner = .some(s.axOwnerAt?(s.mouse)) }
+                if let o = owner!, o != w.pid { continue }
+            }
+            return w
+        }
+        return nil
+    }
+
+    /// Dock が画面を覆う大きな窓（短い辺 300pt 以上）を出しているか＝Mission Control・Launchpad・App Exposé の最中。
+    /// いつもの Dock は細長い帯なので当たらない
+    static func missionControlShown(_ s: Snapshot) -> Bool {
+        guard let d = s.dockPid else { return false }
+        return s.windows.contains { $0.pid == d && $0.alpha > 0 && min($0.bounds.width, $0.bounds.height) >= 300 }
+    }
+
+    /// 待ち時間・出したばかりを見て、出すかどうかを決める
     private func decide(_ top: Win, _ s: Snapshot, why: Why) -> (Why, Win?) {
         // 出したばかりの窓が前に来ないとき（出せないアプリ）に、出し続けない
         if raisedId == top.id && s.now - raisedAt < coolSpan { cooling = true; return (.cooling, nil) }
@@ -218,6 +233,16 @@ enum Screen {
         }
     }
 
+    /// そのアプリの普通の窓すべて（別のデスクトップ・しまった窓も）。いまのデスクトップに見えているかつき
+    static func allWindows(of pid: pid_t) -> [(bounds: CGRect, onScreen: Bool)] {
+        guard let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        return list.compactMap { d in
+            guard d[kCGWindowOwnerPID as String] as? pid_t == pid, d[kCGWindowLayer as String] as? Int == 0,
+                  let bd = d[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: bd) else { return nil }
+            return (r, d[kCGWindowIsOnscreen as String] as? Bool ?? false)
+        }
+    }
+
     /// カーソルの位置（左上原点）
     static func mouse() -> CGPoint {
         let p = NSEvent.mouseLocation
@@ -246,20 +271,33 @@ enum Screen {
                  controlDown: NSEvent.modifierFlags.contains(.control),
                  buttonsDown: NSEvent.pressedMouseButtons != 0,
                  topEdge: atTopEdge(), now: now,
-                 finderPid: finderPid(),
-                 desktopFocused: { finderPid().map { desktopFocused(finder: $0) } ?? true })
+                 dockPid: dockPid(),
+                 axOwnerAt: { axOwnerCached(at: $0) })
     }
 
-    static func finderPid() -> pid_t? {
-        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
+    /// その位置で実際にマウスを受けるアプリ（読めなければ nil＝手前の窓をそのまま信じる）
+    private static var ownerCache: (at: TimeInterval, pid: pid_t?)?
+    /// 動かしているあいだ毎回読まないよう、0.05 秒は前の答えを使う（毎秒20回まで）
+    static func axOwnerCached(at p: CGPoint) -> pid_t? {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let c = ownerCache, now - c.at < 0.05 { return c.pid }
+        let r = axOwner(at: p); ownerCache = (now, r); return r
     }
 
-    /// Finder の中でデスクトップが操作の対象か＝選ばれている Finder の窓が無い
-    static func desktopFocused(finder pid: pid_t) -> Bool {
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.15)
-        var v: CFTypeRef?
-        return AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &v) != .success || v == nil
+    static func axOwner(at p: CGPoint) -> pid_t? {
+        let sys = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(sys, 0.1)
+        var el: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(p.y), &el) == .success, let e = el else { return nil }
+        var pid: pid_t = 0
+        return AXUIElementGetPid(e, &pid) == .success && pid > 0 ? pid : nil
+    }
+
+    private static var dockCache: pid_t?
+    static func dockPid() -> pid_t? {
+        if let p = dockCache, NSRunningApplication(processIdentifier: p) != nil { return p }
+        dockCache = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
+        return dockCache
     }
 }
 
@@ -300,6 +338,8 @@ enum Raiser {
 
     /// 直近の失敗・見送りの理由（HOVER_LOG で出す）
     static var lastNote: String?
+    /// 直近の raise が「別のデスクトップへ移るおそれがあるので見送った」か（許可の失敗とは数えない）
+    static var lastSkipped = false
 
     /// その窓だけを前に出し、操作の対象にする。
     /// アプリを最前面にすると（公開の仕組みでは）そのアプリの窓が全部前に出るので、
@@ -307,60 +347,56 @@ enum Raiser {
     static var generation = 0
     @discardableResult
     static func raise(_ w: Win, at point: CGPoint?, before: [Win]? = nil) -> Bool {
-        lastNote = nil
+        lastNote = nil; lastSkipped = false
         guard let ax = axWindow(for: w, at: point) else { lastNote = "出せなかった：アクセシビリティの窓が見つからない（pid \(w.pid)）"; return false }
         return bringFront(pid: w.pid, keep: w.id, ax: ax, before: before)
     }
 
-    /// デスクトップ＝Finder を最前面にし、操作の対象をデスクトップにする。Finder の窓は前に出さない（間にあったほかのアプリの窓を戻す）
-    /// デスクトップを選ぶ公開の仕組みは無い（AXFocused・AXMain は効かない）ので、何もない所なら、そこを1回クリックしたのと同じにする
-    @discardableResult
-    static func raiseDesktop(finder pid: pid_t, at point: CGPoint, before: [Win]? = nil) -> Bool {
-        lastNote = nil
-        if !Screen.desktopFocused(finder: pid) {
-            if let why = clickBlockReason(finder: pid, at: point) {
-                lastNote = "デスクトップをクリックしなかった：\(why)"
-            } else {
-                for t in [CGEventType.leftMouseDown, .leftMouseUp] {
-                guard let e = CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: point, mouseButton: .left) else { continue }
-                e.flags = []; e.setIntegerValueField(.mouseEventClickState, value: 1)
-                e.post(tap: .cghidEventTap)
-                }
-            }
+    /// 最前面にしてもデスクトップが切り替わらないか＝アプリのメインの窓が target・なし・いまのデスクトップにある窓のどれか。
+    /// AXRaise が遅れて効くアプリのために約 0.1 秒待つ（固まったアプリでは1回の読みが最大 0.15 秒かかる）
+    static func mainSettles(app: AXUIElement, to target: AXUIElement, timeout: TimeInterval = 0.1,
+                            onThisSpace: (AXUIElement) -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while true {
+            if mainIsOK(attr(app, kAXMainWindowAttribute), target, onThisSpace: onThisSpace) { return true }
+            if Date() >= end { return false }
+            usleep(10_000)
         }
-        return bringFront(pid: pid, keep: kCGNullWindowID, ax: nil, before: before)
     }
 
-    /// クリックしてよい所か：Finder のデスクトップの地（アイコンの上ではない）で、
-    /// 「壁紙をクリックしてデスクトップを表示」とステージマネージャが切ってある（窓が全部どくのを防ぐ）
-    static func canClickDesktop(finder pid: pid_t, at p: CGPoint) -> Bool { clickBlockReason(finder: pid, at: p) == nil }
+    static func mainIsOK(_ main: CFTypeRef?, _ target: AXUIElement, onThisSpace: (AXUIElement) -> Bool) -> Bool {
+        guard let m = main, CFGetTypeID(m) == AXUIElementGetTypeID() else { return true }
+        if CFEqual(m, target) { return true }
+        return onThisSpace(m as! AXUIElement)
+    }
 
-    /// クリックできない理由（できるなら nil）
-    static func clickBlockReason(finder pid: pid_t, at p: CGPoint) -> String? {
-        let wm = UserDefaults(suiteName: "com.apple.WindowManager")
-        if wm?.bool(forKey: "GloballyEnabled") == true { return "ステージマネージャが入っている" }
-        if wm?.object(forKey: "EnableStandardClickToShowDesktop") as? Bool ?? true {
-            return "「壁紙をクリックしてデスクトップを表示」が有効（全窓が隠れるため）。システム設定＞デスクトップとDock＞壁紙をクリックしてデスクトップを表示 を「ステージマネージャ使用時のみ」に"
-        }
-        let sys = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(sys, 0.15)
-        var el: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(p.y), &el) == .success, let e = el else { return "カーソルの下の要素を読めない" }
-        var owner: pid_t = 0
-        guard AXUIElementGetPid(e, &owner) == .success, owner == pid else { return "カーソルの下が Finder のものではない" }
-        let role = attr(e, kAXRoleAttribute) as? String
-        return role == kAXGroupRole || role == kAXScrollAreaRole ? nil : "アイコンなど、デスクトップの地ではない（\(role ?? "不明")）"
+    /// その枠の窓が「いまのデスクトップに見えている1枚だけ」か。別のデスクトップに同じ枠の窓（最大化した窓など）があれば、見分けられないので false
+    static func onlyHere(frame f: CGRect, among mine: [(bounds: CGRect, onScreen: Bool)]) -> Bool {
+        let same = mine.filter { sameFrame($0.bounds, f) }
+        return same.count == 1 && same[0].onScreen
+    }
+
+    static func sameFrame(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) < 2 && abs(a.minY - b.minY) < 2 && abs(a.width - b.width) < 2 && abs(a.height - b.height) < 2
     }
 
     /// アプリを最前面にして、keep 以外の同じアプリの窓より手前にいたほかのアプリの窓を元の並びに戻す
-    private static func bringFront(pid: pid_t, keep: CGWindowID, ax: AXUIElement?, before: [Win]?) -> Bool {
+    private static func bringFront(pid: pid_t, keep: CGWindowID, ax: AXUIElement, before: [Win]?) -> Bool {
         let w = Win(id: keep, pid: pid, layer: 0, bounds: .zero, alpha: 1)
         let app = AXUIElementCreateApplication(w.pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
         let order = (before ?? Screen.windows()).filter { $0.layer == 0 && $0.alpha > 0 }
-        if let ax {
+        do {
             AXUIElementSetAttributeValue(ax, kAXMainAttribute as CFString, kCFBooleanTrue)
             AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
+            // アプリを最前面にすると、そのアプリの「メインの窓」のあるデスクトップへ切り替わることがある。
+            // メインの窓が「乗せた窓・なし・いまのデスクトップにある窓」のどれかになったのを見てから最前面にする。別のデスクトップの窓のままなら見送る
+            let mine = Screen.allWindows(of: pid)
+            guard mainSettles(app: app, to: ax, onThisSpace: { m in frame(m).map { Raiser.onlyHere(frame: $0, among: mine) } ?? false }) else {
+                lastSkipped = true
+                lastNote = "見送り：そのアプリのメインの窓が別のデスクトップにある（か見分けられない）（pid \(pid)）。最前面にするとそこへ移るので出さない"
+                return true
+            }
         }
         let fr = AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
         guard fr == .success else {
@@ -392,7 +428,7 @@ enum Raiser {
                 for o in passed.reversed() where at(o.id) != nil {
                     if let e = axWindow(for: o, at: nil) { AXUIElementPerformAction(e, kAXRaiseAction as CFString) }
                 }
-                if let ax { AXUIElementPerformAction(ax, kAXRaiseAction as CFString) }
+                AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
             } else if Date().timeIntervalSince(start) < 1.0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { restoreWhenPassed() }
             }

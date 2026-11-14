@@ -69,6 +69,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         status.menu = menu
         trusted = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         brain.onNote = { [weak self] m in self?.note(m) }
+        note("起動：アクセシビリティの許可=\(trusted ? "あり" : "なし")")
         applyPrefs()
         HotKey.action = { [weak self] in self?.toggle() }
         hotKey = HotKey()
@@ -88,6 +89,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func recheck() {
         let now = AXIsProcessTrusted()
+        if now != trusted { note("アクセシビリティの許可=\(now ? "あり" : "なし")") }
         if let e = pauseEnd, e <= Date() { pauseEnd = nil; applyPrefs() }
         if now != trusted { trusted = now; applyPrefs() } else { updateIcon() }
     }
@@ -141,8 +143,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if log && why != .waiting { FileHandle.standardError.write("\(why.rawValue)\n".data(using: .utf8)!) }
         var ok = true
-        if why == .raise, let w { ok = Raiser.raise(w, at: snap.mouse, before: snap.windows); brain.reportRaise(id: w.id, ok: ok) }
-        if why == .desktop, let w { ok = Raiser.raiseDesktop(finder: w.pid, at: snap.mouse, before: snap.windows); brain.reportRaise(id: w.id, ok: ok) }
+        if why == .raise, let w { ok = Raiser.raise(w, at: snap.mouse, before: snap.windows); brain.reportRaise(id: w.id, ok: ok, skipped: Raiser.lastSkipped) }
         if let n = Raiser.lastNote { note(n); Raiser.lastNote = nil }
         if brain.needsAttention != wasAttention { wasAttention = brain.needsAttention; updateIcon() }
     }
