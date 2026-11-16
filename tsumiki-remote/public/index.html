@@ -1264,6 +1264,12 @@
   .sheetbody .confirm2 button{flex:1 1 0;text-align:center;min-width:84px;min-height:44px;border-radius:12px;
     border:1px solid var(--line);background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
   .sheetbody .confirm2 button.yes{background:var(--crit-bg);border-color:var(--crit);color:var(--crit);font-weight:700}
+  /* カメラ（Mac の内蔵カメラの1枚） */
+  .cambox { padding: 4px 0 8px; }
+  .cambox img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain;
+    background: #000; border-radius: 12px; }
+  .cambox.busy img { opacity: .5; }
+  .camnote { color: var(--dim); font-size: 13px; margin-top: 6px; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -6804,6 +6810,42 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
 
+  // ---------------------------------------------------------- カメラ（2026-11-16）
+  // Mac の内蔵カメラで1枚撮って見せる。開いたらすぐ1枚・「もう1枚」で撮り直す（押した時だけ撮る＝
+  // ランプが点くのは撮る一瞬だけ）。撮った物は Mac が iCloud の「つみきカメラ」にも置く。
+  // 幕が掛かっていても撮れる（撮るのは専用アプリ。server.js の cameraShoot の注）。
+  function openCamera() {
+    openSheet('カメラ');
+    var box = document.createElement('div');
+    box.className = 'cambox';
+    var img = document.createElement('img');
+    img.alt = 'Mac のカメラ';
+    var note = document.createElement('div');
+    note.className = 'camnote';
+    box.appendChild(img);
+    box.appendChild(note);
+    sheetBody.appendChild(box);
+    var again = sheetItem('もう1枚', '', shoot, { icon: 'camera', iconCls: 'dark' });
+    function shoot() {
+      if (sheet.hidden || !box.isConnected) return;
+      again.disabled = true;
+      box.classList.add('busy');
+      note.textContent = '撮っています…';
+      api('/api/camera', { method: 'POST', body: '{}' }, 30000).then(function (r) {
+        if (!box.isConnected) return;
+        img.src = r.img;
+        note.textContent = r.saved ? 'iCloud に保存: ' + r.saved : '撮れました（iCloud に置けませんでした）';
+      }).catch(function (e) {
+        if (!box.isConnected) return;
+        note.textContent = '撮れません: ' + e.message;
+      }).then(function () {
+        box.classList.remove('busy');
+        again.disabled = false;
+      });
+    }
+    shoot();
+  }
+
   // ---------------------------------------------------------- Mac の幕（つみきロック）
   //
   // 上の帯の鍵：押すたびに掛ける⇄外す。どちらも一押し（2026-10-13 本人の選択。Face ID＝パスキーは
@@ -7007,6 +7049,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     shield: '<path d="M12 3.2 19.4 6v6c0 4.2-3 7.4-7.4 8.8C7.6 19.4 4.6 16.2 4.6 12V6z"/>',
     // 月＝画面を消す（眠らせる）
     moon: '<path d="M20.4 14.8A8.5 8.5 0 0 1 9.2 3.6 8.5 8.5 0 1 0 20.4 14.8z"/>',
+    // カメラ＝Mac の内蔵カメラで1枚
+    camera: '<path d="M3.2 8.6A2.2 2.2 0 0 1 5.4 6.4h2.1l1.4-2h6.2l1.4 2h2.1a2.2 2.2 0 0 1 2.2 2.2v8.8'
+      + 'a2.2 2.2 0 0 1-2.2 2.2H5.4a2.2 2.2 0 0 1-2.2-2.2z"/><circle cx="12" cy="12.8" r="3.6"/>',
     // 開いた鍵＝Mac の幕が外れている
     unlock: '<rect x="5" y="10.6" width="14" height="9.8" rx="2.2"/>'
       + '<path d="M8.2 10.6V7.8a3.8 3.8 0 0 1 7.3-1.5"/>',
@@ -7123,6 +7168,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       { icon: 'folder', iconCls: 'edit' });
     sheetItem('Mac の画面を消す', '', function () { closeSheet(); doDark(); },
       { icon: 'moon', iconCls: 'dark' });
+    sheetItem('カメラ', '', function () { openCamera(); },
+      { icon: 'camera', iconCls: 'dark' });
     if (lockSt && lockSt.app) {
       sheetItem('Mac の幕', '', function () { openLockSheet(); },
         { icon: lockSt.locked ? 'lock' : 'unlock', iconCls: 'dark', val: lockSt.locked ? '掛けています' : '' });
