@@ -89,7 +89,9 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!
     let opt = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.7]
     guard let data = ctx.jpegRepresentation(of: img, colorSpace: cs, options: opt) else { fail("絵を作れません", 6) }
-    session.stopRunning()
+    // 4秒待っても暗いまま＝写っていない見込み。写真は返すが、印（<出力>.dark）を置いて画面で知らせる
+    if y <= 0.04 { FileManager.default.createFile(atPath: out.path + ".dark", contents: nil) }
+    // ⚠️ stopRunning はここ（受け取りの列の中）で呼ばない。止まることがある。exit で閉じる
     do { try data.write(to: out, options: .atomic) } catch { fail("書けません", 7) }
     exit(0)
   }
@@ -97,14 +99,17 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
 let g = Grab()
 func go() { g.run() }
+// 時間切れ：許可済みなら15秒（サーバーは20秒で待つのをやめて止めに来る）。
+// 許可の問い合わせは Mac の前で押されるまで待つので長め（このときサーバーは先に諦める）
+var limit: Double = 15
 switch AVCaptureDevice.authorizationStatus(for: .video) {
 case .authorized: go()
 case .notDetermined:
+  limit = 90
   AVCaptureDevice.requestAccess(for: .video) { ok in
     if ok { DispatchQueue.main.async { go() } } else { fail("カメラが許可されていません（Mac の設定 > プライバシー > カメラ）", 3) }
   }
 default: fail("カメラが許可されていません（Mac の設定 > プライバシー > カメラ）", 3)
 }
-// 許可の問い合わせは Mac の前で押されるまで待つので長め。撮るだけなら1〜2秒で終わる
-DispatchQueue.main.asyncAfter(deadline: .now() + 90) { fail("時間切れ", 8) }
+DispatchQueue.main.asyncAfter(deadline: .now() + limit) { fail("時間切れ（カメラから絵が届きません）", 8) }
 RunLoop.main.run()

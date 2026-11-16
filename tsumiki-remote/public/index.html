@@ -1266,7 +1266,7 @@
   .sheetbody .confirm2 button.yes{background:var(--crit-bg);border-color:var(--crit);color:var(--crit);font-weight:700}
   /* カメラ（Mac の内蔵カメラの1枚） */
   .cambox { padding: 4px 0 8px; }
-  .cambox img { display: block; width: 100%; height: min(44dvh, 100dvh - 340px, 400px); object-fit: contain;
+  .cambox img { display: block; width: 100%; height: min(44dvh, 100dvh - 392px, 400px); object-fit: contain;
     background: #000; border-radius: 12px; }
   .camseg { display: flex; gap: 6px; margin-bottom: 8px; }
   .sheetbody .camseg button { flex: 1; min-width: 0; min-height: 44px; padding: 0 4px; text-align: center;
@@ -1275,7 +1275,24 @@
   .sheetbody .camseg button.shoot { flex: 0 0 52px; color: var(--fg); background: var(--panel);
     display: grid; place-items: center; }
   .camseg .shoot svg { width: 24px; height: 24px; }
-  .cambox.busy img { opacity: .5; }
+  .cambox.busy img, .cambox img.stale { opacity: .25; }
+  .camacts { display: flex; gap: 6px; margin-top: 8px; }
+  /* 広い画面のシートは真ん中の枠（高さ min(600px, 80dvh)）。写真はその中に収める */
+  @media (min-width:900px), (min-width:600px) and (max-height:520px) {
+    .cambox img { height: clamp(140px, 80dvh - 300px, 300px); }
+  }
+  /* 横向きの iPhone（背が 520 以下）：縦に積むと写真が 0〜140px しか取れない（反証役 2026-11-16）。
+     写真を左・形と撮り直し・保存・開くを右に並べる */
+  @media (min-width:600px) and (max-height:520px) {
+    .cambox { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 10px;
+      grid-template-areas: "img seg" "img note" "img acts" "img ."; grid-template-rows: auto auto auto 1fr; }
+    .cambox img { grid-area: img; height: calc(80dvh - 130px); }
+    .cambox .camseg { grid-area: seg; flex-wrap: wrap; }
+    .cambox .camnote { grid-area: note; }
+    .cambox .camacts { grid-area: acts; }
+    #sheet.cam .sheetbox { width: min(760px, 100%); }
+  }
+  .sheetbody .camacts button { flex: 1; min-height: 44px; padding: 0 8px; text-align: center; font-size: 15px; }
   .camnote { color: var(--dim); font-size: 13px; margin-top: 6px; overflow-wrap: anywhere; }
 </style>
 </head>
@@ -6824,16 +6841,32 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //   写る広さの目安：16:9＝横がいちばん広い／4:3・正方形＝面積が大きい／9:16＝上下がいちばん広い
   var CAM_SHAPES = ['9:16', '16:9', '4:3', '1:1'];
   var CAM_KEY = 'tsumiki.camShape';
+  // 撮っている最中の1枚（{shape, p}）。シートを閉じても撮影は Mac で続くので、開き直したときは
+  // 同じ形ならそれを待って見せ、違う形ならその後に撮る（二重に撮らない・前の撮影の待ちで時間切れにしない）
+  var camPending = null;
+  function camShot(shape) {
+    if (camPending && camPending.shape === shape) return camPending.p;
+    var before = camPending ? camPending.p.catch(function () {}) : Promise.resolve();
+    var mine = { shape: shape };
+    mine.p = before.then(function () {
+      return api('/api/camera', { method: 'POST', body: JSON.stringify({ shape: shape }) }, 30000);
+    });
+    mine.p.catch(function () {}).then(function () { if (camPending === mine) camPending = null; });
+    camPending = mine;
+    return mine.p;
+  }
   // 幕が掛かっていても撮れる（撮るのは専用アプリ。server.js の cameraShoot の注）。
   function openCamera() {
     openSheet('カメラ');
+    sheet.classList.add('cam');
     var box = document.createElement('div');
     box.className = 'cambox';
     var img = document.createElement('img');
-    img.alt = 'Mac のカメラ';
+    img.alt = '';   // 撮れるまでは黒い枠に字を出さない
     var note = document.createElement('div');
     note.className = 'camnote';
-    var shape = localStorage.getItem(CAM_KEY);
+    var shape = null;
+    try { shape = localStorage.getItem(CAM_KEY); } catch (e) { /* 読めなければ既定 */ }
     if (CAM_SHAPES.indexOf(shape) < 0) shape = '9:16';
     var seg = document.createElement('div');
     seg.className = 'camseg';
@@ -6844,15 +6877,18 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       b.dataset.k = k;
       b.onclick = function () {
         if (k === shape || box.classList.contains('busy')) return;
-        shape = k;
-        try { localStorage.setItem(CAM_KEY, k); } catch (e) { /* 覚えられないだけ */ }
+        shape = k;   // 覚えるのは撮れてから（失敗した形を次の既定にしない）
         mark();
         shoot();
       };
       seg.appendChild(b);
     });
     function mark() {
-      Array.prototype.forEach.call(seg.children, function (b) { if (b.dataset.k) b.classList.toggle('on', b.dataset.k === shape); });
+      Array.prototype.forEach.call(seg.children, function (b) {
+        if (!b.dataset.k) return;
+        b.classList.toggle('on', b.dataset.k === shape);
+        b.setAttribute('aria-pressed', b.dataset.k === shape ? 'true' : 'false');
+      });
     }
     mark();
     // 撮り直しは形と同じ行の右端に置く（下に項目として置くと、9:16 の写真に押し出されて
@@ -6864,25 +6900,54 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     again.innerHTML = sicSvg('camera');
     again.onclick = function () { shoot(); };
     seg.appendChild(again);
+    // 保存した1枚を開く2つ＝つみきリモートのプレビュー（拡大・共有）／ファイル App（その写真を直接）
+    var acts = document.createElement('div');
+    acts.className = 'camacts';
+    var relNow = '';
+    function actBtn(label, fn) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.disabled = true;
+      b.onclick = function () { if (relNow) fn(relNow); };
+      acts.appendChild(b);
+      return b;
+    }
+    var viewB = actBtn('プレビュー', function (rel) { openPreview(rel); });
+    var filesB = actBtn('ファイル App', function (rel) { openInFiles(rel); });
+    function setRel(rel) { relNow = rel || ''; viewB.disabled = filesB.disabled = !relNow; }
     box.appendChild(seg);
     box.appendChild(img);
     box.appendChild(note);
+    box.appendChild(acts);
     sheetBody.appendChild(box);
+    // 撮っている間は形も撮り直しも押せない（押しても黙って何も起きない、をなくす）
+    function busy(on) {
+      box.classList.toggle('busy', on);
+      Array.prototype.forEach.call(seg.children, function (b) { b.disabled = on; });
+    }
     function shoot() {
       if (sheet.hidden || !box.isConnected) return;
-      again.disabled = true;
-      box.classList.add('busy');
+      var want = shape;
+      busy(true);
       note.textContent = '撮っています…';
-      api('/api/camera', { method: 'POST', body: JSON.stringify({ shape: shape }) }, 30000).then(function (r) {
+      setRel('');
+      camShot(want).then(function (r) {
         if (!box.isConnected) return;
         img.src = r.img;
-        note.textContent = r.saved ? 'iCloud に保存: ' + r.saved : '撮れました（iCloud に置けませんでした）';
+        img.alt = 'Mac のカメラ';
+        img.classList.remove('stale');
+        setRel(r.rel);
+        try { localStorage.setItem(CAM_KEY, want); } catch (e) { /* 覚えられないだけ */ }
+        note.textContent = (r.saved ? 'iCloud に保存: ' + r.saved : '撮れました（iCloud に置けませんでした）')
+          + (r.dark ? '・暗い写真です' : '');
       }).catch(function (e) {
         if (!box.isConnected) return;
+        // 前の写真は残すが薄くする（いま選んでいる形の写真に見せない）
+        img.classList.add('stale');
         note.textContent = '撮れません: ' + e.message;
       }).then(function () {
-        box.classList.remove('busy');
-        again.disabled = false;
+        if (box.isConnected) busy(false);
       });
     }
     shoot();
@@ -7185,6 +7250,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function openSheet(title) {
+    sheet.classList.remove('cam');   // カメラのときだけ広げた枠を戻す
     sheetTitle.textContent = title;
     sheetBody.innerHTML = '';
     loginStep = '';   // ほかのシートに替わった＝ログインの巡回はもうここを描かない

@@ -21,7 +21,7 @@ iPhone (PWA)  ──https──▶  Tailscale  ──▶  Mac:8787 (server.js)  
 | `public/sw.js` | 画面一式を iPhone の中に置いておく係（Service Worker）。Mac に届かなくても真っ白にしない |
 | `public/icon-180.png` `icon-512.png` | ホーム画面のアイコン（`bin/make_icon.py` で作る） |
 | `lib/auth.js` | Claude のログインの期限の「判断」だけの小さな部屋（→「Claude のログインの期限」） |
-| `camera/` | Mac の内蔵カメラで1枚撮る専用アプリ（`build.sh` で `~/Applications/つみきカメラ.app` に作る）。node はカメラの許可を持てないので、許可はこのアプリだけに持たせ `open` で起こす。撮った物は iCloud の `つみきカメラ/` にも置く。幕が掛かっていても撮れる |
+| `camera/` | Mac の内蔵カメラで1枚撮る専用アプリ（`build.sh` で `~/Applications/つみきカメラ.app` に作る）。node はカメラの許可を持てないので、許可はこのアプリだけに持たせ `open` で起こす。撮った物は iCloud の `つみきカメラ/` にも置き、画面の「プレビュー」「ファイル App」で開ける。形は 9:16（既定）・16:9・4:3・正方形。幕が掛かっていても撮れる |
 | `lib/lockgate.js` | つみきロック（Mac の幕）とのやりとりと、パスキーの確かめ（→「Mac の幕」） |
 | `bin/` | 道具＝`auth_check.js`（期限の通し確認）・`auth_rehearsal.js`（稽古場）・`link_ext_check.js`（履歴で光らせる種類の点検）・`memo.js`（席のメモ欄に1行書く）・`qr.sh`・`make_icon.py` |
 

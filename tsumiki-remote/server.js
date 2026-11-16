@@ -2650,46 +2650,79 @@ const CAMERA_APP = path.join(os.homedir(), 'Applications', 'つみきカメラ.a
 const CAMERA_TMP = path.join(os.homedir(), '.tsumiki-remote', 'cam');
 const CAMERA_DIR_NAME = 'つみきカメラ';
 let cameraBusy = null;
+let cameraWaiting = 0;
 // 撮れる形（つみきカメラの formats のうち4つ）。画面から名前で選ぶ。既定は縦長（2026-11-16 本人「基本的に9:16で」）
 const CAMERA_SHAPES = { '9:16': '1080x1920', '16:9': '1920x1080', '4:3': '1760x1328', '1:1': '1552x1552' };
 const CAMERA_DEFAULT = '9:16';
+// 待つのは20秒。つみきカメラ側の時間切れ（許可済みなら15秒）より長くしておき、それでも返らなければ止める
+// ＝アプリが残ってランプが点きっぱなし・次の撮影とカメラを取り合う、を防ぐ（反証役 2026-11-16）
+const CAMERA_WAIT_MS = 20000;
 function cameraName(d) {
   const z = (n) => String(n).padStart(2, '0');
   return `${d.getMonth() + 1}月${d.getDate()}日 ${z(d.getHours())}時${z(d.getMinutes())}分${z(d.getSeconds())}秒.jpg`;
 }
-async function cameraShoot(shape) {
-  // カメラは1つ。撮っている最中に押されたら、その1枚が終わるのを待ってから撮る
-  while (cameraBusy) await cameraBusy.catch(() => {});
-  const fmt = CAMERA_SHAPES[shape] || CAMERA_SHAPES[CAMERA_DEFAULT];
-  cameraBusy = (async () => {
-    await fsp.mkdir(CAMERA_TMP, { recursive: true });
-    const tmp = path.join(CAMERA_TMP, `shot-${process.pid}-${Date.now()}.jpg`);
-    const ok = await new Promise((resolve) => {
-      execFile('/usr/bin/open', ['-W', '-g', '-n', '-a', CAMERA_APP, '--args', tmp, fmt], { timeout: 20000 },
-        (err) => resolve(!err));
-    });
-    let img = null, why = '';
-    try { img = await fsp.readFile(tmp); } catch (e) {
-      try { why = (await fsp.readFile(tmp + '.err', 'utf8')).trim(); } catch (e2) { /* 理由なし */ }
-    }
-    fsp.unlink(tmp + '.err').catch(() => {});
-    if (!img || !img.length) {
-      fsp.unlink(tmp).catch(() => {});
-      throw new Error(why || (ok ? '撮れませんでした' : 'つみきカメラを起こせません'));
-    }
-    const name = cameraName(new Date());
-    const dir = path.join(PREVIEW_OUT, CAMERA_DIR_NAME);
-    const saved = await new Promise((resolve) => {
-      execFile('/bin/mkdir', ['-p', dir], { timeout: 8000 }, (e1) => {
-        if (e1) return resolve(false);
-        execFile('/bin/cp', [tmp, path.join(dir, name)], { timeout: 10000 }, (e2) => resolve(!e2));
+// 一時置き場を空にする。撮影は1枚ずつなので、撮る前に消してよい（遅れて書かれた部屋の写真を残さない）
+async function cameraSweep() {
+  let names = [];
+  try { names = await fsp.readdir(CAMERA_TMP); } catch (e) { return; }
+  await Promise.all(names.map((n) => fsp.unlink(path.join(CAMERA_TMP, n)).catch(() => {})));
+}
+cameraSweep();
+function cameraShoot(shape) {
+  if (shape != null && !Object.prototype.hasOwnProperty.call(CAMERA_SHAPES, shape)) {
+    return Promise.reject(Object.assign(new Error('その形では撮れません'), { code: 400 }));
+  }
+  const fmt = CAMERA_SHAPES[shape == null ? CAMERA_DEFAULT : shape];
+  // 待ちは1件まで。それ以上の連打は断る（諦めた要求の分まで撮ってランプを点け続けない）
+  if (cameraBusy && cameraWaiting >= 1) {
+    return Promise.reject(Object.assign(new Error('撮っています。少し待ってください'), { code: 429 }));
+  }
+  return (async () => {
+    cameraWaiting++;
+    try { while (cameraBusy) await cameraBusy.catch(() => {}); } finally { cameraWaiting--; }
+    cameraBusy = cameraRun(fmt).finally(() => { cameraBusy = null; });
+    return cameraBusy;
+  })();
+}
+async function cameraRun(fmt) {
+  await fsp.mkdir(CAMERA_TMP, { recursive: true, mode: 0o700 });
+  await cameraSweep();
+  const tmp = path.join(CAMERA_TMP, `shot-${process.pid}-${Date.now()}.jpg`);
+  const res = await new Promise((resolve) => {
+    execFile('/usr/bin/open', ['-W', '-g', '-n', '-a', CAMERA_APP, '--args', tmp, fmt], { timeout: CAMERA_WAIT_MS },
+      (err) => resolve(err ? (err.killed ? 'timeout' : 'fail') : 'ok'));
+  });
+  if (res === 'timeout') {
+    // open だけ殺しても、つみきカメラは生きている。止める（撮影は1枚ずつなので、残っているのはこの1つ）
+    execFile('/usr/bin/pkill', ['-f', CAMERA_APP + '/Contents/MacOS/'], { timeout: 4000 }, () => {});
+  }
+  let img = null, why = '', dark = false;
+  try { img = await fsp.readFile(tmp); } catch (e) {
+    try { why = (await fsp.readFile(tmp + '.err', 'utf8')).trim(); } catch (e2) { /* 理由なし */ }
+  }
+  try { await fsp.access(tmp + '.dark'); dark = true; } catch (e) { /* 明るい */ }
+  if (!img || !img.length) {
+    cameraSweep();
+    throw new Error(why
+      || (res === 'timeout' ? '20秒待っても撮れませんでした（ほかのアプリがカメラを使用中かもしれません）'
+        : res === 'fail' ? 'つみきカメラを起こせません' : '撮れませんでした'));
+  }
+  const name = cameraName(new Date());
+  const dir = path.join(PREVIEW_OUT, CAMERA_DIR_NAME);
+  // 書きかけを iCloud に同期させない：隠し名（.〜.part）に写してから名前を付け替える
+  const part = path.join(dir, '.' + name + '.part');
+  const saved = await new Promise((resolve) => {
+    execFile('/bin/mkdir', ['-p', dir], { timeout: 8000 }, (e1) => {
+      if (e1) return resolve(false);
+      execFile('/bin/cp', [tmp, part], { timeout: 10000 }, (e2) => {
+        if (e2) { execFile('/bin/rm', ['-f', part], { timeout: 8000 }, () => {}); return resolve(false); }
+        execFile('/bin/mv', ['-f', part, path.join(dir, name)], { timeout: 8000 }, (e3) => resolve(!e3));
       });
     });
-    fsp.unlink(tmp).catch(() => {});
-    console.log(`camera ${img.length}B saved=${saved}`);
-    return { img, name, saved };
-  })().finally(() => { cameraBusy = null; });
-  return cameraBusy;
+  });
+  cameraSweep();
+  console.log(`camera ${img.length}B saved=${saved}${dark ? ' dark' : ''}`);
+  return { img, name, saved, dark };
 }
 
 // ---------------------------------------------------------------- HTTP
@@ -3767,7 +3800,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, g.error ? 400 : 200, g);
     }
 
-    // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用。
+    // Mac の内蔵カメラで1枚撮る（cameraShoot の注）
     if (p === '/api/camera' && req.method === 'POST') {
       try {
         const body = await readBody(req).catch(() => ({}));
@@ -3775,12 +3808,16 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, {
           img: 'data:image/jpeg;base64,' + r.img.toString('base64'),
           name: r.name, saved: r.saved ? CAMERA_DIR_NAME + '/' + r.name : '',
+          // 置き場（PREVIEW_ROOT）からの相対＝画面のプレビュー（openPreview）とファイル App（openInFiles）に渡す
+          rel: r.saved ? PREVIEW_OUT_NAME + '/' + CAMERA_DIR_NAME + '/' + r.name : '',
+          dark: r.dark,
         });
       } catch (e) {
-        return json(res, 500, { error: String(e.message || e) });
+        return json(res, e.code || 500, { error: String(e.message || e) });
       }
     }
 
+    // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用。
     if (p === '/api/displaysleep' && req.method === 'POST') {
       const r = await new Promise((resolve) => {
         execFile('/usr/bin/pmset', ['displaysleepnow'], { timeout: 5000 },
