@@ -2650,17 +2650,22 @@ const CAMERA_APP = path.join(os.homedir(), 'Applications', 'つみきカメラ.a
 const CAMERA_TMP = path.join(os.homedir(), '.tsumiki-remote', 'cam');
 const CAMERA_DIR_NAME = 'つみきカメラ';
 let cameraBusy = null;
+// 撮れる形（つみきカメラの formats のうち4つ）。画面から名前で選ぶ。既定は縦長（2026-11-16 本人「基本的に9:16で」）
+const CAMERA_SHAPES = { '9:16': '1080x1920', '16:9': '1920x1080', '4:3': '1760x1328', '1:1': '1552x1552' };
+const CAMERA_DEFAULT = '9:16';
 function cameraName(d) {
   const z = (n) => String(n).padStart(2, '0');
   return `${d.getMonth() + 1}月${d.getDate()}日 ${z(d.getHours())}時${z(d.getMinutes())}分${z(d.getSeconds())}秒.jpg`;
 }
-function cameraShoot() {
-  if (cameraBusy) return cameraBusy;   // 同時に押されたら同じ1枚を返す（カメラは1つ）
+async function cameraShoot(shape) {
+  // カメラは1つ。撮っている最中に押されたら、その1枚が終わるのを待ってから撮る
+  while (cameraBusy) await cameraBusy.catch(() => {});
+  const fmt = CAMERA_SHAPES[shape] || CAMERA_SHAPES[CAMERA_DEFAULT];
   cameraBusy = (async () => {
     await fsp.mkdir(CAMERA_TMP, { recursive: true });
     const tmp = path.join(CAMERA_TMP, `shot-${process.pid}-${Date.now()}.jpg`);
     const ok = await new Promise((resolve) => {
-      execFile('/usr/bin/open', ['-W', '-g', '-n', '-a', CAMERA_APP, '--args', tmp], { timeout: 20000 },
+      execFile('/usr/bin/open', ['-W', '-g', '-n', '-a', CAMERA_APP, '--args', tmp, fmt], { timeout: 20000 },
         (err) => resolve(!err));
     });
     let img = null, why = '';
@@ -3765,7 +3770,8 @@ const server = http.createServer(async (req, res) => {
     // Mac の画面だけ消す（スリープはしない）。出先で消し忘れに気づいたとき用。
     if (p === '/api/camera' && req.method === 'POST') {
       try {
-        const r = await cameraShoot();
+        const body = await readBody(req).catch(() => ({}));
+        const r = await cameraShoot(body && body.shape);
         return json(res, 200, {
           img: 'data:image/jpeg;base64,' + r.img.toString('base64'),
           name: r.name, saved: r.saved ? CAMERA_DIR_NAME + '/' + r.name : '',

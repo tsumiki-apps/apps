@@ -1266,8 +1266,15 @@
   .sheetbody .confirm2 button.yes{background:var(--crit-bg);border-color:var(--crit);color:var(--crit);font-weight:700}
   /* カメラ（Mac の内蔵カメラの1枚） */
   .cambox { padding: 4px 0 8px; }
-  .cambox img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain;
+  .cambox img { display: block; width: 100%; height: min(44dvh, 100dvh - 340px, 400px); object-fit: contain;
     background: #000; border-radius: 12px; }
+  .camseg { display: flex; gap: 6px; margin-bottom: 8px; }
+  .sheetbody .camseg button { flex: 1; min-width: 0; min-height: 44px; padding: 0 4px; text-align: center;
+    border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--dim); font-size: 15px; }
+  .sheetbody .camseg button.on { color: var(--fg); border-color: var(--fg); background: var(--panel); }
+  .sheetbody .camseg button.shoot { flex: 0 0 52px; color: var(--fg); background: var(--panel);
+    display: grid; place-items: center; }
+  .camseg .shoot svg { width: 24px; height: 24px; }
   .cambox.busy img { opacity: .5; }
   .camnote { color: var(--dim); font-size: 13px; margin-top: 6px; overflow-wrap: anywhere; }
 </style>
@@ -6813,6 +6820,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // ---------------------------------------------------------- カメラ（2026-11-16）
   // Mac の内蔵カメラで1枚撮って見せる。開いたらすぐ1枚・「もう1枚」で撮り直す（押した時だけ撮る＝
   // ランプが点くのは撮る一瞬だけ）。撮った物は Mac が iCloud の「つみきカメラ」にも置く。
+  // 形は4つから選べる（既定は縦長 9:16・選んだ形は覚えておく）。選び直すとその形ですぐ撮る。
+  //   写る広さの目安：16:9＝横がいちばん広い／4:3・正方形＝面積が大きい／9:16＝上下がいちばん広い
+  var CAM_SHAPES = ['9:16', '16:9', '4:3', '1:1'];
+  var CAM_KEY = 'tsumiki.camShape';
   // 幕が掛かっていても撮れる（撮るのは専用アプリ。server.js の cameraShoot の注）。
   function openCamera() {
     openSheet('カメラ');
@@ -6822,16 +6833,47 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     img.alt = 'Mac のカメラ';
     var note = document.createElement('div');
     note.className = 'camnote';
+    var shape = localStorage.getItem(CAM_KEY);
+    if (CAM_SHAPES.indexOf(shape) < 0) shape = '9:16';
+    var seg = document.createElement('div');
+    seg.className = 'camseg';
+    CAM_SHAPES.forEach(function (k) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = k === '1:1' ? '正方形' : k;
+      b.dataset.k = k;
+      b.onclick = function () {
+        if (k === shape || box.classList.contains('busy')) return;
+        shape = k;
+        try { localStorage.setItem(CAM_KEY, k); } catch (e) { /* 覚えられないだけ */ }
+        mark();
+        shoot();
+      };
+      seg.appendChild(b);
+    });
+    function mark() {
+      Array.prototype.forEach.call(seg.children, function (b) { if (b.dataset.k) b.classList.toggle('on', b.dataset.k === shape); });
+    }
+    mark();
+    // 撮り直しは形と同じ行の右端に置く（下に項目として置くと、9:16 の写真に押し出されて
+    // 小さい画面・広い画面の枠では「閉じる」の陰に隠れた＝2026-11-16 8幅で実測）
+    var again = document.createElement('button');
+    again.type = 'button';
+    again.className = 'shoot';
+    again.setAttribute('aria-label', 'もう1枚');
+    again.innerHTML = sicSvg('camera');
+    again.onclick = function () { shoot(); };
+    seg.appendChild(again);
+    box.appendChild(seg);
     box.appendChild(img);
     box.appendChild(note);
     sheetBody.appendChild(box);
-    var again = sheetItem('もう1枚', '', shoot, { icon: 'camera', iconCls: 'dark' });
     function shoot() {
       if (sheet.hidden || !box.isConnected) return;
       again.disabled = true;
       box.classList.add('busy');
       note.textContent = '撮っています…';
-      api('/api/camera', { method: 'POST', body: '{}' }, 30000).then(function (r) {
+      api('/api/camera', { method: 'POST', body: JSON.stringify({ shape: shape }) }, 30000).then(function (r) {
         if (!box.isConnected) return;
         img.src = r.img;
         note.textContent = r.saved ? 'iCloud に保存: ' + r.saved : '撮れました（iCloud に置けませんでした）';

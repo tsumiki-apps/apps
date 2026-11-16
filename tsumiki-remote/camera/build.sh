@@ -4,8 +4,11 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 app="$HOME/Applications/つみきカメラ.app"
+# 先に別の場所で組む（組めなかったときに、動いている今のアプリを消さない）
+bin="$(mktemp -d)/tsumiki-camera"
+swiftc -O -o "$bin" "$here/main.swift"
 rm -rf "$app"; mkdir -p "$app/Contents/MacOS"
-swiftc -O -o "$app/Contents/MacOS/tsumiki-camera" "$here/main.swift"
+mv "$bin" "$app/Contents/MacOS/tsumiki-camera"
 cat > "$app/Contents/Info.plist" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

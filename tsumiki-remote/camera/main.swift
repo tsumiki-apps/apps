@@ -11,7 +11,7 @@ let args = CommandLine.arguments
 guard args.count >= 2 else { exit(2) }
 let out = URL(fileURLWithPath: args[1])
 let errURL = URL(fileURLWithPath: args[1] + ".err")
-let maxW: CGFloat = 960
+let maxSide: CGFloat = 1280   // 長い辺をここまで縮める
 
 func fail(_ msg: String, _ code: Int32) -> Never {
   try? msg.write(to: errURL, atomically: true, encoding: .utf8)
@@ -43,7 +43,6 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
       fail("カメラを開けません（ほかのアプリが使用中かもしれません）", 5)
     }
     session.beginConfiguration()
-    if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
     session.addInput(input)
     let o = AVCaptureVideoDataOutput()
     o.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
@@ -51,8 +50,24 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     guard session.canAddOutput(o) else { fail("カメラを開けません", 5) }
     session.addOutput(o)
     session.commitConfiguration()
+    // 写す形。引数3つ目（例 1760x1328）で選べる。無ければ横長でいちばん面積が大きいもの
+    // （MacBook の内蔵なら 1760×1328 の 4:3）。16:9 はセンサーの上下を切り落とした形で、写る範囲が狭い
+    // （2026-11-16 本人「もっと広角で」）。⚠️ activeFormat は commit の後に入れる
+    let want = args.count >= 3 ? args[2] : ""
+    let pick = dev.formats.filter { f in
+      let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+      return want.isEmpty ? d.width >= d.height : "\(d.width)x\(d.height)" == want
+    }.max { a, b in
+      let x = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
+      let y = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
+      return Int(x.width) * Int(x.height) < Int(y.width) * Int(y.height)
+    }
+    // ⚠️ Mac では startRunning が形を preset に戻す。押さえたまま（lock 中に）点けて、点けた後に放す
+    let locked = pick != nil && (try? dev.lockForConfiguration()) != nil
+    if locked, let f = pick { dev.activeFormat = f }
     start = Date()   // 許可の窓を待った時間は数えない
     session.startRunning()
+    if locked { dev.unlockForConfiguration() }
   }
 
   func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from c: AVCaptureConnection) {
@@ -69,8 +84,8 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     if !steady && t < 4.0 { return }
     done = true
     var img = src
-    let w = img.extent.width
-    if w > maxW { img = img.transformed(by: CGAffineTransform(scaleX: maxW / w, y: maxW / w)) }
+    let side = max(img.extent.width, img.extent.height)
+    if side > maxSide { img = img.transformed(by: CGAffineTransform(scaleX: maxSide / side, y: maxSide / side)) }
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!
     let opt = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.7]
     guard let data = ctx.jpegRepresentation(of: img, colorSpace: cs, options: opt) else { fail("絵を作れません", 6) }
