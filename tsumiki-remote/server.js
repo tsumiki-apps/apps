@@ -1295,6 +1295,31 @@ const LIST_MS = 1200;
 // 詰まったときにいちばん見たいものが返ってこない
 const PANE_MS = 2500;
 const lastSeat = new Map();   // name -> 最後にうまく読めた1行
+
+// Claude Code の席の呼び名（claude-c9 など）→ tmux の席の名前（work2 など）。2026-11-16
+// Claude が別の席を内部名で書いたとき、画面がそれを札の「番号・題名」に置き換えるのに使う。
+// 正本は ~/.claude/sessions/<pid>.json（name と tmux "work2:@62.%62" が入っている）。
+// 終わった席のファイルが残ることがあるので、pid が生きているものだけ採る。3秒ためる
+const AGENT_DIR = process.env.TSUMIKI_AGENT_DIR || path.join(os.homedir(), '.claude', 'sessions');   // 試験は別の置き場
+let agentCache = { at: 0, map: {} };
+function agentNames() {
+  if (Date.now() - agentCache.at < 3000) return agentCache.map;
+  const map = {};
+  let files = [];
+  try { files = fs.readdirSync(AGENT_DIR).filter((f) => /^\d+\.json$/.test(f)); } catch (_) {}
+  for (const f of files) {
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(AGENT_DIR, f), 'utf8'));
+      const name = String(j.name || '');
+      const seat = String(j.tmux || '').split(':')[0];
+      if (!/^[A-Za-z0-9_.-]{1,40}$/.test(name) || !NAME_RE.test(seat)) continue;
+      try { process.kill(Number(j.pid), 0); } catch (e) { if (e.code !== 'EPERM') continue; }
+      map[name] = seat;
+    } catch (_) {}
+  }
+  agentCache = { at: Date.now(), map };
+  return map;
+}
 const staleSeat = new Set();  // いま「前の値でしのいでいる」席（ログを毎周期出さないため）
 
 function forgetScreen(name) {
@@ -3116,6 +3141,7 @@ const server = http.createServer(async (req, res) => {
       return jsonZ(req, res, 200, {
         sessions: out, usage: usageSnapshot(), usageWait: usageWaitInfo(),
         battery: batterySnapshot(), auth: authSnapshot(), memos: memoOut, lock: LOCK.snapshot(),
+        agents: agentNames(),
         version: currentVersion(), now: Date.now(),
       });
     }

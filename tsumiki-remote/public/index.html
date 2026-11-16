@@ -645,6 +645,20 @@
     background:none;border:none;padding:0;margin:0;font:inherit;
   }
   #out .fl:active{opacity:.55}
+  /* 別の席の呼び名（claude-c9）を置き換えた札の形の印（2026-11-16）。
+     丸の色は上の札と同じ（作業中＝紫・返答待ち＝オレンジ・待機＝灰・中断＝青） */
+  #out .seatchip{
+    display:inline-flex;align-items:center;gap:4px;vertical-align:baseline;
+    font-family:inherit;font-size:.95em;font-weight:700;line-height:1.35;color:var(--fg);
+    padding:0 6px;margin:0 1px;border-radius:7px;background:var(--sunk);border:1px solid #3b4250;
+    position:relative;cursor:pointer;white-space:normal;text-align:left;
+  }
+  #out .seatchip::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--idle);flex:0 0 auto}
+  #out .seatchip.busy::before{background:var(--busy)}
+  #out .seatchip.waiting::before{background:var(--wait)}
+  #out .seatchip.paused::before{background:var(--pause)}
+  #out .seatchip::after{content:'';position:absolute;top:-5px;bottom:-5px;left:0;right:0}
+  #out .seatchip:active{opacity:.55}
   /* 11px の字の中の札なので、押せる高さが16pxしかない。上下だけ少し広げる
      （左右は隣の字に被るので広げない。上下も隣の行に届かない幅にとどめる） */
   #out .fl{position:relative}
@@ -2085,6 +2099,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var memoTimer = null;
   var MEMO_WAIT_MS = 700;      // 打つ手が止まってから送るまで（1文字ごとに送らない）
   var sessions = [];
+  // Claude の席の呼び名（claude-c9）→ tmux の席（work2）。履歴の中の呼び名を札に置き換えるのに使う（→ seatOfAgent）
+  var agents = {}, agentsKey = '';
   var timer = null;
   var toastTimer = null;
 
@@ -3450,6 +3466,10 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       renderLock(d.lock);
       renderAuth(d.auth);
       sessions = d.sessions;
+      // 呼び名の対応が変わったら描き直す（先に画面が届いて、札にならないまま残るのを防ぐ）
+      // 席の並び・題名が変わっても番号がずれるので、それも合わせて見る
+      var ak = JSON.stringify(d.agents || {}) + sessions.map(function (x) { return x.name + '\u0001' + (x.title || ''); }).join('\u0002');
+      if (ak !== agentsKey) { agents = d.agents || {}; agentsKey = ak; fileRedrawWanted = true; }
       sessions.forEach(function (s2) {
         if (keepPending.hasOwnProperty(s2.name)) s2.keep = keepPending[s2.name];
       });
@@ -4695,6 +4715,16 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       .catch(function (e) { toast('開けません: ' + e.message); });
   }
 
+  // Claude Code の席の呼び名。claude- の後ろは英小文字と数字だけ（ListAgents の出し方）。
+  // 前後が英数字・ハイフンにつながっていたら別の語の一部（claude-code など辞書に無い名前は seatOfAgent で落ちる）
+  var RE_AGENT = /(?<![A-Za-z0-9_-])claude-[a-z0-9]{1,8}(?![A-Za-z0-9_-])/g;
+  function seatOfAgent(name) {
+    var t = agents.hasOwnProperty(name) ? agents[name] : null;
+    if (!t) return null;
+    for (var i = 0; i < sessions.length; i++) if (sessions[i].name === t) return { s: sessions[i], n: i + 1 };
+    return null;
+  }
+
   function findTargets(text, extra) {
     var hits = [], m;
     function push(at, raw, kind) {
@@ -4748,6 +4778,11 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       var b = text.indexOf(m[1], m.index);
       if (b >= 0) push(b, m[1], 'val');
     }
+    // 別の席の呼び名（claude-c9）。いま並んでいる席に当たるものだけ札にする（2026-11-16 本人の依頼）
+    RE_AGENT.lastIndex = 0;
+    while ((m = RE_AGENT.exec(text))) {
+      if (seatOfAgent(m[0])) hits.push({ i: m.index, j: m.index + m[0].length, s: m[0], k: 'seat' });
+    }
     // 行をまたいで割れた名前（外で拾ったもの）も、同じ土俵で重なりを捨てる
     if (extra) for (var e = 0; e < extra.length; e++) hits.push(extra[e]);
     // 前から順に。同じところから始まっていたら長い方を採る（URL の中の
@@ -4773,6 +4808,19 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     hits.forEach(function (h) {
       if (h.i > at) parent.appendChild(document.createTextNode(text.slice(at, h.i)));
       var what = h.k === 'url' ? 'リンク' : '合言葉';
+      if (h.k === 'seat') {
+        // 内部名を消して、札と同じ「番号・題名」の印に置き換える。押すとその席へ
+        var hit = seatOfAgent(h.s);
+        var sb = document.createElement('button');
+        sb.type = 'button';
+        sb.className = 'seatchip ' + statusOf(hit.s);
+        sb.textContent = hit.n + '・' + (hit.s.title || hit.s.name);
+        sb.title = h.s;
+        (function (name) { sb.onclick = function () { if (name !== current) select(name); }; })(hit.s.name);
+        parent.appendChild(sb);
+        at = h.j;
+        return;
+      }
       if (h.k === 'file') {
         var fb = document.createElement('button');
         fb.type = 'button';
