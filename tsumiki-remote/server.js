@@ -2694,7 +2694,8 @@ async function cameraRun(fmt) {
   });
   if (res === 'timeout') {
     // open だけ殺しても、つみきカメラは生きている。止める（撮影は1枚ずつなので、残っているのはこの1つ）
-    execFile('/usr/bin/pkill', ['-f', CAMERA_APP + '/Contents/MacOS/'], { timeout: 4000 }, () => {});
+    // 止め終わるまで待つ（待たずに次の撮影が始まると、遅れた pkill が新しい方を止めかねない）
+    await new Promise((r) => execFile('/usr/bin/pkill', ['-f', CAMERA_APP + '/Contents/MacOS/'], { timeout: 4000 }, () => r()));
   }
   let img = null, why = '', dark = false;
   try { img = await fsp.readFile(tmp); } catch (e) {
@@ -2703,9 +2704,11 @@ async function cameraRun(fmt) {
   try { await fsp.access(tmp + '.dark'); dark = true; } catch (e) { /* 明るい */ }
   if (!img || !img.length) {
     cameraSweep();
-    throw new Error(why
+    const e = new Error(why
       || (res === 'timeout' ? '20秒待っても撮れませんでした（ほかのアプリがカメラを使用中かもしれません）'
         : res === 'fail' ? 'つみきカメラを起こせません' : '撮れませんでした'));
+    e.code = 503;   // 機械の都合で撮れない（サーバーの故障の 500 と分ける）
+    throw e;
   }
   const name = cameraName(new Date());
   const dir = path.join(PREVIEW_OUT, CAMERA_DIR_NAME);
@@ -3813,7 +3816,10 @@ const server = http.createServer(async (req, res) => {
           dark: r.dark,
         });
       } catch (e) {
-        return json(res, e.code || 500, { error: String(e.message || e) });
+        // 番号の付いた失敗（400・429・503）は文言をそのまま。ほか（書けない等）はパスを出さない
+        if (!e.code || typeof e.code !== 'number') console.error('camera', e);
+        return json(res, typeof e.code === 'number' ? e.code : 500,
+          { error: typeof e.code === 'number' ? String(e.message || e) : '撮れませんでした（Mac 側の置き場に書けません）' });
       }
     }
 

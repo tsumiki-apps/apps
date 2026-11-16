@@ -31,6 +31,7 @@ if [ -z "$id" ]; then
   if [ "$n" -gt 1 ]; then echo "Developer ID の鍵が $n 個あります。CAMERA_SIGN_ID=<ハッシュ> を付けて撃ってください" >&2; exit 1; fi
   id="$ids"
 fi
+[ -z "$id" ] && echo "⚠️ Developer ID の鍵がありません。ad-hoc 署名にします（カメラの許可を取り直すことになります）" >&2
 codesign --force --sign "${id:--}" --identifier com.tsumiki.camera "$tmpapp"
 rm -rf "$app"
 mv "$tmpapp" "$app"

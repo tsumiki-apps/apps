@@ -23,7 +23,18 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
   var start = Date()
   var done = false
   let ctx = CIContext()
+  // 明るさは見た目の値（sRGB）で測る。⚠️ colorSpace: nil だと光の量そのもの（リニア）が返り、
+  // 見た目 0.38 がリニア 0.12 になって、暗い・明るいの判定がずれた（2026-11-16）
+  let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
   var lastY: CGFloat = -1
+  // 暗いとき（夜）に重ねるコマ。Mac では露出補正・ISO・シャッターを直接いじれない（API が macOS で無効）。
+  // そこで ①コマを 15fps に落として1コマの露光を伸ばし ②数コマを平均してざらつきを減らし
+  // ③暗さに応じて持ち上げる（2026-11-16 本人「夜暗くなった時画質悪くなる、露出上げて」）
+  var stack: [CIImage] = []
+  var firstY: CGFloat = 0
+  let stackN = 8          // 暗いときに重ねる枚数（15fps で約0.5秒）
+  let darkBelow: CGFloat = 0.32   // これより暗ければ重ねて持ち上げる
+  let target: CGFloat = 0.45      // 持ち上げる先の明るさ（見た目の値）
 
   // 絵全体の明るさ（0〜1）。CIAreaAverage で1画素にして読む
   func luma(_ img: CIImage) -> CGFloat {
@@ -32,15 +43,59 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
       let o = f.outputImage else { return 0 }
     var px = [UInt8](repeating: 0, count: 4)
     ctx.render(o, toBitmap: &px, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-      format: .RGBA8, colorSpace: nil)
+      format: .RGBA8, colorSpace: srgb)
     return (0.299 * CGFloat(px[0]) + 0.587 * CGFloat(px[1]) + 0.114 * CGFloat(px[2])) / 255
+  }
+
+  // 何コマかを足して枚数で割る（動かない物はそのまま、ざらつきは √枚数 分の1に）
+  func average(_ xs: [CIImage]) -> CIImage {
+    guard var sum = xs.first else { return CIImage() }
+    if xs.count == 1 { return sum }
+    for x in xs.dropFirst() {
+      sum = CIFilter(name: "CIAdditionCompositing", parameters: [kCIInputImageKey: x, kCIInputBackgroundImageKey: sum])!.outputImage!
+    }
+    let k = CGFloat(1) / CGFloat(xs.count)
+    return sum.applyingFilter("CIColorMatrix", parameters: [
+      "inputRVector": CIVector(x: k, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: k, z: 0, w: 0),
+      "inputBVector": CIVector(x: 0, y: 0, z: k, w: 0), "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)])
+  }
+
+  // 暗さに応じて持ち上げる（2026-11-16 夜の部屋で撮り比べて詰めた）。
+  // ・倍にするだけ（露出）や全体にかける曲線だと、天井・布団が先に白く飛んだ
+  // ・露出は控えめにし、暗い所だけ周りを見て持ち上げる（CIHighlightShadowAdjust の影）と自然だった
+  // ・段数は 0.5 段ずつ上げ、平均が target に近いものを選ぶ。ただし広い面（ぼかした最大）が
+  //   白くなりかけたらそこで止める
+  func lift(_ img: CIImage, _ ev: Double) -> CIImage {
+    img.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: ev])
+      .applyingFilter("CIColorClamp")
+      .applyingFilter("CIHighlightShadowAdjust", parameters: ["inputShadowAmount": 1.0, "inputHighlightAmount": 0.7, "inputRadius": 10])
+      .cropped(to: img.extent)
+  }
+  // 広い面の明るさの最大（点の電球は数えない）
+  func broadMax(_ img: CIImage) -> CGFloat {
+    let b = img.clampedToExtent().applyingFilter("CIBoxBlur", parameters: [kCIInputRadiusKey: 40]).cropped(to: img.extent)
+    guard let o = CIFilter(name: "CIAreaMaximum", parameters: [kCIInputImageKey: b, kCIInputExtentKey: CIVector(cgRect: b.extent)])?.outputImage else { return 0 }
+    var px = [UInt8](repeating: 0, count: 4)
+    ctx.render(o, toBitmap: &px, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: srgb)
+    return (0.299 * CGFloat(px[0]) + 0.587 * CGFloat(px[1]) + 0.114 * CGFloat(px[2])) / 255
+  }
+  func brighten(_ img: CIImage, y: CGFloat) -> CIImage {
+    var best = lift(img, 0), bestD = abs(luma(best) - target)
+    for ev in stride(from: 0.5, through: 4.0, by: 0.5) {
+      let o = lift(img, ev)
+      if broadMax(o) > 0.9 { break }        // これ以上上げると広い面が飛ぶ
+      let d = abs(luma(o) - target)
+      if d < bestD { best = o; bestD = d }
+    }
+    return best.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.04, "inputSharpness": 0.4])
+      .cropped(to: img.extent)
   }
 
   func run() {
     guard let dev = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified)
       ?? AVCaptureDevice.default(for: .video) else { fail("カメラが見つかりません", 4) }
     guard let input = try? AVCaptureDeviceInput(device: dev), session.canAddInput(input) else {
-      fail("カメラを開けません（ほかのアプリが使用中かもしれません）", 5)
+      fail("カメラを開けません", 5)   // Mac の内蔵カメラは他のアプリと共有できる＝使用中でもここは通る
     }
     session.beginConfiguration()
     session.addInput(input)
@@ -63,8 +118,13 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
       return Int(x.width) * Int(x.height) < Int(y.width) * Int(y.height)
     }
     // ⚠️ Mac では startRunning が形を preset に戻す。押さえたまま（lock 中に）点けて、点けた後に放す
-    let locked = pick != nil && (try? dev.lockForConfiguration()) != nil
+    let locked = (try? dev.lockForConfiguration()) != nil
     if locked, let f = pick { dev.activeFormat = f }
+    // コマの速さをいちばん遅く（内蔵は 15fps）＝自動露出が1コマに長く光を当てられる（30fps の倍）
+    if locked, let r = dev.activeFormat.videoSupportedFrameRateRanges.min(by: { $0.minFrameRate < $1.minFrameRate }) {
+      dev.activeVideoMinFrameDuration = r.maxFrameDuration
+      dev.activeVideoMaxFrameDuration = r.maxFrameDuration
+    }
     start = Date()   // 許可の窓を待った時間は数えない
     session.startRunning()
     if locked { dev.unlockForConfiguration() }
@@ -81,16 +141,35 @@ final class Grab: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let y = luma(src)
     let steady = y > 0.04 && abs(y - lastY) < 0.01
     lastY = y
-    if !steady && t < 4.0 { return }
+    if stack.isEmpty && !steady && t < 5.0 { return }
+    // 先に縮める（重ねる手間とメモリを減らす）
+    var small = src
+    let side = max(small.extent.width, small.extent.height)
+    if side > maxSide { small = small.transformed(by: CGAffineTransform(scaleX: maxSide / side, y: maxSide / side)) }
+    if stack.isEmpty { firstY = y }
+    // 明るければ1コマでよい。暗ければ stackN コマ集める（受け取った絵は使い回されるので、写し取って持つ）
+    if firstY < darkBelow {
+      let lin = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
+      guard let cg = ctx.createCGImage(small, from: small.extent, format: .RGBAh, colorSpace: lin) else { return }
+      stack.append(CIImage(cgImage: cg))
+      if stack.count < stackN && t < 12 { return }
+    } else {
+      stack = [small]
+    }
     done = true
-    var img = src
-    let side = max(img.extent.width, img.extent.height)
-    if side > maxSide { img = img.transformed(by: CGAffineTransform(scaleX: maxSide / side, y: maxSide / side)) }
+    var img = average(stack)
+    // 調整用：TSUMIKI_CAM_RAW に置き場があれば、持ち上げる前の絵（重ねただけ）を TIFF で置く
+    if let raw = ProcessInfo.processInfo.environment["TSUMIKI_CAM_RAW"] {
+      try? ctx.writeTIFFRepresentation(of: img, to: URL(fileURLWithPath: raw), format: .RGBAh,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!)
+    }
+    if firstY < darkBelow { img = brighten(img, y: firstY) }
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!
     let opt = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.7]
     guard let data = ctx.jpegRepresentation(of: img, colorSpace: cs, options: opt) else { fail("絵を作れません", 6) }
-    // 4秒待っても暗いまま＝写っていない見込み。写真は返すが、印（<出力>.dark）を置いて画面で知らせる
-    if y <= 0.04 { FileManager.default.createFile(atPath: out.path + ".dark", contents: nil) }
+    // 持ち上げても暗いまま＝ほぼ写っていない見込み。写真は返すが、印（<出力>.dark）を置いて画面で知らせる
+    // （持ち上げる前の明るさで決めると、見えるようになった写真にも「暗い」と出た）
+    if luma(img) < 0.15 { FileManager.default.createFile(atPath: out.path + ".dark", contents: nil) }
     // ⚠️ stopRunning はここ（受け取りの列の中）で呼ばない。止まることがある。exit で閉じる
     do { try data.write(to: out, options: .atomic) } catch { fail("書けません", 7) }
     exit(0)
