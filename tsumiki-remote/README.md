@@ -17,7 +17,7 @@ iPhone (PWA)  ──https──▶  Tailscale  ──▶  Mac:8787 (server.js)  
 | `public/index.html` | スマホ用の画面（単一HTML・PWA）。1.5秒ごとに状態を取りに行く。版が変わったら自分で読み込み直す |
 | `hooks/ntfy-notify.sh` | Claude Code の hook から ntfy.sh に「返答待ち／終わった」を通知 |
 | `hooks/statusline-tap.js` | Claude Code のステータス行の包み。枠の使用率と席の文脈の大きさを `~/.tsumiki-remote/status/` に写し、同じ入力を Vibe Island のステータス行に渡す（→「ステータス行の写し」） |
-| `launchagents/*.plist` | ログイン時に ①サーバー（`com.tsumiki.remote`）②caffeinate（`awake`）③Tailscale（`tailscaled`）を自動起動 |
+| `launchagents/*.plist` | ログイン時に ①サーバー（`com.tsumiki.remote`）②caffeinate（`awake`）③Tailscale（`tailscaled`）を自動起動（この Mac では 2026-11-17 から `awake` を止め、眠らせない役は Amphetamine） |
 | `public/sw.js` | 画面一式を iPhone の中に置いておく係（Service Worker）。Mac に届かなくても真っ白にしない |
 | `public/icon-180.png` `icon-512.png` | ホーム画面のアイコン（`bin/make_icon.py` で作る） |
 | `lib/auth.js` | Claude のログインの期限の「判断」だけの小さな部屋（→「Claude のログインの期限」） |
@@ -864,6 +864,12 @@ Touch ID センサーになっていて、修飾キーの組み合わせとし�
 セッションを持っていると、何で消しても画面がすぐ復帰する。今回の目的
 （蓋は開けたまま画面だけ消す）とは真逆なので、そのセッションは終了しておく。
 眠らせない役目は `com.tsumiki.awake` が担っているので Amphetamine は不要。
+
+**2026-11-17 から、この Mac は逆にした：** `com.tsumiki.awake` は止めて（`launchctl bootout`＋`disable`）、
+眠らせない役は Amphetamine に任せている。この形で「消灯」を効かせるには、Amphetamine の
+「ディスプレイのスリープを許可」を ON にしておく（OFF だと画面がすぐ戻る）。
+awake に戻すときは `launchctl enable gui/$(id -u)/com.tsumiki.awake` →
+`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tsumiki.awake.plist`。
 
 ### 3. Tailscale（外から繋ぐ）— sudo なしで動かす
 
