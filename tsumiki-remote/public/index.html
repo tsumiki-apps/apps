@@ -695,6 +695,16 @@
     -webkit-overflow-scrolling:touch;
   }
   #cmd:focus{outline:none;border-color:#3b4250}
+  /* hold 中の入力欄（2026-11-20 本人が4案から選んだ＝案2「青い破線」）。
+     欄を沈んだ灰にし、縁を中断の青（タブの縁と同じ --pause）の破線に、左に ⏸ の線画。
+     打てない（readOnly）・＋と↑も押せない＝syncHeld。書きかけは消さずに薄く見せたまま残し、
+     unhold で元どおり打てる。破線も1pxにして、切り替えで欄の高さが動かないようにした。
+     ⏸ の色は --pause と同じ #60a5fa（data URI の中は変数が効かない） */
+  footer.held #cmd{
+    background:var(--sunk) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2360a5fa' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M10 9v6M14 9v6'/%3E%3C/svg%3E") no-repeat 12px center/18px;
+    border:1px dashed var(--pause);color:var(--dim);padding-left:38px;cursor:default;
+  }
+  footer.held #cmd::placeholder{color:var(--pause)}
   #pick{
     flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:var(--panel);
     border:1px solid var(--line);color:var(--dim);font-size:20px;line-height:1;
@@ -2636,6 +2646,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   var snapDirty = false;
   var snapSavedAt = 0;
   var offline = false;
+  var held = false;   // いまの席が hold 中（入力欄・＋・↑を止める）＝syncHeld
   var everSynced = false;   // 一度でも席の一覧を受け取ったか（初回だけ state→pane の順にする）
 
   function snapBody(only) {
@@ -2679,7 +2690,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 出ている最中でもボタンが押せた＝押した瞬間に長文が失われる入口になっていた。
   function syncSendEnabled() {
     syncDraftSeat();
-    el.send.disabled = offline || !current;
+    el.send.disabled = offline || !current || held;
   }
 
   var reconnecting = false;   // 再接続ボタンを押して4秒以内
@@ -2948,8 +2959,9 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var ph = (cur && cur.kind === 'shell')
       ? 'コマンドを入力…（AIではありません）'
       : '指示を入力…';
+    if (cur && statusOf(cur) === 'paused') ph = '中断中';   // hold 中（syncHeld と同じ判定）
     if (el.cmd.placeholder !== ph) { imeNote('入力欄の文言を変えた'); el.cmd.placeholder = ph; }
-    pickBtn.disabled = !cur;
+    pickBtn.disabled = !cur || held;
 
     // 入力欄の真上に「いまの送り先」を出す。番号はタブの番号と揃える
     el.dest.hidden = !cur;
@@ -5723,6 +5735,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   el.sug.addEventListener('click', function () {
     if (!sugShown) return;
     if (!current) return toast('送り先が選ばれていません');
+    if (held) return toast('中断中は送れません');
     sugSentAt = Date.now();
     renderSug();                                 // 押した手応え＝すぐ引っ込める
     sendKeys(['Tab', 'Enter']).then(function () {
@@ -5739,6 +5752,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 1.6秒のトーストが出るだけ。長々書いた指示がどこにも残らず、書き直すしかなかった
   // （当時は打つたびの自動保存が無かった。2026-09-23 から打つたび・裏に回るときにも預ける）。
   el.send.onclick = function () {
+    if (held) return toast('中断中は送れません');
     var v = el.cmd.value.trim();
     if (atts.some(function (a) { return !a.path; })) return toast('ファイルを置いている途中です');
     var paths = atts.map(function (a) { return a.path; }).join(' ');
@@ -5944,6 +5958,23 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     var st = cur ? statusOf(cur) : '';
     el.khold.hidden = st === 'paused';
     el.kunhold.hidden = st !== 'paused';
+    syncHeld(st === 'paused');
+  }
+
+  // hold 中は入力欄をグレーアウト（2026-11-20 本人の依頼・見た目は CSS の footer.held）。
+  // readOnly にする＝disabled と違って書きかけは消えず見えたまま。unhold で元に戻る。
+  // 止めるのは「入力欄から送る道」だけ。上の段のキー（esc・⏎・1〜4・unhold）は押せるまま
+  function syncHeld(on) {
+    if (on === held) return;
+    held = on;
+    document.querySelector('footer').classList.toggle('held', on);
+    el.cmd.readOnly = on;
+    if (on && document.activeElement === el.cmd) el.cmd.blur();   // キーボードを下げる
+    var cur = sessions.filter(function (s) { return s.name === current; })[0];
+    var ph = on ? '中断中' : (cur && cur.kind === 'shell') ? 'コマンドを入力…（AIではありません）' : '指示を入力…';
+    if (el.cmd.placeholder !== ph) { imeNote('入力欄の文言を変えた'); el.cmd.placeholder = ph; }
+    pickBtn.disabled = !cur || on;
+    syncSendEnabled();
   }
 
   var PERM_TEXT = '画面操作許可\nClaude in chrome許可';
@@ -5955,6 +5986,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // 送るときは前後の空白を削るので、前に空白や改行があってもコマンドとして見る
   var CMD_HEAD = /^\s*\/[^\s\/]*(?=\s|$)/;
   function insertAtCaret(t) {
+    if (held) return toast('中断中は入力できません');
     var v = el.cmd.value;
     var s0 = el.cmd.selectionStart, s1 = el.cmd.selectionEnd;
     if (typeof s0 !== 'number' || typeof s1 !== 'number') s0 = s1 = v.length;
@@ -5982,6 +6014,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   // パス（/Users/… で始まる出した指示）はコマンドとして扱わず、カーソルの位置に入れる。
   // ほかの札とそろえて入力欄に焦点を移し、カーソルは末尾
   function insertText(t) {
+    if (held) return toast('中断中は入力できません');
     if (!CMD_HEAD.test(t)) return insertAtCaret(t);
     var rest = el.cmd.value.trim().replace(CMD_HEAD, '').trim();
     el.cmd.value = t + (rest ? ' ' + rest : '');
