@@ -409,7 +409,7 @@ const TYPES={
   news:{
     name:'お知らせ',icon:'msg',
     fields:[
-      {k:'img',label:'実物',hint:'PDFの画面など',kind:'img'},
+      {k:'img',label:'実物',hint:'PDF・画像',kind:'img'},
       {k:'tag',label:'号',hint:'NEW の横',def:'FY27 Q1 W8'},
       {k:'title',label:'見出し',hint:'改行で3行まで',def:'Team\nNews Letter',kind:'area',rows:3},
       {k:'l1',label:'ひとこと',def:'最新号が届きました'},
@@ -645,7 +645,7 @@ function buildForm(){
   const t=TYPES[st.type],v=st.v[st.type];
   const lb=fd=>`<span class="lb">${fd.label}${fd.hint?`<small>${fd.hint}</small>`:''}</span>`;
   const slot=(k,sq,nm)=>`<div class="img"><div class="thumb${sq?' sq':''}" data-th="${k}"></div>
-        <label class="b">${svgIcon('photo')}選ぶ<input type="file" accept="image/*" data-file="${k}" aria-label="${nm}を選ぶ"></label>
+        <label class="b">${svgIcon('photo')}選ぶ<input type="file" accept="image/*,application/pdf,.pdf" data-file="${k}" aria-label="${nm}を選ぶ"></label>
         <button type="button" class="b" data-clr="${k}" aria-label="${nm}を外す">${svgIcon('x')}外す</button></div>`;
   const clr=fd=>`<button type="button" class="clr" data-xk="${fd.k}" aria-label="${fd.label}を消す">${svgIcon('x')}</button>`;
   let h='';
@@ -724,27 +724,78 @@ function rowsUI(fd,v){
 }
 function thumb(){document.querySelectorAll('[data-th]').forEach(th=>{const im=imgs[ik(st.type,th.dataset.th)];th.style.backgroundImage=im?`url(${im.src})`:'none'})}
 
+/* PDF は1ページ目を絵にして使う。PDF.js は版を固定し、本体は SRI、作業役は中身のハッシュを確かめてから動かす */
+const PDFJS='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/';
+const PDFJS_SRI='sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e';
+const PDFW_SHA='SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2';
+let pdfReady=null;
+function loadPdfjs(){
+  if(pdfReady)return pdfReady;
+  pdfReady=(async()=>{
+    if(!window.pdfjsLib)await new Promise((ok,ng)=>{const sc=document.createElement('script');sc.src=PDFJS+'pdf.min.js';
+      sc.integrity=PDFJS_SRI;sc.crossOrigin='anonymous';sc.onload=ok;sc.onerror=()=>ng(new Error('load'));document.head.appendChild(sc)});
+    const buf=await (await fetch(PDFJS+'pdf.worker.min.js',{cache:'force-cache'})).arrayBuffer();
+    const d=new Uint8Array(await crypto.subtle.digest('SHA-384',buf));let b='';for(const x of d)b+=String.fromCharCode(x);
+    if(btoa(b)!==PDFW_SHA)throw new Error('hash');
+    pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([buf],{type:'text/javascript'}));
+    return pdfjsLib;
+  })();
+  pdfReady.catch(()=>{pdfReady=null});
+  return pdfReady;
+}
+const isPdf=f=>f.type==='application/pdf'||/\.pdf$/i.test(f.name||'');
+async function pdfToCanvas(file){
+  const lib=await loadPdfjs();
+  const doc=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false,
+    cMapUrl:PDFJS.replace('build/','cmaps/'),cMapPacked:true,standardFontDataUrl:PDFJS.replace('build/','standard_fonts/')}).promise;
+  try{
+    const pg=await doc.getPage(1),v0=pg.getViewport({scale:1});
+    // 縦に長すぎるページ（ニュースレターの1枚もの）は上の部分だけ使う
+    const tall=v0.height/v0.width>1.6,h0=tall?v0.width*1.32:v0.height;
+    const sc=2400/Math.max(v0.width,h0),vp=pg.getViewport({scale:sc});
+    const c=document.createElement('canvas');c.width=Math.round(v0.width*sc);c.height=Math.round(h0*sc);
+    const x=c.getContext('2d');x.fillStyle=C('white');x.fillRect(0,0,c.width,c.height);
+    await pg.render({canvasContext:x,viewport:vp}).promise;
+    return {c,n:doc.numPages,tall};
+  }finally{doc.destroy()}
+}
+let pdfBusy=0;
+async function takePdf(file,t){
+  const my=++pdfBusy;say('PDFを読んでいます…',true);
+  let r;
+  try{r=await pdfToCanvas(file)}
+  catch(e){if(my===pdfBusy)say(e&&e.name==='PasswordException'?'鍵のかかったPDFは読めません':e&&e.message==='load'?'PDFを読む部品を取りに行けませんでした（通信を確かめてください）':'このPDFは読めませんでした');return}
+  if(my!==pdfBusy){r.c.width=r.c.height=0;return} // 後から別のファイルを選んだ
+  const notes=[];if(r.n>1)notes.push(`1ページ目を使います（全${r.n}ページ）`);if(r.tall)notes.push('縦に長いので上の部分を使います');
+  keepCanvas(r.c,t,notes.join('／'));
+}
+function keepCanvas(c,t,note){
+  const data=c.toDataURL('image/jpeg',0.9);c.width=c.height=0;
+  const im2=new Image();im2.onload=()=>{
+    imgs[t]=im2;
+    if(saveImg(t,data))say(note||'',!!note);else say('画像が大きくて覚えておけません。今は使えますが、開き直すと前の画像に戻ります');
+    thumb();draw()};
+  im2.src=data;
+}
 function takeFile(file,slot){
   if(!file)return;
-  if(file.type&&!/^image\//.test(file.type)){say('画像のファイルを選んでください');return}
-  const t=ik(st.type,slot);const url=URL.createObjectURL(file);const im=new Image();
+  const t=ik(st.type,slot||'img');
+  if(isPdf(file)){takePdf(file,t);return}
+  if(file.type&&!/^image\//.test(file.type)){say('画像かPDFのファイルを選んでください');return}
+  pdfBusy++;
+  const url=URL.createObjectURL(file);const im=new Image();
   im.onload=()=>{ // 長い辺 2400px までに縮めて覚える。透けている所は白にする
     const m=2400,s=Math.min(1,m/Math.max(im.width,im.height));
     const c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*s));c.height=Math.max(1,Math.round(im.height*s));
     const x=c.getContext('2d');x.fillStyle=C('white');x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
     URL.revokeObjectURL(url);
-    const data=c.toDataURL('image/jpeg',0.9);c.width=c.height=0;
-    const im2=new Image();im2.onload=()=>{
-      imgs[t]=im2;
-      if(saveImg(t,data))say('');else say('画像が大きくて覚えておけません。今は使えますが、開き直すと前の画像に戻ります');
-      thumb();draw()};
-    im2.src=data;
+    keepCanvas(c,t,'');
   };
   im.onerror=()=>{URL.revokeObjectURL(url);say('この画像は読めませんでした')};
   im.src=url;
 }
 document.addEventListener('paste',e=>{
-  for(const it of (e.clipboardData||{}).items||[])if(it.kind==='file'&&/^image\//.test(it.type)){takeFile(it.getAsFile());e.preventDefault();return}
+  for(const it of (e.clipboardData||{}).items||[])if(it.kind==='file'&&(/^image\//.test(it.type)||it.type==='application/pdf')){takeFile(it.getAsFile());e.preventDefault();return}
 });
 const hasFiles=e=>e.dataTransfer&&[...e.dataTransfer.types].includes('Files');
 document.addEventListener('dragover',e=>{if(hasFiles(e))e.preventDefault()});
