@@ -15,23 +15,20 @@
 
 ## 2. 注入
 - 自分専用の新規アプリは `inject_backbtn.py`（戻るボタン＋apple-touch-icon）。**HTMLにベタ書きしない**（左端エッジスワイプのみ。見える「‹ つみき」は置かない）。外部配布には注入しない。
-- UI部品は `tn.css`、決定論の乱数 `TN.rnd`・`TN.reveal` は `tn.js`。`python3 inject_tn.py <HTML>` で両方入る。デモで `Math.random()` を使わない。外部配布に入れてよい → 詳細 `docs/tn部品.md`
+- UI部品は `python3 inject_tn.py <HTML>`（`tn.css`＋`tn.js`・外部配布にも可）。デモは `Math.random()` でなく `TN.rnd`/`TN.reveal` → `docs/tn部品.md`
 
 ## 3. 見た目
-- 正本は `DESIGN.md`（読むのはA層 §5 P1）。ダークの塗りボタンは `--accent` 地に `--ink` 文字、洗い色の帯は `--good-ink`/`--warn-ink`。
+- 正本は `DESIGN.md`（ダークの塗りボタン・洗い色の帯の文字色もここ）。
 - 色を触ったら `python3 design_check.py <HTML>` と `python3 color_leak.py <HTML>` の両方を通す（✗1件で終了コード1）。
 - スキルを直したら `python3 sync_skills.py --write`。→ 詳細 `docs/見た目の検査.md`
 
 ## 4. 固有の禁止・お返事カード
 - 受託ソース `Kouban/` `Teppari/` は `.gitignore`。成果物のHTMLだけを `~/tsumiki-tools` へ。
-- お返事カードは `python3 make_reply_card.py <カード.json>`。正本 `~/ObsidianVault/Playbooks/reply-card-format.md`。画面は架空データの複製から撮る（せんや＝`senya-shots-src/`）。
+- お返事カードは `python3 make_reply_card.py <カード.json>`。正本 `~/ObsidianVault/Playbooks/reply-card-format.md`（画面は架空データの複製から撮る）。
 
 ## 5. 出力の置き場（正本＝`docs/置き場.md`）
 - 出力は全部 `~/つみき出力/<セッションの名前>/<ファイル>`。種類や版のフォルダを作らない。名前は日本語、日付や v2 を付けない。
 - **置き場は自分で組み立てず `python3 tsumiki_out.py <ファイル名>` に聞く**（見せた後に作り直すなら `--new`）。`SendUserFile` はここに置いてから。
 
-## 6. Codex連携
-停止中（A層 §6）。再開したとき → `~/ObsidianVault/Knowledge/claude-codex-integration.md`
-
-## 7. クラウドで開かれたら止まる
+## 6. クラウドで開かれたら止まる
 A層が見えない／`~/ObsidianVault` が無い＝クラウド。「ここでは作業しない」と伝えて止まる（ブランチも push もしない）。→ `docs/クラウドセッション.md`
