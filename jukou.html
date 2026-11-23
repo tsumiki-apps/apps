@@ -161,6 +161,7 @@ textarea:focus{border-color:var(--accent-2);outline:none;box-shadow:0 0 0 2px va
 .btn{min-height:44px;padding:0 18px;border-radius:12px;font-size:15px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .btn-main{background:var(--fill);color:var(--on-fill);font-weight:700;flex:1}
 .btn-quiet{background:var(--surface-2);color:var(--ink)}
+.btn-ic{width:44px;padding:0;flex:none}
 .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .hint{font-size:13px;color:var(--ink-mid);margin-top:6px}
 .hint.warn{color:var(--warn-ink)}
@@ -563,6 +564,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
   <p class="p-note" id="pNote" hidden></p>
   <div class="p-foot">
     <button class="btn btn-quiet" id="pLoad"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 14l5-5 5 5M4 3h16"/></svg>ファイルを読み込む</button>
+    <button class="btn btn-quiet btn-ic" id="pPrompt" type="button" aria-label="AIに渡すプロンプトを保存" title="プロンプトを保存"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M12 11v6M9 14l3 3 3-3"/></svg></button>
     <span class="del" id="pDel" hidden>
       <button class="btn btn-quiet go">この日の取り込みを消す</button>
       <button class="btn btn-warn yes">消す</button>
@@ -578,6 +580,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
   <p class="p-note" id="lNote" hidden></p>
   <div class="p-foot">
     <button class="btn btn-quiet" id="lLoad"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 14l5-5 5 5M4 3h16"/></svg>ファイルを読み込む</button>
+    <button class="btn btn-quiet btn-ic" id="lPrompt" type="button" aria-label="AIに渡すプロンプトを保存" title="プロンプトを保存"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M12 11v6M9 14l3 3 3-3"/></svg></button>
     <button class="btn btn-quiet" id="lAdd"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>研修を足す</button>
     <span class="del" id="lDel" hidden>
       <button class="btn btn-quiet go">予定を全部消す</button>
@@ -602,6 +605,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
   </section>
   <div class="p-foot">
     <button class="btn btn-quiet" id="rLoad"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 14l5-5 5 5M4 3h16"/></svg>ファイルを読み込む</button>
+    <button class="btn btn-quiet btn-ic" id="rPrompt" type="button" aria-label="AIに渡すプロンプトを保存" title="プロンプトを保存"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M12 11v6M9 14l3 3 3-3"/></svg></button>
     <span class="del" id="rDel" hidden>
       <button class="btn btn-quiet go">全部消す</button>
       <button class="btn btn-warn yes">消す</button>
@@ -1247,7 +1251,7 @@ $('#menuBtn').addEventListener('click', ()=>$('#menu').showModal());
 $('#closeMenu').addEventListener('click', ()=>$('#menu').close());
 $('#menu').addEventListener('click', e=>{ if(e.target===$('#menu')) $('#menu').close(); });
 $('#expBtn').addEventListener('click', ()=>{
-  const blob = new Blob([JSON.stringify(Object.assign({}, db, {people:pdb, plan:ldb, remind:rdb, task:tdb}),null,1)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify(Object.assign({}, db, {people:pdb, plan:ldb, remind:rdb, task:tdb, usage:udb}),null,1)], {type:'application/json'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `受講率ノート_${todayStr()}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
   $('#menu').close(); toast('控えを保存しました');
@@ -2005,6 +2009,127 @@ $('#rFile').addEventListener('change', async ()=>{ const f=$('#rFile').files[0];
   box.querySelector('.no').addEventListener('click',()=>box.classList.remove('ask'));
   box.querySelector('.yes').addEventListener('click',()=>{ box.classList.remove('ask'); rdb.ps=[]; rdb.cp={}; rdb.d=''; rsave(); renderRemind(); toast('連絡の人を全部消しました'); }); })();
 
+/* ---------- AIに渡すプロンプト（.txt で保存） ---------- */
+const PROMPTS = {
+people:['プロンプト_ひとりずつ.txt', `Learning の受講状況を、ひとり×セッションごとに1行の CSV ファイルにしてください。
+
+【出力のかたち】
+・ファイル名：learning_YYYY-MM-DD.csv（YYYY-MM-DD は今日の日付）
+・文字コード UTF-8、区切りはカンマ、1行目は見出し
+・見出しは次の9列で、この順番・この名前のまま：
+取得日,メール,姓,名,職種,セッション名,状態,期限,完了日
+
+【各列のルール】
+・取得日：今日の日付（YYYY-MM-DD）。全行同じ
+・メール：その人のメールアドレス。人を見分ける鍵なので必ず入れる
+・姓／名／職種：画面に出ているとおり
+・セッション名：画面のタイトルを1文字も変えずに写す（訳さない・略さない・まとめない）
+・状態：次の4つのどれかだけ
+　完了／未完了／期限切れ／対象外
+・期限・完了日：YYYY-MM-DD。無いときは空欄
+・カンマや改行を含む値は "（ダブルクォート）で囲む
+
+【守ること】
+・1行＝ひとり×1セッション。横に並べた表（セッションが列になる形）にしない
+・読めない・分からない値は推測で埋めず、空欄にする
+・画面に無い人やセッションを足さない
+・ファイルの中は CSV だけ（説明文やまとめを入れない）
+
+【ファイルとは別に、画面に出してほしいこと】
+・人数、行数、状態ごとの件数
+・読めなかった・空欄にした箇所の一覧（だれの・どのセッションか）
+`],
+plan:['プロンプト_研修の予定.txt', `添付した画像は、研修の予定表（Training Index）のスクリーンショットです。縦に長い表を、上から順に数枚に分けて撮っています。
+全部の画像を読み、職種×研修ごとに1行の CSV を作ってください。
+
+【画像の見かた】
+・いちばん左の「ROLE」の列が職種。職種の名前は、その職種の帯（横に長い区画）の縦のまん中あたりに書いてある
+・右側の色つきの四角（バー）が研修。バーは、上下の横線で区切られた職種の区画のうち、自分が入っている区画の職種のもの
+・画像の切れ目で職種の区画が次の画像に続くことがある。次の画像の上のほうにあるバーは、前の画像の最後の職種のものか、次の画像で名前が出る職種のものかを、区画の線で判断する
+・バーの中の1行目（太字）が研修名。長い名前は2〜3行に折り返しているので、つなげて1行にする（折り返しのところは半角スペース1つ）
+・バーの下の小さい字「30m | Oct 27 - Nov 6」が「時間 | 開始 - 終了」。ここも折り返していることがある（「Nov」と「6」が別の行など）
+・バーの色が優先：ピンク＝P1、青＝P2、緑＝P3（画面の下に凡例がある）
+・同じ研修名でも、職種によって色（優先）が違うことがある。職種ごとにそのバーの色を見る
+・右上に「▼（くの字）」のあるバーは、中に研修がまとまった束。束の題名だけを1行にする
+・リンクのマーク・チェックのマークは無視する（マークの無いバーも研修として数える）
+・上の週の見出し（NOV 1 - NOV 7 など）は使わない。日付はバーの中の字だけを使う
+
+【出力のかたち】
+・ファイル名：研修の予定_YYYY-MM-DD.csv（YYYY-MM-DD は今日の日付）。ファイルを作れないときは、CSV の中身だけをコードブロックで出す
+・文字コード UTF-8、区切りはカンマ、1行目は見出し
+・見出しは次の6列で、この順番・この名前のまま：
+職種,研修名,優先,時間（分）,開始,終了
+・行の順番は、画像の上から下（職種の順）、同じ職種の中も上から下。同じ高さに並ぶバーは左から右
+
+【各列のルール】
+・職種：画像の名前を1文字も変えずに写す（例：Role A, Role B）。カンマを含む値は "（ダブルクォート）で囲む
+・束（▼）は職種ごとに色が違っても、職種ごとに1行ずつ書く
+・研修名：画像の英語のまま写す（訳さない・略さない・記号「|」「:」もそのまま）。「|」を含んでも区切りではない
+・優先：P1／P2／P3 のどれか
+・時間（分）：数字だけ。15m→15、30m→30、1h→60、1h 30m→90
+・開始・終了：YYYY-MM-DD。年は画像の題名（例：November Training Index）の年＝今年として決める。題名の月の前後の月も今年（例：11月の表の Oct・Dec はどちらも今年）。12月の表で終了が Jan なら翌年にする
+
+【守ること】
+・1行＝1つの職種×1つの研修。同じ研修が5つの職種にあれば5行
+・読めない・自信のない値は推測で埋めず、空欄にする
+・画像に無い職種や研修を足さない。同じ職種の中で同じ研修を2回書かない
+・CSV の中に説明文やまとめを入れない
+
+【CSV とは別に、画面に出してほしいこと】
+・職種ごとの研修の数、職種の数、研修の数（同じ題名は1つと数えて）、行数
+・空欄にした箇所と、自信のない箇所（どの職種の・どの研修の・どの列か、と理由）
+・画像の切れ目で、どちらの職種か迷ったバーがあればその名前
+
+【出力の例（形だけ。中身は画像に合わせる）】
+職種,研修名,優先,時間（分）,開始,終了
+Role C,Sample Course One,P2,30,2026-01-05,2026-02-04
+Role A,"Sample Course Two, Lab",P1,60,2026-01-12,2026-01-26
+Role B,"Sample Course Two, Lab",P1,60,2026-01-12,2026-01-26
+`],
+remind:['プロンプト_連絡.txt', `今日 Learning の予定が入っているのに、研修（モジュール）がまだ終わっていない人の一覧を、CSV ファイルにしてください。
+
+【出力のかたち】
+・ファイル名：未完了の人_YYYY-MM-DD.csv（YYYY-MM-DD は今日の日付）。ファイルを作れないときは、CSV の中身だけをコードブロックで出す
+・文字コード UTF-8、区切りはカンマ、1行目は見出し
+・見出しは次の2列で、この順番・この名前のまま：
+名前,開始
+
+【各列のルール】
+・名前：「姓 名」（あいだに半角スペース1つ）。画面に出ているとおりに写す
+・開始：その人の今日の Learning の開始時刻を 24時間の HH:MM で（例：09:30、13:00）。分からないときは空欄
+・カンマを含む値は "（ダブルクォート）で囲む
+
+【守ること】
+・1行＝ひとり。同じ人を2回書かない（予定が2つあるときは早いほうの時刻）
+・今日の予定が無い人、もう終わっている人は入れない
+・読めない・分からない値は推測で埋めず、空欄にする
+・ファイルの中は CSV だけ（説明文やまとめを入れない）
+
+【ファイルとは別に、画面に出してほしいこと】
+・人数と、開始時刻ごとの人数
+・開始時刻が分からず空欄にした人の名前
+`]};
+function savePrompt(k){ const [name, text]=PROMPTS[k];
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text], {type:'text/plain;charset=utf-8'})); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000); toast(name+' を保存します'); }
+[['pPrompt','people'],['lPrompt','plan'],['rPrompt','remind']].forEach(([id,k])=>$('#'+id).addEventListener('click', ()=>savePrompt(k)));
+
+/* ---------- 使った回数（端末の中だけ・名前や中身は記録しない） ---------- */
+const CKEY = KEY==='jukou.v1' ? 'jukou.usage.v1' : KEY+'.usage';
+let udb = (()=>{ try{ const d=JSON.parse(localStorage.getItem(CKEY)||'null'); if(d && d.days && typeof d.days==='object') return d; }catch(e){} return {since:Date.now(), days:{}}; })();
+let uT=0;
+function use(name){ try{ const d=todayStr(), h=new Date().getHours(); const day=udb.days[d]||(udb.days[d]={});
+    day[name]=(day[name]||0)+1; if(/^(見る|開く):/.test(name)){ const hk='時:'+h; day[hk]=(day[hk]||0)+1; }
+    const ks=Object.keys(udb.days).sort(); while(ks.length>120) delete udb.days[ks.shift()];
+    clearTimeout(uT); uT=setTimeout(()=>{ try{ localStorage.setItem(CKEY, JSON.stringify(udb)); }catch(e){} }, 300);
+  }catch(e){} }
+function useName(el){ if(el.id) return el.id; const p=el.parentElement && el.parentElement.closest('[id]'); const c=[...el.classList].filter(x=>!/^(on|ask|next|done|drag)$/.test(x))[0]||el.tagName.toLowerCase(); return c+'@'+(p?p.id:'-'); }
+document.addEventListener('click', e=>{ const el=e.target.closest('button,a,summary,[role=button],[data-ck],[data-ed],label.pick,tr.pick,input[type=radio],input[type=checkbox]'); if(el && !(el.matches('input') && el.closest('label'))) use('押す:'+useName(el)); }, true);
+document.addEventListener('change', e=>{ const el=e.target; if(el.matches('input[type=file]')) use('読込:'+useName(el)); }, true);
+const useFlush=()=>{ try{ localStorage.setItem(CKEY, JSON.stringify(udb)); }catch(e){} };
+addEventListener('pagehide', useFlush); document.addEventListener('visibilitychange', ()=>{ if(document.hidden) useFlush(); });
+use('開く:アプリ');
+
 /* ---------- タスク ---------- */
 const TKEY = KEY==='jukou.v1' ? 'jukou.task.v1' : KEY+'.task';
 const TREP = [['none','なし'],['day','毎日'],['wd','平日'],['week','毎週'],['2week','隔週'],['month','毎月'],['year','毎年']];
@@ -2084,7 +2209,8 @@ function renderTask(){
   $('#tkBody').innerHTML=h;
 }
 function tFind(el){ const r=el.closest('.tk'); return r ? tdb.ts.find(t=>t.id===r.dataset.id) : null; }
-function tApply(t, st, focusSel){
+function tApply(t, st, focusSel, how){
+  use((how||'丸')+':'+st);
   const c=tcommit(()=>setSt(t, st)); if(!c.ok) return; const msg=c.r; renderTask();
   toast(`「${t.t}」を${STN[st]}に`+(msg?`。${msg}`:''));
   const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] ${focusSel||'[data-ck]'}`);
@@ -2117,8 +2243,8 @@ function tkEnd(e){
   const st = !far ? '' : d.dx>0 ? (t.st==='todo'?'doing':'todo') : (t.st==='done'?'':'done');
   const back=()=>{ d.fg.classList.remove('drag'); d.fg.style.transform=''; row.querySelectorAll('.tk-bg').forEach(b=>b.classList.remove('on')); };
   if(!st){ if(calm()||!d.fg.animate){ back(); return; } const a=d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:'translateX(0)'}],{duration:180,easing:'ease-out'}); d.fg.style.transform=''; a.onfinish=back; return; }
-  if(calm()||!d.fg.animate){ tApply(t, st); return; }
-  const to=d.dx>0?W:-W; d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:`translateX(${to}px)`}],{duration:160,easing:'ease-in',fill:'forwards'}).onfinish=()=>tApply(t, st);
+  if(calm()||!d.fg.animate){ tApply(t, st, null, 'フリック'); return; }
+  const to=d.dx>0?W:-W; d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:`translateX(${to}px)`}],{duration:160,easing:'ease-in',fill:'forwards'}).onfinish=()=>tApply(t, st, null, 'フリック');
 }
 $('#tkBody').addEventListener('pointerup', tkEnd);
 $('#tkBody').addEventListener('pointercancel', tkEnd);
@@ -2181,8 +2307,10 @@ $('#tkForm').addEventListener('submit', e=>{
 /* ページの切り替え */
 let view='store';
 function route(){
+  const was=view;
   view = location.hash==='#people' ? 'people' : location.hash==='#plan' ? 'plan' : location.hash==='#remind' ? 'remind' : location.hash==='#task' ? 'task' : 'store';
   $('#vStore').hidden = view!=='store'; $('#vPeople').hidden = view!=='people'; $('#vPlan').hidden = view!=='plan'; $('#vRemind').hidden = view!=='remind'; $('#vTask').hidden = view!=='task';
+  const first=!route.n++; if(first || was!==view) use('見る:'+view);
   ['Store','People','Plan','Remind','Task'].forEach(k=>$('#tab'+k).removeAttribute('aria-current'));
   if(view==='store'){ $('#tabStore').setAttribute('aria-current','page'); renderChart(); }
   else if(view==='people'){ $('#tabPeople').setAttribute('aria-current','page'); renderPeople(); }
@@ -2190,6 +2318,7 @@ function route(){
   else if(view==='task'){ $('#tabTask').setAttribute('aria-current','page'); renderTask(); }
   else { $('#tabPlan').setAttribute('aria-current','page'); renderPlan(); }
 }
+route.n=0;
 $('#tabStore').addEventListener('click', e=>{ e.preventDefault(); history.replaceState(null,'',location.pathname+location.search); route(); });
 window.addEventListener('hashchange', route);
 
