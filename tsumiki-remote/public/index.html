@@ -4379,7 +4379,8 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     return best.n ? best : { n: 0, d: 0 };
   }
 
-  function filePick(list, ctx) {
+  // seat＝押した時点で見ていた席（seatNow）。答えを待つ間に席を切り替えても、押した席で絞る
+  function filePick(list, ctx, seat) {
     // ① 受け取りの複製は、元の置き場に同じ大きさのものがあれば外す（新しい順で届いている）
     var reps = list.filter(function (c) {
       if (c.rel.indexOf(INBOX_DIR) !== 0) return true;
@@ -4388,7 +4389,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       });
     });
     if (reps.length === 1) return { one: reps[0] };
-    if (!ctx) return { many: reps };
+    if (!ctx) return seatPick(reps, seat) || { many: reps };
     // ② 名前のすぐ前に付いたパスは**網**にする。後ろから1つずつ照らし、どちらかが尽きるまで
     //    全部合う候補だけを残す（`V1/画像/img1.png` なら V1 の画像だけが残る）。
     //    ⚠️ 前は「ありふれた名前だけのパスは使わない」にしていて、すぐ前に V1 と書いてあるのに
@@ -4426,8 +4427,29 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
       near = near.filter(function (o) { return o.s.d === dmin; });
       if (near.length === 1) return { one: near[0].c };
     }
-    // ④ 決められない
-    return { many: reps };
+    // ④ 押した席が置いた物（下の seatPick）
+    // ⑤ 決められない
+    return seatPick(reps, seat) || { many: reps };
+  }
+
+  // 押した席が置いた物（印の seat・born が押した席と同じ）が1つだけなら、それに決める。
+  // 返信文は `◯◯様_返信.txt` のように同じ名前が席ごとにでき（2026-11-23 に4か所）、
+  // 返答に置き場を書かないと③で絞れず、本文の札が「同じ名前が複数あります」で止まった。
+  // ⚠️ 札の題名とフォルダ名で照らすのはやめた（反証役 BLOCKER）：フォルダ名は最初に置いた時点で
+  //    固定され、札の題名は後から動く。別の席のフォルダ名と同じ題名になると、黙ってその席の物を開いた。
+  //    印は tsumiki_out.py が置いた席を書く。席名は使い回されるので、作られた時刻（秒）と組で照らす。
+  //    印の無い物・別の席の物しか無いときは、これまでどおり選ばせる
+  function seatNow() {
+    var b = 0;
+    sessions.forEach(function (x) { if (x.name === current) b = x.created || 0; });
+    return current && b ? { name: current, born: b } : null;
+  }
+  function seatPick(reps, seat) {
+    if (!seat) return null;
+    var mine = reps.filter(function (c) {
+      return c.seat === seat.name && Number(c.born) === seat.born;
+    });
+    return mine.length === 1 ? { one: mine[0] } : null;
   }
 
   // ------------------------------------------- 光った名前はファイルアプリで開く
@@ -4496,6 +4518,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   //    もう答えを持っているので、それで1つに決まれば聞き直さずに飛ぶ。
   //    聞き直しは後ろで行い、消えていたら戻ってきたときに知らせる
   function fileOpenNow(name, ctx) {
+    var seat = seatNow();
     var e = fileIdx[name];
     var h = e && e.hit;
     // 古い答えでは開かない。README の「同じ名前は1つに決めない」：8/31 の履歴で押すと
@@ -4503,7 +4526,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     if (!h || Date.now() - e.at > FILE_OPEN_FRESH_MS) return false;
     // 候補が全部そろっていないとき（total が多い）は、ほかに古い版があるかもしれない＝聞き直す
     if (!h.list || !h.list.length || h.total > h.list.length) return false;
-    var p = filePick(h.list, ctx);
+    var p = filePick(h.list, ctx, seat);
     if (!p.one) return false;
     var rel = p.one.rel;
     openInFiles(rel);
@@ -4514,7 +4537,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         var g = d && d.found && d.found[name];
         if (!g || !g.list || !g.list.length) return;
         fileIdx[name] = { hit: g, at: Date.now() };
-        var q = filePick(g.list, ctx);
+        var q = filePick(g.list, ctx, seat);
         if (!q.one || q.one.rel !== rel) toast('同じ名前の別の版があります。もう一度押してください');
       })
       .catch(function () {});
@@ -4522,6 +4545,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
   }
 
   function fileOpen(name, ctx) {
+    var seat = seatNow();
     if (fileOpenNow(name, ctx)) return;
     api('/api/lookup?max=60&names=' + encodeURIComponent(name), null, 8000)
       .then(function (d) {
@@ -4531,7 +4555,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
           return toast('見つかりません');
         }
         fileIdx[name] = { hit: h, at: Date.now() };
-        var p = filePick(h.list, ctx);
+        var p = filePick(h.list, ctx, seat);
         if (p.one) return openInFiles(p.one.rel);
         openSheet(name);
         p.many.forEach(function (c) {
@@ -6288,6 +6312,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
     b.classList.add('fcp');
     b.dataset.file = name;
     b._want = function () {
+      var seat = seatNow();     // 押した時点の席（答えは最大8秒後）
       if (b._p) return b._p;
       var relP = full
         ? api('/api/resolve?paths=' + encodeURIComponent(full), null, 8000).then(function (d) {
@@ -6298,7 +6323,7 @@ window.__ORB={MODE_DRAWS:Ct,MODE_FRAMES:vt,STATE_TO_MODE:Ot,finalizeFrame:L,make
         : api('/api/lookup?max=60&names=' + encodeURIComponent(name), null, 8000).then(function (d) {
             var h = d && d.found && d.found[name];
             if (!h || !h.list || !h.list.length) throw new Error('見つかりません');
-            var pk = filePick(h.list, fileCtx(lines, no, col, name));
+            var pk = filePick(h.list, fileCtx(lines, no, col, name), seat);
             if (!pk.one) throw new Error('同じ名前が複数あります。名前を押して開き、右上でコピーしてください');
             return pk.one.rel;
           });

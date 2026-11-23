@@ -2274,7 +2274,11 @@ async function pinnedRows(limit) {
     if (!rel || rel.startsWith('/') || rel.split('/').includes('..')) continue;
     if (seen.has(rel)) continue;                 // 同じものは新しいほうだけ
     seen.add(rel);
-    rows.push({ rel, at: Number(o.at) || 0 });
+    // seat・born＝置いた席（tmux の席名と、その席ができた時刻＝秒）。画面が「押した席が置いた物」に
+    // 決めるため（2026-11-23）。古い印には無い
+    const seat = typeof o.seat === 'string' ? o.seat : '';
+    const born = Number(o.born) || 0;
+    rows.push(seat && born ? { rel, at: Number(o.at) || 0, seat, born } : { rel, at: Number(o.at) || 0 });
   }
   return rows;
 }
@@ -2328,14 +2332,17 @@ async function lookupNames(names, max) {
   const want = new Set(names);
   const cands = new Map();                       // 名前 → Map(rel → {rel, mtime, pin})
   // size＝押したときに「中身が同じ複製か」を見分けるため（受け取りの複製と元の置き場など）
-  const add = (base, rel, mtime, pin, size) => {
+  const add = (base, rel, mtime, pin, size, row) => {
     let m = cands.get(base);
     if (!m) { m = new Map(); cands.set(base, m); }
-    const cur = m.get(rel);
-    if (!cur) { m.set(rel, { rel, mtime, pin, size }); return; }
-    // 写しと印で同じものを2度見たら、新しいほうの時刻・大きさと「印あり」を残す
-    if (mtime > cur.mtime) { cur.mtime = mtime; cur.size = size; }
-    if (pin) cur.pin = true;
+    let cur = m.get(rel);
+    if (!cur) { cur = { rel, mtime, pin, size }; m.set(rel, cur); }
+    else {
+      // 写しと印で同じものを2度見たら、新しいほうの時刻・大きさと「印あり」を残す
+      if (mtime > cur.mtime) { cur.mtime = mtime; cur.size = size; }
+      if (pin) cur.pin = true;
+    }
+    if (row && row.seat) { cur.seat = row.seat; cur.born = row.born; }
   };
   if (recentCache.list) {
     for (const f of recentCache.list) {
@@ -2349,7 +2356,7 @@ async function lookupNames(names, max) {
     if (!want.has(base) || !LINK_EXT.test(base) || !previewRelOk(r.rel)) return;
     try {
       const st = await within(fsp.stat(path.join(PREVIEW_ROOT, r.rel)), 1200, 'iCloud');
-      if (st.isFile()) add(base, r.rel, st.mtimeMs, true, st.size);
+      if (st.isFile()) add(base, r.rel, st.mtimeMs, true, st.size, r);
     } catch (e) { /* もう無い・読めないものは候補にしない */ }
   }));
   const found = {};

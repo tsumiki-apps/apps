@@ -132,7 +132,7 @@ def _trim_locked():
         pass
 
 
-def pin(paths, by='tsumiki_out'):
+def pin(paths, by='tsumiki_out', seat=None):
     """印を付ける。付けられた数を返す。**呼び出し側を絶対に落とさない。**
 
     ⚠️ ここで例外を上げると、置き場を聞いただけの道具が道連れで死ぬ。
@@ -144,7 +144,14 @@ def pin(paths, by='tsumiki_out'):
         rel = _rel(p)
         if not rel:
             continue
-        rows.append(json.dumps({'rel': rel, 'at': now, 'by': by}, ensure_ascii=False))
+        row = {'rel': rel, 'at': now, 'by': by}
+        # 置いた席（tmux の席名と、その席ができた時刻＝秒）。つみきリモートで同じ名前が
+        # いくつもあるとき「押した席が置いた物」に決めるため（2026-11-23）。席名は使い回されるので
+        # 作られた時刻と組で照らす。取れなければ付けない（＝これまでどおり選ばせる）
+        if seat and seat.get('name') and seat.get('born'):
+            row['seat'] = seat['name']
+            row['born'] = int(seat['born'])
+        rows.append(json.dumps(row, ensure_ascii=False))
     if not rows:
         return 0
     try:

@@ -40,7 +40,7 @@ try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from tsumiki_pin import pin as pin_made
 except Exception:
-    def pin_made(paths):
+    def pin_made(paths, seat=None):
         return 0
 
 TESTING = bool(os.environ.get('TSUMIKI_OUT_ROOT'))
@@ -84,6 +84,18 @@ def clean_name(s):
     s = s.lstrip('.').strip()
     s = SPACE_RE.sub('_', s)
     return s[:60].rstrip('_ ')     # 頭の _ は落とさない（ARCHIVE の守りが効くように）
+
+
+def tmux_seat():
+    """いまの席（tmux の席名と作られた時刻）。tmux の外なら None"""
+    pane = os.environ.get('TMUX_PANE', '')
+    if not pane:
+        return None
+    out = tmux('display', '-p', '-t', pane, '#{session_name}\t#{session_created}')
+    name, _, born = out.partition('\t')
+    if not name or not born.isdigit():
+        return None
+    return {'name': name, 'born': int(born)}
 
 
 def tmux(*args):
@@ -306,7 +318,7 @@ def main(argv):
         # ⚠️ まだファイルは無い（ここで返すのは「これから置く場所」）。光るのは実際にできたものだけ。
         # ⚠️ 試しの置き場のときは付けない（印の控えは1つしかなく、本物の画面で光ってしまう）
         if not TESTING:
-            pin_made([out])
+            pin_made([out], seat=tmux_seat())
         print(out)
     for n in notes:
         sys.stderr.write('（%s）\n' % n)
