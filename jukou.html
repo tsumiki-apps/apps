@@ -197,7 +197,8 @@ dialog.sheet::backdrop{background:var(--scrim)}
 /* 切り替え（店全体／ひとりずつ） */
 .views{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:-4px 0 16px;overflow-x:auto}
 .views a{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 10px;font-size:15px;color:var(--ink-soft);text-decoration:none;white-space:nowrap}
-@media (max-width:369px){.views a{padding:0 7px;gap:4px}.views a svg{display:none}}
+@media (max-width:369px){.views a{padding:0 6px;gap:4px;font-size:14px}}
+@media (max-width:459px){.views a{padding:0 8px}.views a svg{display:none}}
 .views a[aria-current="page"]{color:var(--ink);font-weight:700;box-shadow:inset 0 -2px 0 var(--ink)}
 .views svg{width:17px;height:17px;flex:none}
 
@@ -301,6 +302,28 @@ div.ptr[data-k]{cursor:pointer}
 .rc-foot{position:sticky;bottom:0;margin:auto -16px 0;padding:10px 16px calc(12px + env(safe-area-inset-bottom));background:var(--paper);border-top:1px solid var(--line);display:flex;gap:8px}
 .rc-foot .btn{flex:1}
 dialog.rec{overflow-y:auto}
+
+/* 連絡 */
+.rm-row{display:flex;align-items:center;gap:8px;min-height:52px;border-top:1px solid var(--line)}
+.rm-row:first-child{border-top:0}
+.rm-row .nm{flex:1;min-width:0;font-weight:700;overflow-wrap:anywhere}
+.rm-row input[type="time"]{width:8.2em;flex:none;padding:0 8px}
+.rm-row .icobtn{flex:none}
+.rm-add{display:flex;gap:8px;margin-top:10px}
+.rm-add input{flex:1;min-width:0}
+.rm-from{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-size:15px;font-weight:700}
+.rm-from input{flex:1;min-width:0;font-weight:500}
+.rm-slot{border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:10px}
+.rm-slot.next{border-color:var(--fill);box-shadow:0 0 0 1px var(--fill)}
+.rm-sh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.rm-sh b{font-size:20px;font-variant-numeric:tabular-nums}
+.rm-sh .st{margin-left:auto;font-size:12px;font-weight:700}
+.rm-sh .st.ok{color:var(--good-ink)}.rm-sh .st.nx{color:var(--warn-ink)}
+.rm-names{margin:6px 0 10px;line-height:1.6;overflow-wrap:anywhere}
+.rm-slot .btn{width:100%}
+.rm-slot.done .btn-main{background:var(--hov);color:var(--ink);font-weight:500}
+.rm-miss{margin:12px 2px 0}
+.rm-txt{width:100%;margin-top:10px;font:inherit;font-size:16px;line-height:1.5;border:1px solid var(--line-2);border-radius:12px;padding:10px;background:var(--surface);color:var(--ink);resize:vertical}
 
 /* 人のページ（右から出る） */
 dialog.peek{border:0;padding:0;margin:0 0 0 auto;height:100dvh;max-height:100dvh;width:100%;max-width:100%;background:var(--paper);color:var(--ink)}
@@ -436,6 +459,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
     <a href="#" id="tabStore" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="M7 15l4-4 3 3 5-6"/></svg>店全体</a>
     <a href="#people" id="tabPeople"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></svg>ひとりずつ</a>
     <a href="#plan" id="tabPlan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>研修の予定</a>
+    <a href="#remind" id="tabRemind"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg>連絡</a>
   </nav>
 
 <div id="vStore">
@@ -502,6 +526,29 @@ body.pv #printArea svg{max-width:100%;height:auto}
     </span>
   </div>
   <input type="file" id="lFile" accept=".csv,text/csv" hidden>
+</div>
+
+<div id="vRemind" hidden>
+  <section class="card" aria-labelledby="rmT1">
+    <div class="band-h"><h2 id="rmT1">未完了の人</h2><span class="meta" id="rmMeta"></span></div>
+    <div id="rmList"></div>
+    <form class="rm-add" id="rmAdd"><input class="date-in" id="rmName" placeholder="名前" aria-label="足す人の名前" autocomplete="off"><button class="btn btn-quiet" type="submit">足す</button></form>
+  </section>
+  <section class="card" aria-labelledby="rmT2">
+    <div class="band-h"><h2 id="rmT2">時間帯ごとの文章</h2></div>
+    <label class="rm-from"><span>差出人</span><input class="date-in" id="rmFrom" placeholder="email from ◯◯ の名前" autocomplete="off"></label>
+    <div id="rmSlots"></div>
+    <p class="meta rm-miss" id="rmMiss" hidden></p>
+  </section>
+  <div class="p-foot">
+    <button class="btn btn-quiet" id="rLoad"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 14l5-5 5 5M4 3h16"/></svg>ファイルを読み込む</button>
+    <span class="del" id="rDel" hidden>
+      <button class="btn btn-quiet go">全部消す</button>
+      <button class="btn btn-warn yes">消す</button>
+      <button class="btn btn-quiet no">やめる</button>
+    </span>
+  </div>
+  <input type="file" id="rFile" accept=".csv,.txt,text/csv,text/plain" hidden>
 </div>
 </div>
 
@@ -1101,7 +1148,7 @@ $('#menuBtn').addEventListener('click', ()=>$('#menu').showModal());
 $('#closeMenu').addEventListener('click', ()=>$('#menu').close());
 $('#menu').addEventListener('click', e=>{ if(e.target===$('#menu')) $('#menu').close(); });
 $('#expBtn').addEventListener('click', ()=>{
-  const blob = new Blob([JSON.stringify(Object.assign({}, db, {people:pdb, plan:ldb}),null,1)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify(Object.assign({}, db, {people:pdb, plan:ldb, remind:rdb}),null,1)], {type:'application/json'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `受講率ノート_${todayStr()}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
   $('#menu').close(); toast('控えを保存しました');
@@ -1112,15 +1159,15 @@ $('#impFile').addEventListener('change', async ()=>{
   try{
     const d = JSON.parse(await f.text());
     if(!d || !d.entries || typeof d.entries!=='object') throw 0;
-    let n=0, pn=mergePeople(d.people), ln=mergePlan(d.plan);
+    let n=0, pn=mergePeople(d.people), ln=mergePlan(d.plan), rn=mergeRemind(d.remind);
     for(const [k,e] of Object.entries(d.entries)){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(k) || !e) continue;
       const cur = db.entries[k];
       if(!cur || (e.t||0) > (cur.t||0)){ db.entries[k]=e; n++; }
     }
-    persist(); renderAll(); fillForm($('#date').value||todayStr()); renderPeople(); renderPlan();
+    persist(); renderAll(); fillForm($('#date').value||todayStr()); renderPeople(); renderPlan(); renderRemind();
     const cn=mergePeople.calls||0;
-    toast((n||pn||ln||cn) ? [n?`${n}日分`:'', pn?`ひとりずつ ${pn}回分`:'', cn?`チェック ${cn}件`:'', ln?'研修の予定':''].filter(Boolean).join('・')+'を戻しました' : '新しい記録はありませんでした');
+    toast((n||pn||ln||cn||rn) ? [n?`${n}日分`:'', pn?`ひとりずつ ${pn}回分`:'', cn?`チェック ${cn}件`:'', ln?'研修の予定':'', rn?'連絡':''].filter(Boolean).join('・')+'を戻しました' : '新しい記録はありませんでした');
   }catch(e){ toast('このファイルは読めませんでした'); }
   $('#impFile').value=''; $('#menu').close();
 });
@@ -1769,14 +1816,105 @@ function buildPlanPrint(){
   $('#printArea').innerHTML = h+`</tbody></table></section>`;
 }
 
+/* ---------- 連絡（時間帯ごとにリーダーへ送る文章） ---------- */
+const RKEY = KEY==='jukou.v1' ? 'jukou.remind.v1' : KEY+'.remind';
+function rload(){ try{ const d=JSON.parse(localStorage.getItem(RKEY)||'null'); if(d && Array.isArray(d.ps)) return {d:d.d||'', at:d.at||0, ps:d.ps.filter(p=>p&&typeof p.n==='string'&&p.n.trim()).map(p=>({n:p.n.trim(), t:/^\d{2}:\d{2}$/.test(p.t||'')?p.t:''})), cp:(d.cp&&typeof d.cp==='object')?d.cp:{}, from:typeof d.from==='string'?d.from:''}; }catch(e){} return {d:'', at:0, ps:[], cp:{}, from:''}; }
+let rdb = rload();
+function rsave(){ rdb.at=Date.now(); try{ localStorage.setItem(RKEY, JSON.stringify(rdb)); return true; }catch(e){ toast('保存できませんでした（端末の空きが足りません）'); return false; } }
+function mergeRemind(r){ if(!r || !Array.isArray(r.ps) || (r.at||0) <= (rdb.at||0)) return 0;
+  const keep=rdb, raw=localStorage.getItem(RKEY);
+  try{ localStorage.setItem(RKEY, JSON.stringify(r)); rdb=rload(); rdb.from = keep.from || rdb.from;
+    if(keep.d===rdb.d) for(const [t,c] of Object.entries(keep.cp||{})){ if(!rdb.cp[t] || (c.at||0)>(rdb.cp[t].at||0)) rdb.cp[t]=c; }
+    localStorage.setItem(RKEY, JSON.stringify(rdb)); return 1;
+  }catch(e){ rdb=keep; try{ if(raw!=null) localStorage.setItem(RKEY, raw); }catch(_){} return 0; } }
+const RMSG = from => `Leaders,\nPlease remind the team!📚\nThese team members haven't finished the training yet! Please tell them to check the email from ${from}!📩\n\n`;
+function rSlots(){ const m=new Map(); rdb.ps.forEach(p=>{ if(!p.t) return; if(!m.has(p.t)) m.set(p.t,[]); m.get(p.t).push(p.n); }); return [...m.entries()].sort((a,b)=>a[0]<b[0]?-1:1); }
+const rSig = names => rdb.from+'\n'+names.join('\n');
+const rToday = c => !!c && ymd(new Date(c.at||0))===todayStr();
+function rNames(t){
+  t=t.replace(/^\uFEFF/,''); const first=t.split(/\r?\n/,1)[0];
+  const sep = first.includes('\t') ? '\t' : (!first.includes(',') && first.includes(';')) ? ';' : ',';
+  const rows = sep===',' ? csvParse(t) : t.split(/\r?\n/).map(l=>l.split(sep)).filter(r=>r.some(x=>x.trim()));
+  rNames.drop=0; if(!rows.length) return [];
+  const h=rows[0].map(x=>nz(x));
+  const fi=k=>h.findIndex(x=>k.includes(x));
+  const iN=fi(['名前','氏名','name','fullname','フルネーム','teammember','member']), iL=fi(['姓','lastname','familyname']), iF=fi(['名','firstname','givenname']);
+  const iT=fi(['開始','開始時刻','時刻','時間','start','time','starttime']);
+  const head = iN>=0 || iL>=0 || iF>=0;
+  const out=[], seen=new Set();
+  (head?rows.slice(1):rows).forEach(r=>{
+    let n = head ? (iN>=0 ? r[iN] : [r[iL]||'', r[iF]||''].join(' ')) : r[0];
+    n=String(n||'').replace(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*/,'').replace(/\s+/g,' ').trim();
+    if(!n) return; const k=nz(n); if(n.length>60 || seen.has(k)){ rNames.drop++; return; } seen.add(k);
+    out.push({n, t: iT>=0 ? rTime(r[iT]) : ''});
+  });
+  return out;
+}
+function rTime(v){
+  const s=String(v||'').normalize('NFKC').trim().toLowerCase(); const m=s.match(/^(午前|午後)?\s*(\d{1,2})(?:[:時]\s*(\d{1,2}))?\s*分?\s*(am|pm|a\.m\.|p\.m\.)?/);
+  if(!m) return ''; let h=+m[2]; const mi=m[3]==null?0:+m[3]; const pm=m[1]==='午後'||/^p/.test(m[4]||''), am=m[1]==='午前'||/^a/.test(m[4]||'');
+  if(pm && h<12) h+=12; if(am && h===12) h=0; if(h>23 || mi>59) return '';
+  return String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0');
+}
+function renderRemind(){
+  const today=todayStr(), ps=rdb.ps;
+  $('#rmMeta').textContent = ps.length ? (rdb.d && rdb.d!==today ? md(rdb.d)+' の読み込み・' : '')+ps.length+'人' : '';
+  $('#rmList').innerHTML = ps.length ? ps.map((p,i)=>`<div class="rm-row"><span class="nm">${esc(p.n)}</span><input type="time" class="date-in" data-i="${i}" value="${p.t}" aria-label="${esc(p.n)} の開始時刻"><button class="icobtn" data-x="${i}" aria-label="${esc(p.n)} を外す"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`).join('')
+    : `<div class="callout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg><div>未完了の人のリスト（CSV・txt）を読み込むか、名前を足してください。</div></div>`;
+  $('#rmFrom').value = rdb.from;
+  $('#rDel').hidden = !ps.length;
+  renderRSlots();
+}
+function renderRSlots(){
+  const sl=rSlots(); let nextT=null;
+  sl.forEach(([t,names])=>{ const c=rdb.cp[t]; if(!nextT && !(rToday(c) && c.sig===rSig(names))) nextT=t; });
+  $('#rmSlots').innerHTML = sl.length ? sl.map(([t,names])=>{ const c=rToday(rdb.cp[t]) ? rdb.cp[t] : null, done=!!c && c.sig===rSig(names), old=!!c && !done;
+    const st = done ? `<span class="st ok">✓ コピー済み ${hm(c.at)}</span>` : t===nextT ? `<span class="st nx">次</span>` : '';
+    return `<div class="rm-slot${done?' done':''}${t===nextT?' next':''}"><div class="rm-sh"><b>${t}</b><span class="meta">${names.length}人${old?'・前のコピーから変わりました':''}</span>${st}</div>
+      <div class="rm-names">${names.map(esc).join('、')}</div>
+      <button class="btn btn-main" data-cp="${t}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>${done?'もう一度コピー':t+' の文章をコピー'}</button></div>`; }).join('')
+    : `<p class="meta">開始時刻を入れると、同じ時刻の人がここにまとまります。</p>`;
+  const miss=rdb.ps.filter(p=>!p.t).map(p=>p.n);
+  $('#rmMiss').hidden=!(miss.length && sl.length); $('#rmMiss').textContent='時刻がまだ：'+miss.join('、');
+}
+function hm(ms){ const d=new Date(ms); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); return true; }catch(e){}
+  const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;top:0;left:0;opacity:0;font-size:16px';
+  document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,t.length); let ok=false; try{ ok=document.execCommand('copy'); }catch(e){} ta.remove(); return ok;
+}
+$('#rmList').addEventListener('change', e=>{ const i=e.target.dataset?.i; if(i==null) return; const p=rdb.ps[+i]; if(!p) return; p.t=e.target.value||''; rsave(); renderRSlots(); });
+$('#rmList').addEventListener('click', e=>{ const b=e.target.closest('[data-x]'); if(!b) return; const i=+b.dataset.x, p=rdb.ps.splice(i,1)[0]; rsave(); renderRemind(); toast(p.n+' を外しました'); ($('#rmList').querySelectorAll('[data-x]')[Math.min(i, rdb.ps.length-1)] || $('#rmName')).focus(); });
+$('#rmAdd').addEventListener('submit', e=>{ e.preventDefault(); const n=$('#rmName').value.replace(/\s+/g,' ').trim(); if(!n) return;
+  if(rdb.ps.some(p=>nz(p.n)===nz(n))){ toast(n+' はもう入っています'); return; }
+  if(rdb.d!==todayStr()){ rdb.d=todayStr(); rdb.cp={}; } rdb.ps.push({n,t:''}); rsave(); $('#rmName').value=''; renderRemind(); });
+$('#rmFrom').addEventListener('input', e=>{ rdb.from=e.target.value.trim(); rsave(); renderRSlots(); });
+$('#rmSlots').addEventListener('click', async e=>{ const b=e.target.closest('[data-cp]'); if(!b) return; const t=b.dataset.cp;
+  if(!rdb.from){ toast('差出人の名前を入れてください'); $('#rmFrom').focus(); return; }
+  const sl=rSlots().find(x=>x[0]===t); if(!sl) return;
+  const txt=RMSG(rdb.from)+sl[1].join('\n'), ok=await copyText(txt);
+  if(!ok){ const box=b.closest('.rm-slot'); let ta=box.querySelector('textarea'); if(!ta){ ta=document.createElement('textarea'); ta.readOnly=true; ta.rows=7; ta.className='rm-txt'; ta.setAttribute('aria-label',t+' の文章'); box.appendChild(ta); } ta.value=txt; ta.focus(); ta.select(); toast('自動でコピーできませんでした。下の文章を長押ししてコピーしてください'); return; }
+  rdb.cp[t]={at:Date.now(), sig:rSig(sl[1])}; rsave(); renderRSlots(); toast(t+' の文章をコピーしました'); });
+$('#rLoad').addEventListener('click', ()=>$('#rFile').click());
+$('#rFile').addEventListener('change', async ()=>{ const f=$('#rFile').files[0]; $('#rFile').value=''; if(!f) return;
+  let list=[]; try{ list=rNames(await f.text()); }catch(e){}
+  if(!list.length){ toast(f.name+' から名前を読めませんでした'); return; }
+  const same = rdb.d===todayStr(), old=new Map(rdb.ps.map(p=>[nz(p.n),p.t]));
+  list.forEach(p=>{ if(!p.t && same) p.t=old.get(nz(p.n))||''; });
+  rdb.ps=list; rdb.d=todayStr(); if(!same) rdb.cp={}; rsave(); renderRemind(); toast(list.length+'人を読み込みました'+(rNames.drop?`（重なり・長すぎる名前 ${rNames.drop}件を外しました）`:'')); });
+(()=>{ const box=$('#rDel'); box.querySelector('.go').addEventListener('click',()=>box.classList.add('ask'));
+  box.querySelector('.no').addEventListener('click',()=>box.classList.remove('ask'));
+  box.querySelector('.yes').addEventListener('click',()=>{ box.classList.remove('ask'); rdb.ps=[]; rdb.cp={}; rdb.d=''; rsave(); renderRemind(); toast('連絡の人を全部消しました'); }); })();
+
 /* ページの切り替え */
 let view='store';
 function route(){
-  view = location.hash==='#people' ? 'people' : location.hash==='#plan' ? 'plan' : 'store';
-  $('#vStore').hidden = view!=='store'; $('#vPeople').hidden = view!=='people'; $('#vPlan').hidden = view!=='plan';
-  ['Store','People','Plan'].forEach(k=>$('#tab'+k).removeAttribute('aria-current'));
+  view = location.hash==='#people' ? 'people' : location.hash==='#plan' ? 'plan' : location.hash==='#remind' ? 'remind' : 'store';
+  $('#vStore').hidden = view!=='store'; $('#vPeople').hidden = view!=='people'; $('#vPlan').hidden = view!=='plan'; $('#vRemind').hidden = view!=='remind';
+  ['Store','People','Plan','Remind'].forEach(k=>$('#tab'+k).removeAttribute('aria-current'));
   if(view==='store'){ $('#tabStore').setAttribute('aria-current','page'); renderChart(); }
   else if(view==='people'){ $('#tabPeople').setAttribute('aria-current','page'); renderPeople(); }
+  else if(view==='remind'){ $('#tabRemind').setAttribute('aria-current','page'); renderRemind(); }
   else { $('#tabPlan').setAttribute('aria-current','page'); renderPlan(); }
 }
 $('#tabStore').addEventListener('click', e=>{ e.preventDefault(); history.replaceState(null,'',location.pathname+location.search); route(); });
