@@ -687,16 +687,55 @@ $('#save').addEventListener('click', ()=>{
   toast(mdw(date)+' を保存しました');
 });
 /* 記録のページを開く・閉じる */
-function openRec(date){
-  fillForm(date||todayStr());
-  const r=$('#rec'); if(!r.open) r.showModal(); r.scrollTop=0;
-  const first=inputs.find(el=>el.value===''); if(matchMedia('(hover:hover)').matches) (first||inputs[0]).focus(); else r.focus();
+/* 開く動き：押したところ（＋）から円が広がって画面になり、中身が上から順に出る。閉じると＋へ縮む。
+   ばね＝design_refs の基準（stiffness 200 / damping 28）。動きを減らす設定では出さない */
+const MV = (()=>{ const k=200,c=28; let x=0,v=0,t=0; const dt=1/600, o=[];
+  while(t<1.6){ v+=(-k*(x-1)-c*v)*dt; x+=v*dt; t+=dt; o.push(x); if(t>.25 && Math.abs(x-1)<.001 && Math.abs(v)<.01) break; }
+  const pts=[]; for(let i=0;i<=32;i++) pts.push(+o[Math.round(i*(o.length-1)/32)].toFixed(4));
+  const ok = window.CSS && CSS.supports && CSS.supports('animation-timing-function','linear(0, 1)');
+  return {ease: ok ? 'linear('+pts.join(',')+')' : 'cubic-bezier(.2,.9,.25,1)', ms: Math.round(t*1000)}; })();
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+let recFrom=null, recAnims=[], recClosing=false;
+function recStop(){ recAnims.forEach(a=>{ try{ a.cancel(); }catch(e){} }); recAnims=[]; }
+function recCircle(r){
+  const vis = el => el && el.isConnected && el.getClientRects().length && getComputedStyle(el).visibility!=='hidden';
+  const el = vis(recFrom) ? recFrom : vis($('#addRec')) ? $('#addRec') : null, d=r.getBoundingClientRect();
+  const b = el ? el.getBoundingClientRect() : {left:d.left+d.width/2-30, top:d.top+d.height/2-30, width:60, height:60};
+  const cx=b.left+b.width/2-d.left, cy=b.top+b.height/2-d.top;
+  const R=Math.ceil(Math.hypot(Math.max(cx, d.width-cx), Math.max(cy, d.height-cy)));
+  return {cx, cy, r0:Math.max(12, Math.min(b.width, b.height)/2), R, fab: el && el.id==='addRec' ? el : null};
 }
-function closeRec(){ const r=$('#rec'); if(r.open) r.close(); }
-$('#addRec').addEventListener('click', ()=>openRec(todayStr()));
+function openRec(date, from){
+  fillForm(date||todayStr());
+  const r=$('#rec'); recStop(); recClosing=false; r.inert=false; recFrom=from||null;
+  if(!r.open) r.showModal(); r.scrollTop=0;
+  const first=inputs.find(el=>el.value===''); if(matchMedia('(hover:hover)').matches) (first||inputs[0]).focus({preventScroll:true}); else r.focus();
+  if(calm() || !r.animate) return;
+  const g=recCircle(r), at=`at ${g.cx}px ${g.cy}px`;
+  const fill = g.fab ? getComputedStyle(g.fab).backgroundColor : getComputedStyle(r).backgroundColor;
+  recAnims.push(r.animate([{clipPath:`circle(${g.r0}px ${at})`, backgroundColor:fill}, {backgroundColor:getComputedStyle(r).backgroundColor, offset:.35}, {clipPath:`circle(${g.R}px ${at})`}], {duration:MV.ms, easing:MV.ease}));
+  try{ recAnims.push(r.animate([{opacity:0},{opacity:1}], {duration:MV.ms*.6, pseudoElement:'::backdrop'})); }catch(e){}
+  if(g.fab) recAnims.push(g.fab.animate([{transform:'rotate(0)'},{transform:'rotate(90deg) scale(.6)', opacity:0}], {duration:180, easing:'ease-in', fill:'forwards'}));
+  r.querySelectorAll('.rc > *:not(#fields):not([hidden]), #fields > *').forEach((it,i)=>recAnims.push(
+    it.animate([{opacity:0, transform:'translateY(12px)'},{opacity:1, transform:'none'}], {duration:280, delay:120+i*45, easing:'cubic-bezier(.2,.8,.2,1)', fill:'backwards'})));
+}
+function closeRec(){
+  const r=$('#rec'); if(!r.open || recClosing) return;
+  if(calm() || !r.animate){ recStop(); r.close(); return; }
+  const cur=getComputedStyle(r).clipPath; recStop(); recClosing=true; r.inert=true;
+  const g=recCircle(r), at=`at ${g.cx}px ${g.cy}px`;
+  const a=r.animate([{clipPath:(cur && cur!=='none') ? cur : `circle(${g.R}px ${at})`},{clipPath:`circle(${g.r0}px ${at})`}], {duration:260, easing:'cubic-bezier(.4,0,.8,.4)', fill:'forwards'});
+  recAnims.push(a);
+  try{ recAnims.push(r.animate([{opacity:1},{opacity:0}], {duration:260, pseudoElement:'::backdrop', fill:'forwards'})); }catch(e){}
+  if(g.fab) recAnims.push(g.fab.animate([{transform:'rotate(90deg) scale(.6)', opacity:0},{transform:'none', opacity:1}], {duration:200, delay:140, easing:'cubic-bezier(.2,.8,.2,1)', fill:'backwards'}));
+  const done=()=>{ if(recClosing && r.open) r.close(); };
+  a.finished.then(done).catch(()=>{}); setTimeout(done, 500);
+}
+$('#rec').addEventListener('cancel', e=>{ if(calm() || recClosing) return; e.preventDefault(); closeRec(); });
+$('#addRec').addEventListener('click', e=>openRec(todayStr(), e.currentTarget));
 $('#recClose').addEventListener('click', closeRec);
 let byKey=false; addEventListener('keydown',()=>{byKey=true},true); addEventListener('pointerdown',()=>{byKey=false},true);
-$('#rec').addEventListener('close', ()=>{ const f=$('#addRec'); if(!f) return; if(view==='store' && byKey) f.focus({preventScroll:true}); else f.blur(); });
+$('#rec').addEventListener('close', ()=>{ recClosing=false; $('#rec').inert=false; recAnims.filter(a=>a.effect && a.effect.target===$('#rec')).forEach(a=>a.cancel()); const f=$('#addRec'); if(!f) return; if(view==='store' && byKey) f.focus({preventScroll:true}); else f.blur(); });
 /* 削除：その場で確かめる（confirm を使わない） */
 const delEl = $('#del');
 delEl.querySelector('.go').addEventListener('click', ()=>delEl.classList.add('ask'));
@@ -985,7 +1024,7 @@ function renderTable(){
   $('#count').textContent = ds.length ? ds.length+'日' : '';
   if(!ds.length){ $('#tbl').innerHTML = `<div class="empty">まだ記録がありません</div>`; return; }
   $('#tbl').innerHTML = tableHTML(ds, true);
-  $('#tbl').querySelectorAll('tr.pick').forEach(tr=>{ const go=()=>{ $('#logPage').close(); openRec(tr.dataset.d); }; tr.addEventListener('click',go); tr.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } }); });
+  $('#tbl').querySelectorAll('tr.pick').forEach(tr=>{ const go=()=>{ $('#logPage').close(); openRec(tr.dataset.d, null); }; tr.addEventListener('click',go); tr.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } }); });
 }
 function tableHTML(ds, pick){
   let h = `<table><thead><tr><th>日付</th>`;
