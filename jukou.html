@@ -78,7 +78,9 @@ h2{font-size:17px;font-weight:700;line-height:1.4}
 .band .tot .v{font-size:24px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
 .band .tot .d{font-size:11px;opacity:.85}
 .band .tot[aria-pressed="true"]{box-shadow:inset 0 0 0 3px var(--accent)}
-.band .sc{flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.band .sc{flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain}
+.band .c{scroll-snap-align:start}
+@media (prefers-reduced-motion:reduce){.band .sc{scroll-behavior:auto}}
 .band .in{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));min-width:532px}
 .band .gh{font-size:12px;font-weight:700;text-align:center;padding:3px 0}
 .band .ga{grid-column:span 3;background:var(--tg-bl);color:var(--tg-bl-i)}
@@ -211,6 +213,21 @@ button.ptr:active,button.ptr:hover{background:var(--hov)}
 .ptr .nm{font-weight:500;overflow-wrap:anywhere}
 .ptr .pill{white-space:normal;overflow-wrap:anywhere}
 .ptr .r{text-align:right;display:flex;justify-content:flex-end;align-items:center;gap:6px}
+.ptr.w4{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr) 72px 48px}
+div.ptr[data-k]{cursor:pointer}
+@media (hover:hover){div.ptr[data-k]:hover{background:var(--hov)}}
+.ptr .pn{display:block;width:100%;text-align:left;font:inherit;color:inherit;font-weight:500;overflow-wrap:anywhere;min-height:36px;padding:0}
+.ptr .cw{font-size:11px;color:var(--ink-soft);font-weight:400;font-variant-numeric:tabular-nums;display:block;margin-top:1px}
+.ptr>.cc{padding:0;display:flex;justify-content:center}
+.callck{width:44px;height:44px;display:grid;place-items:center;border-radius:999px;color:var(--ink-soft)}
+.callck svg{width:24px;height:24px}
+.callck[aria-pressed="true"]{color:var(--hi)}
+.callck.old[aria-pressed="true"]{color:var(--ink-soft)}
+.callck:focus-visible{outline:2px solid var(--hi);outline-offset:-2px}
+.callrow{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 14px 0 6px;border-radius:999px;border:1px solid var(--line-2);font-size:14px;color:var(--ink-mid)}
+.callrow svg{width:22px;height:22px;flex:none;color:var(--ink-soft)}
+.callrow[aria-pressed="true"]{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.callrow[aria-pressed="true"] svg{color:var(--hi)}
 .dl{font-size:12px;color:var(--good-ink);font-variant-numeric:tabular-nums}
 .dl.up{color:var(--warn-ink)}
 .pill{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-size:13px;line-height:1.55;border-radius:4px;padding:1px 7px;font-variant-numeric:tabular-nums}
@@ -292,6 +309,15 @@ details.lend[open]>summary .tri{transform:rotate(90deg)}
 
 /* 印刷用（画面では隠す） */
 #printArea{display:none}
+#pvBar{display:none}
+body.pv #pvBar{display:flex;position:sticky;top:0;z-index:5;gap:8px;align-items:center;justify-content:space-between;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:var(--paper);border-bottom:1px solid var(--line)}
+#pvBar .t{font-size:14px;font-weight:700;white-space:nowrap}
+@media (max-width:599px){#pvBar .t{display:none}#pvBar .bs{flex:1;flex-wrap:nowrap}#pvBar .bs .btn{flex:1;padding:0 10px;white-space:nowrap}}
+#pvBar .bs{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media screen{body.pv #printArea{width:1050px;padding:24px 28px 40px;background:var(--pr-paper)}}
+body.pv{overflow-x:hidden}
+body.pv #printArea svg{max-width:100%;height:auto}
+@media print{ #pvBar{display:none!important} }
 @media print{
   @page{size:A4 landscape;margin:12mm}
   :root{--ink:var(--pr-ink);--ink-mid:var(--pr-soft);--ink-soft:var(--pr-soft);--line:var(--pr-line);--line-2:var(--pr-line);--surface:var(--pr-paper);--paper:var(--pr-paper)}
@@ -441,6 +467,7 @@ details.lend[open]>summary .tri{transform:rotate(90deg)}
   </div>
 </dialog>
 
+<div id="pvBar" role="toolbar" aria-label="印刷"><span class="t">印刷の見本</span><span class="bs"><button class="btn btn-quiet" id="pvShare" hidden>ファイルで共有</button><button class="btn btn-quiet" id="pvClose">閉じる</button><button class="btn btn-main" id="pvGo">印刷する</button></span></div>
 <div id="printArea"></div>
 <div class="toast" id="toast" role="status"></div>
 
@@ -598,7 +625,7 @@ function renderChips(){
   $('#band').innerHTML = `<div class="band">${cell('a',0,'tot')}<div class="sc"><div class="in"><div class="gh ga">ATLAS</div><div class="gh gl">Learning</div>`+
     BAND.map(([g,i])=>cell(g,i,'c')).join('')+`</div></div></div>`;
   $('#band').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ st.g=b.dataset.g2; st.hi=+b.dataset.i; st.tipDate=null; renderChips(); renderChart(); }));
-  const sel=$('#band').querySelector('.c[aria-pressed="true"]'), sc=$('#band .sc'); if(sel && sc){ const l=sel.offsetLeft, r=l+sel.offsetWidth; if(l<sc.scrollLeft) sc.scrollLeft=l; else if(r>sc.scrollLeft+sc.clientWidth) sc.scrollLeft=r-sc.clientWidth; }
+  const sel=$('#band').querySelector('.c[aria-pressed="true"]'), sc=$('#band .sc'); if(sel && sc){ const l=sel.getBoundingClientRect().left-sc.getBoundingClientRect().left+sc.scrollLeft, r=l+sel.offsetWidth; if(l<sc.scrollLeft || r>sc.scrollLeft+sc.clientWidth) sc.scrollTo({left:l, behavior:'instant'}); }
   const m=GROUPS[st.g].m[st.hi]; $('#plotTitle').textContent = (st.g==='a'&&st.hi===0 ? 'Total' : GROUPS[st.g].name+' '+m.en)+' の推移';
 }
 function renderHeat(){
@@ -807,7 +834,43 @@ function buildPrint(){
 }
 const doPrint = ()=> view==='people' ? buildPeoplePrint() : view==='plan' ? buildPlanPrint() : buildPrint();
 window.addEventListener('beforeprint', doPrint);
-$('#printBtn').addEventListener('click', ()=>{ $('#menu').close(); doPrint(); setTimeout(()=>window.print(), 50); });
+/* 印刷：見本を画面に出し、そこで押した操作のまま print() を呼ぶ（iPhone は遅らせた print を受け付けないことがある） */
+function printCSS(){
+  for(const sh of document.styleSheets){ let rs; try{ rs=sh.cssRules; }catch(e){ continue; }
+    for(const r of rs){ if(r.media && r.media.mediaText==='print' && r.cssText.includes('#printArea')) return [...r.cssRules].map(x=>x.cssText).join('\n'); } }
+  return '';
+}
+let pvFired=false, pvY=0;
+window.addEventListener('beforeprint', ()=>{ pvFired=true; });
+function openPreview(){
+  doPrint(); pvY=scrollY;
+  let st2=$('#pvStyle'); if(!st2){ st2=document.createElement('style'); st2.id='pvStyle'; document.head.appendChild(st2); }
+  st2.textContent = '@media screen{' + printCSS().replace(/@page\s*\{[^}]*\}/g,'').replace(/\.toast,/g,'') + '}\n#printArea{display:block!important}';
+  document.body.classList.add('pv'); fitPreview(); scrollTo(0,0);
+  const probe=new File(['x'],'a.html',{type:'text/html'});
+  $('#pvShare').hidden = false; $('#pvShare').dataset.mode = (navigator.canShare && navigator.canShare({files:[probe]})) ? 'share' : 'dl';
+  $('#pvShare').textContent = $('#pvShare').dataset.mode==='share' ? 'ファイルで共有' : 'ファイルで保存';
+  $('#pvGo').focus();
+}
+function fitPreview(){ const a=$('#printArea'); if(!document.body.classList.contains('pv')) return; const k=Math.min(1, document.documentElement.clientWidth/1050); a.style.zoom = k<1 ? k : ''; }
+window.addEventListener('resize', fitPreview);
+window.addEventListener('beforeprint', ()=>{ $('#printArea').style.zoom=''; });
+window.addEventListener('afterprint', fitPreview);
+function closePreview(){ $('#printArea').style.zoom=''; document.body.classList.remove('pv'); const s2=$('#pvStyle'); if(s2) s2.textContent=''; scrollTo(0,pvY); }
+$('#printBtn').addEventListener('click', ()=>{ $('#menu').close(); openPreview(); });
+$('#pvClose').addEventListener('click', closePreview);
+$('#pvGo').addEventListener('click', ()=>{
+  pvFired=false;
+  try{ window.print(); }catch(e){}
+  setTimeout(()=>{ if(!pvFired && document.body.classList.contains('pv')) toast('印刷の画面が出ないときは「ファイルで共有」から印刷できます'); }, 1500);
+});
+$('#pvShare').addEventListener('click', async ()=>{
+  const css=[...document.querySelectorAll('style')].filter(x=>x.id!=='pvStyle').map(x=>x.textContent).join('\n').replace(/@page\s*\{[^}]*\}/g,'').replace(/@media print\s*\{/g,'@media all{')+'\n@page{size:A4 landscape;margin:12mm}';
+  const html=`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>受講率ノート 印刷</title><style>${css}\n#pvBar{display:none!important}</style></head><body><div id="printArea">${$('#printArea').innerHTML}</div></body></html>`;
+  const file=new File([html],'受講率ノート_印刷.html',{type:'text/html'});
+  if($('#pvShare').dataset.mode==='share'){ try{ await navigator.share({files:[file], title:'受講率ノート 印刷'}); return; }catch(e){ if(e && e.name==='AbortError') return; } }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000); toast('印刷用のファイルを保存しました');
+});
 
 /* ---------- 控え ---------- */
 $('#menuBtn').addEventListener('click', ()=>$('#menu').showModal());
@@ -832,7 +895,8 @@ $('#impFile').addEventListener('change', async ()=>{
       if(!cur || (e.t||0) > (cur.t||0)){ db.entries[k]=e; n++; }
     }
     persist(); renderAll(); fillForm($('#date').value||todayStr()); renderPeople(); renderPlan();
-    toast((n||pn||ln) ? [n?`${n}日分`:'', pn?`ひとりずつ ${pn}回分`:'', ln?'研修の予定':''].filter(Boolean).join('・')+'を戻しました' : '新しい記録はありませんでした');
+    const cn=mergePeople.calls||0;
+    toast((n||pn||ln||cn) ? [n?`${n}日分`:'', pn?`ひとりずつ ${pn}回分`:'', cn?`声かけ ${cn}件`:'', ln?'研修の予定':''].filter(Boolean).join('・')+'を戻しました' : '新しい記録はありませんでした');
   }catch(e){ toast('このファイルは読めませんでした'); }
   $('#impFile').value=''; $('#menu').close();
 });
@@ -886,6 +950,21 @@ function matchTitle(title){
 
 function snapDates(){ return Object.keys(pdb.snaps).sort(); }
 function curDate(){ const ds=snapDates(); if(!ds.length) return null; return (ps.date && pdb.snaps[ps.date]) ? ps.date : ds[ds.length-1]; }
+const CALL_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>';
+const CALL_ON='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M7.5 12.3l3 3 6-6.4" fill="none" stroke="var(--surface)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function callOf(k){ const c=pdb.calls&&pdb.calls[k]; return c&&c.at ? c : null; }
+function callStamp(c){ return c ? Math.max(c.at||0, c.off||0) : 0; }
+function callOld(c, d){ return !!(c && d && ymd(new Date(c.at)) < d); }
+function callTxt(at){ const d=new Date(at); const p=n=>String(n).padStart(2,'0'); return mdw(ymd(d))+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+function callTxtS(at){ const d=new Date(at); const p=n=>String(n).padStart(2,'0'); return md(ymd(d))+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+function toggleCall(k, name){
+  if(!pdb.calls) pdb.calls={};
+  const was=callOf(k);
+  const prev=pdb.calls[k];
+  pdb.calls[k] = was ? {at:0, off:Date.now()} : {at:Date.now()};
+  if(!ppersist()){ if(prev) pdb.calls[k]=prev; else delete pdb.calls[k]; return; }
+  toast(was ? '声かけの記録を外しました' : '声かけ '+callTxt(pdb.calls[k].at));
+}
 function personKey(r){ return r[1] ? 'm:'+r[1].toLowerCase() : 'n:'+r[2]+' '+r[3]; }
 function people(date){
   const snap=pdb.snaps[date]; if(!snap) return [];
@@ -953,16 +1032,18 @@ function renderPeople(){
   const srt = k => ps.sort===k ? (ps.dir<0?'descending':'ascending') : 'none';
   let h = `<div class="p-tools"><label class="p-search">${IC.search}<input type="search" id="pQ" placeholder="名前で探す" value="${esc(ps.q)}" enterkeyhint="search" autocomplete="off"></label>`+
     `<select class="p-sel" id="pRole" aria-label="職種でしぼる"><option value="">すべての職種</option>${roles.map(r=>`<option ${r===ps.role?'selected':''}>${esc(r)}</option>`).join('')}</select></div>`;
-  h += `<div class="ptbl" role="table"><div class="ptr head" role="row">`+
+  h += `<div class="ptbl" role="table"><div class="ptr head w4" role="row">`+
     `<span role="columnheader"><button data-s="name" aria-sort="${srt('name')}">${IC.name}名前${arrow('name')}</button></span>`+
     `<span role="columnheader"><button data-s="role" aria-sort="${srt('role')}">${IC.sel}職種${arrow('role')}</button></span>`+
-    `<span role="columnheader" class="r"><button data-s="left" aria-sort="${srt('left')}">${IC.hash}残り${arrow('left')}</button></span></div>`;
+    `<span role="columnheader" class="r"><button data-s="left" aria-sort="${srt('left')}">${IC.hash}残り${arrow('left')}</button></span><span role="columnheader" class="r" style="justify-content:center;white-space:nowrap;font-size:12px">声かけ</span></div>`;
   for(const p of list){
     let dl='';
     if(prevMap && prevMap.has(p.key)){ const x=p.left-prevMap.get(p.key); if(x) dl=`<span class="dl ${x>0?'up':''}">${x>0?'+':'−'}${Math.abs(x)}</span>`; }
-    h += `<button class="ptr" role="row" data-k="${esc(p.key)}"><span class="nm" role="cell">${esc(p.name)}</span>`+
+    const cl=callOf(p.key), old=callOld(cl,d);
+    h += `<div class="ptr w4" role="row" data-k="${esc(p.key)}"><span class="nm" role="cell"><button class="pn">${esc(p.name)}</button>${cl?`<span class="cw">${old?'前回 ':'声かけ '}${callTxtS(cl.at)}</span>`:''}</span>`+
       `<span role="cell">${p.role?`<span class="pill ${roleTone(p.role)}">${esc(p.role)}</span>`:''}</span>`+
-      `<span class="r" role="cell">${dl}<span class="pill ${leftTone(p.left)}">${p.left}</span></span></button>`;
+      `<span class="r" role="cell">${dl}<span class="pill ${leftTone(p.left)}">${p.left}</span></span>`+
+      `<span class="cc" role="cell"><button class="callck${old?' old':''}" aria-pressed="${!!cl}" aria-label="${esc(p.name)} 声かけ${cl?'（'+callTxt(cl.at)+'）':''}">${cl?CALL_ON:CALL_OFF}</button></span></div>`;
   }
   if(!list.length) h += `<div class="p-empty" style="padding:20px">あてはまる人がいません</div>`;
   h += `</div><div class="p-sum">${list.length===arr.length?'':`${list.length}人を表示・`}合計 ${list.reduce((a,p)=>a+p.left,0)}件</div>`;
@@ -976,7 +1057,11 @@ function renderPeople(){
   document.querySelectorAll('.ptr.head button').forEach(b=>b.addEventListener('click', ()=>{
     const k=b.dataset.s; if(ps.sort===k) ps.dir=-ps.dir; else { ps.sort=k; ps.dir= k==='left'?-1:-1; } renderPeople();
   }));
-  document.querySelectorAll('button.ptr[data-k]').forEach(b=>b.addEventListener('click', ()=>openPerson(b.dataset.k)));
+  document.querySelectorAll('#pBody div.ptr[data-k]').forEach(row=>row.addEventListener('click', e=>{
+    const k=row.dataset.k;
+    if(e.target.closest('.callck')){ const p=arr.find(x=>x.key===k); toggleCall(k, p?p.name:''); const y=scrollY; renderPeople(); scrollTo(0,y); const b=document.querySelector(`#pBody div.ptr[data-k="${CSS.escape(k)}"] .callck`); if(b) b.focus(); return; }
+    openPerson(k);
+  }));
 }
 
 function openPerson(key){
@@ -1005,6 +1090,8 @@ function openPerson(key){
     `<div class="pp"><span>${IC.hash}残り</span><span class="v"><span class="pill ${leftTone(p.left)}">${p.left}件</span></span></div>`+
     (p.mail?`<div class="pp"><span>${IC.mail}メール</span><span class="v">${esc(p.mail)}</span></div>`:'')+
     `<div class="pp"><span>${IC.cal}取得日</span><span class="v">${mdw(d)}</span></div></div>`;
+  const cl=callOf(p.key);
+  h += `<div style="margin:0 4px 14px"><button class="callrow" id="pkCall" aria-pressed="${!!cl}">${cl?CALL_ON:CALL_OFF}<span>${cl?'声かけ '+callTxt(cl.at):'声かけした'}</span></button></div>`;
   if(p.left && top) h += `<div class="callout">${IC.info}<span>まだ ${p.left}件。いちばん多いのは「${esc(top.name)}」（${top.items.length}件）。</span></div>`;
   else if(!p.left) h += `<div class="callout">${IC.info}<span>この日の取り込みでは、残りはありません。</span></div>`;
   gs.forEach((g,i)=>{
@@ -1014,6 +1101,11 @@ function openPerson(key){
   if(done.length) h += `<details class="tog"><summary>${IC.tri}完了 <span class="n">${done.length}</span></summary>${done.map(r=>{ const it=matchTitle(r[5]); return `<div class="ck done"><i aria-hidden="true"></i><span>${esc(it?it.t:r[5])}${r[8]?`<span class="sub">${md(r[8])} 完了</span>`:''}</span></div>`; }).join('')}</details>`;
   $('#pk').innerHTML=h;
   $('#pkClose').addEventListener('click', ()=>$('#peek').close());
+  $('#pkCall').addEventListener('click', ()=>{
+    toggleCall(p.key, p.name); const c=callOf(p.key), b=$('#pkCall');
+    b.setAttribute('aria-pressed', !!c); b.innerHTML=(c?CALL_ON:CALL_OFF)+`<span>${c?'声かけ '+callTxt(c.at):'声かけした'}</span>`;
+    if(view==='people'){ const y=scrollY; renderPeople(); scrollTo(0,y); }
+  });
   showPeek();
 }
 $('#peek').addEventListener('click', e=>{ if(e.target===$('#peek')) $('#peek').close(); });
@@ -1063,22 +1155,25 @@ $('#pDate').addEventListener('change', e=>{ ps.date=e.target.value; renderPeople
   box.querySelector('.yes').addEventListener('click', ()=>{ const d=curDate(); if(d){ delete pdb.snaps[d]; ppersist(); ps.date=null; } box.classList.remove('ask'); renderPeople(); toast('消しました'); });
 })();
 function mergePeople(src){
-  if(!src || typeof src!=='object') return 0; let n=0;
+  mergePeople.calls=0; if(!src || typeof src!=='object') return 0; let n=0;
   for(const [d,sn] of Object.entries(src.snaps||{})){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(d) || !sn || !Array.isArray(sn.rows)) continue;
     const cur=pdb.snaps[d]; if(!cur || (sn.at||0)>(cur.at||0)){ pdb.snaps[d]=sn; n++; }
   }
   if(src.list && src.list.text && (!pdb.list || (src.list.at||0)>(pdb.list.at||0))){ pdb.list=src.list; listCache=null; }
+  mergePeople.calls=0;
+  if(src.calls && typeof src.calls==='object'){ if(!pdb.calls) pdb.calls={};
+    for(const [k,c] of Object.entries(src.calls)){ if(!c || !Number.isFinite(callStamp(c)) || !callStamp(c)) continue; if(callStamp(c)>callStamp(pdb.calls[k])){ pdb.calls[k]=c.at?{at:c.at}:{at:0,off:c.off}; mergePeople.calls++; } } }
   ppersist(); return n;
 }
 function buildPeoplePrint(){
   const d=curDate(); if(!d){ buildPrint(); return; }
   const arr=people(d).sort((a,b)=>(b.left-a.left)||a.name.localeCompare(b.name,'ja'));
   let h=`<div class="pr-h"><h1>受講率ノート・ひとりずつ</h1><span class="meta">${mdw(d)} 取得・${arr.length}人・${mdw(todayStr())} 印刷</span></div>`;
-  h+=`<section class="pr-ppl"><table><thead><tr><th>名前</th><th>職種</th><th style="text-align:right">残り</th><th>まだのセッション</th></tr></thead><tbody>`;
+  h+=`<section class="pr-ppl"><table><thead><tr><th>名前</th><th>職種</th><th style="text-align:right">残り</th><th>声かけ</th><th>まだのセッション</th></tr></thead><tbody>`;
   for(const p of arr){
     const ts=p.rows.filter(r=>OPEN_STATES.includes(r[6])).map(r=>{ const it=matchTitle(r[5]); return esc(it?it.t:r[5])+(r[6]==='期限切れ'?'（期限切れ）':''); });
-    h+=`<tr><td>${esc(p.name)}</td><td>${esc(p.role||'')}</td><td class="n">${p.left}</td><td>${ts.join('／')}</td></tr>`;
+    h+=`<tr><td>${esc(p.name)}</td><td>${esc(p.role||'')}</td><td class="n">${p.left}</td><td style="white-space:nowrap">${callOf(p.key)?callTxtS(callOf(p.key).at):''}</td><td>${ts.join('／')}</td></tr>`;
   }
   $('#printArea').innerHTML = h+`</tbody></table></section>`;
 }
