@@ -44,7 +44,8 @@ button{background:none;border:0;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
 .wrap{width:100%;max-width:720px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom))}
 @media (min-width:600px){.wrap{padding-left:24px;padding-right:24px}}
-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 4px 16px}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;clip-path:inset(50%);white-space:nowrap}
+header{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:4px 4px 4px}
 h1{font-size:24px;font-weight:700;line-height:1.35}
 .icobtn{width:44px;height:44px;display:inline-grid;place-items:center;border-radius:14px;color:var(--ink-mid)}
 .icobtn:active{background:var(--surface-2)}
@@ -291,8 +292,8 @@ details.lend[open]>summary .tri{transform:rotate(90deg)}
 </head>
 <body>
 <div class="wrap">
+  <h1 class="vh">受講率ノート</h1>
   <header>
-    <h1>受講率ノート</h1>
     <button class="icobtn" id="menuBtn" aria-label="メニュー">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
     </button>
@@ -766,7 +767,7 @@ $('#impFile').addEventListener('change', async ()=>{
   const f = $('#impFile').files[0]; if(!f) return;
   try{
     const d = JSON.parse(await f.text());
-    if(!d || typeof d.entries!=='object') throw 0;
+    if(!d || !d.entries || typeof d.entries!=='object') throw 0;
     let n=0, pn=mergePeople(d.people), ln=mergePlan(d.plan);
     for(const [k,e] of Object.entries(d.entries)){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(k) || !e) continue;
@@ -1092,6 +1093,7 @@ function renderPlan(){
   const end=$('#lEnd'); if(end) end.addEventListener('toggle', ()=>{ ls.endOpen=end.open; });
 }
 
+new MutationObserver(()=>{ const pk=$('#peek'), h=pk.querySelector('h2'); pk.setAttribute('aria-label', h?h.textContent.trim():'詳細'); }).observe($('#peek'),{childList:true,subtree:true});
 function showPeek(){ const pk=$('#peek'); if(!pk.open) pk.showModal(); pk.focus(); pk.scrollTop=0; }
 const getItem = id => ldb.items.find(x=>x.id===id);
 function pkBar(path){ return `<div class="pk-bar"><span class="meta">${esc(path)}</span><button class="icobtn" id="pkClose" aria-label="閉じる">${IC.close}</button></div>`; }
@@ -1220,7 +1222,7 @@ function planEdit(isNew){
     const rs={}; document.querySelectorAll('#fR select').forEach(x=>{ if(x.value!=='-') rs[x.dataset.r]=x.value; });
     const pr=planRoles(); Object.keys(rs).forEach(r=>{ if(!pr.includes(r)) (ldb.roles=ldb.roles||[]).push(r); });
     if(isNew){ const n={id:uid(), t, min:mn, s, e, roles:rs}; ldb.items.push(n); ls.id=n.id; }
-    else { if(nz(it.t)!==nz(t) && ldb.map[nz(it.t)] && !ldb.map[nz(t)]){ ldb.map[nz(t)]=ldb.map[nz(it.t)]; delete ldb.map[nz(it.t)]; } Object.assign(it,{t, min:mn, s, e, roles:rs}); }
+    else { if(nz(it.t)!==nz(t) && ldb.map[nz(it.t)] && !ldb.map[nz(t)]){ ldb.map[nz(t)]=ldb.map[nz(it.t)].slice(); if(!ldb.items.some(x=>x!==it && nz(x.t)===nz(it.t))) delete ldb.map[nz(it.t)]; } Object.assign(it,{t, min:mn, s, e, roles:rs}); }
     if(lpersist()) toast(isNew?'研修を足しました':'保存しました');
     renderPlan(); planView(); $('#peek').scrollTop=0;
   });
