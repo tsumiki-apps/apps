@@ -2101,8 +2101,9 @@ function liLines(ctx,name,f,tw,wrap=true){ ctx.font=`500 ${f}px ${LI.FONT}`; con
   const ch=[...name]; /* 空白の無い長い名前：文字の途中で2行に分ける */
   for(let i=Math.ceil(ch.length/2), d=0; d<ch.length; d++){ for(const j of [i-d,i+d]){ if(j<1||j>=ch.length) continue; const a=ch.slice(0,j).join(''), b=ch.slice(j).join(''); if(mw(a)<=tw && mw(b)<=tw) return [a,b]; } }
   return null; }
-function liFit(ctx,names,W,H,cwMax){ const one=liFit1(ctx,names,W,H,cwMax,false); if(one && one.f>=40) return one; /* 1行で40px以上なら折り返さない */
-  const two=liFit1(ctx,names,W,H,cwMax,true); return (!one || (two && two.score>one.score)) ? two : one; }
+/* 1行のまま並べる案と、長い名前だけ2行にする案を比べる。折り返すのは文字が2割以上大きくなるときだけ（短い名前は折らない） */
+function liFit(ctx,names,W,H,cwMax){ const one=liFit1(ctx,names,W,H,cwMax,false), two=liFit1(ctx,names,W,H,cwMax,true);
+  if(!one) return two; return (two && two.f >= one.f*1.2) ? two : one; }
 function liFit1(ctx,names,W,H,cwMax,wrap){ let best=null;
   for(let cols=1; cols<=Math.min(LI.COLMAX,names.length); cols++){ const rows=Math.ceil(names.length/cols);
     for(let f=LI.FMAX; f>=LI.FMIN; f--){ const gap=Math.round(f*.45), cw=Math.min(cwMax,(W-(cols-1)*gap)/cols), tw=cw-6-f*1.1-f*1.0-f*.4-4;
@@ -2111,7 +2112,8 @@ function liFit1(ctx,names,W,H,cwMax,wrap){ let best=null;
       /* 行の高さは行ごと：2行に折れた名前がある行だけ高くする（1人のせいで全員を小さくしない） */
       const rh=[]; for(let r=0;r<rows;r++){ const L=Math.max(...ls.slice(r*cols,(r+1)*cols).map(x=>x.length)); rh.push(Math.round(Math.max(f, L*f*1.2)+f*1.1)); }
       const gh=rh.reduce((a,b)=>a+b,0)+(rows-1)*gap; if(gh>H) continue;
-      const nw=ls.filter(x=>x.length>1).length, score=f*Math.max(.5,1-.15*nw); if(!best||score>=best.score) best={score,f,cols,gap,rh,gh,cw,ls}; break; } }
+      const nw=ls.filter(x=>x.length>1).length, score=f*Math.max(.7,1-.03*nw); /* 折り返しの数は同じくらいの大きさのときの決め手だけ */ if(!best||score>=best.score) best={score,f,cols,gap,rh,gh,cw,ls};
+      if(!nw) break; /* 折り返しがあるときは、小さい f で折り返しが減る案も見る */ } }
   return best; }
 function liRR(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 async function liMake(names,ds){
@@ -2149,13 +2151,12 @@ async function liMake(names,ds){
     const gx=LI.PX+(W-gw)/2, gy=pages>1?gyAll:areaT+Math.max(0,(areaH-r.gh)/2), f=r.f;
     const ry=[]; r.rh.reduce((y,h)=>{ ry.push(y); return y+h+r.gap; }, gy);
     r.ls.forEach((ln,i)=>{ const ri=Math.floor(i/r.cols), cx=gx+(i%r.cols)*(r.cw+r.gap), cy=ry[ri], chh=r.rh[ri], rad=f*.4;
-      r.ch=chh;
-      x.save(); x.shadowColor='rgba(29,26,21,.08)'; x.shadowBlur=6; x.shadowOffsetY=2; liRR(x,cx,cy,r.cw,r.ch,rad); x.fillStyle=LI.card; x.fill(); x.restore();
-      liRR(x,cx+1.5,cy+1.5,r.cw-3,r.ch-3,rad-1.5); x.lineWidth=3; x.strokeStyle=LI.edge; x.stroke();
-      const ix=cx+3+f*.55; liIcon(x,icPs,ix+f/2,cy+r.ch/2,f,f);
-      x.save(); liRR(x,cx,cy,r.cw-3,r.ch,rad); x.clip();
+      x.save(); x.shadowColor='rgba(29,26,21,.08)'; x.shadowBlur=6; x.shadowOffsetY=2; liRR(x,cx,cy,r.cw,chh,rad); x.fillStyle=LI.card; x.fill(); x.restore();
+      liRR(x,cx+1.5,cy+1.5,r.cw-3,chh-3,rad-1.5); x.lineWidth=3; x.strokeStyle=LI.edge; x.stroke();
+      const ix=cx+3+f*.55; liIcon(x,icPs,ix+f/2,cy+chh/2,f,f);
+      x.save(); liRR(x,cx,cy,r.cw-3,chh,rad); x.clip();
       x.fillStyle=LI.ink; x.font=`500 ${f}px ${LI.FONT}`; x.textAlign='left'; x.textBaseline='middle';
-      const lh=f*1.2, ty=cy+r.ch/2-(ln.length-1)*lh/2; ln.forEach((s,k)=>x.fillText(s,ix+f+f*.4,ty+k*lh)); x.restore(); });
+      const lh=f*1.2, ty=cy+chh/2-(ln.length-1)*lh/2; ln.forEach((s,k)=>x.fillText(s,ix+f+f*.4,ty+k*lh)); x.restore(); });
     out.push(c); }
   return {canvases:out, forced};
 }
@@ -2175,7 +2176,7 @@ $('#rmImg').addEventListener('click', async ()=>{
     $('#liShare').dataset.mode = share ? 'share' : 'dl'; $('#liShare').textContent = share ? '共有' : '保存';
     $('#lImg').showModal();
     toast(names.length+'人'+(liFiles.length>1?`・${liFiles.length}枚に分けました`:'')+(forced?'・名前が長く小さくなっています':''));
-  }catch(e){ toast('画像を作れませんでした'); }
+  }catch(e){ console.error('[Learning画像]',e); toast('画像を作れませんでした'); }
   finally{ b.disabled=false; renderRSlots(); }
 });
 $('#liShare').addEventListener('click', async ()=>{ if(!liFiles.length) return;
