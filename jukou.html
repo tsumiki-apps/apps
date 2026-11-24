@@ -324,7 +324,8 @@ dialog.rec{overflow-y:auto}
 .rm-tg{display:flex;align-items:center;gap:8px;min-height:44px;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .rm-row.fold .rm-tg{flex:1;min-width:0}
 .rm-tg .tm{margin-left:auto;display:flex;align-items:center;gap:4px;flex:none;font-size:14px;font-variant-numeric:tabular-nums;color:var(--ink-mid)}
-.rm-tg .tm span:nth-child(3){margin-left:8px}
+.rm-tg .tm span:last-child{margin-left:8px}
+.rm-fromb{min-height:44px;padding:0 4px;border:0;background:none;font:inherit;font-size:13px;color:var(--ink-soft);cursor:pointer}
 .rm-h{align-items:center;min-height:44px}
 .rm-h .del .btn{min-height:44px;padding:0 14px}
 .rm-add{display:flex;gap:8px;margin-top:10px}
@@ -617,7 +618,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
     <form class="rm-add" id="rmAdd"><input class="date-in" id="rmName" placeholder="名前" aria-label="足す人の名前" autocomplete="off"><button class="btn btn-quiet" type="submit">足す</button></form>
   </section>
   <section class="card" aria-labelledby="rmT2">
-    <div class="band-h"><h2 id="rmT2">🛎️Remind Quick Start</h2></div>
+    <div class="band-h rm-h"><h2 id="rmT2">🛎️Remind Quick Start</h2><button class="rm-fromb" id="rmFromBtn" type="button" hidden></button></div>
     <label class="rm-from" id="rmFromBox" hidden><span>差出人</span><input class="date-in" id="rmFrom" placeholder="名前" autocomplete="off"></label>
     <div id="rmSlots"></div>
   </section>
@@ -2010,8 +2011,8 @@ const rOpen=new Set();   /* 時刻が両方そろった人のうち、開いて�
 function renderRemind(){
   const ps=rdb.ps;
   $('#rmList').innerHTML = ps.length ? ps.map((p,i)=>{ const full=!!(p.t&&p.l), open=!full || rOpen.has(nz(p.n));
-    if(!open) return `<div class="rm-row fold"><button class="rm-tg" type="button" data-o="${i}" aria-expanded="false"><span class="nm">${esc(p.n)}</span><span class="tm"><span aria-hidden="true">🛎️</span>${p.t}<span aria-hidden="true">🌱</span>${p.l}</span></button></div>`;
-    return `<div class="rm-row">${full?`<button class="rm-tg nm" type="button" data-o="${i}" aria-expanded="true">${esc(p.n)}</button>`:`<span class="nm">${esc(p.n)}</span>`}<div class="rm-ts"><label><span aria-hidden="true">🛎️</span><input type="time" class="date-in" data-i="${i}" data-k="t" value="${p.t}" aria-label="${esc(p.n)} の出勤時刻"></label><label><span aria-hidden="true">🌱</span><input type="time" class="date-in" data-i="${i}" data-k="l" value="${p.l}" aria-label="${esc(p.n)} の Learning の時刻"></label></div><button class="icobtn" data-x="${i}" aria-label="${esc(p.n)} を外す"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`; }).join('')
+    if(!open) return `<div class="rm-row fold"><button class="rm-tg" type="button" data-o="${i}" aria-expanded="false" aria-label="${esc(p.n)}・出勤 ${p.t}・Learning ${p.l}（押すと直せます）"><span class="nm">${esc(p.n)}</span><span class="tm"><span aria-hidden="true">🛎️</span>${p.t}<span aria-hidden="true">🌱</span>${p.l}</span></button></div>`;
+    return `<div class="rm-row">${full?`<button class="rm-tg nm" type="button" data-o="${i}" aria-expanded="true" aria-label="${esc(p.n)}（押すとたたみます）">${esc(p.n)}</button>`:`<span class="nm">${esc(p.n)}</span>`}<div class="rm-ts"><label><span aria-hidden="true">🛎️</span><input type="time" class="date-in" data-i="${i}" data-k="t" value="${p.t}" aria-label="${esc(p.n)} の出勤時刻"></label><label><span aria-hidden="true">🌱</span><input type="time" class="date-in" data-i="${i}" data-k="l" value="${p.l}" aria-label="${esc(p.n)} の Learning の時刻"></label></div><button class="icobtn" data-x="${i}" aria-label="${esc(p.n)} を外す"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`; }).join('')
     : `<p class="meta">未完了リストを読み込んでください</p>`;
   $('#rmFrom').value = rdb.from;
   $('#rDel').hidden = !ps.length; if(!ps.length) $('#rDel').classList.remove('ask');
@@ -2021,7 +2022,7 @@ function slotsHTML(k){
   const sl=rSlots(k); let nextT=null;
   sl.forEach(([t,names])=>{ const c=rdb.cp[rKey(t,k)]; if(!nextT && !(rToday(c) && c.sig===rSig(names,k))) nextT=t; });
   return sl.map(([t,names])=>{ const c=rToday(rdb.cp[rKey(t,k)]) ? rdb.cp[rKey(t,k)] : null, done=!!c && c.sig===rSig(names,k), old=!!c && !done;
-    const st = done ? `<span class="st ok">✓ ${hm(c.at)}</span>` : t===nextT ? `<span class="st nx">次</span>` : '';
+    const st = done ? `<span class="st ok">✓ ${hm(c.at)}</span>` : old ? `<span class="st nx">変更</span>` : t===nextT ? `<span class="st nx">次</span>` : '';
     return `<div class="rm-slot${done?' done':''}${t===nextT?' next':''}"><div class="rm-sh"><b>${t}</b>${st}</div>
       <div class="rm-names">${names.map(esc).join('、')}</div>
       <button class="btn btn-main" data-cp="${t}" data-k="${k}" aria-label="${t} の文章をコピー"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>コピー</button></div>`; }).join('');
@@ -2029,12 +2030,13 @@ function slotsHTML(k){
 function renderRSlots(){
   const sl=rSlots('t'), ll=rSlots('l');
   $('#rmSlots').innerHTML = slotsHTML('t');
-  $('#rmFromBox').hidden = !!rdb.from || !sl.length;
+  if(document.activeElement!==$('#rmFrom')) $('#rmFromBox').hidden = !!rdb.from || !sl.length;
+  $('#rmFromBtn').hidden = !rdb.from || !$('#rmFromBox').hidden; $('#rmFromBtn').textContent = 'from '+rdb.from; $('#rmFromBtn').setAttribute('aria-label','差出人 '+rdb.from+'（押すと直せます）');
   $('#rmLSlots').innerHTML = slotsHTML('l');
   const lines=rRemLines(), past=rRemLines.past, sig=lines.join('\n'), r=rdb.rm && rToday(rdb.rm) ? rdb.rm : null, stale=rStale();
   $('#rmRem').disabled = !lines.length || stale;
   $('#rmRemSt').textContent = stale && rdb.ps.some(p=>p.l) ? md(rdb.d)+' の名簿' : !lines.length ? (past ? '時刻が過ぎています' : '')
-    : (r && r.sig===sig ? `✓ ${hm(r.at)}・` : '')+lines.length+'人'+(past ? `（過ぎた${past}人を除く）` : '');
+    : (r ? (r.sig===sig ? `開いた ${hm(r.at)}・` : '変更あり・') : '')+lines.length+'人'+(past ? `（過ぎた${past}人を除く）` : '');
   $('#rmRemSt').classList.toggle('warn', stale && rdb.ps.some(p=>p.l));
 }
 function hm(ms){ const d=new Date(ms); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
@@ -2043,12 +2045,19 @@ async function copyText(t){
   const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;top:0;left:0;opacity:0;font-size:16px';
   document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,t.length); let ok=false; try{ ok=document.execCommand('copy'); }catch(e){} ta.remove(); return ok;
 }
-$('#rmList').addEventListener('change', e=>{ const i=e.target.dataset?.i, k=e.target.dataset?.k; if(i==null || (k!=='t' && k!=='l')) return; const p=rdb.ps[+i]; if(!p) return; const was=!!(p.t&&p.l); p[k]=e.target.value||''; rsave(); if(was!==!!(p.t&&p.l)){ rOpen.delete(nz(p.n)); renderRemind(); } else renderRSlots(); });
+$('#rmList').addEventListener('change', e=>{ const i=e.target.dataset?.i, k=e.target.dataset?.k; if(i==null || (k!=='t' && k!=='l')) return; const p=rdb.ps[+i]; if(!p) return; const was=!!(p.t&&p.l); p[k]=e.target.value||''; rsave(); if(was!==!!(p.t&&p.l)){ rOpen.delete(nz(p.n)); rPend=true; } renderRSlots(); });
+/* たたむのは、その行から出てから（時刻を選んでいる途中で行が消えないように） */
+let rPend=false;
+$('#rmList').addEventListener('focusout', e=>{ if(!rPend) return; const row=e.target.closest('.rm-row'); setTimeout(()=>{ const a=document.activeElement; if(!rPend || (row && row.contains(a))) return; rPend=false;
+  const ai=a?.dataset?.i, ak=a?.dataset?.k, ao=a?.dataset?.o, inList=$('#rmList').contains(a); renderRemind();
+  if(inList){ const f=$('#rmList').querySelector(ai!=null&&ak ? `[data-i="${ai}"][data-k="${ak}"]` : ao!=null ? `[data-o="${ao}"]` : 'x'); f&&f.focus(); } }, 0); });
 $('#rmList').addEventListener('click', e=>{ const o=e.target.closest('[data-o]'); if(!o) return; const p=rdb.ps[+o.dataset.o]; if(!p) return; const k=nz(p.n); rOpen.has(k)?rOpen.delete(k):rOpen.add(k); renderRemind(); const f=$('#rmList').querySelector(`[data-o="${o.dataset.o}"]`); f&&f.focus(); });
-$('#rmList').addEventListener('click', e=>{ const b=e.target.closest('[data-x]'); if(!b) return; const i=+b.dataset.x, p=rdb.ps.splice(i,1)[0]; rsave(); renderRemind(); toast(p.n+' を外しました'); ($('#rmList').querySelectorAll('[data-x]')[Math.min(i, rdb.ps.length-1)] || $('#rmName')).focus(); });
+$('#rmList').addEventListener('click', e=>{ const b=e.target.closest('[data-x]'); if(!b) return; const i=+b.dataset.x, p=rdb.ps.splice(i,1)[0]; rsave(); renderRemind(); toast(p.n+' を外しました'); rOpen.delete(nz(p.n)); const row=$('#rmList').querySelectorAll('.rm-row')[Math.min(i, rdb.ps.length-1)]; ((row && row.querySelector('[data-x],[data-o]')) || $('#rmName')).focus(); });
 $('#rmAdd').addEventListener('submit', e=>{ e.preventDefault(); const n=$('#rmName').value.replace(/\s+/g,' ').trim(); if(!n) return;
   if(rdb.ps.some(p=>nz(p.n)===nz(n))){ toast(n+' はもう入っています'); return; }
   if(rdb.d!==todayStr()){ rdb.d=todayStr(); rdb.cp={}; rdb.rm=null; } rdb.ps.push({n,t:'',l:''}); rsave(); $('#rmName').value=''; renderRemind(); });
+$('#rmFromBtn').addEventListener('click', ()=>{ $('#rmFromBox').hidden=false; $('#rmFromBtn').hidden=true; $('#rmFrom').focus(); });
+$('#rmFrom').addEventListener('blur', ()=>{ if(rdb.from){ $('#rmFromBox').hidden=true; } renderRSlots(); });
 $('#rmFrom').addEventListener('input', e=>{ rdb.from=e.target.value.trim(); rsave(); $('#rmSlots').innerHTML=slotsHTML('t'); });
 async function onSlotCopy(e){ const b=e.target.closest('[data-cp]'); if(!b) return; const t=b.dataset.cp, k=b.dataset.k==='l'?'l':'t';
   if(k==='t' && !rdb.from){ $('#rmFromBox').hidden=false; toast('差出人の名前を入れてください'); $('#rmFrom').focus(); return; }
@@ -2069,10 +2078,10 @@ $('#rFile').addEventListener('change', async ()=>{ const f=$('#rFile').files[0];
   const same = rdb.d===todayStr(), old=new Map(rdb.ps.map(p=>[nz(p.n),p]));
   list.forEach(p=>{ const o=same ? old.get(nz(p.n)) : null; if(o){ if(!p.t) p.t=o.t||''; if(!p.l) p.l=o.l||''; } });
   if(rNames.want>0 && rNames.want!==list.length) setTimeout(()=>toast(`見出しは ${rNames.want}人、読めたのは ${list.length}人です。ファイルを見直してください`), 2600);
-  rdb.ps=list; rdb.d=todayStr(); if(!same){ rdb.cp={}; rdb.rm=null; } rsave(); renderRemind(); toast(list.length+'人を読み込みました'+((rNames.skip||rNames.long||rNames.done)?'（'+[rNames.done?`完了の ${rNames.done}人`:'', rNames.skip?`Incomplete 以外 ${rNames.skip}行`:'', rNames.long?`長すぎる名前 ${rNames.long}件`:''].filter(Boolean).join('・')+'を除きました）':'')); });
+  rOpen.clear(); rdb.ps=list; rdb.d=todayStr(); if(!same){ rdb.cp={}; rdb.rm=null; } rsave(); renderRemind(); toast(list.length+'人を読み込みました'+((rNames.skip||rNames.long||rNames.done)?'（'+[rNames.done?`完了の ${rNames.done}人`:'', rNames.skip?`Incomplete 以外 ${rNames.skip}行`:'', rNames.long?`長すぎる名前 ${rNames.long}件`:''].filter(Boolean).join('・')+'を除きました）':'')); });
 (()=>{ const box=$('#rDel'); box.querySelector('.go').addEventListener('click',()=>box.classList.add('ask'));
   box.querySelector('.no').addEventListener('click',()=>box.classList.remove('ask'));
-  box.querySelector('.yes').addEventListener('click',()=>{ box.classList.remove('ask'); rdb.ps=[]; rdb.cp={}; rdb.rm=null; rdb.d=''; rsave(); renderRemind(); toast('連絡の人を全部消しました'); }); })();
+  box.querySelector('.yes').addEventListener('click',()=>{ box.classList.remove('ask'); rOpen.clear(); rdb.ps=[]; rdb.cp={}; rdb.rm=null; rdb.d=''; rsave(); renderRemind(); toast('連絡の人を全部消しました'); }); })();
 
 /* ---------- AIに渡すプロンプト（.txt で保存） ---------- */
 const PROMPTS = {
