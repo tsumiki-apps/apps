@@ -2194,14 +2194,15 @@ function tRow(t){
     <div class="tk-fg"><button class="tk-ck" type="button" data-ck aria-label="${esc(t.t)}を${ck}"><i>${ICK}</i></button>
     <button class="tk-tx" type="button" data-ed aria-label="${esc(t.t)}（${STN[t.st]}）を開く"><span class="t">${esc(t.t)}</span>${r?`<span class="r">${r}</span>`:''}</button></div></div>`; }
 function tSort(a,b){ return (a.due||'9999')<(b.due||'9999')?-1:(a.due||'9999')>(b.due||'9999')?1 : (a.tm||'99')<(b.tm||'99')?-1:(a.tm||'99')>(b.tm||'99')?1 : a.c-b.c; }
-let tkShowDone = false;
+let tkShowDone = false, tkShowWk = false;
 function renderTask(){
   const today=todayStr(), wk=addD(today,6);
   const open=tdb.ts.filter(t=>t.st!=='done').sort(tSort), done=tdb.ts.filter(t=>t.st==='done').sort((a,b)=>b.done-a.done);
   const G=[['今日', open.filter(t=>t.due && t.due<=today)], ['今週', open.filter(t=>t.due>today && t.due<=wk)], ['あとで', open.filter(t=>!t.due || t.due>wk)]];
   let h='';
   for(const [n,a] of G){ if(!a.length) continue; const dg=a.filter(t=>t.st==='doing').length;
-    h+=`<section aria-label="${n}"><h3 class="tk-sec">${n}<span class="meta">${dg?`進行中 ${dg}・`:''}${a.length}件</span></h3><div class="tk-list">${a.map(tRow).join('')}</div></section>`; }
+    const fold=n==='今週';
+    h+=`<section aria-label="${n}"><h3 class="tk-sec">${n}<span class="meta">${dg?`進行中 ${dg}・`:''}${a.length}件</span></h3>${fold?`<button class="btn btn-quiet" type="button" id="tkWk" aria-expanded="${tkShowWk}" style="width:100%;${tkShowWk?'margin-bottom:8px':''}">${tkShowWk?'今週を隠す':'今週を見る'}</button>`:''}${!fold||tkShowWk?`<div class="tk-list">${a.map(tRow).join('')}</div>`:''}</section>`; }
   if(!open.length) h+=`<p class="tk-empty">${done.length?'まだのタスクはありません。':'タスクはまだありません。下の「新しいタスク」から足せます。'}</p>`;
   if(done.length){ h+=`<section aria-label="完了"><h3 class="tk-sec">完了<span class="meta">${done.length}件</span></h3>
     <button class="btn btn-quiet" type="button" id="tkDone" aria-expanded="${tkShowDone}" style="width:100%;${tkShowDone?'margin-bottom:8px':''}">${tkShowDone?'完了を隠す':'完了を見る'}</button>
@@ -2250,6 +2251,7 @@ $('#tkBody').addEventListener('pointerup', tkEnd);
 $('#tkBody').addEventListener('pointercancel', tkEnd);
 $('#tkBody').addEventListener('click', e=>{
   if(e.detail>0 && Date.now()-tkSkip<350){ e.preventDefault(); return; }
+  if(e.target.closest('#tkWk')){ tkShowWk=!tkShowWk; renderTask(); $('#tkWk').focus(); return; }
   if(e.target.closest('#tkDone')){ tkShowDone=!tkShowDone; renderTask(); $('#tkDone').focus(); return; }
   const t=tFind(e.target); if(!t) return;
   if(e.target.closest('[data-ck]')) tApply(t, t.st==='done'?'todo':'done');
