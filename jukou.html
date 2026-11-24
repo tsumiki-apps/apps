@@ -319,7 +319,7 @@ dialog.rec{overflow-y:auto}
 @media (min-width:600px){.rm-ts{order:0;flex:0 1 auto}.rm-ts label{flex-direction:row;align-items:center;gap:6px}.rm-row input[type="time"]{width:8.2em;flex:none}}
 .rm-rem{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 .rm-rem .btn{flex:1 1 220px}
-.rm-rem .meta.ok{color:var(--good-ink);font-weight:700}
+.rm-rem .meta.warn{color:var(--warn-ink);font-weight:700}
 .rm-row .icobtn{flex:none}
 .rm-add{display:flex;gap:8px;margin-top:10px}
 .rm-add input{flex:1;min-width:0}
@@ -619,6 +619,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
   <section class="card" aria-labelledby="rmT3">
     <div class="band-h"><h2 id="rmT3">Learning の見回り</h2></div>
     <div id="rmLSlots"></div>
+    <p class="meta rm-miss" id="rmLMiss" hidden></p>
     <div class="rm-rem"><button class="btn btn-quiet" id="rmRem" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>リマインダーに入れる</button><span class="meta" id="rmRemSt"></span></div>
   </section>
   <div class="p-foot">
@@ -1957,17 +1958,22 @@ const rSig = (names,k='t') => k==='l' ? 'L\n'+names.join('\n') : rdb.from+'\n'+n
 const rKey = (t,k) => k==='l' ? 'L'+t : t;
 const rText = (t,names,k) => k==='l' ? LMSG+names.map(n=>t+' '+n).join('\n') : RMSG(rdb.from)+names.join('\n');
 /* リマインダーへ渡す行：yyyy/MM/dd HH:mm｜名前（Learning の時刻が入っている人だけ・時刻順） */
-function rRemLines(){ const d=todayStr().replace(/-/g,'/'); return rdb.ps.filter(p=>p.l).slice().sort((a,b)=>a.l<b.l?-1:a.l>b.l?1:0).map(p=>d+' '+p.l+'｜'+p.n.replace(/[｜\r\n]/g,' ')); }
+const nowHM = () => { const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+function rRemLines(){ const d=todayStr().replace(/-/g,'/'), now=nowHM(); rRemLines.past=0;
+  return rdb.ps.filter(p=>p.l).filter(p=>{ if(p.l<=now){ rRemLines.past++; return false; } return true; }).slice().sort((a,b)=>a.l<b.l?-1:a.l>b.l?1:0).map(p=>d+' '+p.l+'｜'+p.n.replace(/[｜\r\n]/g,' ')); }
+const rStale = () => !!rdb.d && rdb.d!==todayStr();
 const rToday = c => !!c && ymd(new Date(c.at||0))===todayStr();
 function rNames(t){
   t=t.replace(/^\uFEFF/,'');
   rNames.drop=0; rNames.long=0; rNames.skip=0; rNames.want=-1; rNames.none=false; rNames.done=0;
   /* 【未完了者(12人)】- 名前 … 【完了者(20人)】- 名前 … の形：未完了の見出しの下だけを読む */
   if(/^\s*【[^】\n]*】/m.test(t)){
-    const out=[], seen=new Set(); let on=false, any=false;
+    const out=[], seen=new Set(); let on=false, any=false, bul=null;
     t.split(/\r?\n/).forEach(l=>{ const h=l.normalize('NFKC').match(/^\s*【([^】]*)】/);
-      if(h){ on=/未完了|未受講|incomplete|not\s*complete/i.test(h[1]); if(on){ any=true; const c=h[1].match(/(\d+)\s*人/); rNames.want=(rNames.want<0?0:rNames.want)+(c?+c[1]:0); if(!c) rNames.want=-2; } return; }
-      if(!on){ if(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*\S/.test(l)) rNames.done++; return; }
+      if(h){ on=/未完了|未受講|incomplete|not\s*complete/i.test(h[1]); if(on){ any=true; const c=h[1].match(/(\d+)\s*人/); if(rNames.want!==-2) rNames.want = c ? (rNames.want<0?0:rNames.want)+(+c[1]) : -2; } return; }
+      const isB=/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*\S/.test(l);
+      if(!on){ if(isB) rNames.done++; return; }
+      if(!l.trim()) return; if(bul===null) bul=isB; if(bul && !isB){ rNames.skip++; return; }
       let n=l.replace(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*/,'');
       n=(n.replace(/\s*[（(][^（）()]*[）)]?\s*$/,'').trim() || n).replace(/\s+/g,' ').trim();
       if(!n) return; const k=nz(n); if(n.length>60){ rNames.long++; return; } if(seen.has(k)){ rNames.drop++; return; } seen.add(k);
@@ -2025,10 +2031,14 @@ function renderRSlots(){
   const miss=rdb.ps.filter(p=>!p.t).map(p=>p.n);
   $('#rmMiss').hidden=!(miss.length && sl.length); $('#rmMiss').textContent='出勤がまだ：'+miss.join('、');
   $('#rmLSlots').innerHTML = ll.length ? slotsHTML('l') : `<p class="meta">Learning の時刻を入れると、同じ時刻の人がここにまとまります。</p>`;
-  const lines=rRemLines(), sig=lines.join('\n'), r=rdb.rm && rToday(rdb.rm) ? rdb.rm : null;
-  $('#rmRem').disabled = !lines.length;
-  $('#rmRemSt').textContent = !lines.length ? '' : !r ? lines.length+'人を「ラーニングリスト」へ' : r.sig===sig ? `✓ 送った ${hm(r.at)}・${lines.length}人` : `前に送ってから変わりました・${lines.length}人`;
-  $('#rmRemSt').classList.toggle('ok', !!r && r.sig===sig);
+  const lines=rRemLines(), past=rRemLines.past, sig=lines.join('\n'), r=rdb.rm && rToday(rdb.rm) ? rdb.rm : null, stale=rStale();
+  const lmiss=rdb.ps.filter(p=>!p.l).map(p=>p.n);
+  $('#rmLMiss').hidden=!(lmiss.length && ll.length); $('#rmLMiss').textContent='Learning がまだ：'+lmiss.join('、');
+  $('#rmRem').disabled = !lines.length || stale;
+  $('#rmRemSt').textContent = stale && rdb.ps.some(p=>p.l) ? md(rdb.d)+' の名簿です。今日のリストを読み込んでください'
+    : !lines.length ? (past ? '時刻が過ぎた人だけです' : '')
+    : (!r ? lines.length+'人を「ラーニングリスト」へ' : r.sig===sig ? `ショートカットを開きました ${hm(r.at)}・${lines.length}人（入ったかはリマインダーで）` : `前に開いてから変わりました・${lines.length}人`) + (past ? `・時刻が過ぎた ${past}人は除きます` : '');
+  $('#rmRemSt').classList.toggle('warn', stale && rdb.ps.some(p=>p.l));
 }
 function hm(ms){ const d=new Date(ms); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
 async function copyText(t){
@@ -2050,7 +2060,8 @@ async function onSlotCopy(e){ const b=e.target.closest('[data-cp]'); if(!b) retu
   rdb.cp[rKey(t,k)]={at:Date.now(), sig:rSig(sl[1],k)}; rsave(); renderRSlots(); toast(t+' の文章をコピーしました'); }
 $('#rmSlots').addEventListener('click', onSlotCopy);
 $('#rmLSlots').addEventListener('click', onSlotCopy);
-$('#rmRem').addEventListener('click', ()=>{ const lines=rRemLines(); if(!lines.length){ toast('Learning の時刻を入れてください'); return; }
+$('#rmRem').addEventListener('click', ()=>{ if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでから入れてください'); return; }
+  const lines=rRemLines(); if(!lines.length){ toast(rRemLines.past ? '時刻が過ぎた人だけなので、入れる人がいません' : 'Learning の時刻を入れてください'); return; }
   rdb.rm={at:Date.now(), sig:lines.join('\n')}; rsave(); renderRSlots();
   location.href='shortcuts://run-shortcut?name='+encodeURIComponent(LSC)+'&input=text&text='+encodeURIComponent(lines.join('\n')); });
 $('#rLoad').addEventListener('click', ()=>$('#rFile').click());
