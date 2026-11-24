@@ -153,6 +153,9 @@ console.log('■ ログインが通った画面（Enter を押してよいか）
 const done = '* Worked for 11s · done 9:49\n\n────────────────────\n\n  Login\n\n'
   + '  Logged in as someone@example.com\n  Login successful. Press Enter to continue…\n';
 check('通った画面 → 押す', AUTH.loginDone(done), true);
+// 2026-11-24 の実際の画面（頭に ✔ が付く形）
+check('頭に ✔ が付いた通った画面 → 押す',
+  AUTH.loginDone(done.replace('  Login successful', '  ✔ Login successful')), true);
 check('返事の本文に載っていて下に入力欄がある画面では押さない',
   AUTH.loginDone(done + '────\n❯ \n────\n  ⏵⏵ bypass permissions on'), false);
 check('コードを待っている画面では押さない',

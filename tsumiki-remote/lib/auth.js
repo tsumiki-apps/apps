@@ -162,7 +162,8 @@ function meaningful(text) {
 function loginDone(text) {
   const lines = meaningful(text);
   const last = lines[lines.length - 1] || '';
-  return /^Login successful\.\s*Press Enter to continue/i.test(last);
+  // 頭の ✔ は 2026-11-24 から付くようになった（無いと気づけず「確かめています…」で止まった）
+  return /^(?:[✔✓√]\s*)?Login successful\.\s*Press Enter to continue/i.test(last);
 }
 
 // コードを貼る欄が**いま開いているか**。いちばん下が `Esc to cancel`、そのすぐ上が
