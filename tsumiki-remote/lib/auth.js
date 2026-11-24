@@ -99,18 +99,25 @@ function findLoginUrl(text) {
     const m = lines[i].match(LOGIN_URL_HEAD);
     if (!m) continue;
     let u = lines[i].slice(m.index).trim();
+    let ended = false;   // URLのあとに「続きでない行」が来た＝画面の下端で切れていない
     // 続きに見える行だけをつなぐ。空行・空白入りの行が来たらそこで終わり
     for (let j = i + 1; j < lines.length; j++) {
       const t = lines[j].trim();
-      if (!t || t !== lines[j].replace(/\s/g, '') || !URL_CHARS.test(t)) break;
+      if (!t || t !== lines[j].replace(/\s/g, '') || !URL_CHARS.test(t)) { ended = true; break; }
       u += t;
     }
-    found.push(u.replace(/[)\]}.,]+$/, ''));
+    found.push({ u: u.replace(/[)\]}.,]+$/, ''), ended });
   }
   // 切れていないものだけ。同じ画面に前回のURLが残っていることがあるので、
-  // いちばん新しい（下にある）ものを返す
-  const ok = found.filter((u) => u.includes('client_id=') && u.includes('state='));
-  return ok.length ? ok[ok.length - 1] : null;
+  // いちばん新しい（下にある）ものを返す。
+  // 2026-11-24 Claude Code のURLが短い形（`/oauth/authorize?z-<44字ほど>`、client_id も
+  // state も無い）に変わり、全部「切れている」扱いで捨てていた（シートが「URLを待っています…」
+  // のまま）。短い形は ①`?z-` のあとが英数字20字以上だけ ②URLの下に続きでない行がある
+  // （＝画面の下端で切れていない）の2つが揃ったときだけ渡す
+  const ok = found.filter(({ u, ended }) =>
+    (u.includes('client_id=') && u.includes('state=')) ||
+    (ended && /\/oauth\/authorize\?z-[A-Za-z0-9_-]{20,}$/.test(u)));
+  return ok.length ? ok[ok.length - 1].u : null;
 }
 
 // ------------------------------------------------ ログインの方法を選ぶ画面

@@ -104,6 +104,16 @@ const cut = fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8')
   .split('\n').slice(0, 8).join('\n');   // 途中で画面が切れた場合
 check('途中で切れていたら渡さない（null）', AUTH.findLoginUrl(cut), null);
 check('URLが無い画面では null', AUTH.findLoginUrl('ふつうの画面です\n❯ '), null);
+// 2026-11-24 から Claude Code は短い形のURLを出す（client_id も state も無い）。架空の値
+const shortTok = 'z-Abcdefghij0123456789KLMNOPqrstuv_-wxyzABCDE';
+const shortScr = '  Browser didn\'t open? Use the URL below to sign\n  in (c to copy)\n\n' +
+  'https://claude.ai/oauth/authorize?' + shortTok.slice(0, 18) + '\n' + shortTok.slice(18) + '   \n\n' +
+  '  Hold Shift (Option in iTerm2, Fn in\n\n  Paste code here if prompted\n> \n\n  Esc to cancel\n';
+check('短い形のURLも1本に戻せる', AUTH.findLoginUrl(shortScr), 'https://claude.ai/oauth/authorize?' + shortTok);
+check('短い形が画面の下端で切れていたら渡さない（null）',
+  AUTH.findLoginUrl('https://claude.ai/oauth/authorize?' + shortTok.slice(0, 18) + '\n' + shortTok.slice(18, 30)), null);
+check('短い形でも中身が短すぎたら渡さない（null）',
+  AUTH.findLoginUrl('https://claude.ai/oauth/authorize?z-abc\n\n  Esc to cancel'), null);
 
 // ------------------------------------------------------------- 方法の画面で 1 を押す
 console.log('■ ログインの方法を選ぶ画面（1 を押してよいか）');
