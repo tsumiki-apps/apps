@@ -3319,8 +3319,8 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/loginurl' && req.method === 'GET') {
       const name = url.searchParams.get('name') || '';
       if (!NAME_RE.test(name)) return json(res, 400, { error: 'bad name' });
-      // -J ＝端末の幅で折り返された1本のURLをつなぎ直す。これが無いと
-      // 途中で切れたURLを「押せるリンク」として渡してしまう
+      // -J は tmux の折り返しをつなぐだけ。Claude Code は自分で改行してURLを出すので
+      // それではつながらない（2026-09-05・11-24 実測）。つなぎ直しは AUTH.findLoginUrl がする
       const r = await tmux(['capture-pane', '-p', '-J', '-t', '=' + name + ':', '-S', '-200']);
       if (!r.ok) return json(res, 500, { error: r.err.slice(0, 200) });
       // 通った画面なら Enter を押して、期限を今すぐ読み直す（5分待たずに帯を変える）。

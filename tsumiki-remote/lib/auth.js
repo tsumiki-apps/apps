@@ -94,30 +94,38 @@ const URL_CHARS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/;
 
 function findLoginUrl(text) {
   const lines = String(text || '').replace(/\r/g, '').split('\n');
-  const found = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(LOGIN_URL_HEAD);
-    if (!m) continue;
-    let u = lines[i].slice(m.index).trim();
-    let ended = false;   // URLのあとに「続きでない行」が来た＝画面の下端で切れていない
-    // 続きに見える行だけをつなぐ。空行・空白入りの行が来たらそこで終わり
-    for (let j = i + 1; j < lines.length; j++) {
-      const t = lines[j].trim();
-      if (!t || t !== lines[j].replace(/\s/g, '') || !URL_CHARS.test(t)) { ended = true; break; }
-      u += t;
-    }
-    found.push({ u: u.replace(/[)\]}.,]+$/, ''), ended });
+  // いちばん下のURLの頭だけを見る。同じ画面（-S -200 の履歴）に前回のURLが残って
+  // いても、いちばん新しいものが不完全なら古い方を渡さず null にする（反証役 2026-11-24）
+  let i = -1, m = null;
+  for (let k = lines.length - 1; k >= 0; k--) {
+    const mm = lines[k].match(LOGIN_URL_HEAD);
+    if (mm) { i = k; m = mm; break; }
   }
-  // 切れていないものだけ。同じ画面に前回のURLが残っていることがあるので、
-  // いちばん新しい（下にある）ものを返す。
-  // 2026-11-24 Claude Code のURLが短い形（`/oauth/authorize?z-<44字ほど>`、client_id も
-  // state も無い）に変わり、全部「切れている」扱いで捨てていた（シートが「URLを待っています…」
-  // のまま）。短い形は ①`?z-` のあとが英数字20字以上だけ ②URLの下に続きでない行がある
-  // （＝画面の下端で切れていない）の2つが揃ったときだけ渡す
-  const ok = found.filter(({ u, ended }) =>
-    (u.includes('client_id=') && u.includes('state=')) ||
-    (ended && /\/oauth\/authorize\?z-[A-Za-z0-9_-]{20,}$/.test(u)));
-  return ok.length ? ok[ok.length - 1].u : null;
+  if (i < 0) return null;
+  let u = lines[i].slice(m.index).trim();
+  let endBlank = false;   // URLのあとに空行が来た（＝Claude Code の画面どおりに終わった）
+  let j = i + 1;
+  // 続きに見える行だけをつなぐ。空行・空白入りの行が来たらそこで終わり
+  for (; j < lines.length; j++) {
+    const t = lines[j].trim();
+    if (!t) { endBlank = true; break; }
+    if (t !== lines[j].replace(/\s/g, '') || !URL_CHARS.test(t)) break;
+    u += t;
+  }
+  u = u.replace(/[)\]}.,]+$/, '');
+  // 従来の長い形：client_id と state が揃っていれば切れていない（state は末尾に付く）
+  if (u.includes('client_id=') && u.includes('state=')) return u;
+  // 2026-11-24 から Claude Code は短い形（`/oauth/authorize?z-<43字ほど>`、client_id も
+  // state も無い）を出す。今までは全部「切れている」扱いで捨て、シートが「URLを待っています…」
+  // のまま止まっていた。短い形は印が無いので、次の3つが揃ったときだけ渡す（反証役）
+  //   ① `?z-` のあとが英数字 40〜46字だけ（実測43字＝32バイトの base64url。途中で切れた短い断片や、
+  //      続きの行に付いた英単語でずれた長さを弾く）
+  //   ② URLのすぐ下が空行（画面の下端・書きかけで切れていない）
+  //   ③ その下に「Paste code here」がある（ログインの画面の続きが描かれ終わっている）
+  if (!/\/oauth\/authorize\?z-[A-Za-z0-9_-]{40,46}$/.test(u)) return null;
+  if (!endBlank) return null;
+  if (!lines.slice(j).some((l) => /Paste code here/.test(l))) return null;
+  return u;
 }
 
 // ------------------------------------------------ ログインの方法を選ぶ画面

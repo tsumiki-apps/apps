@@ -105,15 +105,30 @@ const cut = fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8')
 check('途中で切れていたら渡さない（null）', AUTH.findLoginUrl(cut), null);
 check('URLが無い画面では null', AUTH.findLoginUrl('ふつうの画面です\n❯ '), null);
 // 2026-11-24 から Claude Code は短い形のURLを出す（client_id も state も無い）。架空の値
-const shortTok = 'z-Abcdefghij0123456789KLMNOPqrstuv_-wxyzABCDE';
-const shortScr = '  Browser didn\'t open? Use the URL below to sign\n  in (c to copy)\n\n' +
-  'https://claude.ai/oauth/authorize?' + shortTok.slice(0, 18) + '\n' + shortTok.slice(18) + '   \n\n' +
-  '  Hold Shift (Option in iTerm2, Fn in\n\n  Paste code here if prompted\n> \n\n  Esc to cancel\n';
-check('短い形のURLも1本に戻せる', AUTH.findLoginUrl(shortScr), 'https://claude.ai/oauth/authorize?' + shortTok);
-check('短い形が画面の下端で切れていたら渡さない（null）',
-  AUTH.findLoginUrl('https://claude.ai/oauth/authorize?' + shortTok.slice(0, 18) + '\n' + shortTok.slice(18, 30)), null);
-check('短い形でも中身が短すぎたら渡さない（null）',
-  AUTH.findLoginUrl('https://claude.ai/oauth/authorize?z-abc\n\n  Esc to cancel'), null);
+const HEAD = 'https://claude.ai/oauth/authorize?';
+const tok = 'z-Abcdefghij0123456789KLMNOPqrstuv_-wxyzABCDE';   // z- のあと43字
+const tail = '\n\n  Hold Shift (Option in iTerm2, Fn in\n\n  Paste code here if prompted\n> \n\n  Esc to cancel\n';
+const scr = (url2) => '  Login\n\n  Browser didn\'t open? Use the URL below to sign\n  in (c to copy)\n\n' + url2 + tail;
+const shortU = HEAD + tok;
+const split = HEAD + tok.slice(0, 15) + '\n' + tok.slice(15) + '   ';
+check('短い形：実画面の形（架空の値）から1本に戻せる',
+  AUTH.findLoginUrl(fs.readFileSync(path.join(FIX, 'login画面_短い形_51桁.txt'), 'utf8')),
+  HEAD + 'z-Fake0Fake1Fake2Fake3Fake4Fake5Fake6Fake7Fake8');
+check('短い形：2行に割れたURLを1本に戻せる', AUTH.findLoginUrl(scr(split)), shortU);
+check('短い形：画面の下端で切れていたら null',
+  AUTH.findLoginUrl(HEAD + tok.slice(0, 15) + '\n' + tok.slice(15, 30)), null);
+check('短い形：空行で終わっていても中身が足りなければ null',
+  AUTH.findLoginUrl(scr(HEAD + tok.slice(0, 25))), null);
+check('短い形：続きの行に英単語が付いたら null',
+  AUTH.findLoginUrl(scr(split.trimEnd() + '\nWaiting')), null);
+check('短い形：下に「Paste code here」がまだ無ければ null',
+  AUTH.findLoginUrl(split + '\n\n  Hold Shift\n'), null);
+check('古い完全なURLの下に新しい切れたURLがあれば古い方を渡さない（null）',
+  AUTH.findLoginUrl(scr(split) + '\n' + HEAD + tok.slice(0, 15)), null);
+check('古い長い形の下に新しい短い形があれば新しい方',
+  AUTH.findLoginUrl(fs.readFileSync(path.join(FIX, 'login画面_51桁.txt'), 'utf8') + '\n' + scr(split)), shortU);
+check('古い短い形の下に新しい長い形があれば新しい方（長さ450）',
+  (AUTH.findLoginUrl(scr(split) + '\n' + fs.readFileSync(path.join(FIX, 'login画面_80桁.txt'), 'utf8')) || '').length, 450);
 
 // ------------------------------------------------------------- 方法の画面で 1 を押す
 console.log('■ ログインの方法を選ぶ画面（1 を押してよいか）');
