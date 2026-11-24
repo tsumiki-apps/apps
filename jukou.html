@@ -1942,13 +1942,14 @@ function rNames(t){
   const h=rows[0].map(x=>nz(x));
   const fi=k=>h.findIndex(x=>k.includes(x));
   const iN=fi(['名前','氏名','name','fullname','フルネーム','teammember','member']), iL=fi(['姓','lastname','familyname']), iF=fi(['名','firstname','givenname']);
-  const iT=fi(['開始','開始時刻','時刻','時間','start','time','starttime']);
+  const iT=fi(['開始','開始時刻','時刻','時間','start','time','starttime']), iS=fi(['コースステータス','ステータス','status','coursestatus']);
   const head = iN>=0 || iL>=0 || iF>=0;
   const out=[], seen=new Set();
-  (head?rows.slice(1):rows).forEach(r=>{
+  rNames.long=0; (head?rows.slice(1):rows).forEach(r=>{
+    if(head && iS>=0 && r[iS] && !/incomplete|未完了/i.test(r[iS])) return;
     let n = head ? (iN>=0 ? r[iN] : [r[iL]||'', r[iF]||''].join(' ')) : r[0];
     n=String(n||'').replace(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*/,'').replace(/\s*[（(][^（）()]*[）)]?\s*$/,'').replace(/\s+/g,' ').trim();
-    if(!n) return; const k=nz(n); if(n.length>60 || seen.has(k)){ rNames.drop++; return; } seen.add(k);
+    if(!n) return; const k=nz(n); if(n.length>60){ rNames.long++; return; } if(seen.has(k)){ rNames.drop++; return; } seen.add(k);
     out.push({n, t: iT>=0 ? rTime(r[iT]) : ''});
   });
   return out;
@@ -2004,7 +2005,7 @@ $('#rFile').addEventListener('change', async ()=>{ const f=$('#rFile').files[0];
   if(!list.length){ toast(f.name+' から名前を読めませんでした'); return; }
   const same = rdb.d===todayStr(), old=new Map(rdb.ps.map(p=>[nz(p.n),p.t]));
   list.forEach(p=>{ if(!p.t && same) p.t=old.get(nz(p.n))||''; });
-  rdb.ps=list; rdb.d=todayStr(); if(!same) rdb.cp={}; rsave(); renderRemind(); toast(list.length+'人を読み込みました'+(rNames.drop?`（重なり・長すぎる名前 ${rNames.drop}件を外しました）`:'')); });
+  rdb.ps=list; rdb.d=todayStr(); if(!same) rdb.cp={}; rsave(); renderRemind(); toast(list.length+'人を読み込みました'+(rNames.long?`（長すぎる名前 ${rNames.long}件を外しました）`:'')); });
 (()=>{ const box=$('#rDel'); box.querySelector('.go').addEventListener('click',()=>box.classList.add('ask'));
   box.querySelector('.no').addEventListener('click',()=>box.classList.remove('ask'));
   box.querySelector('.yes').addEventListener('click',()=>{ box.classList.remove('ask'); rdb.ps=[]; rdb.cp={}; rdb.d=''; rsave(); renderRemind(); toast('連絡の人を全部消しました'); }); })();
