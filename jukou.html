@@ -332,6 +332,12 @@ dialog.rec{overflow-y:auto}
 .tk-sec{display:flex;justify-content:space-between;align-items:baseline;margin:18px 6px 6px;font-size:15px;font-weight:700}
 .tk-sec:first-child{margin-top:0}
 #tkBody section+section{margin-top:22px}
+.tk-sec-b{margin-top:6px;margin-bottom:0}
+.tk-sec-b button{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:44px;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.tk-sec-b .meta{display:inline-flex;align-items:center;gap:4px}
+.tk-sec-b svg{width:16px;height:16px;transition:transform .2s}
+.tk-sec-b [aria-expanded="true"]{margin-bottom:6px}
+.tk-sec-b [aria-expanded="true"] svg{transform:rotate(180deg)}
 .tk-sec .meta{font-weight:500}
 .tk-list{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface)}
 .tk{position:relative;overflow:hidden;border-top:1px solid var(--line)}
@@ -1938,17 +1944,18 @@ function rNames(t){
   t=t.replace(/^\uFEFF/,''); const first=t.split(/\r?\n/,1)[0];
   const sep = first.includes('\t') ? '\t' : (!first.includes(',') && first.includes(';')) ? ';' : ',';
   const rows = sep===',' ? csvParse(t) : t.split(/\r?\n/).map(l=>l.split(sep)).filter(r=>r.some(x=>x.trim()));
-  rNames.drop=0; if(!rows.length) return [];
+  rNames.drop=0; rNames.long=0; rNames.skip=0; if(!rows.length) return [];
   const h=rows[0].map(x=>nz(x));
   const fi=k=>h.findIndex(x=>k.includes(x));
   const iN=fi(['名前','氏名','name','fullname','フルネーム','teammember','member']), iL=fi(['姓','lastname','familyname']), iF=fi(['名','firstname','givenname']);
   const iT=fi(['開始','開始時刻','時刻','時間','start','time','starttime']), iS=fi(['コースステータス','ステータス','status','coursestatus']);
   const head = iN>=0 || iL>=0 || iF>=0;
   const out=[], seen=new Set();
-  rNames.long=0; (head?rows.slice(1):rows).forEach(r=>{
-    if(head && iS>=0 && r[iS] && !/incomplete|未完了/i.test(r[iS])) return;
+  (head?rows.slice(1):rows).forEach(r=>{
+    if(head && iS>=0 && r[iS] && !/incomplete|未完了/i.test(r[iS])){ rNames.skip++; return; }
     let n = head ? (iN>=0 ? r[iN] : [r[iL]||'', r[iF]||''].join(' ')) : r[0];
-    n=String(n||'').replace(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*/,'').replace(/\s*[（(][^（）()]*[）)]?\s*$/,'').replace(/\s+/g,' ').trim();
+    n=String(n||'').replace(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*/,'');
+    n=(n.replace(/\s*[（(][^（）()]*[）)]?\s*$/,'').trim() || n).replace(/\s+/g,' ').trim();
     if(!n) return; const k=nz(n); if(n.length>60){ rNames.long++; return; } if(seen.has(k)){ rNames.drop++; return; } seen.add(k);
     out.push({n, t: iT>=0 ? rTime(r[iT]) : ''});
   });
@@ -2002,10 +2009,10 @@ $('#rmSlots').addEventListener('click', async e=>{ const b=e.target.closest('[da
 $('#rLoad').addEventListener('click', ()=>$('#rFile').click());
 $('#rFile').addEventListener('change', async ()=>{ const f=$('#rFile').files[0]; $('#rFile').value=''; if(!f) return;
   let list=[]; try{ list=rNames(await f.text()); }catch(e){}
-  if(!list.length){ toast(f.name+' から名前を読めませんでした'); return; }
+  if(!list.length){ toast(rNames.skip ? `未完了の人はいませんでした（Incomplete 以外の ${rNames.skip}行を除きました）` : f.name+' から名前を読めませんでした'); return; }
   const same = rdb.d===todayStr(), old=new Map(rdb.ps.map(p=>[nz(p.n),p.t]));
   list.forEach(p=>{ if(!p.t && same) p.t=old.get(nz(p.n))||''; });
-  rdb.ps=list; rdb.d=todayStr(); if(!same) rdb.cp={}; rsave(); renderRemind(); toast(list.length+'人を読み込みました'+(rNames.long?`（長すぎる名前 ${rNames.long}件を外しました）`:'')); });
+  rdb.ps=list; rdb.d=todayStr(); if(!same) rdb.cp={}; rsave(); renderRemind(); toast(list.length+'人を読み込みました'+((rNames.skip||rNames.long)?'（'+[rNames.skip?`Incomplete 以外 ${rNames.skip}行`:'', rNames.long?`長すぎる名前 ${rNames.long}件`:''].filter(Boolean).join('・')+'を除きました）':'')); });
 (()=>{ const box=$('#rDel'); box.querySelector('.go').addEventListener('click',()=>box.classList.add('ask'));
   box.querySelector('.no').addEventListener('click',()=>box.classList.remove('ask'));
   box.querySelector('.yes').addEventListener('click',()=>{ box.classList.remove('ask'); rdb.ps=[]; rdb.cp={}; rdb.d=''; rsave(); renderRemind(); toast('連絡の人を全部消しました'); }); })();
@@ -2100,7 +2107,7 @@ remind:['プロンプト_連絡.txt', `画面に出ている「研修（コー�
 ・データ更新日時：画面に出ている更新日時をそのまま写す（例：11/22/2026 9:51:53 PM）
 ・店舗・Source・コースカテゴリ・コース名言語・コースステータス・部署・役職・バッジ区分・雇用形態：画面の表記のまま写す（訳さない・略さない。例：Learning、ATLAS、Incomplete、FT、PT）
 ・コース名：画面のまま写す。画面で途中が省略されているときは、見えている所まで写して最後に「…（表示が途中で省略）」を付ける
-・氏名：画面のまま写す（読みがなや漢字が括弧で付いていれば、それも含めて写す）
+・氏名：画面のまま写す（読みがなや漢字が括弧で付いていれば、それも含めて写す。画面で途中が切れていれば、見えている所までをそのまま写し、補わない）
 ・カンマを含む値は "（ダブルクォート）で囲む
 
 【守ること】
@@ -2201,6 +2208,7 @@ function tRow(t){
     <button class="tk-tx" type="button" data-ed aria-label="${esc(t.t)}（${STN[t.st]}）を開く"><span class="t">${esc(t.t)}</span>${r?`<span class="r">${r}</span>`:''}</button></div></div>`; }
 function tSort(a,b){ return (a.due||'9999')<(b.due||'9999')?-1:(a.due||'9999')>(b.due||'9999')?1 : (a.tm||'99')<(b.tm||'99')?-1:(a.tm||'99')>(b.tm||'99')?1 : a.c-b.c; }
 let tkShowDone = false, tkShowWk = false;
+const ICV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 function renderTask(){
   const today=todayStr(), wk=addD(today,6);
   const open=tdb.ts.filter(t=>t.st!=='done').sort(tSort), done=tdb.ts.filter(t=>t.st==='done').sort((a,b)=>b.done-a.done);
@@ -2208,7 +2216,8 @@ function renderTask(){
   let h='';
   for(const [n,a] of G){ if(!a.length) continue; const dg=a.filter(t=>t.st==='doing').length;
     const fold=n==='今週';
-    h+=`<section aria-label="${n}"><h3 class="tk-sec">${n}<span class="meta">${dg?`進行中 ${dg}・`:''}${a.length}件</span></h3>${fold?`<button class="btn btn-quiet" type="button" id="tkWk" aria-expanded="${tkShowWk}" style="width:100%;${tkShowWk?'margin-bottom:8px':''}">${tkShowWk?'今週を隠す':'今週を見る'}</button>`:''}${!fold||tkShowWk?`<div class="tk-list">${a.map(tRow).join('')}</div>`:''}</section>`; }
+    const cnt=`<span class="meta">${dg?`進行中 ${dg}・`:''}${a.length}件${fold?ICV:''}</span>`;
+    h+=`<section aria-label="${n}">${fold?`<h3 class="tk-sec tk-sec-b"><button type="button" id="tkWk" aria-expanded="${tkShowWk}" aria-label="今週 ${a.length}件を${tkShowWk?'隠す':'見る'}">${n}${cnt}</button></h3>`:`<h3 class="tk-sec">${n}${cnt}</h3>`}${!fold||tkShowWk?`<div class="tk-list">${a.map(tRow).join('')}</div>`:''}</section>`; }
   if(!open.length) h+=`<p class="tk-empty">${done.length?'まだのタスクはありません。':'タスクはまだありません。下の「新しいタスク」から足せます。'}</p>`;
   if(done.length){ h+=`<section aria-label="完了"><h3 class="tk-sec">完了<span class="meta">${done.length}件</span></h3>
     <button class="btn btn-quiet" type="button" id="tkDone" aria-expanded="${tkShowDone}" style="width:100%;${tkShowDone?'margin-bottom:8px':''}">${tkShowDone?'完了を隠す':'完了を見る'}</button>
