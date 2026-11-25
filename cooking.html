@@ -1517,7 +1517,8 @@ async function updateComment(cid, body, mentions){
   const added = (mentions||[]).filter(w=>had.indexOf(w)<0 && w!==who);
   if(added.length && before) pushNotify('mention', before.record_id, body, added);
 }
-/* 親を消すときは、ぶら下がっている返信も一緒に消す（宙に浮いた返信を残さない） */
+/* 親を消すときは、ぶら下がっている返信も一緒に消す（宙に浮いた返信を残さない）。
+   2人（家族モードでない人）は、誰のコメントでも消せる＝家族や相手のコメントも片付けられる */
 async function deleteComment(cid){
   const ids=[cid].concat(allComments.filter(c=>c.parent_id===cid).map(c=>c.id));
   const {error}=await sb.from('comments').delete().in('id',ids); if(error)console.error(error);
@@ -2671,7 +2672,7 @@ function cmtHTML(c, isRep){
         <div class="acts">
           <span class="rep" data-rep="${c.id}">返信</span>
           ${c.who===who?`<span class="edit" data-editc="${c.id}">編集</span>`:''}
-          ${c.who===who?`<span class="del" data-delc="${c.id}">削除</span>`:''}
+          ${(c.who===who || !FAMILY)?`<span class="del" data-delc="${c.id}">削除</span>`:''}
         </div>`;
   return `<div class="cmt${isRep?' is-reply':''}">
       ${avatarHTML(c.who)}
@@ -2733,8 +2734,11 @@ function bindDetailCmt(){
   if(ta) bindMentionInput(ta, list.querySelector('#menSugEdit'));
   list.querySelectorAll('[data-delc]').forEach(el=>el.onclick=async()=>{
     const c=allComments.find(x=>x.id===el.dataset.delc);
-    const hasReps = c && allComments.some(x=>x.parent_id===c.id);
-    if(!confirm(hasReps? 'このコメントと、ぶら下がっている返信も消します。よろしいですか？' : 'コメントを削除しますか？')) return;
+    if(!c) return;
+    if(FAMILY && c.who!==who) return;   // 家族モードでは人のコメントは消せない
+    const hasReps = allComments.some(x=>x.parent_id===c.id);
+    const whose = (c.who===who) ? 'このコメント' : `${dispName(c.who)}さんのコメント`;
+    if(!confirm(hasReps? `${whose}と、ぶら下がっている返信も消します。よろしいですか？` : `${whose}を削除しますか？`)) return;
     if(replyTo && replyTo.cid===el.dataset.delc) cancelReply();
     if(editingCmt===el.dataset.delc) editingCmt=null;
     await deleteComment(el.dataset.delc); await loadRecords();
