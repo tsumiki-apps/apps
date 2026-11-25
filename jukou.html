@@ -2333,10 +2333,14 @@ function step(t, s, day){
     case 'month': return addM(s,1,day);
     case 'year': return addM(s,12,day);
   } return ''; }
-/* 次の回：期限の次。まだ今日以前なら今日より後まで進める */
+/* 次の回：期限の次。過ぎた回を完了したときは今日の回を飛ばさない（今日が回の日なら今日） */
 function nextDue(t){ if(t.rep==='none') return ''; const today=todayStr(), base=t.due||today, day=t.dom||parse(base).getDate();
-  let d=step(t, base, day), g=0; while(d && d<=today && g++<2000) d=step(t, d, day);
-  if(d && d<=today) d=step(t, today, day); return d; }
+  let d=step(t, base, day), g=0; while(d && d<today && g++<2000) d=step(t, d, day);
+  if(d && d<today) d=step(t, today, day); return d; }
+/* 「毎日」の残りは期限切れにせず今日の回にする（休みの日の分は数えない）。何度呼んでも同じ結果 */
+function tRoll(){ const today=todayStr(); let n=0;
+  for(const t of tdb.ts) if(t.rep==='day' && t.st!=='done' && t.due && t.due<today){ t.due=today; n++; }
+  if(n) tsave(); }
 const WDN = '日月火水木金土';
 function repTxt(t){ if(t.rep==='none') return ''; const r=TREP.find(x=>x[0]===t.rep)[1];
   if(t.rep==='week'){ const w=(t.wd.length?t.wd:t.due?[parse(t.due).getDay()]:[]); return r+(w.length?' '+[1,2,3,4,5,6,0].filter(n=>w.includes(n)).map(n=>WDN[n]).join('・'):''); }
@@ -2368,7 +2372,7 @@ function tSort(a,b){ return (a.due||'9999')<(b.due||'9999')?-1:(a.due||'9999')>(
 let tkShowDone = false, tkShowWk = false;
 const ICV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 function renderTask(){
-  const today=todayStr(), wk=addD(today,6);
+  tRoll(); const today=todayStr(), wk=addD(today,6);
   const open=tdb.ts.filter(t=>t.st!=='done').sort(tSort), done=tdb.ts.filter(t=>t.st==='done').sort((a,b)=>b.done-a.done);
   const G=[['今日', open.filter(t=>t.due && t.due<=today)], ['今週', open.filter(t=>t.due>today && t.due<=wk)], ['あとで', open.filter(t=>!t.due || t.due>wk)]];
   let h='';
@@ -2479,6 +2483,7 @@ $('#tkForm').addEventListener('submit', e=>{
     tkCur=null; tkGone=true; $('#tkSheet').close(); renderTask(); toast(`「${t.t}」を削除しました`); ($('#tkBody').querySelector('[data-ck]')||$('#tkNew')).focus(); }); })();
 
 /* ページの切り替え */
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && view==='task' && !$('#tkSheet').open) renderTask(); });
 let view='task';
 function route(){
   const was=view;
