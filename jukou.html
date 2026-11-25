@@ -2313,7 +2313,7 @@ function tclean(x){ if(!x || typeof x.t!=='string' || !x.t.trim()) return null;
     done:+x.done||0, nx:typeof x.nx==='string'?x.nx:'', c:+x.c||0, dom:(+x.dom>=1&&+x.dom<=31)?+x.dom:0, auto:x.auto?1:0}; }
 function tload(){ try{ const d=JSON.parse(localStorage.getItem(TKEY)||'null'); if(d && Array.isArray(d.ts)) return {at:d.at||0, ts:d.ts.map(tclean).filter(Boolean)}; }catch(e){} return {at:0, ts:[]}; }
 let tdb = tload();
-function tcommit(fn){ const snap=JSON.stringify(tdb.ts); const r=fn(); if(tsave()) return {ok:true, r};
+function tcommit(fn){ tRoll(); const snap=JSON.stringify(tdb.ts); const r=fn(); if(tsave()) return {ok:true, r};
   tdb.ts=JSON.parse(snap).map(tclean).filter(Boolean); renderTask(); return {ok:false}; }
 function tsave(){ tdb.at=Date.now(); try{ localStorage.setItem(TKEY, JSON.stringify(tdb)); return true; }catch(e){ toast('保存できませんでした（端末の空きが足りません）'); return false; } }
 function mergeTask(t){ if(!t || !Array.isArray(t.ts) || (t.at||0) <= (tdb.at||0)) return 0;
@@ -2340,7 +2340,7 @@ function nextDue(t){ if(t.rep==='none') return ''; const today=todayStr(), base=
 /* 「毎日」の残りは期限切れにせず今日の回にする（休みの日の分は数えない）。何度呼んでも同じ結果 */
 function tRoll(){ const today=todayStr(); let n=0;
   for(const t of tdb.ts) if(t.rep==='day' && t.st!=='done' && t.due && t.due<today){ t.due=today; n++; }
-  if(n) tsave(); }
+  if(n){ try{ localStorage.setItem(TKEY, JSON.stringify(tdb)); }catch(e){} } } /* 編集時刻（at）は進めない＝取り込みの新旧比べを狂わせない */
 const WDN = '日月火水木金土';
 function repTxt(t){ if(t.rep==='none') return ''; const r=TREP.find(x=>x[0]===t.rep)[1];
   if(t.rep==='week'){ const w=(t.wd.length?t.wd:t.due?[parse(t.due).getDay()]:[]); return r+(w.length?' '+[1,2,3,4,5,6,0].filter(n=>w.includes(n)).map(n=>WDN[n]).join('・'):''); }
@@ -2483,7 +2483,8 @@ $('#tkForm').addEventListener('submit', e=>{
     tkCur=null; tkGone=true; $('#tkSheet').close(); renderTask(); toast(`「${t.t}」を削除しました`); ($('#tkBody').querySelector('[data-ck]')||$('#tkNew')).focus(); }); })();
 
 /* ページの切り替え */
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && view==='task' && !$('#tkSheet').open) renderTask(); });
+let tkDay=todayStr(); const tkRe=()=>{ if(!document.hidden && view==='task' && !$('#tkSheet').open && !tkDrag){ tkDay=todayStr(); renderTask(); } };
+document.addEventListener('visibilitychange', tkRe); setInterval(()=>{ if(todayStr()!==tkDay) tkRe(); }, 60000);
 let view='task';
 function route(){
   const was=view;
