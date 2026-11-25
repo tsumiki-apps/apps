@@ -2071,16 +2071,18 @@ async function onSlotCopy(e){ const b=e.target.closest('[data-cp]'); if(!b) retu
   }catch(err){ console.error('[連絡の画像]',err); toast('画像を作れませんでした'); }
   finally{ b.disabled=false; } }
 async function siFile(k,t,names){ const c=await siMake(k,t,names), bl=await new Promise((ok,ng)=>c.toBlob(x=>x?ok(x):ng(new Error('toBlob')),'image/png'));
+  c.width=c.height=0; /* 1枚約8MB。枚数が多い日に iPhone のメモリ上限に当たらないよう、すぐ放す */
   return new File([bl], (k==='l'?'Learning_Follow_':'Remind_Quick_Start_')+todayStr()+'_'+t.replace(':','')+'.png', {type:'image/png'}); }
 /* まとめて：Remind → Learning Follow の順に、時間帯ぶん全部作って一度に共有（iPhone は「画像を保存」で写真に入る） */
-$('#rmAll').addEventListener('click', async ()=>{ if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでください'); return; }
+let rmBusy=false; /* 作っている間は2回目を受けない（途中の再描画でボタンが押せる状態に戻っても） */
+$('#rmAll').addEventListener('click', async ()=>{ if(rmBusy) return; if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでください'); return; }
   const all=[...rSlots('t').map(z=>['t',...z]), ...rSlots('l').map(z=>['l',...z])]; if(!all.length) return;
-  const b=$('#rmAll'); b.disabled=true; toast(all.length+'枚を作っています');
+  const b=$('#rmAll'); rmBusy=true; b.disabled=true; toast(all.length+'枚を作っています');
   try{ const fs=[]; for(const [k,t,names] of all) fs.push(await siFile(k,t,names));
     liFiles=fs; liSlots=all.map(([k,t,names])=>({key:rKey(t,k), sig:rSig(names,k)}));
     liShow('まとめて '+fs.length+'枚','連絡の画像'); }
   catch(err){ console.error('[連絡の画像・まとめて]',err); toast('画像を作れませんでした'); }
-  finally{ b.disabled=false; } });
+  finally{ rmBusy=false; b.disabled=rStale(); } });
 $('#rmSlots').addEventListener('click', onSlotCopy);
 $('#rmLSlots').addEventListener('click', onSlotCopy);
 
@@ -2173,13 +2175,13 @@ const SI = {W:1920, H:1080, ink:'#111111', /* 色ok: 書き出す画像の色（
 /* 1行を中央に書く（はみ出すなら小さく） */
 function siCenter(x,s,w,f,y,max){ while(f>20){ x.font=`${w} ${f}px ${SI.FONT}`; if(x.measureText(s).width<=max) break; f-=1; } x.fillText(s,SI.W/2,y); }
 /* 名前の並べ方：列の数（1〜6）ごとに入る一番大きな文字を出し、いちばん大きく書ける並びを選ぶ。
-   4pt 以内の差なら「最後の行に1人だけ残らない」→「列が少ない」方をとる（65pt が上限＝Keynote と同じ） */
+   4pt 以内の差なら「最後の行に1人だけ残らない」方をとり、その中で文字が大きい→列が少ない順（65pt が上限＝Keynote と同じ） */
 function siFit(x,names){ const n=names.length, IW=SI.PW-SI.PAD*2, IH=SI.PH-SI.PAD*2, cs=[];
   for(let c=1; c<=Math.min(6,n); c++){ const r=Math.ceil(n/c);
     for(let f=SI.NF; f>=12; f--){ x.font=`400 ${f}px ${SI.FONT}`; const mw=Math.max(...names.map(s=>x.measureText(s).width)), lh=f*1.55, gx=c>1?f*1.2:0;
       if(r*lh<=IH && c*mw+(c-1)*gx<=IW){ cs.push({f,c,r,lh,cw:mw+gx,orph:c>1&&n>3&&n%c===1}); break; } } }
   if(!cs.length){ const c=Math.min(6,n); return {f:12,c,r:Math.ceil(n/c),lh:18.6,cw:IW/c}; }
-  const top=Math.max(...cs.map(z=>z.f)); return cs.filter(z=>z.f>=top-4).sort((a,b)=>(a.orph-b.orph)||(b.f-a.f>2?1:a.f-b.f>2?-1:0)||(a.c-b.c))[0]; }
+  const top=Math.max(...cs.map(z=>z.f)); return cs.filter(z=>z.f>=top-4).sort((a,b)=>(a.orph-b.orph)||(b.f-a.f)||(a.c-b.c))[0]; }
 async function siMake(k,T,names){
   try{ await document.fonts.load(`700 82px ${SI.FONT}`); }catch(_){}
   const P=SI[k], c=document.createElement('canvas'); c.width=SI.W; c.height=SI.H; const x=c.getContext('2d'), n=names.length;
@@ -2220,7 +2222,7 @@ $('#rmImg').addEventListener('click', async ()=>{
   finally{ b.disabled=false; renderRSlots(); }
 });
 $('#liShare').addEventListener('click', async ()=>{ if(!liFiles.length) return;
-  const mark=()=>{ if(!liSlots.length) return; const at=Date.now(); liSlots.forEach(z=>{ rdb.cp[z.key]={at, sig:z.sig}; }); rsave(); renderRSlots(); };
+  const mark=()=>{ if(!liSlots.length || rStale()) return; const at=Date.now(); liSlots.forEach(z=>{ rdb.cp[z.key]={at, sig:z.sig}; }); rsave(); renderRSlots(); };
   if($('#liShare').dataset.mode==='share'){ try{ await navigator.share({files:liFiles}); mark(); toast('共有しました'); return; }catch(e){ if(e && e.name==='AbortError') return; } }
   mark();
   liFiles.forEach((f,i)=>setTimeout(()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }, i*300));
