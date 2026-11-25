@@ -2006,10 +2006,12 @@ function rNames(t){
     n=String(n||'').replace(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*/,'');
     n=(n.replace(/\s*[（(][^（）()]*[）)]?\s*$/,'').trim() || n).replace(/\s+/g,' ').trim();
     if(!n) return; const k=nz(n); if(n.length>60){ rNames.long++; return; } if(seen.has(k)){ rNames.drop++; return; } seen.add(k);
-    out.push({n, t: iT>=0 ? rTime(r[iT]) : '', l: iLt>=0 ? rTime(r[iLt]) : ''});
+    out.push({n, t: iT>=0 ? rTime(r[iT]) : '', l: iLt>=0 ? rTimeHM(r[iLt]) : ''});
   });
   return out;
 }
+/* Learning 列は回数や日付が入ることもあるので、時と分の区切りがある値だけを時刻として読む */
+function rTimeHM(v){ const s=String(v||'').normalize('NFKC').trim(); return /^(午前|午後)?\s*\d{1,2}\s*[:時]\s*\d{1,2}\s*分?\s*([ap]\.?m\.?)?$/i.test(s) ? rTime(s) : ''; }
 function rTime(v){
   const s=String(v||'').normalize('NFKC').trim().toLowerCase(); const m=s.match(/^(午前|午後)?\s*(\d{1,2})(?:[:時]\s*(\d{1,2}))?\s*分?\s*(am|pm|a\.m\.|p\.m\.)?/);
   if(!m) return ''; let h=+m[2]; const mi=m[3]==null?0:+m[3]; const pm=m[1]==='午後'||/^p/.test(m[4]||''), am=m[1]==='午前'||/^a/.test(m[4]||'');
@@ -2064,13 +2066,13 @@ $('#rmFrom').addEventListener('input', e=>{ rdb.from=e.target.value.trim(); rsav
 let liSlots=[]; /* いま見せている時間帯の画像（共有・保存したら ✓ を付ける） */
 async function onSlotCopy(e){ const b=e.target.closest('[data-cp]'); if(!b) return; const t=b.dataset.cp, k=b.dataset.k==='l'?'l':'t';
   if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでください'); return; }
-  const sl=rSlots(k).find(x=>x[0]===t); if(!sl) return;
-  b.disabled=true;
+  const sl=rSlots(k).find(x=>x[0]===t); if(!sl || rmBusy) return;
+  b.disabled=true; rmBusy=true; $('#rmAllT').disabled=$('#rmAllL').disabled=true;
   try{
     liFiles=[await siFile(k,t,sl[1], rSlots(k).findIndex(z=>z[0]===t)+1)]; liSlots=[{key:rKey(t,k), sig:rSig(sl[1],k)}];
     liShow(k==='l'?'Learning Follow '+t:'Remind Quick Start '+t, (k==='l'?'Learningフォロー':'リマインド')+'の画像（'+t+'）');
   }catch(err){ console.error('[連絡の画像]',err); toast('画像を作れませんでした'); }
-  finally{ b.disabled=false; } }
+  finally{ b.disabled=false; rmBusy=false; $('#rmAllT').disabled=$('#rmAllL').disabled=rStale(); } }
 /* 撮影日時を書いた EXIF を JPEG の頭に足す（写真アプリはこの日時で並べる） */
 function siExif(buf,d){ const p=n=>String(n).padStart(2,'0'), ds=`${d.getFullYear()}:${p(d.getMonth()+1)}:${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}\0`;
   const t=new Uint8Array(128), v=new DataView(t.buffer); t.set([0x49,0x49,0x2A,0,8,0,0,0]);
@@ -2079,10 +2081,11 @@ function siExif(buf,d){ const p=n=>String(n).padStart(2,'0'), ds=`${d.getFullYea
   v.setUint16(58,2,true); ent(60,0x9003,2,20,88); ent(72,0x9004,2,20,108); v.setUint32(84,0,true);
   [38,88,108].forEach(o=>{ for(let i=0;i<20;i++) t[o+i]=ds.charCodeAt(i); });
   const body=new Uint8Array(6+128); body.set([0x45,0x78,0x69,0x66,0,0]); body.set(t,6);
-  const src=new Uint8Array(buf), out=new Uint8Array(src.length+4+body.length); out.set([0xFF,0xD8,0xFF,0xE1,(body.length+2)>>8,(body.length+2)&255]); out.set(body,6); out.set(src.subarray(2),6+body.length); return out; }
+  const src=new Uint8Array(buf), at=(src[2]===0xFF&&src[3]===0xE0) ? 4+((src[4]<<8)|src[5]) : 2; /* APP0(JFIF) があればその後ろ（JFIF は APP0 が先頭の決まり） */
+  const out=new Uint8Array(src.length+4+body.length); out.set(src.subarray(0,at)); out.set([0xFF,0xE1,(body.length+2)>>8,(body.length+2)&255],at); out.set(body,at+4); out.set(src.subarray(at),at+4+body.length); return out; }
 /* n＝その日の何枚目か（ファイル名を時間の早い順に並べる）。at＝撮影日時 */
 async function siFile(k,t,names,n=1,at=new Date()){ const c=await siMake(k,t,names), bl=await new Promise((ok,ng)=>c.toBlob(x=>x?ok(x):ng(new Error('toBlob')),'image/jpeg',0.95));
-  c.width=c.height=0; /* 1枚約8MB。枚数が多い日に iPhone のメモリ上限に当たらないよう、すぐ放す */
+  c.width=c.height=0; /* 描画面は1枚約8MB。枚数が多い日に iPhone のメモリ上限に当たらないよう、すぐ放す */
   const nm=todayStr().replace(/-/g,'')+'_'+String(n).padStart(2,'0')+'_'+t.replace(':','')+'_'+(k==='l'?'Learning_Follow':'Remind_Quick_Start')+'.jpg';
   return new File([siExif(await bl.arrayBuffer(),at)], nm, {type:'image/jpeg'}); }
 /* まとめて：Remind と Learning Follow それぞれで、時間帯ぶん全部作って一度に共有（iPhone は「画像を保存」で写真に入る）。
