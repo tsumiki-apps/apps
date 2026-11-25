@@ -328,7 +328,7 @@ dialog#lImg{width:min(560px,calc(100% - 24px));max-height:92dvh;overflow-y:auto}
 .li-h h2{font-size:17px;font-weight:700}
 .li-imgs{display:flex;flex-direction:column;gap:10px}
 .li-imgs img{width:100%;height:auto;display:block;border-radius:10px;border:1px solid var(--line)}
-.li-acts{display:flex;gap:8px}.li-acts .btn{flex:1}
+.li-acts{display:flex;gap:8px;position:sticky;bottom:0;margin:0 -16px -16px;padding:10px 16px 16px;background:var(--surface)}.li-acts .btn{flex:1}
 .rm-rem .meta.warn{color:var(--warn-ink);font-weight:700}
 .rm-row .icobtn{flex:none}
 .rm-tg{display:flex;align-items:center;gap:8px;min-height:44px;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
@@ -351,6 +351,7 @@ dialog#lImg{width:min(560px,calc(100% - 24px));max-height:92dvh;overflow-y:auto}
 .rm-slot .btn{width:100%}
 .rm-slot.done .btn-main{background:var(--hov);color:var(--ink);font-weight:500}
 .rm-miss{margin:12px 2px 0}
+.rm-all{display:flex;margin:12px 0 0}.rm-all[hidden]{display:none}.rm-all .btn{flex:1}.rm-all-n{margin-left:6px;font-weight:500;opacity:.8}
 /* タスク */
 .tk-sec{display:flex;justify-content:space-between;align-items:baseline;margin:18px 6px 6px;font-size:15px;font-weight:700}
 .tk-sec:first-child{margin-top:0}
@@ -631,6 +632,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
     <div id="rmLSlots"></div>
     <div class="rm-rem"><button class="btn btn-quiet btn-img" id="rmImg" type="button" aria-label="本日の Learning 未受講の方の画像"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>未受講</button><button class="btn btn-quiet" id="rmRem" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>リマインダー</button><span class="meta" id="rmRemSt"></span></div>
   </section>
+  <div class="rm-all" id="rmAllBox" hidden><button class="btn btn-main" id="rmAll" type="button" aria-label="全部の時間帯の画像をまとめて作る"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="14" height="12" rx="2"/><path d="M17 19H5a2 2 0 0 1-2-2V7"/></svg>まとめて<span id="rmAllN" class="rm-all-n"></span></button></div>
   <div class="p-foot">
     <button class="btn btn-quiet btn-ic" id="rPrompt" type="button" aria-label="AIに渡すプロンプトを保存" title="プロンプトを保存"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M12 11v6M9 14l3 3 3-3"/></svg></button>
   </div>
@@ -2035,9 +2037,10 @@ function slotsHTML(k){
 function renderRSlots(){
   const sl=rSlots('t'), ll=rSlots('l');
   $('#rmSlots').innerHTML = slotsHTML('t');
-  if(document.activeElement!==$('#rmFrom')) $('#rmFromBox').hidden = !!rdb.from || !sl.length;
-  $('#rmFromBtn').hidden = !rdb.from || !$('#rmFromBox').hidden; $('#rmFromBtn').textContent = 'from '+rdb.from; $('#rmFromBtn').setAttribute('aria-label','差出人 '+rdb.from+'（押すと直せます）');
+  $('#rmFromBox').hidden = true; void sl; /* 差出人は画像に入らなくなった（Keynote の原案どおり）ので出さない */
+  $('#rmFromBtn').hidden = true; $('#rmFromBtn').textContent = 'from '+rdb.from; $('#rmFromBtn').setAttribute('aria-label','差出人 '+rdb.from+'（押すと直せます）');
   $('#rmLSlots').innerHTML = slotsHTML('l');
+  const na=sl.length+ll.length; $('#rmAllBox').hidden = !na; $('#rmAll').disabled = rStale(); $('#rmAllN').textContent = na+'枚';
   const lines=rRemLines(), past=rRemLines.past, sig=lines.join('\n'), r=rdb.rm && rToday(rdb.rm) ? rdb.rm : null, stale=rStale();
   $('#rmRem').disabled = !lines.length || stale;
   $('#rmImg').disabled = stale || !rdb.ps.some(p=>p.l);
@@ -2057,19 +2060,27 @@ $('#rmList').addEventListener('click', e=>{ const b=e.target.closest('[data-x]')
 $('#rmFromBtn').addEventListener('click', ()=>{ $('#rmFromBox').hidden=false; $('#rmFromBtn').hidden=true; $('#rmFrom').focus(); });
 $('#rmFrom').addEventListener('blur', ()=>{ if(rdb.from){ $('#rmFromBox').hidden=true; } renderRSlots(); });
 $('#rmFrom').addEventListener('input', e=>{ rdb.from=e.target.value.trim(); rsave(); $('#rmSlots').innerHTML=slotsHTML('t'); $('#rmLSlots').innerHTML=slotsHTML('l'); });
-let liSlot=null; /* いま見せている時間帯の画像（共有・保存したら ✓ を付ける） */
+let liSlots=[]; /* いま見せている時間帯の画像（共有・保存したら ✓ を付ける） */
 async function onSlotCopy(e){ const b=e.target.closest('[data-cp]'); if(!b) return; const t=b.dataset.cp, k=b.dataset.k==='l'?'l':'t';
   if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでください'); return; }
-  if(!rdb.from){ $('#rmFromBox').hidden=false; toast('差出人の名前を入れてください'); $('#rmFrom').focus(); return; }
   const sl=rSlots(k).find(x=>x[0]===t); if(!sl) return;
   b.disabled=true;
   try{
-    const c=await siMake(k,t,sl[1]), bl=await new Promise((ok,ng)=>c.toBlob(x=>x?ok(x):ng(new Error('toBlob')),'image/png'));
-    const nm=(k==='l'?'Learning_Follow_':'Remind_Quick_Start_')+todayStr()+'_'+t.replace(':','')+'.png';
-    liFiles=[new File([bl], nm, {type:'image/png'})]; liSlot={key:rKey(t,k), sig:rSig(sl[1],k)};
+    liFiles=[await siFile(k,t,sl[1])]; liSlots=[{key:rKey(t,k), sig:rSig(sl[1],k)}];
     liShow(k==='l'?'Learning Follow '+t:'Remind Quick Start '+t, (k==='l'?'Learningフォロー':'リマインド')+'の画像（'+t+'）');
   }catch(err){ console.error('[連絡の画像]',err); toast('画像を作れませんでした'); }
   finally{ b.disabled=false; } }
+async function siFile(k,t,names){ const c=await siMake(k,t,names), bl=await new Promise((ok,ng)=>c.toBlob(x=>x?ok(x):ng(new Error('toBlob')),'image/png'));
+  return new File([bl], (k==='l'?'Learning_Follow_':'Remind_Quick_Start_')+todayStr()+'_'+t.replace(':','')+'.png', {type:'image/png'}); }
+/* まとめて：Remind → Learning Follow の順に、時間帯ぶん全部作って一度に共有（iPhone は「画像を保存」で写真に入る） */
+$('#rmAll').addEventListener('click', async ()=>{ if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでください'); return; }
+  const all=[...rSlots('t').map(z=>['t',...z]), ...rSlots('l').map(z=>['l',...z])]; if(!all.length) return;
+  const b=$('#rmAll'); b.disabled=true; toast(all.length+'枚を作っています');
+  try{ const fs=[]; for(const [k,t,names] of all) fs.push(await siFile(k,t,names));
+    liFiles=fs; liSlots=all.map(([k,t,names])=>({key:rKey(t,k), sig:rSig(names,k)}));
+    liShow('まとめて '+fs.length+'枚','連絡の画像'); }
+  catch(err){ console.error('[連絡の画像・まとめて]',err); toast('画像を作れませんでした'); }
+  finally{ b.disabled=false; } });
 $('#rmSlots').addEventListener('click', onSlotCopy);
 $('#rmLSlots').addEventListener('click', onSlotCopy);
 
@@ -2151,72 +2162,47 @@ async function liMake(names,ds){
     out.push(c); }
   return {canvases:out, forced};
 }
-/* ---------- 連絡の画像（Remind Quick Start／Learning Follow・16:9） ---------- */
-const SI = {W:1920, H:1080, FI:46, FB:7, TS:80, ink:'#15130f', /* 色ok: 書き出す画像の色（固定） */
-  FONT:'"Hiragino Sans", "Hiragino Kaku Gothic ProN", -apple-system, system-ui, sans-serif', /* 太い字（W8・W9）がある書体を先に */ EMO:'"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif',
-  t:{e:'🛎️', c:'#e8590c', d:'#a63c00', tint:'#ffe3cc', lt:'Quick start', ln:'残っている人'}, /* 色ok: 書き出す画像の色（固定） */
-  l:{e:'🌱', c:'#2f9e44', d:'#1b6e2c', tint:'#d8f5dc', lt:'Learning開始', ln:'対象'}}; /* 色ok: 書き出す画像の色。画面の明るい/暗いに合わせず固定する */
-/* 文の1行＝部品の並び [{s:文字, c:色, w:太さ, k:大きさの倍率, e:絵文字か}] */
-function siW(x,segs,f){ return segs.reduce((w,g)=>{ x.font=`${g.w||700} ${Math.round(f*(g.k||1))}px ${g.e?SI.EMO:SI.FONT}`; return w+x.measureText(g.s).width; },0); }
-function siLine(x,segs,f,X,Y,ink){ let cx=X; segs.forEach(g=>{ x.font=`${g.w||700} ${Math.round(f*(g.k||1))}px ${g.e?SI.EMO:SI.FONT}`; x.fillStyle=g.c||ink; x.fillText(g.s,cx,Y); cx+=x.measureText(g.s).width; }); }
-function siPanel(x,X,Y,W,H,P){ x.fillStyle=P.d; liRR(x,X,Y+8,W,H,26); x.fill(); x.fillStyle='#fff'; liRR(x,X,Y,W,H,26); x.fill(); }
-/* 黒いラベル（右に人数の札を付けられる）。返り値＝高さ */
-function siLabel(x,X,Y,txt,cnt,P){ const f=28; x.font=`800 ${f}px ${SI.FONT}`; const tw=x.measureText(txt).width; let cw=0;
-  if(cnt){ x.font=`800 26px ${SI.FONT}`; cw=x.measureText(cnt).width+28+14; }
-  const w=tw+48+cw, h=Math.round(f*1.2)+14; x.fillStyle=SI.ink; liRR(x,X,Y,w,h,h/2); x.fill();
-  x.textBaseline='middle'; x.textAlign='left'; x.fillStyle='#fff'; x.font=`800 ${f}px ${SI.FONT}`; x.fillText(txt,X+24,Y+h/2+1);
-  if(cnt){ const px=X+24+tw+14, ph=h-14; x.fillStyle=P.c; liRR(x,px,Y+7,cw-14,ph,ph/2); x.fill(); x.fillStyle='#fff'; x.font=`800 26px ${SI.FONT}`; x.fillText(cnt,px+14,Y+h/2+1); }
-  return h; }
-/* 名前：同じ幅の札を中央に並べる。札が一番大きくなる文字の大きさと列数を選ぶ（行は5行まで・1人だけ下に残る並びは避ける） */
-function siFit(x,names,W,H){ const n=names.length;
-  for(let f=150; f>=30; f-=2){ x.font=`900 ${f}px ${SI.FONT}`; const cw=Math.ceil(Math.max(...names.map(s=>x.measureText(s).width))+f*.6), rh=Math.ceil(f*1.24), gx=f*.3, gy=f*.26;
-    for(let c=Math.min(n,5); c>=1; c--){ const rows=Math.ceil(n/c); if(rows>5) continue; if(c>1 && n%c===1 && n>3) continue; if(c>1 && Math.ceil(n/(c-1))===rows) continue;
-      const gw=c*cw+(c-1)*gx, gh=rows*rh+(rows-1)*gy; if(gw<=W && gh<=H) return {f,c,rows,cw,rh,gx,gy,gw,gh}; } }
-  x.font=`900 30px ${SI.FONT}`; const cw=Math.min(W,Math.max(...names.map(s=>x.measureText(s).width))+18), c=Math.max(1,Math.floor((W+9)/(cw+9))), rows=Math.ceil(n/c);
-  return {f:30,c,rows,cw,rh:37,gx:9,gy:8,gw:c*cw+(c-1)*9,gh:rows*37+(rows-1)*8}; }
+/* ---------- 連絡の画像（Remind Quick Start／Learning Follow・16:9・Keynote の原案と同じ配置） ---------- */
+const SI = {W:1920, H:1080, ink:'#111111', /* 色ok: 書き出す画像の色（固定） */
+  FONT:'-apple-system, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif', EMO:'"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif',
+  PX:81, PY:322, PW:1758, PH:685, PAD:60, NF:65,
+  t:{e:'🔔', c:'#E0A100', bg:'#FFF7D9', h:'Please remind team', /* 色ok: 書き出す画像の色（固定） */
+     l1:()=>'Some team members haven’t completed Learning.', l2:"Leaders, please remind team members who haven't completed the Learning module."},
+  l:{e:'🍀', c:'#2E9E4F', bg:'#EAF7EC', h:'Please follow team', /* 色ok: 書き出す画像の色。画面の明るい/暗いに合わせず固定する */
+     l1:T=>'Team member start learning at '+T+'.', l2:'Leaders, please make sure that team members are able to learn in the best possible environment.'}};
+/* 1行を中央に書く（はみ出すなら小さく） */
+function siCenter(x,s,w,f,y,max){ while(f>20){ x.font=`${w} ${f}px ${SI.FONT}`; if(x.measureText(s).width<=max) break; f-=1; } x.fillText(s,SI.W/2,y); }
+/* 名前の並べ方：列の数（1〜6）ごとに入る一番大きな文字を出し、いちばん大きく書ける並びを選ぶ。
+   4pt 以内の差なら「最後の行に1人だけ残らない」→「列が少ない」方をとる（65pt が上限＝Keynote と同じ） */
+function siFit(x,names){ const n=names.length, IW=SI.PW-SI.PAD*2, IH=SI.PH-SI.PAD*2, cs=[];
+  for(let c=1; c<=Math.min(6,n); c++){ const r=Math.ceil(n/c);
+    for(let f=SI.NF; f>=12; f--){ x.font=`400 ${f}px ${SI.FONT}`; const mw=Math.max(...names.map(s=>x.measureText(s).width)), lh=f*1.55, gx=c>1?f*1.2:0;
+      if(r*lh<=IH && c*mw+(c-1)*gx<=IW){ cs.push({f,c,r,lh,cw:mw+gx,orph:c>1&&n>3&&n%c===1}); break; } } }
+  if(!cs.length){ const c=Math.min(6,n); return {f:12,c,r:Math.ceil(n/c),lh:18.6,cw:IW/c}; }
+  const top=Math.max(...cs.map(z=>z.f)); return cs.filter(z=>z.f>=top-4).sort((a,b)=>(a.orph-b.orph)||(b.f-a.f>2?1:a.f-b.f>2?-1:0)||(a.c-b.c))[0]; }
 async function siMake(k,T,names){
-  try{ await document.fonts.load(`900 100px ${SI.FONT}`); }catch(_){}
-  const P=SI[k], c=document.createElement('canvas'); c.width=SI.W; c.height=SI.H; const x=c.getContext('2d'), ink=SI.ink, n=names.length, many=n>=5;
-  /* 外の淡い色・枠の中の濃い色・内側の黒い線 */
-  x.fillStyle=P.tint; x.fillRect(0,0,SI.W,SI.H);
-  const fo=SI.FI+SI.FB/2; x.fillStyle=P.c; liRR(x,SI.FI,SI.FI,SI.W-SI.FI*2,SI.H-SI.FI*2,28); x.fill();
-  x.lineWidth=SI.FB; x.strokeStyle=ink; liRR(x,fo,fo,SI.W-fo*2,SI.H-fo*2,28-SI.FB/2); x.stroke();
-  /* 四隅の絵文字（枠の角ぎりぎり） */
-  const cc=fo-SI.TS/2; [[cc,cc],[SI.W-cc-SI.TS,cc],[cc,SI.H-cc-SI.TS],[SI.W-cc-SI.TS,SI.H-cc-SI.TS]].forEach(([X,Y])=>{
-    x.fillStyle='#fff'; liRR(x,X,Y,SI.TS,SI.TS,20); x.fill(); x.lineWidth=SI.FB; x.strokeStyle=ink; liRR(x,X+SI.FB/2,Y+SI.FB/2,SI.TS-SI.FB,SI.TS-SI.FB,20-SI.FB/2); x.stroke();
-    x.font=`${Math.round(SI.TS*.56)}px ${SI.EMO}`; x.textAlign='center'; x.textBaseline='middle'; x.fillText(P.e,X+SI.TS/2,Y+SI.TS/2+2); });
-  const L=SI.FI+SI.FB+100, R=SI.W-L, top=SI.FI+SI.FB+58, bot=SI.H-SI.FI-SI.FB-62, IW=R-L, PP=44; /* PP＝パネルの内側の余白 */
-  /* 見出し（白・1行。入らなければ小さく） */
-  const head = k==='l' ? [{s:P.e,e:1,w:900},{s:'Learningフォローしてください',w:900,c:'#fff'}] : [{s:P.e,e:1,w:900},{s:'リマインドしてください',w:900,c:'#fff'},{s:P.e,e:1,w:900}];
-  let hf=78; while(siW(x,head,hf)>IW && hf>48) hf-=2;
-  const hw=siW(x,head,hf), hy=top+Math.round(hf*1.15*.5); x.textAlign='left'; x.textBaseline='middle';
-  siLine(x,head.map(g=>g.e?g:{...g,c:P.d}),hf,L+(IW-hw)/2,hy+5,P.d); siLine(x,head,hf,L+(IW-hw)/2,hy,'#fff');
-  /* お願い（注文どおりの文・2行） */
-  const who = rdb.from, HA={s:'🤲🏻',e:1,k:1.3};
-  const body = k==='l'
-    ? [[{s:T,c:P.c,w:900},{s:`から${who}のLearningが始まりました。`}],[{s:'最適な環境で学習ができるようにフォローしてください'},HA]]
-    : [[{s:T,c:P.c,w:900},{s:'のQuick start参加者でLearning moduleが残っている人がいます。'}],[{s:`${who}からのメールを見てlearningを受講するようにリマインドしてください！`},HA]];
-  let bf=many?34:38; const bIW=IW-PP*2; while(Math.max(...body.map(l=>siW(x,l,bf)))>bIW && bf>24) bf-=1;
-  const lab=Math.round(28*1.2)+14, bH=PP+lab+14+Math.round(body.length*bf*1.5)+PP-4, bY=bot-8-bH;
-  siPanel(x,L,bY,IW,bH,P); siLabel(x,L+PP,bY+PP-6,'お願い','',P);
-  body.forEach((l,i)=>siLine(x,l,bf,L+PP,bY+PP-6+lab+14+Math.round(bf*1.5*(i+.5)),ink));
-  /* 時刻のパネルと名前のパネル */
-  const GP=30, mY=top+Math.round(hf*1.15)+GP+6, mH=bY-GP-mY, tW=380;
-  siPanel(x,L,mY,tW,mH,P); siLabel(x,L+PP,mY+PP-6,P.lt,'',P);
-  let tf=118; x.font=`900 ${tf}px ${SI.FONT}`; while(x.measureText(T).width>tW-PP*2 && tf>40){ tf-=2; x.font=`900 ${tf}px ${SI.FONT}`; }
-  x.fillStyle=P.c; x.textAlign='center'; x.fillText(T,L+tW/2,mY+PP-6+lab+(mH-PP+6-lab)/2);
-  const nX=L+tW+GP, nW=IW-tW-GP; siPanel(x,nX,mY,nW,mH,P); siLabel(x,nX+PP,mY+PP-6,P.ln,n+'名',P);
-  const aX=nX+PP, aY=mY+PP-6+lab+18, aW=nW-PP*2, aH=mH-(PP-6)-lab-18-PP, r=siFit(x,names,aW,aH);
-  const gx0=aX+(aW-r.gw)/2, gy0=aY+(aH-r.gh)/2;
-  names.forEach((s,i)=>{ const ri=Math.floor(i/r.c), inRow=Math.min(r.c,n-ri*r.c), rowW=inRow*r.cw+(inRow-1)*r.gx, X=aX+(aW-rowW)/2+(i%r.c)*(r.cw+r.gx), Y=gy0+ri*(r.rh+r.gy);
-    x.fillStyle=P.tint; liRR(x,X,Y,r.cw,r.rh,r.f*.22); x.fill();
-    x.save(); liRR(x,X,Y,r.cw,r.rh,r.f*.22); x.clip(); x.fillStyle=ink; x.font=`900 ${r.f}px ${SI.FONT}`; x.textAlign='center'; x.textBaseline='middle'; x.fillText(s,X+r.cw/2,Y+r.rh/2+r.f*.02); x.restore(); });
-  void gx0; return c; }
+  try{ await document.fonts.load(`700 82px ${SI.FONT}`); }catch(_){}
+  const P=SI[k], c=document.createElement('canvas'); c.width=SI.W; c.height=SI.H; const x=c.getContext('2d'), n=names.length;
+  /* 淡い背景・細い枠線・白いパネル */
+  x.fillStyle=P.bg; x.fillRect(0,0,SI.W,SI.H);
+  x.lineWidth=4; x.strokeStyle=P.c; x.strokeRect(19,19,1882,1042);
+  x.fillStyle='#fff'; liRR(x,SI.PX,SI.PY,SI.PW,SI.PH,30); x.fill();
+  /* 右上のアップルのマーク（Apple の端末の書体にだけある字） */
+  x.fillStyle=P.c; x.font='bold 127px "Helvetica Neue", Helvetica, -apple-system, sans-serif'; x.textBaseline='top'; x.textAlign='left'; x.fillText('',1755,48);
+  /* 見出し：絵文字＋太字＋絵文字 */
+  x.textBaseline='alphabetic'; x.font=`700 82px ${SI.FONT}`; const hw=x.measureText(P.h).width; x.font=`82px ${SI.EMO}`; const ew=x.measureText(P.e).width; const hx=SI.W/2-(hw+ew*2)/2;
+  x.fillText(P.e,hx,158); x.fillStyle=SI.ink; x.font=`700 82px ${SI.FONT}`; x.fillText(P.h,hx+ew,158); x.font=`82px ${SI.EMO}`; x.fillText(P.e,hx+ew+hw,158);
+  /* 2行の文（2行目に時刻が入るのは Learning Follow） */
+  x.textAlign='center'; x.fillStyle=SI.ink; siCenter(x,P.l1(T),400,65,235,1800); siCenter(x,P.l2,400,42,290,1800);
+  /* 名前 */
+  const L=siFit(x,names); x.font=`400 ${L.f}px ${SI.FONT}`; x.textBaseline='middle'; const y0=SI.PY+SI.PH/2-(L.r*L.lh)/2+L.lh/2;
+  names.forEach((s,i)=>{ const r=Math.floor(i/L.c), inr=Math.min(L.c,n-r*L.c), X=SI.W/2-(inr*L.cw)/2+L.cw/2+(i%L.c)*L.cw; x.fillText(s,X,y0+r*L.lh); });
+  return c; }
 /* 画像を見せる（Learning 未受講の画像と同じシートを使う） */
 function liShow(title,alt){ $('#liT').textContent=title; $('#liImgs').innerHTML='';
   liFiles.forEach((f,i)=>{ const im=new Image(); im.src=URL.createObjectURL(f); im.alt=alt+(liFiles.length>1?'（'+(i+1)+'/'+liFiles.length+'）':''); $('#liImgs').appendChild(im); });
   const share = navigator.canShare && navigator.canShare({files:liFiles});
-  $('#liShare').dataset.mode = share ? 'share' : 'dl'; $('#liShare').textContent = share ? '共有' : '保存';
+  $('#liShare').dataset.mode = share ? 'share' : 'dl'; $('#liShare').textContent = share ? (liFiles.length>1 ? liFiles.length+'枚を共有・保存' : '共有') : '保存';
   $('#lImg').showModal(); }
 /* 時刻が過ぎた人も載せる：この画像は「まだ受けていない人」の一覧で、過ぎた人こそ声かけが要るため（リマインダーとは目的が違う） */
 function liNames(){ return rdb.ps.filter(p=>p.l).slice().sort((a,b)=>a.l<b.l?-1:a.l>b.l?1:0).map(p=>p.n); }
@@ -2228,13 +2214,13 @@ $('#rmImg').addEventListener('click', async ()=>{
     const d=todayStr(), {canvases,forced}=await liMake(names,d);
     const blobs=await Promise.all(canvases.map(c=>new Promise((ok,ng)=>c.toBlob(bl=>bl?ok(bl):ng(new Error('toBlob')),'image/png'))));
     liFiles=blobs.map((bl,i)=>new File([bl], `Learning_Incomplete_${d}${blobs.length>1?'_'+(i+1):''}.png`, {type:'image/png'}));
-    liSlot=null; liShow('Learning Incomplete','Learning Incomplete の画像');
+    liSlots=[]; liShow('Learning Incomplete','Learning Incomplete の画像');
     toast(names.length+'人'+(liFiles.length>1?`・${liFiles.length}枚に分けました`:'')+(forced?'・名前が長く小さくなっています':''));
   }catch(e){ console.error('[Learning画像]',e); toast('画像を作れませんでした'); }
   finally{ b.disabled=false; renderRSlots(); }
 });
 $('#liShare').addEventListener('click', async ()=>{ if(!liFiles.length) return;
-  const mark=()=>{ if(!liSlot) return; rdb.cp[liSlot.key]={at:Date.now(), sig:liSlot.sig}; rsave(); renderRSlots(); };
+  const mark=()=>{ if(!liSlots.length) return; const at=Date.now(); liSlots.forEach(z=>{ rdb.cp[z.key]={at, sig:z.sig}; }); rsave(); renderRSlots(); };
   if($('#liShare').dataset.mode==='share'){ try{ await navigator.share({files:liFiles}); mark(); toast('共有しました'); return; }catch(e){ if(e && e.name==='AbortError') return; } }
   mark();
   liFiles.forEach((f,i)=>setTimeout(()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }, i*300));
@@ -2242,7 +2228,7 @@ $('#liShare').addEventListener('click', async ()=>{ if(!liFiles.length) return;
 function liClose(){ $('#lImg').close(); }
 $('#liClose').addEventListener('click', liClose);
 $('#lImg').addEventListener('click', e=>{ if(e.target===$('#lImg')) liClose(); });
-$('#lImg').addEventListener('close', ()=>{ liSlot=null; $('#liImgs').querySelectorAll('img').forEach(im=>URL.revokeObjectURL(im.src)); $('#liImgs').innerHTML=''; });
+$('#lImg').addEventListener('close', ()=>{ liSlots=[]; $('#liImgs').querySelectorAll('img').forEach(im=>URL.revokeObjectURL(im.src)); $('#liImgs').innerHTML=''; });
 $('#rmRem').addEventListener('click', ()=>{ if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでから入れてください'); return; }
   const lines=rRemLines(); if(!lines.length){ toast(rRemLines.past ? '時刻が過ぎた人だけなので、入れる人がいません' : 'Learning の時刻を入れてください'); return; }
   rdb.rm={at:Date.now(), sig:lines.join('\n')}; rsave(); renderRSlots();
