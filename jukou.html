@@ -1995,7 +1995,7 @@ function rNames(t){
   const h=rows[0].map(x=>nz(x));
   const fi=k=>h.findIndex(x=>k.includes(x));
   const iN=fi(['名前','氏名','name','fullname','フルネーム','teammember','member']), iL=fi(['姓','lastname','familyname']), iF=fi(['名','firstname','givenname']);
-  const iT=fi(['開始','開始時刻','時刻','時間','start','time','starttime']), iS=fi(['コースステータス','ステータス','status','coursestatus']);
+  const iT=fi(['開始','開始時刻','時刻','時間','start','time','starttime']), iS=fi(['コースステータス','ステータス','status','coursestatus']), iLt=fi(['learning','learningtime','learning時刻','learning開始','ラーニング']);
   const head = iN>=0 || iL>=0 || iF>=0;
   const out=[], seen=new Set();
   (head?rows.slice(1):rows).forEach(r=>{
@@ -2004,7 +2004,7 @@ function rNames(t){
     n=String(n||'').replace(/^\s*(?:[-・•*●◯○]|\d+[.)．、])\s*/,'');
     n=(n.replace(/\s*[（(][^（）()]*[）)]?\s*$/,'').trim() || n).replace(/\s+/g,' ').trim();
     if(!n) return; const k=nz(n); if(n.length>60){ rNames.long++; return; } if(seen.has(k)){ rNames.drop++; return; } seen.add(k);
-    out.push({n, t: iT>=0 ? rTime(r[iT]) : '', l:''});
+    out.push({n, t: iT>=0 ? rTime(r[iT]) : '', l: iLt>=0 ? rTime(r[iLt]) : ''});
   });
   return out;
 }
@@ -2060,25 +2060,38 @@ $('#rmList').addEventListener('click', e=>{ const b=e.target.closest('[data-x]')
 $('#rmFromBtn').addEventListener('click', ()=>{ $('#rmFromBox').hidden=false; $('#rmFromBtn').hidden=true; $('#rmFrom').focus(); });
 $('#rmFrom').addEventListener('blur', ()=>{ if(rdb.from){ $('#rmFromBox').hidden=true; } renderRSlots(); });
 $('#rmFrom').addEventListener('input', e=>{ rdb.from=e.target.value.trim(); rsave(); $('#rmSlots').innerHTML=slotsHTML('t'); $('#rmLSlots').innerHTML=slotsHTML('l'); });
+/* 全部の時間帯を時刻の早い順に（同じ時刻は Remind→Follow）。ファイル名の通し番号もこの順 */
+const rAllSlots = () => [...rSlots('t').map(z=>['t',...z]), ...rSlots('l').map(z=>['l',...z])].sort((a,b)=>a[1]<b[1]?-1:a[1]>b[1]?1:(a[0]==='t'?-1:1));
 let liSlots=[]; /* いま見せている時間帯の画像（共有・保存したら ✓ を付ける） */
 async function onSlotCopy(e){ const b=e.target.closest('[data-cp]'); if(!b) return; const t=b.dataset.cp, k=b.dataset.k==='l'?'l':'t';
   if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでください'); return; }
   const sl=rSlots(k).find(x=>x[0]===t); if(!sl) return;
   b.disabled=true;
   try{
-    liFiles=[await siFile(k,t,sl[1])]; liSlots=[{key:rKey(t,k), sig:rSig(sl[1],k)}];
+    liFiles=[await siFile(k,t,sl[1], rAllSlots().findIndex(z=>z[0]===k&&z[1]===t)+1)]; liSlots=[{key:rKey(t,k), sig:rSig(sl[1],k)}];
     liShow(k==='l'?'Learning Follow '+t:'Remind Quick Start '+t, (k==='l'?'Learningフォロー':'リマインド')+'の画像（'+t+'）');
   }catch(err){ console.error('[連絡の画像]',err); toast('画像を作れませんでした'); }
   finally{ b.disabled=false; } }
-async function siFile(k,t,names){ const c=await siMake(k,t,names), bl=await new Promise((ok,ng)=>c.toBlob(x=>x?ok(x):ng(new Error('toBlob')),'image/png'));
+/* 撮影日時を書いた EXIF を JPEG の頭に足す（写真アプリはこの日時で並べる） */
+function siExif(buf,d){ const p=n=>String(n).padStart(2,'0'), ds=`${d.getFullYear()}:${p(d.getMonth()+1)}:${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}\0`;
+  const t=new Uint8Array(128), v=new DataView(t.buffer); t.set([0x49,0x49,0x2A,0,8,0,0,0]);
+  const ent=(o,tag,type,cnt,val)=>{ v.setUint16(o,tag,true); v.setUint16(o+2,type,true); v.setUint32(o+4,cnt,true); v.setUint32(o+8,val,true); };
+  v.setUint16(8,2,true); ent(10,0x0132,2,20,38); ent(22,0x8769,4,1,58); v.setUint32(34,0,true);
+  v.setUint16(58,2,true); ent(60,0x9003,2,20,88); ent(72,0x9004,2,20,108); v.setUint32(84,0,true);
+  [38,88,108].forEach(o=>{ for(let i=0;i<20;i++) t[o+i]=ds.charCodeAt(i); });
+  const body=new Uint8Array(6+128); body.set([0x45,0x78,0x69,0x66,0,0]); body.set(t,6);
+  const src=new Uint8Array(buf), out=new Uint8Array(src.length+4+body.length); out.set([0xFF,0xD8,0xFF,0xE1,(body.length+2)>>8,(body.length+2)&255]); out.set(body,6); out.set(src.subarray(2),6+body.length); return out; }
+/* n＝その日の何枚目か（ファイル名を時間の早い順に並べる）。at＝撮影日時 */
+async function siFile(k,t,names,n=1,at=new Date()){ const c=await siMake(k,t,names), bl=await new Promise((ok,ng)=>c.toBlob(x=>x?ok(x):ng(new Error('toBlob')),'image/jpeg',0.95));
   c.width=c.height=0; /* 1枚約8MB。枚数が多い日に iPhone のメモリ上限に当たらないよう、すぐ放す */
-  return new File([bl], (k==='l'?'Learning_Follow_':'Remind_Quick_Start_')+todayStr()+'_'+t.replace(':','')+'.png', {type:'image/png'}); }
+  const nm=todayStr().replace(/-/g,'')+'_'+String(n).padStart(2,'0')+'_'+t.replace(':','')+'_'+(k==='l'?'Learning_Follow':'Remind_Quick_Start')+'.jpg';
+  return new File([siExif(await bl.arrayBuffer(),at)], nm, {type:'image/jpeg'}); }
 /* まとめて：Remind → Learning Follow の順に、時間帯ぶん全部作って一度に共有（iPhone は「画像を保存」で写真に入る） */
 let rmBusy=false; /* 作っている間は2回目を受けない（途中の再描画でボタンが押せる状態に戻っても） */
 $('#rmAll').addEventListener('click', async ()=>{ if(rmBusy) return; if(rStale()){ toast(md(rdb.d)+' の名簿です。今日のリストを読み込んでください'); return; }
-  const all=[...rSlots('t').map(z=>['t',...z]), ...rSlots('l').map(z=>['l',...z])]; if(!all.length) return;
+  const all=rAllSlots(); if(!all.length) return;
   const b=$('#rmAll'); rmBusy=true; b.disabled=true; toast(all.length+'枚を作っています');
-  try{ const fs=[]; for(const [k,t,names] of all) fs.push(await siFile(k,t,names));
+  try{ const fs=[], now=Date.now(); for(const [i,[k,t,names]] of all.entries()) fs.push(await siFile(k,t,names,i+1,new Date(now-(all.length-1-i)*1000)));
     liFiles=fs; liSlots=all.map(([k,t,names])=>({key:rKey(t,k), sig:rSig(names,k)}));
     liShow('まとめて '+fs.length+'枚','連絡の画像'); }
   catch(err){ console.error('[連絡の画像・まとめて]',err); toast('画像を作れませんでした'); }
