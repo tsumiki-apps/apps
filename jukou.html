@@ -387,12 +387,13 @@ dialog#lImg{width:min(560px,calc(100% - 24px));max-height:92dvh;overflow-y:auto}
 .tk-empty{padding:18px 6px 4px;color:var(--ink-soft)}
 .tk-hint{margin:12px 6px 0}
 dialog#tkPp{position:fixed;inset:auto;margin:0;border:0;padding:0;border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px -8px var(--sh-2);width:min(240px,calc(100% - 32px));overflow:hidden}
-dialog#tkPp::backdrop{background:transparent}
 .pp-h{margin:0;padding:10px 14px 4px;font-size:12px;color:var(--sub)}
 .pp-b{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:48px;padding:0 14px;border:0;border-top:1px solid var(--line);background:none;color:inherit;font:inherit;font-size:15px;font-weight:700;text-align:left;cursor:pointer}
 .pp-b .meta{font-weight:500}
 .pp-b input{font:inherit;font-size:16px;font-weight:500;border:0;background:var(--surface-2);color:inherit;border-radius:8px;padding:4px 6px;min-width:0;max-width:60%}
 .tk-fg{-webkit-touch-callout:none}
+.tk-fg.hold{transform:scale(.975);background:var(--surface-2);transition:transform .45s cubic-bezier(.3,.7,.4,1) .1s,background-color .45s ease .1s}
+dialog#tkPp::backdrop{background:rgba(0,0,0,.08)}
 dialog#tkSheet{width:min(480px,100%);max-width:100%;max-height:92dvh;overflow-y:auto;margin:auto auto 0;border-radius:20px 20px 0 0;background:var(--paper)}
 @media (min-width:600px){dialog#tkSheet{margin:auto;border-radius:20px}}
 .tks{padding:10px 16px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
@@ -723,6 +724,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
       <button class="btn btn-warn yes" type="button">消す</button>
       <button class="btn btn-quiet no" type="button">やめる</button>
     </span>
+    <button class="btn btn-quiet" type="button" id="tkPost">延期</button>
     <button class="btn btn-quiet" type="button" id="tkCancel">やめる</button>
     <button class="btn btn-main" type="submit" value="save">保存</button>
   </div>
@@ -2353,12 +2355,12 @@ function nextDue(t){ if(t.rep==='none') return ''; const today=todayStr(), base=
   if(d && d<today) d=step(t, today, day); return d; }
 /* 「毎日」の残りは期限切れにせず今日の回にする（休みの日の分は数えない）。何度呼んでも同じ結果 */
 function tRoll(){ const today=todayStr(); let n=0;
-  for(const t of tdb.ts) if(t.rep==='day' && t.st!=='done' && t.due && t.due<today){ t.due=today; n++; }
+  for(const t of tdb.ts) if(t.rep==='day' && t.st!=='done' && t.due && t.due<today){ t.due=today; t.od=''; n++; }
   if(n){ try{ localStorage.setItem(TKEY, JSON.stringify(tdb)); }catch(e){} } } /* 編集時刻（at）は進めない＝取り込みの新旧比べを狂わせない */
 const WDN = '日月火水木金土';
 function repTxt(t){ if(t.rep==='none') return ''; const r=TREP.find(x=>x[0]===t.rep)[1];
   if(t.rep==='week'){ const w=(t.wd.length?t.wd:t.due?[parse(t.due).getDay()]:[]); return r+(w.length?' '+[1,2,3,4,5,6,0].filter(n=>w.includes(n)).map(n=>WDN[n]).join('・'):''); }
-  if(t.rep==='month' && t.due) return r+' '+parse(t.due).getDate()+'日';
+  if(t.rep==='month' && t.due) return r+' '+(t.dom||parse(t.od||t.due).getDate())+'日';
   return r; }
 function dueTxt(t){ if(!t.due) return ''; const today=todayStr(), k=dayNum(t.due)-dayNum(today);
   const s = k===0?'今日' : k===1?'明日' : k===-1?'昨日' : mdw(t.due);
@@ -2377,7 +2379,7 @@ const ICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 const IRP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg>';
 const STN = {todo:'まだ', doing:'進行中', done:'完了'};
 function tRow(t){
-  const r=[dueTxt(t), t.tm?esc(t.tm):'', t.rep!=='none'?IRP+' '+esc(repTxt(t)):'', t.od&&t.od!==t.due&&t.st!=='done'?'延期':'', t.st==='doing'?'<span class="chip">進行中</span>':'', t.memo?esc(t.memo):''].filter(Boolean).map(x=>`<span>${x}</span>`).join('');
+  const r=[dueTxt(t), t.tm?esc(t.tm):'', t.rep!=='none'?IRP+' '+esc(repTxt(t)):'', t.rep!=='none'&&t.od&&t.od!==t.due&&t.st!=='done'?'延期':'', t.st==='doing'?'<span class="chip">進行中</span>':'', t.memo?esc(t.memo):''].filter(Boolean).map(x=>`<span>${x}</span>`).join('');
   const ck = t.st==='done' ? 'まだに戻す' : '完了にする';
   return `<div class="tk" data-id="${esc(t.id)}" data-st="${t.st}"><div class="tk-bg r" aria-hidden="true"></div><div class="tk-bg l" aria-hidden="true"></div>
     <div class="tk-fg"><button class="tk-ck" type="button" data-ck aria-label="${esc(t.t)}を${ck}"><i>${ICK}</i></button>
@@ -2411,33 +2413,51 @@ function tApply(t, st, focusSel, how){
 let tkDrag=null, tkSkip=0;
 $('#tkBody').addEventListener('pointerdown', e=>{
   const fg=e.target.closest('.tk-fg'); if(!fg || e.button>0) return;
-  tkLong=0; const d=tkDrag={fg, x:e.clientX, y:e.clientY, dx:0, on:false, id:e.pointerId};
-  setTimeout(()=>{ if(tkDrag!==d || d.on || !fg.isConnected) return; const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; ppOpen(t, fg); }, 500);
+  const d=tkDrag={fg, x:e.clientX, y:e.clientY, dx:0, on:false, id:e.pointerId};
+  if(e.pointerType!=='mouse'){ const t0=tFind(fg); if(t0 && t0.st!=='done' && !calm()) fg.classList.add('hold');
+    setTimeout(()=>{ if(tkDrag!==d || d.on || !fg.isConnected){ return; } const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; try{ navigator.vibrate&&navigator.vibrate(8); }catch(_){} ppOpen(t, fg); }, 500); }
 });
 /* 長押しの延期 */
 let tkLong=0, ppCur=null;
+/* 押さえている間に少し沈んだ行を、ばねのように戻す */
+function unhold(fg){ if(!fg || !fg.classList.contains('hold')) return; const cs=getComputedStyle(fg).transform; fg.classList.remove('hold');
+  if(!calm() && fg.animate && cs && cs!=='none') fg.animate([{transform:cs},{transform:'scale(1)'}],{duration:480,easing:'cubic-bezier(.22,1.35,.36,1)'}); }
+['pointerup','pointercancel'].forEach(k=>document.addEventListener(k, ()=>document.querySelectorAll('.tk-fg.hold').forEach(unhold), true));
+document.addEventListener('pointerdown', ()=>{ tkLong=0; }, true);
 function ppBase(t){ const today=todayStr(); return t.due && t.due>today ? t.due : today; }
 function ppOpen(t, fg){ const dl=$('#tkPp'); if(dl.open) return; ppCur=t; const b=ppBase(t);
-  dl.querySelectorAll('[data-pp]').forEach(x=>x.querySelector('.meta').textContent=mdw(addD(b,+x.dataset.pp)));
+  const now=b===todayStr(); dl.querySelectorAll('[data-pp]').forEach(x=>{ const n=+x.dataset.pp; x.firstChild.textContent = now ? (n===1?'明日':'あさって') : n+'日後'; x.querySelector('.meta').textContent=mdw(addD(b,n)); });
   const inp=$('#tkPpD'); inp.min=addD(todayStr(),1); inp.value='';
   use('延期:開く'); dl.showModal();
   const r=fg.getBoundingClientRect(), w=dl.offsetWidth, h=dl.offsetHeight;
   let top=r.bottom+6; if(top+h>innerHeight-12) top=Math.max(12, r.top-h-6);
-  dl.style.left=Math.max(16, Math.min(innerWidth-w-16, r.right-w-8))+'px'; dl.style.top=top+'px';
+  const up=top<r.bottom; dl.style.left=Math.max(16, Math.min(innerWidth-w-16, r.right-w-8))+'px'; dl.style.top=top+'px';
+  unhold(fg);
+  if(!calm() && dl.animate){ dl.style.transformOrigin=(up?'bottom':'top')+' right';
+    dl.animate([{opacity:0, transform:`scale(.86) translateY(${up?10:-10}px)`},{opacity:1, transform:'none'}],{duration:420, easing:'cubic-bezier(.22,1.25,.36,1)'});
+    try{ dl.animate([{opacity:0},{opacity:1}],{duration:300, easing:'ease-out', pseudoElement:'::backdrop'}); }catch(_){}
+    [...dl.children].forEach((c,i)=>c.animate([{opacity:0, transform:`translateY(${up?4:-4}px)`},{opacity:1, transform:'none'}],{duration:300, delay:70+i*40, easing:'ease-out', fill:'backwards'})); }
   dl.querySelector('[data-pp]').focus(); }
-function ppGo(d){ const t=ppCur; if(!t || !okD(d)) return; $('#tkPp').close();
+function ppClose(){ const dl=$('#tkPp'); if(!dl.open || dl._cl) return; if(calm() || !dl.animate){ dl.close(); return; } dl._cl=1;
+  try{ dl.animate([{opacity:1},{opacity:0}],{duration:180, easing:'ease-in', pseudoElement:'::backdrop', fill:'forwards'}); }catch(_){}
+  const a=dl.animate([{opacity:1, transform:'none'},{opacity:0, transform:'scale(.94)'}],{duration:180, easing:'cubic-bezier(.4,0,1,1)', fill:'forwards'});
+  const end=()=>{ if(!dl._cl) return; dl._cl=0; dl.close(); dl.getAnimations({subtree:true}).forEach(x=>x.cancel()); }; a.onfinish=end; setTimeout(end, 320); }
+$('#tkPp').addEventListener('cancel', e=>{ e.preventDefault(); ppClose(); });
+function ppGo(d){ const t=ppCur && tdb.ts.find(x=>x.id===ppCur.id); if(!t || !okD(d) || !$('#tkPp').open || $('#tkPp')._cl) return; ppClose();
   const c=tcommit(()=>{ if(t.rep!=='none'){ const o=t.od||t.due||todayStr(); if(t.rep==='week' && !t.wd.length) t.wd=[parse(o).getDay()]; if(!t.dom) t.dom=parse(o).getDate(); t.od = d===o ? '' : o; } t.due=d; });
   if(!c.ok) return; use('延期:'+t.rep); renderTask(); toast(`「${t.t}」を ${mdw(d)} に延期しました`);
   const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] [data-ed]`); if(el) el.focus(); }
-$('#tkPp').addEventListener('click', e=>{ const b=e.target.closest('[data-pp]'); if(b && ppCur) ppGo(addD(ppBase(ppCur),+b.dataset.pp)); else if(e.target===$('#tkPp')) $('#tkPp').close(); });
-$('#tkPpD').addEventListener('change', e=>{ const v=e.target.value; if(v && v>todayStr()) ppGo(v); });
+$('#tkPp').addEventListener('click', e=>{ const b=e.target.closest('[data-pp]'); if(b && ppCur) ppGo(addD(ppBase(ppCur),+b.dataset.pp)); else if(e.target===$('#tkPp')) ppClose(); });
+const ppPick=e=>{ const v=e.target.value; if(v && v>todayStr()) ppGo(v); };
+$('#tkPpD').addEventListener('change', e=>{ if(!matchMedia('(pointer:coarse)').matches) ppPick(e); });
+$('#tkPpD').addEventListener('blur', e=>{ if(matchMedia('(pointer:coarse)').matches) ppPick(e); });
 $('#tkPp').addEventListener('close', ()=>{ ppCur=null; });
 $('#tkBody').addEventListener('contextmenu', e=>{ const fg=e.target.closest('.tk-fg'); if(!fg) return; e.preventDefault(); const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; ppOpen(t, fg); });
 $('#tkBody').addEventListener('pointermove', e=>{
   const d=tkDrag; if(!d || e.pointerId!==d.id) return;
   const dx=e.clientX-d.x, dy=e.clientY-d.y;
-  if(!d.on){ if(Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)){ tkDrag=null; return; }
-    if(Math.abs(dx)<10) return; d.on=true; d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){} }
+  if(!d.on){ if(Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)){ tkDrag=null; d.fg.classList.remove('hold'); return; }
+    if(Math.abs(dx)<10) return; d.on=true; d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){} }
   const t=tFind(d.fg); if(!t || !d.fg.isConnected){ tkDrag=null; return; } const row=d.fg.parentNode, W=row.offsetWidth;
   let x=dx; if(x<0 && t.st==='done') x=Math.max(x,-24);
   d.dx=x; d.fg.style.transform=`translateX(${x}px)`;
@@ -2485,7 +2505,7 @@ function tOpen(t){
   $('#tkForm').querySelectorAll('[name=tkst]').forEach(i=>i.checked=i.value===x.st);
   $('#tkForm').querySelectorAll('[name=tkrp]').forEach(i=>i.checked=i.value===x.rep);
   const w=x.wd.length?x.wd:(x.due?[parse(x.due).getDay()]:[]); $('#tkWd').querySelectorAll('input').forEach(i=>i.checked=w.includes(+i.value));
-  $('#tkDel').hidden=!t; $('#tkDel').classList.remove('ask'); $('#tkCancel').hidden=!!t;
+  $('#tkDel').hidden=!t; $('#tkPost').hidden=!t||t.st==='done'; $('#tkDel').classList.remove('ask'); $('#tkCancel').hidden=!!t;
   tHint(); $('#tkSheet').showModal(); if(!t) $('#tkT').focus();
 }
 $('#tkNew').addEventListener('click', ()=>tOpen(null));
@@ -2494,6 +2514,8 @@ $('#tkForm').addEventListener('change', tHint);
 $('#tkDc').addEventListener('click', ()=>{ $('#tkD').value=''; tHint(); });
 $('#tkHc').addEventListener('click', ()=>{ $('#tkH').value=''; });
 $('#tkCancel').addEventListener('click', ()=>$('#tkSheet').close());
+$('#tkPost').addEventListener('click', ()=>{ const t=tkCur; if(!t) return; tkGone=true; $('#tkSheet').close(); tkShowWk=true; renderTask();
+  const fg=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] .tk-fg`); if(fg){ fg.scrollIntoView({block:'nearest'}); ppOpen(t, fg); } });
 $('#tkSheet').addEventListener('pointerdown', e=>{ tkDown=e.target; });
 $('#tkSheet').addEventListener('click', e=>{ if(e.target===$('#tkSheet') && tkDown===$('#tkSheet')) $('#tkSheet').close(); });
 let tkGone=false, tkDown=null;
@@ -2506,7 +2528,7 @@ $('#tkForm').addEventListener('submit', e=>{
   let t=tkCur;
   const c=tcommit(()=>{ if(f.due && (!t || t.due!==f.due)) f.dom=parse(f.due).getDate();
     if(!t){ t={id:tid(), done:0, nx:'', c:Date.now(), st:'todo', dom:0, auto:0}; Object.assign(t, f, {st:'todo'}); tdb.ts.push(t); return setSt(t, f.st); }
-    const st=f.st; if(t.due!==f.due) t.od=''; Object.assign(t, f, {st:t.st, auto:0}); return setSt(t, st); });
+    const st=f.st; if(t.due!==f.due || f.rep!==t.rep || f.rep==='none') t.od=''; Object.assign(t, f, {st:t.st, auto:0}); return setSt(t, st); });
   if(!c.ok){ tkCur = tkCur && tdb.ts.find(x=>x.id===tkCur.id) || null; return; }
   const msg=c.r, id=t.id; tkCur=t; $('#tkSheet').close(); renderTask();
   toast(`「${t.t}」を保存しました`+(msg?`。${msg}`:''));
