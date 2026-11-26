@@ -47,7 +47,7 @@ button,input,textarea{font:inherit;color:inherit}
 button{background:none;border:0;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
 /* 指で操作している間はフォーカスの枠を出さない（iPhone で丸などに茶色の四角が残るため）。キーを押したら戻る */
-html.fv-off :focus-visible,html.fv-off .tks-opts input:focus-visible+span{outline:none}
+html.fv-off.fv-off :focus-visible,html.fv-off.fv-off .tks-opts input:focus-visible+span{outline:none} /* .fv-off を2回＝button.ckb:focus-visible などの個別の枠より強くする */
 .wrap{width:100%;max-width:720px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom))}
 @media (min-width:600px){.wrap{padding-left:24px;padding-right:24px}}
 .vh{position:absolute;width:1px;height:1px;margin:-1px;clip-path:inset(50%);white-space:nowrap}
@@ -2419,9 +2419,9 @@ function tApply(t, st, focusSel, how){
 }
 /* 枠を戻すのは移動のキー（Tab・矢印）を押したときだけ。文字や Enter では戻さない */
 document.addEventListener('keydown', e=>{ if(/^(Tab|Arrow)/.test(e.key)) document.documentElement.classList.remove('fv-off'); }, true);
-document.addEventListener('pointerdown', ()=>document.documentElement.classList.add('fv-off'), true);
+document.addEventListener('pointerdown', e=>{ if(e.pointerType!=='mouse') document.documentElement.classList.add('fv-off'); }, true); /* 指とペンだけ。マウスでは枠の出方を変えない */
 /* フリック */
-let tkDrag=null, tkSkip=0;
+let tkDrag=null, tkSkip=0, tkSkipFg=null;
 $('#tkBody').addEventListener('pointerdown', e=>{
   const fg=e.target.closest('.tk-fg'); if(!fg || e.button>0) return;
   const d=tkDrag={fg, x:e.clientX, y:e.clientY, dx:0, on:false, id:e.pointerId};
@@ -2457,7 +2457,7 @@ $('#tkPp').addEventListener('cancel', e=>{ e.preventDefault(); ppClose(); });
 function ppGo(d){ const t=ppCur && tdb.ts.find(x=>x.id===ppCur.id); if(!t || !okD(d) || !$('#tkPp').open || $('#tkPp')._cl) return; ppClose();
   const c=tcommit(()=>{ if(t.rep!=='none'){ const o=t.od||t.due||todayStr(); if(t.rep==='week' && !t.wd.length) t.wd=[parse(o).getDay()]; if(!t.dom) t.dom=parse(o).getDate(); t.od = d===o ? '' : o; } t.due=d; });
   if(!c.ok) return; use('延期:'+t.rep); ppFoc=t.id; renderTask(); toast(`「${t.t}」を ${mdw(d)} に延期しました`); }
-$('#tkPp').addEventListener('click', e=>{ const b=e.target.closest('[data-pp]'); if(b && ppCur) ppGo(addD(ppBase(ppCur),+b.dataset.pp)); else if(e.target===$('#tkPp')) ppClose(); });
+$('#tkPp').addEventListener('click', e=>{ if(tkLong && e.detail>0){ tkLong=0; return; } /* 長押しを離したときのクリックでは閉じない・選ばない */ const b=e.target.closest('[data-pp]'); if(b && ppCur) ppGo(addD(ppBase(ppCur),+b.dataset.pp)); else if(e.target===$('#tkPp')) ppClose(); });
 const ppPick=e=>{ const v=e.target.value; if(v && v>todayStr()) ppGo(v); };
 $('#tkPpD').addEventListener('change', e=>{ if(!matchMedia('(pointer:coarse)').matches) ppPick(e); });
 $('#tkPpD').addEventListener('blur', e=>{ if(matchMedia('(pointer:coarse)').matches) ppPick(e); });
@@ -2466,7 +2466,7 @@ $('#tkBody').addEventListener('contextmenu', e=>{ const fg=e.target.closest('.tk
 $('#tkBody').addEventListener('pointermove', e=>{
   const d=tkDrag; if(!d || e.pointerId!==d.id) return;
   const dx=e.clientX-d.x, dy=e.clientY-d.y;
-  if(!d.on){ if(Math.hypot(dx,dy)>10) d.mv=1; /* 動いたら長押しにしない */
+  if(!d.on){ if(Math.hypot(dx,dy)>10 && !d.mv){ d.mv=1; unhold(d.fg); } /* 動いたら長押しにしない・沈みも戻す */
     if(Math.abs(dy)>10 && Math.abs(dx)<Math.abs(dy)*1.5){ tkDrag=null; d.fg.classList.remove('hold'); return; }
     if(Math.abs(dx)<24 || Math.abs(dx)<Math.abs(dy)*1.5) return; d.on=true; /* 動き出しの24pxは引いて動かす＝行が飛ばない・逆向きにも振れる */ d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){}
     const t0=tFind(d.fg), r0=d.fg.parentNode; if(t0 && r0){ const back=t0.st==='doing'||t0.st==='done';
@@ -2490,7 +2490,7 @@ function tkTh(W){ return Math.min(150, W*.45); }
 function tkEnd(e){
   const d=tkDrag; if(!d || (e && e.pointerId!==d.id)) return; tkDrag=null;
   if(!d.on) return;
-  tkSkip=Date.now();
+  tkSkip=Date.now(); tkSkipFg=d.fg; /* 払った行だけ、直後のクリックを捨てる */
   const t=tFind(d.fg); if(!t || !d.fg.isConnected){ renderTask(); return; } const row=d.fg.parentNode, W=row.offsetWidth;
   /* 速く払ったときは短くても決める（最後の0.1秒の速さ） */
   const P=d.pts||[], v = P.length>1 ? (P[P.length-1][1]-P[0][1])/Math.max(16, P[P.length-1][0]-P[0][0]) : 0;
@@ -2507,7 +2507,7 @@ $('#tkBody').addEventListener('pointerup', tkEnd);
 $('#tkBody').addEventListener('pointercancel', tkEnd);
 $('#tkBody').addEventListener('click', e=>{
   if(tkLong && e.detail>0){ tkLong=0; e.preventDefault(); return; }
-  if(e.detail>0 && Date.now()-tkSkip<350){ e.preventDefault(); return; }
+  if(e.detail>0 && Date.now()-tkSkip<350 && tkSkipFg && tkSkipFg.contains(e.target)){ e.preventDefault(); return; }
   if(e.target.closest('#tkWk')){ tkShowWk=!tkShowWk; renderTask(); $('#tkWk').focus(); return; }
   if(e.target.closest('#tkDone')){ tkShowDone=!tkShowDone; renderTask(); $('#tkDone').focus(); return; }
   const t=tFind(e.target); if(!t) return;
