@@ -369,9 +369,9 @@ dialog#lImg{width:min(560px,calc(100% - 24px));max-height:92dvh;overflow-y:auto}
 .tk-bg{position:absolute;inset:0;display:flex;align-items:center;padding:0 18px;font-size:15px;font-weight:700;color:var(--paper);visibility:hidden}
 .tk-bg.r{background:var(--hi)}.tk-bg.l{background:var(--good-ink);justify-content:flex-end}
 .tk-bg.on{visibility:visible}
-.tk-bg{gap:10px;opacity:.62;transition:opacity .15s ease}.tk-bg.far{opacity:1}
-.tk-ic{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.22);font-size:14px;transition:background-color .15s ease,color .15s ease}
-.tk-bg.far .tk-ic{background:var(--paper)}.tk-bg.r.far .tk-ic{color:var(--hi)}.tk-bg.l.far .tk-ic{color:var(--good-ink)}
+.tk-bg{gap:10px}
+.tk-ic{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:transparent;box-shadow:inset 0 0 0 2px currentColor;font-size:14px;transition:background-color .15s ease,color .15s ease}
+.tk-bg.far .tk-ic{background:var(--paper);box-shadow:none}.tk-bg.r.far .tk-ic{color:var(--hi)}.tk-bg.l.far .tk-ic{color:var(--good-ink)}
 .tk-fg{position:relative;display:flex;align-items:center;gap:4px;min-height:60px;padding:4px 8px 4px 4px;background:var(--surface);touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .tk-fg.drag{box-shadow:0 2px 12px -4px var(--sh-2)}
 .tk-ck{flex:none;width:44px;height:44px;display:grid;place-items:center;border-radius:12px}
@@ -2408,7 +2408,7 @@ function renderTask(){
 function tFind(el){ const r=el.closest('.tk'); return r ? tdb.ts.find(t=>t.id===r.dataset.id) : null; }
 function tApply(t, st, focusSel, how){
   use((how||'丸')+':'+st);
-  const c=tcommit(()=>setSt(t, st)); if(!c.ok) return; const msg=c.r; renderTask();
+  const c=tcommit(()=>setSt(t, st)); if(!c.ok){ renderTask(); return; } const msg=c.r; renderTask();
   toast(`「${t.t}」を${STN[st]}に`+(msg?`。${msg}`:''));
   const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] ${focusSel||'[data-ck]'}`);
   if(el) el.focus(); else ($('#tkBody').querySelector('[data-ck]')||$('#tkNew')).focus();
@@ -2472,10 +2472,11 @@ $('#tkBody').addEventListener('pointermove', e=>{
   R.classList.toggle('on', x>0); L.classList.toggle('on', x<0);
   const B=x>0?R:L; R.classList.toggle('far', far&&x>0); L.classList.toggle('far', far&&x<0);
   /* 決まる所を越えた瞬間：丸が弾んで軽く震える（戻ると小さく戻る） */
-  if(far!==!!d.far){ d.far=far; const ic=B.querySelector('.tk-ic');
-    if(far){ try{ navigator.vibrate&&navigator.vibrate(10); }catch(_){} }
-    if(ic && ic.animate && !calm()) ic.animate(far?[{transform:'scale(.7)'},{transform:'scale(1.22)',offset:.5},{transform:'scale(1)'}]:[{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:far?340:160,easing:far?'cubic-bezier(.22,1.2,.36,1)':'ease-out'}); }
+  const fs=far?Math.sign(x):0; if(fs!==(d.far||0)){ d.far=fs; tkCue(B, !!fs); }
 });
+function tkCue(B, far){ const ic=B&&B.querySelector('.tk-ic');
+  if(far){ try{ navigator.vibrate&&navigator.vibrate(10); }catch(_){} }
+  if(ic && ic.animate && !calm()) ic.animate(far?[{transform:'scale(.7)'},{transform:'scale(1.22)',offset:.5},{transform:'scale(1)'}]:[{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:far?340:160,easing:far?'cubic-bezier(.22,1.2,.36,1)':'ease-out'}); }
 /* 決まる距離：72px（狭い画面では行幅の25%まで） */
 function tkTh(W){ return Math.min(72, W*.25); }
 function tkEnd(e){
@@ -2490,6 +2491,7 @@ function tkEnd(e){
   const st = !far ? '' : d.dx>0 ? (t.st==='todo'?'doing':'todo') : (t.st==='done'?'':'done');
   const back=()=>{ d.fg.classList.remove('drag'); d.fg.style.transform=''; row.querySelectorAll('.tk-bg').forEach(b=>b.classList.remove('on','far')); };
   if(!st){ if(calm()||!d.fg.animate){ back(); return; } const a=d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:'translateX(0)'}],{duration:180,easing:'ease-out'}); d.fg.style.transform=''; a.onfinish=back; return; }
+  if(!d.far){ const B=row.querySelector(d.dx>0?'.tk-bg.r':'.tk-bg.l'); B.classList.add('far'); tkCue(B, true); } /* 速い払いで決まったときも合図を出す */
   if(calm()||!d.fg.animate){ tApply(t, st, null, 'フリック'); return; }
   const to=d.dx>0?W:-W; d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:`translateX(${to}px)`}],{duration:160,easing:'ease-in',fill:'forwards'}).onfinish=()=>tApply(t, st, null, 'フリック');
 }
@@ -2548,7 +2550,7 @@ $('#tkCancel').addEventListener('click', ()=>$('#tkSheet').close());
   dl.addEventListener('close', ()=>{ g=null; dl.style.transform=''; dl.style.pointerEvents=''; }); })();
 /* 編集画面の「延期」：書きかけがあれば先に保存してから延期のメニューを出す */
 function tDirty(t){ const f=tForm(), w=a=>a.slice().sort().join(); const tw=t.wd.length?t.wd:(t.due?[parse(t.due).getDay()]:[]);
-  return f.t!==t.t || f.memo!==t.memo || f.due!==t.due || f.tm!==t.tm || f.st!==t.st || f.rep!==t.rep || (f.rep==='week' && w(f.wd)!==w(tw)); }
+  return f.t!==t.t || f.memo!==(t.memo||'').trim() || f.due!==t.due || f.tm!==t.tm || f.st!==t.st || f.rep!==t.rep || (f.rep==='week' && w(f.wd)!==w(tw)); }
 $('#tkPost').addEventListener('click', ()=>{ const t0=tkCur; if(!t0) return; const id=t0.id;
   if(tDirty(t0)){ $('#tkForm').requestSubmit(); if($('#tkSheet').open) return; }
   else { tkGone=true; $('#tkSheet').close(); renderTask(); }
