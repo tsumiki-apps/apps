@@ -2425,14 +2425,13 @@ let tkDrag=null, tkSkip=0, tkSkipFg=null;
 $('#tkBody').addEventListener('pointerdown', e=>{
   const fg=e.target.closest('.tk-fg'); if(!fg || e.button>0) return;
   const d=tkDrag={fg, x:e.clientX, y:e.clientY, dx:0, on:false, id:e.pointerId};
-  if(e.pointerType!=='mouse'){ const t0=tFind(fg); if(t0 && t0.st!=='done' && !calm()) fg.classList.add('hold');
+  if(e.pointerType!=='mouse'){ /* 押したときの沈みはやめた（払い始めに行が指についてこなくなるため） */
     setTimeout(()=>{ if(tkDrag!==d || d.on || d.mv || !fg.isConnected){ return; } const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; try{ navigator.vibrate&&navigator.vibrate(8); }catch(_){} ppOpen(t, fg); }, 500); }
 });
 /* 長押しの延期 */
 let tkLong=0, ppCur=null, ppFoc=null;
-/* 押さえている間に少し沈んだ行を、ばねのように戻す */
-function unhold(fg){ if(!fg || !fg.classList.contains('hold')) return; const cs=getComputedStyle(fg).transform; fg.classList.remove('hold');
-  if(!calm() && fg.animate && cs && cs!=='none') fg.animate([{transform:cs},{transform:'scale(1)'}],{duration:480,easing:'cubic-bezier(.22,1.35,.36,1)'}); }
+/* 沈みの印を外す（動きはつけない） */
+function unhold(fg){ if(fg) fg.classList.remove('hold'); }
 ['pointerup','pointercancel'].forEach(k=>document.addEventListener(k, ()=>document.querySelectorAll('.tk-fg.hold').forEach(unhold), true));
 document.addEventListener('pointerdown', ()=>{ tkLong=0; }, true);
 function ppBase(t){ const today=todayStr(); return t.due && t.due>today ? t.due : today; }
@@ -2479,12 +2478,12 @@ $('#tkBody').addEventListener('pointermove', e=>{
   const R=row.querySelector('.tk-bg.r'), L=row.querySelector('.tk-bg.l'), far=Math.abs(x)>=tkTh(W) && !(x<0 && t.st==='done');
   R.classList.toggle('on', x>0); L.classList.toggle('on', x<0);
   const B=x>0?R:L; R.classList.toggle('far', far&&x>0); L.classList.toggle('far', far&&x<0);
-  /* 決まる所を越えた瞬間：丸が弾んで軽く震える（戻ると小さく戻る） */
+  /* 決まる所を越えた瞬間：軽く震える */
   const fs=far?Math.sign(x):0; if(fs!==(d.far||0)){ d.far=fs; tkCue(B, !!fs); }
 });
 function tkCue(B, far){ const ic=B&&B.querySelector('.tk-ic');
   if(far){ try{ navigator.vibrate&&navigator.vibrate(10); }catch(_){} }
-  if(ic && ic.animate && !calm()) ic.animate(far?[{transform:'scale(.7)'},{transform:'scale(1.22)',offset:.5},{transform:'scale(1)'}]:[{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:far?340:160,easing:far?'cubic-bezier(.22,1.2,.36,1)':'ease-out'}); }
+  /* 弾む動きはやめた。合図は振動と背景の丸の色だけ */ }
 /* 決まる距離：150px（狭い画面では行幅の45%まで） */
 function tkTh(W){ return Math.min(150, W*.45); }
 function tkEnd(e){
@@ -2498,10 +2497,10 @@ function tkEnd(e){
   const far=(Math.abs(d.dx)>=tkTh(W) || fast) && e && e.type==='pointerup';
   const st = !far ? '' : d.dx>0 ? (t.st==='todo'?'doing':'todo') : (t.st==='done'?'':'done');
   const back=()=>{ d.fg.classList.remove('drag'); d.fg.style.transform=''; row.querySelectorAll('.tk-bg').forEach(b=>b.classList.remove('on','far')); };
-  if(!st){ if(calm()||!d.fg.animate){ back(); return; } const a=d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:'translateX(0)'}],{duration:180,easing:'ease-out'}); d.fg.style.transform=''; a.onfinish=back; return; }
-  if(!d.far){ const B=row.querySelector(d.dx>0?'.tk-bg.r':'.tk-bg.l'); B.classList.add('far'); tkCue(B, true); } /* 速い払いで決まったときも合図を出す */
-  if(calm()||!d.fg.animate){ tApply(t, st, null, 'フリック'); return; }
-  const to=d.dx>0?W:-W; d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:`translateX(${to}px)`}],{duration:160,easing:'ease-in',fill:'forwards'}).onfinish=()=>tApply(t, st, null, 'フリック');
+  /* 離したら動きをつけずにすぐ決める／すぐ戻す */
+  if(!st){ back(); return; }
+  if(!d.far) tkCue(null, true); /* 速い払いで決まったときも震える */
+  tApply(t, st, null, 'フリック');
 }
 $('#tkBody').addEventListener('pointerup', tkEnd);
 $('#tkBody').addEventListener('pointercancel', tkEnd);
