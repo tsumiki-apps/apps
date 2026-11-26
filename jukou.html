@@ -46,6 +46,8 @@ body{font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans",s
 button,input,textarea{font:inherit;color:inherit}
 button{background:none;border:0;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
+/* 指で操作している間はフォーカスの枠を出さない（iPhone で丸などに茶色の四角が残るため）。キーを押したら戻る */
+html.ptr :focus-visible{outline:none}
 .wrap{width:100%;max-width:720px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom))}
 @media (min-width:600px){.wrap{padding-left:24px;padding-right:24px}}
 .vh{position:absolute;width:1px;height:1px;margin:-1px;clip-path:inset(50%);white-space:nowrap}
@@ -2413,20 +2415,17 @@ function tApply(t, st, focusSel, how){
   const c=tcommit(()=>setSt(t, st)); if(!c.ok){ renderTask(); return; } const msg=c.r; renderTask();
   toast(`「${t.t}」を${STN[st]}に`+(msg?`。${msg}`:''));
   const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] ${focusSel||'[data-ck]'}`);
-  /* 指で操作したときはフォーカスを移さない（iPhone で丸に茶色の枠が残るため）。キーボードのときだけ戻す */
-  if(!tkKbd) return;
   if(el) el.focus(); else ($('#tkBody').querySelector('[data-ck]')||$('#tkNew')).focus();
 }
-let tkKbd=false;
-document.addEventListener('keydown', ()=>{ tkKbd=true; }, true);
-document.addEventListener('pointerdown', ()=>{ tkKbd=false; }, true);
+document.addEventListener('keydown', ()=>document.documentElement.classList.remove('ptr'), true);
+document.addEventListener('pointerdown', ()=>document.documentElement.classList.add('ptr'), true);
 /* フリック */
 let tkDrag=null, tkSkip=0;
 $('#tkBody').addEventListener('pointerdown', e=>{
   const fg=e.target.closest('.tk-fg'); if(!fg || e.button>0) return;
   const d=tkDrag={fg, x:e.clientX, y:e.clientY, dx:0, on:false, id:e.pointerId};
   if(e.pointerType!=='mouse'){ const t0=tFind(fg); if(t0 && t0.st!=='done' && !calm()) fg.classList.add('hold');
-    setTimeout(()=>{ if(tkDrag!==d || d.on || !fg.isConnected){ return; } const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; try{ navigator.vibrate&&navigator.vibrate(8); }catch(_){} ppOpen(t, fg); }, 500); }
+    setTimeout(()=>{ if(tkDrag!==d || d.on || d.mv || !fg.isConnected){ return; } const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; try{ navigator.vibrate&&navigator.vibrate(8); }catch(_){} ppOpen(t, fg); }, 500); }
 });
 /* 長押しの延期 */
 let tkLong=0, ppCur=null, ppFoc=null;
@@ -2466,13 +2465,14 @@ $('#tkBody').addEventListener('contextmenu', e=>{ const fg=e.target.closest('.tk
 $('#tkBody').addEventListener('pointermove', e=>{
   const d=tkDrag; if(!d || e.pointerId!==d.id) return;
   const dx=e.clientX-d.x, dy=e.clientY-d.y;
-  if(!d.on){ if(Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)){ tkDrag=null; d.fg.classList.remove('hold'); return; }
-    if(Math.abs(dx)<16 || Math.abs(dx)<Math.abs(dy)*1.5) return; d.on=true; d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){}
+  if(!d.on){ if(Math.hypot(dx,dy)>10) d.mv=1; /* 動いたら長押しにしない */
+    if(Math.abs(dy)>10 && Math.abs(dx)<Math.abs(dy)*1.5){ tkDrag=null; d.fg.classList.remove('hold'); return; }
+    if(Math.abs(dx)<16 || Math.abs(dx)<Math.abs(dy)*1.5) return; d.on=true; /* 動き出しの16pxは引いて動かす＝行が飛ばない・逆向きにも振れる */ d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){}
     const t0=tFind(d.fg), r0=d.fg.parentNode; if(t0 && r0){ const back=t0.st==='doing'||t0.st==='done';
       r0.querySelector('.tk-bg.r').innerHTML = back ? '<span class="tk-ic">←</span>まだに戻す' : '<span class="tk-ic">▶</span>進行中';
       r0.querySelector('.tk-bg.l').innerHTML = '完了<span class="tk-ic">✓</span>'; } }
   const t=tFind(d.fg); if(!t || !d.fg.isConnected){ tkDrag=null; return; } const row=d.fg.parentNode, W=row.offsetWidth;
-  let x=dx; if(x<0 && t.st==='done') x=Math.max(x,-24);
+  let x=Math.sign(dx)*Math.max(0, Math.abs(dx)-16); if(x<0 && t.st==='done') x=Math.max(x,-24);
   d.dx=x; d.fg.style.transform=`translateX(${x}px)`;
   const now=performance.now(); (d.pts||(d.pts=[])).push([now,x]); while(d.pts.length>2 && now-d.pts[0][0]>100) d.pts.shift();
   const R=row.querySelector('.tk-bg.r'), L=row.querySelector('.tk-bg.l'), far=Math.abs(x)>=tkTh(W) && !(x<0 && t.st==='done');
