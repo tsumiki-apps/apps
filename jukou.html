@@ -2419,7 +2419,7 @@ $('#tkBody').addEventListener('pointerdown', e=>{
     setTimeout(()=>{ if(tkDrag!==d || d.on || !fg.isConnected){ return; } const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; try{ navigator.vibrate&&navigator.vibrate(8); }catch(_){} ppOpen(t, fg); }, 500); }
 });
 /* 長押しの延期 */
-let tkLong=0, ppCur=null;
+let tkLong=0, ppCur=null, ppFoc=null;
 /* 押さえている間に少し沈んだ行を、ばねのように戻す */
 function unhold(fg){ if(!fg || !fg.classList.contains('hold')) return; const cs=getComputedStyle(fg).transform; fg.classList.remove('hold');
   if(!calm() && fg.animate && cs && cs!=='none') fg.animate([{transform:cs},{transform:'scale(1)'}],{duration:480,easing:'cubic-bezier(.22,1.35,.36,1)'}); }
@@ -2446,13 +2446,12 @@ function ppClose(){ const dl=$('#tkPp'); if(!dl.open || dl._cl) return; if(calm(
 $('#tkPp').addEventListener('cancel', e=>{ e.preventDefault(); ppClose(); });
 function ppGo(d){ const t=ppCur && tdb.ts.find(x=>x.id===ppCur.id); if(!t || !okD(d) || !$('#tkPp').open || $('#tkPp')._cl) return; ppClose();
   const c=tcommit(()=>{ if(t.rep!=='none'){ const o=t.od||t.due||todayStr(); if(t.rep==='week' && !t.wd.length) t.wd=[parse(o).getDay()]; if(!t.dom) t.dom=parse(o).getDate(); t.od = d===o ? '' : o; } t.due=d; });
-  if(!c.ok) return; use('延期:'+t.rep); renderTask(); toast(`「${t.t}」を ${mdw(d)} に延期しました`);
-  const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] [data-ed]`); if(el) el.focus(); }
+  if(!c.ok) return; use('延期:'+t.rep); ppFoc=t.id; renderTask(); toast(`「${t.t}」を ${mdw(d)} に延期しました`); }
 $('#tkPp').addEventListener('click', e=>{ const b=e.target.closest('[data-pp]'); if(b && ppCur) ppGo(addD(ppBase(ppCur),+b.dataset.pp)); else if(e.target===$('#tkPp')) ppClose(); });
 const ppPick=e=>{ const v=e.target.value; if(v && v>todayStr()) ppGo(v); };
 $('#tkPpD').addEventListener('change', e=>{ if(!matchMedia('(pointer:coarse)').matches) ppPick(e); });
 $('#tkPpD').addEventListener('blur', e=>{ if(matchMedia('(pointer:coarse)').matches) ppPick(e); });
-$('#tkPp').addEventListener('close', ()=>{ ppCur=null; });
+$('#tkPp').addEventListener('close', ()=>{ ppCur=null; const id=ppFoc; ppFoc=null; if(id) setTimeout(()=>{ const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(id)}"] [data-ed]`)||$('#tkWk')||$('#tkBody').querySelector('[data-ck]')||$('#tkNew'); if(el) el.focus(); }, 0); });
 $('#tkBody').addEventListener('contextmenu', e=>{ const fg=e.target.closest('.tk-fg'); if(!fg) return; e.preventDefault(); const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; ppOpen(t, fg); });
 $('#tkBody').addEventListener('pointermove', e=>{
   const d=tkDrag; if(!d || e.pointerId!==d.id) return;
@@ -2523,15 +2522,24 @@ $('#tkCancel').addEventListener('click', ()=>$('#tkSheet').close());
   const end=e=>{ if(!g || e.pointerId!==g.id) return; const {dy,v}=g; g=null; const H=dl.offsetHeight;
     if(dy>Math.min(120,H*.25) || (v>.45 && dy>16)){
       if(calm() || !dl.animate){ dl.style.transform=''; dl.close(); return; }
-      let done=0; const fin=()=>{ if(done) return; done=1; dl.close(); dl.style.transform=''; dl.getAnimations().forEach(x=>x.cancel()); };
-      const ms=Math.max(160, Math.min(300, (H-dy)/Math.max(v,1.4)));
-      dl.animate([{transform:`translateY(${dy}px)`},{transform:`translateY(${H+24}px)`}],{duration:ms, easing:'cubic-bezier(.25,.7,.4,1)', fill:'forwards'}).onfinish=fin;
+      let done=0; dl.style.pointerEvents='none'; const fin=()=>{ if(done) return; done=1; dl.close(); dl.style.transform=''; dl.style.pointerEvents=''; dl.getAnimations({subtree:true}).forEach(x=>x.cancel()); };
+      const to=Math.max(H+24, (innerHeight+H)/2+24), ms=Math.max(160, Math.min(300, (to-dy)/Math.max(v,1.4)));
+      dl.animate([{transform:`translateY(${dy}px)`},{transform:`translateY(${to}px)`}],{duration:ms, easing:'cubic-bezier(.25,.7,.4,1)', fill:'forwards'}).onfinish=fin;
       try{ dl.animate([{opacity:1},{opacity:0}],{duration:ms, easing:'ease-out', pseudoElement:'::backdrop', fill:'forwards'}); }catch(_){}
       setTimeout(fin, ms+120);
     } else { dl.style.transform=''; if(dy && !calm() && dl.animate) dl.animate([{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:460, easing:'cubic-bezier(.22,1.3,.36,1)'}); } };
-  gb.addEventListener('pointerup', end); gb.addEventListener('pointercancel', end); })();
-$('#tkPost').addEventListener('click', ()=>{ const t=tkCur; if(!t) return; tkGone=true; $('#tkSheet').close(); tkShowWk=true; renderTask();
-  const fg=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] .tk-fg`); if(fg){ fg.scrollIntoView({block:'nearest'}); ppOpen(t, fg); } });
+  gb.addEventListener('pointerup', end); gb.addEventListener('pointercancel', end);
+  dl.addEventListener('close', ()=>{ g=null; dl.style.transform=''; dl.style.pointerEvents=''; }); })();
+/* 編集画面の「延期」：書きかけがあれば先に保存してから延期のメニューを出す */
+function tDirty(t){ const f=tForm(), w=a=>a.slice().sort().join(); const tw=t.wd.length?t.wd:(t.due?[parse(t.due).getDay()]:[]);
+  return f.t!==t.t || f.memo!==t.memo || f.due!==t.due || f.tm!==t.tm || f.st!==t.st || f.rep!==t.rep || (f.rep==='week' && w(f.wd)!==w(tw)); }
+$('#tkPost').addEventListener('click', ()=>{ const t0=tkCur; if(!t0) return; const id=t0.id;
+  if(tDirty(t0)){ $('#tkForm').requestSubmit(); if($('#tkSheet').open) return; }
+  else { tkGone=true; $('#tkSheet').close(); renderTask(); }
+  const t=tdb.ts.find(x=>x.id===id); if(!t || t.st==='done') return;
+  const q=()=>$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(id)}"] .tk-fg`);
+  let fg=q(); if(!fg){ tkShowWk=true; renderTask(); fg=q(); }
+  if(fg){ fg.scrollIntoView({block:'nearest'}); ppOpen(t, fg); } });
 $('#tkSheet').addEventListener('pointerdown', e=>{ tkDown=e.target; });
 $('#tkSheet').addEventListener('click', e=>{ if(e.target===$('#tkSheet') && tkDown===$('#tkSheet')) $('#tkSheet').close(); });
 let tkGone=false, tkDown=null;
