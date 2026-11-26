@@ -386,6 +386,13 @@ dialog#lImg{width:min(560px,calc(100% - 24px));max-height:92dvh;overflow-y:auto}
 .tk-tx .r svg{width:13px;height:13px;vertical-align:-2px}
 .tk-empty{padding:18px 6px 4px;color:var(--ink-soft)}
 .tk-hint{margin:12px 6px 0}
+dialog#tkPp{position:fixed;inset:auto;margin:0;border:0;padding:0;border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:0 10px 30px -8px var(--sh-2);width:min(240px,calc(100% - 32px));overflow:hidden}
+dialog#tkPp::backdrop{background:transparent}
+.pp-h{margin:0;padding:10px 14px 4px;font-size:12px;color:var(--sub)}
+.pp-b{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:48px;padding:0 14px;border:0;border-top:1px solid var(--line);background:none;color:inherit;font:inherit;font-size:15px;font-weight:700;text-align:left;cursor:pointer}
+.pp-b .meta{font-weight:500}
+.pp-b input{font:inherit;font-size:16px;font-weight:500;border:0;background:var(--surface-2);color:inherit;border-radius:8px;padding:4px 6px;min-width:0;max-width:60%}
+.tk-fg{-webkit-touch-callout:none}
 dialog#tkSheet{width:min(480px,100%);max-width:100%;max-height:92dvh;overflow-y:auto;margin:auto auto 0;border-radius:20px 20px 0 0;background:var(--paper)}
 @media (min-width:600px){dialog#tkSheet{margin:auto;border-radius:20px}}
 .tks{padding:10px 16px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
@@ -644,7 +651,7 @@ body.pv #printArea svg{max-width:100%;height:auto}
   <h2 class="vh">タスク</h2>
   <div id="tkBody"></div>
   <button class="fab" id="tkNew" type="button" aria-label="新しいタスク"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-  <p class="meta tk-hint">右へフリックで「進行中」、左へフリックで「完了」。丸を押しても完了にできます。</p>
+  <p class="meta tk-hint">右へフリックで「進行中」、左へフリックで「完了」。丸を押しても完了にできます。長押しで延期。</p>
 </div>
 </div>
 
@@ -682,6 +689,12 @@ body.pv #printArea svg{max-width:100%;height:auto}
   </div>
 </div></dialog>
 <dialog class="peek" id="peek" aria-label="ひとりのページ" tabindex="-1"><div class="pk" id="pk"></div></dialog>
+
+<dialog id="tkPp" aria-labelledby="tkPpH"><p class="pp-h" id="tkPpH">延期</p>
+  <button class="pp-b" type="button" data-pp="1">明日<span class="meta"></span></button>
+  <button class="pp-b" type="button" data-pp="2">あさって<span class="meta"></span></button>
+  <label class="pp-b">日付<input type="date" id="tkPpD" aria-label="延期する日付"></label>
+</dialog>
 
 <dialog class="sheet" id="tkSheet" aria-labelledby="tksH"><form class="tks" id="tkForm" method="dialog">
   <div class="tks-grab" aria-hidden="true"></div>
@@ -2310,7 +2323,7 @@ const okT = v => typeof v==='string' && /^\d{2}:\d{2}$/.test(v);
 function tclean(x){ if(!x || typeof x.t!=='string' || !x.t.trim()) return null;
   return {id:String(x.id||Math.random().toString(36).slice(2)), t:x.t.trim(), memo:typeof x.memo==='string'?x.memo:'', due:okD(x.due)?x.due:'', tm:okT(x.tm)?x.tm:'',
     st:TST.includes(x.st)?x.st:'todo', rep:TREP.some(r=>r[0]===x.rep)?x.rep:'none', wd:Array.isArray(x.wd)?x.wd.filter(n=>Number.isInteger(n)&&n>=0&&n<7):[],
-    done:+x.done||0, nx:typeof x.nx==='string'?x.nx:'', c:+x.c||0, dom:(+x.dom>=1&&+x.dom<=31)?+x.dom:0, auto:x.auto?1:0}; }
+    done:+x.done||0, nx:typeof x.nx==='string'?x.nx:'', c:+x.c||0, dom:(+x.dom>=1&&+x.dom<=31)?+x.dom:0, auto:x.auto?1:0, od:okD(x.od)?x.od:''}; }
 function tload(){ try{ const d=JSON.parse(localStorage.getItem(TKEY)||'null'); if(d && Array.isArray(d.ts)) return {at:d.at||0, ts:d.ts.map(tclean).filter(Boolean)}; }catch(e){} return {at:0, ts:[]}; }
 let tdb = tload();
 function tcommit(fn){ tRoll(); const snap=JSON.stringify(tdb.ts); const r=fn(); if(tsave()) return {ok:true, r};
@@ -2334,8 +2347,9 @@ function step(t, s, day){
     case 'year': return addM(s,12,day);
   } return ''; }
 /* 次の回：期限の次。過ぎた回を完了したときは今日の回を飛ばさない（今日が回の日なら今日） */
-function nextDue(t){ if(t.rep==='none') return ''; const today=todayStr(), base=t.due||today, day=t.dom||parse(base).getDate();
-  let d=step(t, base, day), g=0; while(d && d<today && g++<2000) d=step(t, d, day);
+/* 延期した回（od＝元の日付）は元の並びで数え、延期した日より後の回にする */
+function nextDue(t){ if(t.rep==='none') return ''; const today=todayStr(), base=t.od||t.due||today, day=t.dom||parse(base).getDate(), lo=t.od&&t.due?t.due:'';
+  let d=step(t, base, day), g=0; while(d && (d<today || (lo && d<=lo)) && g++<2000) d=step(t, d, day);
   if(d && d<today) d=step(t, today, day); return d; }
 /* 「毎日」の残りは期限切れにせず今日の回にする（休みの日の分は数えない）。何度呼んでも同じ結果 */
 function tRoll(){ const today=todayStr(); let n=0;
@@ -2363,7 +2377,7 @@ const ICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 const IRP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg>';
 const STN = {todo:'まだ', doing:'進行中', done:'完了'};
 function tRow(t){
-  const r=[dueTxt(t), t.tm?esc(t.tm):'', t.rep!=='none'?IRP+' '+esc(repTxt(t)):'', t.st==='doing'?'<span class="chip">進行中</span>':'', t.memo?esc(t.memo):''].filter(Boolean).map(x=>`<span>${x}</span>`).join('');
+  const r=[dueTxt(t), t.tm?esc(t.tm):'', t.rep!=='none'?IRP+' '+esc(repTxt(t)):'', t.od&&t.od!==t.due&&t.st!=='done'?'延期':'', t.st==='doing'?'<span class="chip">進行中</span>':'', t.memo?esc(t.memo):''].filter(Boolean).map(x=>`<span>${x}</span>`).join('');
   const ck = t.st==='done' ? 'まだに戻す' : '完了にする';
   return `<div class="tk" data-id="${esc(t.id)}" data-st="${t.st}"><div class="tk-bg r" aria-hidden="true"></div><div class="tk-bg l" aria-hidden="true"></div>
     <div class="tk-fg"><button class="tk-ck" type="button" data-ck aria-label="${esc(t.t)}を${ck}"><i>${ICK}</i></button>
@@ -2397,8 +2411,28 @@ function tApply(t, st, focusSel, how){
 let tkDrag=null, tkSkip=0;
 $('#tkBody').addEventListener('pointerdown', e=>{
   const fg=e.target.closest('.tk-fg'); if(!fg || e.button>0) return;
-  tkDrag={fg, x:e.clientX, y:e.clientY, dx:0, on:false, id:e.pointerId};
+  tkLong=0; const d=tkDrag={fg, x:e.clientX, y:e.clientY, dx:0, on:false, id:e.pointerId};
+  setTimeout(()=>{ if(tkDrag!==d || d.on || !fg.isConnected) return; const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; ppOpen(t, fg); }, 500);
 });
+/* 長押しの延期 */
+let tkLong=0, ppCur=null;
+function ppBase(t){ const today=todayStr(); return t.due && t.due>today ? t.due : today; }
+function ppOpen(t, fg){ const dl=$('#tkPp'); if(dl.open) return; ppCur=t; const b=ppBase(t);
+  dl.querySelectorAll('[data-pp]').forEach(x=>x.querySelector('.meta').textContent=mdw(addD(b,+x.dataset.pp)));
+  const inp=$('#tkPpD'); inp.min=addD(todayStr(),1); inp.value='';
+  use('延期:開く'); dl.showModal();
+  const r=fg.getBoundingClientRect(), w=dl.offsetWidth, h=dl.offsetHeight;
+  let top=r.bottom+6; if(top+h>innerHeight-12) top=Math.max(12, r.top-h-6);
+  dl.style.left=Math.max(16, Math.min(innerWidth-w-16, r.right-w-8))+'px'; dl.style.top=top+'px';
+  dl.querySelector('[data-pp]').focus(); }
+function ppGo(d){ const t=ppCur; if(!t || !okD(d)) return; $('#tkPp').close();
+  const c=tcommit(()=>{ if(t.rep!=='none'){ const o=t.od||t.due||todayStr(); if(t.rep==='week' && !t.wd.length) t.wd=[parse(o).getDay()]; if(!t.dom) t.dom=parse(o).getDate(); t.od = d===o ? '' : o; } t.due=d; });
+  if(!c.ok) return; use('延期:'+t.rep); renderTask(); toast(`「${t.t}」を ${mdw(d)} に延期しました`);
+  const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] [data-ed]`); if(el) el.focus(); }
+$('#tkPp').addEventListener('click', e=>{ const b=e.target.closest('[data-pp]'); if(b && ppCur) ppGo(addD(ppBase(ppCur),+b.dataset.pp)); else if(e.target===$('#tkPp')) $('#tkPp').close(); });
+$('#tkPpD').addEventListener('change', e=>{ const v=e.target.value; if(v && v>todayStr()) ppGo(v); });
+$('#tkPp').addEventListener('close', ()=>{ ppCur=null; });
+$('#tkBody').addEventListener('contextmenu', e=>{ const fg=e.target.closest('.tk-fg'); if(!fg) return; e.preventDefault(); const t=tFind(fg); if(!t || t.st==='done') return; tkDrag=null; tkLong=1; ppOpen(t, fg); });
 $('#tkBody').addEventListener('pointermove', e=>{
   const d=tkDrag; if(!d || e.pointerId!==d.id) return;
   const dx=e.clientX-d.x, dy=e.clientY-d.y;
@@ -2426,6 +2460,7 @@ function tkEnd(e){
 $('#tkBody').addEventListener('pointerup', tkEnd);
 $('#tkBody').addEventListener('pointercancel', tkEnd);
 $('#tkBody').addEventListener('click', e=>{
+  if(tkLong && e.detail>0){ tkLong=0; e.preventDefault(); return; }
   if(e.detail>0 && Date.now()-tkSkip<350){ e.preventDefault(); return; }
   if(e.target.closest('#tkWk')){ tkShowWk=!tkShowWk; renderTask(); $('#tkWk').focus(); return; }
   if(e.target.closest('#tkDone')){ tkShowDone=!tkShowDone; renderTask(); $('#tkDone').focus(); return; }
@@ -2442,7 +2477,7 @@ function tForm(){ const rp=($('#tkForm').querySelector('[name=tkrp]:checked')||{
     wd: rp==='week' ? [...$('#tkWd').querySelectorAll('input:checked')].map(i=>+i.value) : []}; }
 function tHint(){ const f=tForm(); $('#tkWd').hidden = f.rep!=='week';
   if(f.rep==='none'){ $('#tkNx').textContent=''; return; }
-  const x=Object.assign({}, f, {due:f.due||todayStr()}); const d=nextDue(x);
+  const same=tkCur&&tkCur.due===f.due&&tkCur.rep===f.rep, x=Object.assign({}, f, {due:f.due||todayStr(), od:same?tkCur.od:'', dom:same?tkCur.dom:0}); const d=nextDue(x);
   $('#tkNx').textContent = (f.due?'':'日付がないので今日から数えます。')+(d?`完了すると、次は ${mdw(d)} に「まだ」で出ます。`:''); }
 function tOpen(t){
   tkCur=t||null; const x=t||{t:'',memo:'',due:todayStr(),tm:'',st:'todo',rep:'none',wd:[]};
@@ -2471,7 +2506,7 @@ $('#tkForm').addEventListener('submit', e=>{
   let t=tkCur;
   const c=tcommit(()=>{ if(f.due && (!t || t.due!==f.due)) f.dom=parse(f.due).getDate();
     if(!t){ t={id:tid(), done:0, nx:'', c:Date.now(), st:'todo', dom:0, auto:0}; Object.assign(t, f, {st:'todo'}); tdb.ts.push(t); return setSt(t, f.st); }
-    const st=f.st; Object.assign(t, f, {st:t.st, auto:0}); return setSt(t, st); });
+    const st=f.st; if(t.due!==f.due) t.od=''; Object.assign(t, f, {st:t.st, auto:0}); return setSt(t, st); });
   if(!c.ok){ tkCur = tkCur && tdb.ts.find(x=>x.id===tkCur.id) || null; return; }
   const msg=c.r, id=t.id; tkCur=t; $('#tkSheet').close(); renderTask();
   toast(`「${t.t}」を保存しました`+(msg?`。${msg}`:''));
@@ -2483,7 +2518,7 @@ $('#tkForm').addEventListener('submit', e=>{
     tkCur=null; tkGone=true; $('#tkSheet').close(); renderTask(); toast(`「${t.t}」を削除しました`); ($('#tkBody').querySelector('[data-ck]')||$('#tkNew')).focus(); }); })();
 
 /* ページの切り替え */
-let tkDay=todayStr(); const tkRe=()=>{ if(!document.hidden && view==='task' && !$('#tkSheet').open && !tkDrag){ tkDay=todayStr(); renderTask(); } };
+let tkDay=todayStr(); const tkRe=()=>{ if(!document.hidden && view==='task' && !$('#tkSheet').open && !$('#tkPp').open && !tkDrag){ tkDay=todayStr(); renderTask(); } };
 document.addEventListener('visibilitychange', tkRe); setInterval(()=>{ if(todayStr()!==tkDay) tkRe(); }, 60000);
 let view='task';
 function route(){
