@@ -2411,8 +2411,13 @@ function tApply(t, st, focusSel, how){
   const c=tcommit(()=>setSt(t, st)); if(!c.ok){ renderTask(); return; } const msg=c.r; renderTask();
   toast(`「${t.t}」を${STN[st]}に`+(msg?`。${msg}`:''));
   const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] ${focusSel||'[data-ck]'}`);
+  /* 指で操作したときはフォーカスを移さない（iPhone で丸に茶色の枠が残るため）。キーボードのときだけ戻す */
+  if(!tkKbd) return;
   if(el) el.focus(); else ($('#tkBody').querySelector('[data-ck]')||$('#tkNew')).focus();
 }
+let tkKbd=false;
+document.addEventListener('keydown', ()=>{ tkKbd=true; }, true);
+document.addEventListener('pointerdown', ()=>{ tkKbd=false; }, true);
 /* フリック */
 let tkDrag=null, tkSkip=0;
 $('#tkBody').addEventListener('pointerdown', e=>{
@@ -2460,7 +2465,7 @@ $('#tkBody').addEventListener('pointermove', e=>{
   const d=tkDrag; if(!d || e.pointerId!==d.id) return;
   const dx=e.clientX-d.x, dy=e.clientY-d.y;
   if(!d.on){ if(Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)){ tkDrag=null; d.fg.classList.remove('hold'); return; }
-    if(Math.abs(dx)<10) return; d.on=true; d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){}
+    if(Math.abs(dx)<16 || Math.abs(dx)<Math.abs(dy)*1.5) return; d.on=true; d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){}
     const t0=tFind(d.fg), r0=d.fg.parentNode; if(t0 && r0){ const back=t0.st==='doing'||t0.st==='done';
       r0.querySelector('.tk-bg.r').innerHTML = back ? '<span class="tk-ic">←</span>まだに戻す' : '<span class="tk-ic">▶</span>進行中';
       r0.querySelector('.tk-bg.l').innerHTML = '完了<span class="tk-ic">✓</span>'; } }
@@ -2477,8 +2482,8 @@ $('#tkBody').addEventListener('pointermove', e=>{
 function tkCue(B, far){ const ic=B&&B.querySelector('.tk-ic');
   if(far){ try{ navigator.vibrate&&navigator.vibrate(10); }catch(_){} }
   if(ic && ic.animate && !calm()) ic.animate(far?[{transform:'scale(.7)'},{transform:'scale(1.22)',offset:.5},{transform:'scale(1)'}]:[{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:far?340:160,easing:far?'cubic-bezier(.22,1.2,.36,1)':'ease-out'}); }
-/* 決まる距離：72px（狭い画面では行幅の25%まで） */
-function tkTh(W){ return Math.min(72, W*.25); }
+/* 決まる距離：110px（狭い画面では行幅の35%まで） */
+function tkTh(W){ return Math.min(110, W*.35); }
 function tkEnd(e){
   const d=tkDrag; if(!d || (e && e.pointerId!==d.id)) return; tkDrag=null;
   if(!d.on) return;
@@ -2486,7 +2491,7 @@ function tkEnd(e){
   const t=tFind(d.fg); if(!t || !d.fg.isConnected){ renderTask(); return; } const row=d.fg.parentNode, W=row.offsetWidth;
   /* 速く払ったときは短くても決める（最後の0.1秒の速さ） */
   const P=d.pts||[], v = P.length>1 ? (P[P.length-1][1]-P[0][1])/Math.max(16, P[P.length-1][0]-P[0][0]) : 0;
-  const fast = Math.abs(v)>.45 && Math.sign(v)===Math.sign(d.dx) && Math.abs(d.dx)>=24 && performance.now()-(P.length?P[P.length-1][0]:0)<120;
+  const fast = Math.abs(v)>.9 && Math.sign(v)===Math.sign(d.dx) && Math.abs(d.dx)>=56 && performance.now()-(P.length?P[P.length-1][0]:0)<120;
   const far=(Math.abs(d.dx)>=tkTh(W) || fast) && e && e.type==='pointerup';
   const st = !far ? '' : d.dx>0 ? (t.st==='todo'?'doing':'todo') : (t.st==='done'?'':'done');
   const back=()=>{ d.fg.classList.remove('drag'); d.fg.style.transform=''; row.querySelectorAll('.tk-bg').forEach(b=>b.classList.remove('on','far')); };
