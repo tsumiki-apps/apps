@@ -369,6 +369,9 @@ dialog#lImg{width:min(560px,calc(100% - 24px));max-height:92dvh;overflow-y:auto}
 .tk-bg{position:absolute;inset:0;display:flex;align-items:center;padding:0 18px;font-size:15px;font-weight:700;color:var(--paper);visibility:hidden}
 .tk-bg.r{background:var(--hi)}.tk-bg.l{background:var(--good-ink);justify-content:flex-end}
 .tk-bg.on{visibility:visible}
+.tk-bg{gap:10px;opacity:.62;transition:opacity .15s ease}.tk-bg.far{opacity:1}
+.tk-ic{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.22);font-size:14px;transition:background-color .15s ease,color .15s ease}
+.tk-bg.far .tk-ic{background:var(--paper)}.tk-bg.r.far .tk-ic{color:var(--hi)}.tk-bg.l.far .tk-ic{color:var(--good-ink)}
 .tk-fg{position:relative;display:flex;align-items:center;gap:4px;min-height:60px;padding:4px 8px 4px 4px;background:var(--surface);touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .tk-fg.drag{box-shadow:0 2px 12px -4px var(--sh-2)}
 .tk-ck{flex:none;width:44px;height:44px;display:grid;place-items:center;border-radius:12px}
@@ -2457,22 +2460,35 @@ $('#tkBody').addEventListener('pointermove', e=>{
   const d=tkDrag; if(!d || e.pointerId!==d.id) return;
   const dx=e.clientX-d.x, dy=e.clientY-d.y;
   if(!d.on){ if(Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)){ tkDrag=null; d.fg.classList.remove('hold'); return; }
-    if(Math.abs(dx)<10) return; d.on=true; d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){} }
+    if(Math.abs(dx)<10) return; d.on=true; d.fg.classList.remove('hold'); d.fg.classList.add('drag'); try{ d.fg.setPointerCapture(e.pointerId); }catch(_){}
+    const t0=tFind(d.fg), r0=d.fg.parentNode; if(t0 && r0){ const back=t0.st==='doing'||t0.st==='done';
+      r0.querySelector('.tk-bg.r').innerHTML = back ? '<span class="tk-ic">←</span>まだに戻す' : '<span class="tk-ic">▶</span>進行中';
+      r0.querySelector('.tk-bg.l').innerHTML = '完了<span class="tk-ic">✓</span>'; } }
   const t=tFind(d.fg); if(!t || !d.fg.isConnected){ tkDrag=null; return; } const row=d.fg.parentNode, W=row.offsetWidth;
   let x=dx; if(x<0 && t.st==='done') x=Math.max(x,-24);
   d.dx=x; d.fg.style.transform=`translateX(${x}px)`;
-  const R=row.querySelector('.tk-bg.r'), L=row.querySelector('.tk-bg.l'), far=Math.abs(x)>Math.min(90,W*.28);
+  const now=performance.now(); (d.pts||(d.pts=[])).push([now,x]); while(d.pts.length>2 && now-d.pts[0][0]>100) d.pts.shift();
+  const R=row.querySelector('.tk-bg.r'), L=row.querySelector('.tk-bg.l'), far=Math.abs(x)>=tkTh(W) && !(x<0 && t.st==='done');
   R.classList.toggle('on', x>0); L.classList.toggle('on', x<0);
-  R.textContent = t.st==='doing'||t.st==='done' ? '← まだに戻す' : '▶ 進行中'; L.textContent='完了 ✓';
-  R.style.opacity = L.style.opacity = far?1:.7;
+  const B=x>0?R:L; R.classList.toggle('far', far&&x>0); L.classList.toggle('far', far&&x<0);
+  /* 決まる所を越えた瞬間：丸が弾んで軽く震える（戻ると小さく戻る） */
+  if(far!==!!d.far){ d.far=far; const ic=B.querySelector('.tk-ic');
+    if(far){ try{ navigator.vibrate&&navigator.vibrate(10); }catch(_){} }
+    if(ic && ic.animate && !calm()) ic.animate(far?[{transform:'scale(.7)'},{transform:'scale(1.22)',offset:.5},{transform:'scale(1)'}]:[{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:far?340:160,easing:far?'cubic-bezier(.22,1.2,.36,1)':'ease-out'}); }
 });
+/* 決まる距離：72px（狭い画面では行幅の25%まで） */
+function tkTh(W){ return Math.min(72, W*.25); }
 function tkEnd(e){
   const d=tkDrag; if(!d || (e && e.pointerId!==d.id)) return; tkDrag=null;
   if(!d.on) return;
   tkSkip=Date.now();
-  const t=tFind(d.fg); if(!t || !d.fg.isConnected){ renderTask(); return; } const row=d.fg.parentNode, W=row.offsetWidth, far=Math.abs(d.dx)>Math.min(90,W*.28) && e && e.type==='pointerup';
+  const t=tFind(d.fg); if(!t || !d.fg.isConnected){ renderTask(); return; } const row=d.fg.parentNode, W=row.offsetWidth;
+  /* 速く払ったときは短くても決める（最後の0.1秒の速さ） */
+  const P=d.pts||[], v = P.length>1 ? (P[P.length-1][1]-P[0][1])/Math.max(16, P[P.length-1][0]-P[0][0]) : 0;
+  const fast = Math.abs(v)>.45 && Math.sign(v)===Math.sign(d.dx) && Math.abs(d.dx)>=24 && performance.now()-(P.length?P[P.length-1][0]:0)<120;
+  const far=(Math.abs(d.dx)>=tkTh(W) || fast) && e && e.type==='pointerup';
   const st = !far ? '' : d.dx>0 ? (t.st==='todo'?'doing':'todo') : (t.st==='done'?'':'done');
-  const back=()=>{ d.fg.classList.remove('drag'); d.fg.style.transform=''; row.querySelectorAll('.tk-bg').forEach(b=>b.classList.remove('on')); };
+  const back=()=>{ d.fg.classList.remove('drag'); d.fg.style.transform=''; row.querySelectorAll('.tk-bg').forEach(b=>b.classList.remove('on','far')); };
   if(!st){ if(calm()||!d.fg.animate){ back(); return; } const a=d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:'translateX(0)'}],{duration:180,easing:'ease-out'}); d.fg.style.transform=''; a.onfinish=back; return; }
   if(calm()||!d.fg.animate){ tApply(t, st, null, 'フリック'); return; }
   const to=d.dx>0?W:-W; d.fg.animate([{transform:`translateX(${d.dx}px)`},{transform:`translateX(${to}px)`}],{duration:160,easing:'ease-in',fill:'forwards'}).onfinish=()=>tApply(t, st, null, 'フリック');
