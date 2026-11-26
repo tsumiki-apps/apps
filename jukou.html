@@ -47,7 +47,7 @@ button,input,textarea{font:inherit;color:inherit}
 button{background:none;border:0;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent-2);outline-offset:2px}
 /* 指で操作している間はフォーカスの枠を出さない（iPhone で丸などに茶色の四角が残るため）。キーを押したら戻る */
-html.ptr :focus-visible{outline:none}
+html.ptr :focus-visible,html.ptr .tks-opts input:focus-visible+span{outline:none}
 .wrap{width:100%;max-width:720px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom))}
 @media (min-width:600px){.wrap{padding-left:24px;padding-right:24px}}
 .vh{position:absolute;width:1px;height:1px;margin:-1px;clip-path:inset(50%);white-space:nowrap}
@@ -2417,7 +2417,8 @@ function tApply(t, st, focusSel, how){
   const el=$('#tkBody').querySelector(`.tk[data-id="${CSS.escape(t.id)}"] ${focusSel||'[data-ck]'}`);
   if(el) el.focus(); else ($('#tkBody').querySelector('[data-ck]')||$('#tkNew')).focus();
 }
-document.addEventListener('keydown', ()=>document.documentElement.classList.remove('ptr'), true);
+/* 枠を戻すのは移動のキー（Tab・矢印）を押したときだけ。文字や Enter では戻さない */
+document.addEventListener('keydown', e=>{ if(/^(Tab|Arrow)/.test(e.key)) document.documentElement.classList.remove('ptr'); }, true);
 document.addEventListener('pointerdown', ()=>document.documentElement.classList.add('ptr'), true);
 /* フリック */
 let tkDrag=null, tkSkip=0;
@@ -2493,7 +2494,7 @@ function tkEnd(e){
   const t=tFind(d.fg); if(!t || !d.fg.isConnected){ renderTask(); return; } const row=d.fg.parentNode, W=row.offsetWidth;
   /* 速く払ったときは短くても決める（最後の0.1秒の速さ） */
   const P=d.pts||[], v = P.length>1 ? (P[P.length-1][1]-P[0][1])/Math.max(16, P[P.length-1][0]-P[0][0]) : 0;
-  const fast = Math.abs(v)>1.3 && Math.sign(v)===Math.sign(d.dx) && Math.abs(d.dx)>=90 && performance.now()-(P.length?P[P.length-1][0]:0)<120;
+  const fast = Math.abs(v)>1.3 && Math.sign(v)===Math.sign(d.dx) && Math.abs(d.dx)>=tkTh(W)*.75 && performance.now()-(P.length?P[P.length-1][0]:0)<120;
   const far=(Math.abs(d.dx)>=tkTh(W) || fast) && e && e.type==='pointerup';
   const st = !far ? '' : d.dx>0 ? (t.st==='todo'?'doing':'todo') : (t.st==='done'?'':'done');
   const back=()=>{ d.fg.classList.remove('drag'); d.fg.style.transform=''; row.querySelectorAll('.tk-bg').forEach(b=>b.classList.remove('on','far')); };
